@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,10 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mic, Shield, FileText, Volume2, ArrowRight } from "lucide-react";
+import { Mic, Shield, FileText, Volume2, ArrowRight, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Collection, Project } from "@shared/schema";
+import type { Collection, Project, InterviewSession } from "@shared/schema";
+
+interface ResumeData {
+  session: InterviewSession;
+  isResume: boolean;
+}
 
 export default function InterviewConsentPage() {
   const params = useParams<{ collectionId: string }>();
@@ -22,6 +27,46 @@ export default function InterviewConsentPage() {
     audioRecording: false,
     dataProcessing: false,
   });
+  const [resumeInfo, setResumeInfo] = useState<{ sessionId: string; token: string } | null>(null);
+  const [checkingResume, setCheckingResume] = useState(true);
+
+  // Check for existing resume token on mount
+  useEffect(() => {
+    async function checkForResume() {
+      if (!collectionId) {
+        setCheckingResume(false);
+        return;
+      }
+
+      const stored = localStorage.getItem(`alvia_resume_${collectionId}`);
+      if (!stored) {
+        setCheckingResume(false);
+        return;
+      }
+
+      try {
+        const { token, sessionId } = JSON.parse(stored);
+        const response = await fetch(`/api/interview/resume/${token}`);
+        
+        if (response.ok) {
+          const data: ResumeData = await response.json();
+          if (data.isResume && ["paused", "in_progress", "consent_given"].includes(data.session.status)) {
+            setResumeInfo({ sessionId, token });
+          }
+        } else {
+          // Token invalid or expired, clear it
+          localStorage.removeItem(`alvia_resume_${collectionId}`);
+        }
+      } catch (error) {
+        console.error("Error checking resume token:", error);
+        localStorage.removeItem(`alvia_resume_${collectionId}`);
+      }
+      
+      setCheckingResume(false);
+    }
+
+    checkForResume();
+  }, [collectionId]);
 
   const { data: collection, isLoading: collectionLoading } = useQuery<Collection & { project?: Project }>({
     queryKey: ["/api/collections", collectionId],
@@ -36,6 +81,14 @@ export default function InterviewConsentPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      // Store resume token in localStorage for browser recovery
+      if (data.resumeToken) {
+        localStorage.setItem(`alvia_resume_${collectionId}`, JSON.stringify({
+          token: data.resumeToken,
+          sessionId: data.id,
+          createdAt: Date.now(),
+        }));
+      }
       navigate(`/interview/${data.id}`);
     },
     onError: (error: Error) => {
@@ -53,7 +106,20 @@ export default function InterviewConsentPage() {
 
   const canProceed = allConsentsGiven && (!requiresAudioConsent || consents.audioRecording);
 
-  if (collectionLoading) {
+  const handleResume = () => {
+    if (resumeInfo) {
+      navigate(`/interview/${resumeInfo.sessionId}`);
+    }
+  };
+
+  const handleStartFresh = () => {
+    if (collectionId) {
+      localStorage.removeItem(`alvia_resume_${collectionId}`);
+    }
+    setResumeInfo(null);
+  };
+
+  if (collectionLoading || checkingResume) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
@@ -61,6 +127,56 @@ export default function InterviewConsentPage() {
             <Skeleton className="h-8 w-48 mx-auto" />
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-48 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show resume option if there's an existing session
+  if (resumeInfo) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader className="text-center space-y-4 pb-2">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <RotateCcw className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl font-serif">Welcome Back</CardTitle>
+              <CardDescription className="text-base mt-2">
+                You have an interview in progress
+              </CardDescription>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-6 pt-4">
+            <div className="bg-muted/50 rounded-lg p-4 text-center">
+              <p className="text-sm text-muted-foreground">
+                It looks like you were in the middle of an interview. Would you like to continue where you left off?
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Button 
+                onClick={handleResume} 
+                size="lg" 
+                className="w-full"
+                data-testid="button-resume-interview"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Resume Interview
+              </Button>
+              <Button 
+                onClick={handleStartFresh} 
+                variant="outline" 
+                size="lg" 
+                className="w-full"
+                data-testid="button-start-fresh"
+              >
+                Start a New Interview
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

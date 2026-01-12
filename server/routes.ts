@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { handleVoiceInterview } from "./voice-interview";
+import { generateResumeToken, hashToken, getTokenExpiryDate, isTokenExpired } from "./resume-token";
 import { 
   insertProjectSchema, 
   insertTemplateSchema, 
@@ -410,6 +411,49 @@ export async function registerRoutes(
     }
   });
 
+  // Resume session by token (for returning respondents)
+  app.get("/api/interview/resume/:token", async (req, res) => {
+    try {
+      const tokenHash = hashToken(req.params.token);
+      const session = await storage.getSessionByResumeToken(tokenHash);
+      
+      if (!session) {
+        return res.status(404).json({ message: "Session not found or token invalid" });
+      }
+      
+      if (isTokenExpired(session.resumeTokenExpiresAt)) {
+        return res.status(410).json({ message: "Resume token has expired" });
+      }
+      
+      // Only allow resuming paused or in_progress sessions
+      if (!["paused", "in_progress", "consent_given"].includes(session.status)) {
+        return res.status(400).json({ 
+          message: "Session cannot be resumed", 
+          status: session.status 
+        });
+      }
+      
+      const collection = await storage.getCollection(session.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+      
+      const template = await storage.getTemplate(collection.templateId);
+      const questions = await storage.getQuestionsByTemplate(collection.templateId);
+      
+      res.json({
+        session,
+        collection,
+        template,
+        questions,
+        isResume: true,
+      });
+    } catch (error) {
+      console.error("Error resuming interview:", error);
+      res.status(500).json({ message: "Failed to resume interview" });
+    }
+  });
+
   app.get("/api/sessions/:sessionId/questions", async (req, res) => {
     try {
       const session = await storage.getSession(req.params.sessionId);
@@ -494,12 +538,18 @@ export async function registerRoutes(
         status: "consent_given",
       });
       
+      // Generate resume token for browser recovery
+      const resumeToken = generateResumeToken();
+      const tokenHash = hashToken(resumeToken);
+      const expiresAt = getTokenExpiryDate();
+      await storage.setResumeToken(session.id, tokenHash, expiresAt);
+      
       // Update with started timestamp
       const updatedSession = await storage.updateSession(session.id, {
         startedAt: new Date(),
       });
 
-      res.status(201).json(updatedSession);
+      res.status(201).json({ ...updatedSession, resumeToken });
     } catch (error) {
       console.error("Error creating session:", error);
       res.status(500).json({ message: "Failed to create session" });
