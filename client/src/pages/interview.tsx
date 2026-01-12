@@ -180,6 +180,7 @@ export default function InterviewPage() {
   const [aiTranscriptBuffer, setAiTranscriptBuffer] = useState("");
   const [textInput, setTextInput] = useState("");
   const [isSendingText, setIsSendingText] = useState(false);
+  const [highlightNextButton, setHighlightNextButton] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -360,6 +361,7 @@ export default function InterviewPage() {
         if (message.currentQuestion) {
           setCurrentQuestionText(message.currentQuestion);
         }
+        setHighlightNextButton(false); // Reset highlight when moving to next question
         break;
 
       case "interview_complete":
@@ -381,6 +383,14 @@ export default function InterviewPage() {
       case "disconnected":
         setIsConnected(false);
         setIsListening(false);
+        break;
+
+      case "barbara_guidance":
+        // Barbara is providing guidance to Alvia
+        console.log("[Interview] Barbara guidance:", message);
+        if (message.highlightNextQuestion) {
+          setHighlightNextButton(true);
+        }
         break;
     }
   }, [playAudio, toast, navigate]);
@@ -531,6 +541,7 @@ export default function InterviewPage() {
   const handleNextQuestion = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "next_question" }));
+      setHighlightNextButton(false); // Reset highlight when clicking next
     }
   };
 
@@ -768,7 +779,12 @@ export default function InterviewPage() {
 
           <div className="flex justify-center gap-4">
             {(totalQuestions > 0 || questions) && currentQuestionIndex < (totalQuestions || questions?.length || 0) - 1 ? (
-              <Button onClick={handleNextQuestion} disabled={!isConnected} data-testid="button-next-question">
+              <Button 
+                onClick={handleNextQuestion} 
+                disabled={!isConnected} 
+                data-testid="button-next-question"
+                className={highlightNextButton ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/50" : ""}
+              >
                 Next Question
                 <SkipForward className="w-4 h-4 ml-2" />
               </Button>

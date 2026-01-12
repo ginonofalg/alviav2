@@ -517,6 +517,12 @@ async function triggerBarbaraAnalysis(
     if (guidance.action !== "none" && guidance.confidence > 0.6) {
       state.barbaraGuidanceQueue.push(guidance);
 
+      // For suggest_next_question, craft a specific message that invites the respondent to add more
+      let guidanceMessage = guidance.message;
+      if (guidance.action === "suggest_next_question") {
+        guidanceMessage = "The respondent has given a comprehensive answer. Acknowledge their response warmly, then ask if there's anything else they'd like to add before moving on. Say something like: 'That's really insightful, thank you. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+      }
+
       // Inject guidance by updating session instructions (system context)
       if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
         const updatedInstructions = buildInterviewInstructions(
@@ -524,7 +530,7 @@ async function triggerBarbaraAnalysis(
           currentQuestion,
           state.currentQuestionIndex,
           state.questions.length,
-          guidance.message,
+          guidanceMessage,
         );
 
         state.openaiWs.send(
@@ -538,12 +544,14 @@ async function triggerBarbaraAnalysis(
       }
 
       // Notify client about Barbara's guidance (for debugging/transparency)
+      // Also signal to highlight the Next Question button when appropriate
       clientWs.send(
         JSON.stringify({
           type: "barbara_guidance",
           action: guidance.action,
           message: guidance.message,
           confidence: guidance.confidence,
+          highlightNextQuestion: guidance.action === "suggest_next_question",
         }),
       );
 
