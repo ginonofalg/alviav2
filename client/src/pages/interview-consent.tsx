@@ -33,7 +33,7 @@ export default function InterviewConsentPage() {
       const response = await apiRequest("POST", `/api/collections/${collectionId}/sessions`, {
         consents,
       });
-      return response;
+      return response.json();
     },
     onSuccess: (data) => {
       navigate(`/interview/${data.id}`);

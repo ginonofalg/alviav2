@@ -368,6 +368,34 @@ export async function registerRoutes(
     }
   });
 
+  // Public route for interview access (respondents don't need auth)
+  app.get("/api/interview/:sessionId", async (req, res) => {
+    try {
+      const session = await storage.getSession(req.params.sessionId);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      
+      const collection = await storage.getCollection(session.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+      
+      const template = await storage.getTemplate(collection.templateId);
+      const questions = await storage.getQuestionsByTemplate(collection.templateId);
+      
+      res.json({
+        session,
+        collection,
+        template,
+        questions,
+      });
+    } catch (error) {
+      console.error("Error fetching interview:", error);
+      res.status(500).json({ message: "Failed to fetch interview" });
+    }
+  });
+
   app.get("/api/sessions/:sessionId/questions", async (req, res) => {
     try {
       const session = await storage.getSession(req.params.sessionId);

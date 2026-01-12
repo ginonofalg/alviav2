@@ -21,7 +21,14 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InterviewSession, Question } from "@shared/schema";
+import type { InterviewSession, Question, Collection, InterviewTemplate } from "@shared/schema";
+
+interface InterviewData {
+  session: InterviewSession;
+  collection: Collection;
+  template: InterviewTemplate;
+  questions: Question[];
+}
 
 interface TranscriptEntry {
   speaker: "alvia" | "respondent";
@@ -154,16 +161,13 @@ export default function InterviewPage() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-  const { data: session, isLoading: sessionLoading } = useQuery<InterviewSession>({
-    queryKey: ["/api/sessions", sessionId],
+  const { data: interviewData, isLoading } = useQuery<InterviewData>({
+    queryKey: ["/api/interview", sessionId],
     enabled: !!sessionId,
   });
 
-  const { data: questions, isLoading: questionsLoading } = useQuery<Question[]>({
-    queryKey: ["/api/sessions", sessionId, "questions"],
-    enabled: !!sessionId,
-  });
-
+  const session = interviewData?.session;
+  const questions = interviewData?.questions;
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress = questions ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
 
@@ -214,7 +218,7 @@ export default function InterviewPage() {
     navigate("/interview/complete");
   };
 
-  if (sessionLoading || questionsLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-3xl">
