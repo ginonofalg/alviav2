@@ -5,8 +5,18 @@ import {
   type InterviewTemplate, type InsertTemplate, type Question, type InsertQuestion,
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
   type InterviewSession, type InsertSession, type Segment, type InsertSegment,
-  type WorkspaceMember
+  type WorkspaceMember, type PersistedTranscriptEntry, type PersistedBarbaraGuidance,
+  type PersistedQuestionState
 } from "@shared/schema";
+
+export interface InterviewStatePatch {
+  liveTranscript?: PersistedTranscriptEntry[];
+  lastBarbaraGuidance?: PersistedBarbaraGuidance | null;
+  questionStates?: PersistedQuestionState[];
+  currentQuestionIndex?: number;
+  status?: InterviewSession["status"];
+  pausedAt?: Date | null;
+}
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 
@@ -63,6 +73,7 @@ export interface IStorage {
   getAllSessions(limit?: number): Promise<InterviewSession[]>;
   createSession(session: InsertSession): Promise<InterviewSession>;
   updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined>;
+  persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined>;
   
   // Segments
   getSegment(id: string): Promise<Segment | undefined>;
@@ -349,6 +360,39 @@ export class DatabaseStorage implements IStorage {
   async updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined> {
     const [updated] = await db.update(interviewSessions)
       .set(session)
+      .where(eq(interviewSessions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined> {
+    const updateData: Record<string, unknown> = {};
+    
+    if (patch.liveTranscript !== undefined) {
+      updateData.liveTranscript = patch.liveTranscript;
+    }
+    if (patch.lastBarbaraGuidance !== undefined) {
+      updateData.lastBarbaraGuidance = patch.lastBarbaraGuidance;
+    }
+    if (patch.questionStates !== undefined) {
+      updateData.questionStates = patch.questionStates;
+    }
+    if (patch.currentQuestionIndex !== undefined) {
+      updateData.currentQuestionIndex = patch.currentQuestionIndex;
+    }
+    if (patch.status !== undefined) {
+      updateData.status = patch.status;
+    }
+    if (patch.pausedAt !== undefined) {
+      updateData.pausedAt = patch.pausedAt;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return this.getSession(id);
+    }
+
+    const [updated] = await db.update(interviewSessions)
+      .set(updateData)
       .where(eq(interviewSessions.id, id))
       .returning();
     return updated;

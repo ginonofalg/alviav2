@@ -138,6 +138,10 @@ export const interviewSessions = pgTable("interview_sessions", {
   satisfactionRating: integer("satisfaction_rating"),
   closingComments: text("closing_comments"),
   createdAt: timestamp("created_at").defaultNow(),
+  // State persistence for reconnection/resume
+  liveTranscript: jsonb("live_transcript"),
+  lastBarbaraGuidance: jsonb("last_barbara_guidance"),
+  questionStates: jsonb("question_states"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -305,4 +309,29 @@ export type ExtractedValues = {
   scale?: number;
   numeric?: number;
   multiSelect?: string[];
+};
+
+// Interview state persistence types
+export type PersistedTranscriptEntry = {
+  speaker: "alvia" | "respondent";
+  text: string;
+  timestamp: number;
+  questionIndex: number;
+};
+
+export type PersistedBarbaraGuidance = {
+  action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none";
+  message: string;
+  confidence: number;
+  timestamp: number;
+  questionIndex: number;
+};
+
+export type PersistedQuestionState = {
+  questionIndex: number;
+  status: "not_started" | "in_progress" | "answered" | "skipped";
+  barbaraSuggestedMoveOn: boolean;
+  wordCount: number;
+  activeTimeMs: number;
+  turnCount: number;
 };
