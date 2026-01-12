@@ -200,6 +200,60 @@ export async function registerRoutes(
     }
   });
 
+  const updateTemplateSchema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    objective: z.string().max(1000).optional(),
+    tone: z.string().optional(),
+    constraints: z.string().optional(),
+    questions: z.array(z.object({
+      questionText: z.string().min(1),
+      questionType: z.enum(["open", "yes_no", "scale", "numeric", "multi_select"]),
+      guidance: z.string().optional(),
+      scaleMin: z.number().optional(),
+      scaleMax: z.number().optional(),
+      multiSelectOptions: z.array(z.string()).optional(),
+      timeHintSeconds: z.number().optional(),
+      isRequired: z.boolean().default(true),
+    })).optional(),
+  });
+
+  app.patch("/api/templates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const parseResult = updateTemplateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const { questions: questionData, ...templateData } = parseResult.data;
+
+      const updatedTemplate = await storage.updateTemplate(req.params.id, templateData);
+
+      if (questionData) {
+        await storage.deleteQuestionsByTemplate(req.params.id);
+        if (questionData.length > 0) {
+          const questionsToCreate = questionData.map((q, index) => ({
+            ...q,
+            templateId: req.params.id,
+            orderIndex: index,
+          }));
+          await storage.createQuestions(questionsToCreate);
+        }
+      }
+
+      const questions = await storage.getQuestionsByTemplate(req.params.id);
+      res.json({ ...updatedTemplate, questions });
+    } catch (error) {
+      console.error("Error updating template:", error);
+      res.status(500).json({ message: "Failed to update template" });
+    }
+  });
+
   // Collections
   app.get("/api/collections", isAuthenticated, async (req, res) => {
     try {

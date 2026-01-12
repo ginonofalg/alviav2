@@ -36,6 +36,7 @@ export interface IStorage {
   createQuestions(questions: InsertQuestion[]): Promise<Question[]>;
   updateQuestion(id: string, question: Partial<InsertQuestion>): Promise<Question | undefined>;
   deleteQuestion(id: string): Promise<void>;
+  deleteQuestionsByTemplate(templateId: string): Promise<void>;
   
   // Collections
   getCollection(id: string): Promise<Collection | undefined>;
@@ -205,6 +206,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuestion(id: string): Promise<void> {
     await db.delete(questions).where(eq(questions.id, id));
+  }
+
+  async deleteQuestionsByTemplate(templateId: string): Promise<void> {
+    await db.delete(questions).where(eq(questions.templateId, templateId));
   }
 
   // Collections

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Form,
   FormControl,
@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Project } from "@shared/schema";
+import type { Project, InterviewTemplate, Question } from "@shared/schema";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
   open: MessageSquare,
@@ -79,6 +79,10 @@ const templateFormSchema = z.object({
 });
 
 type TemplateFormData = z.infer<typeof templateFormSchema>;
+
+interface TemplateWithQuestions extends InterviewTemplate {
+  questions?: Question[];
+}
 
 function QuestionCard({ 
   index, 
@@ -149,7 +153,7 @@ function QuestionCard({
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs">Question Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger data-testid={`select-question-type-${index}`}>
                       <SelectValue />
@@ -178,6 +182,7 @@ function QuestionCard({
                     type="number"
                     placeholder="Optional"
                     {...field}
+                    value={field.value ?? ""}
                     onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                     data-testid={`input-time-hint-${index}`}
                   />
@@ -200,6 +205,7 @@ function QuestionCard({
                       type="number"
                       placeholder="1"
                       {...field}
+                      value={field.value ?? ""}
                       onChange={(e) => field.onChange(parseInt(e.target.value))}
                       data-testid={`input-scale-min-${index}`}
                     />
@@ -218,6 +224,7 @@ function QuestionCard({
                       type="number"
                       placeholder="10"
                       {...field}
+                      value={field.value ?? ""}
                       onChange={(e) => field.onChange(parseInt(e.target.value))}
                       data-testid={`input-scale-max-${index}`}
                     />
@@ -240,6 +247,7 @@ function QuestionCard({
                   className="resize-none bg-muted/50 text-sm"
                   rows={2}
                   {...field}
+                  value={field.value ?? ""}
                   data-testid={`input-guidance-${index}`}
                 />
               </FormControl>
@@ -277,10 +285,19 @@ function QuestionCard({
 }
 
 export default function TemplateBuilderPage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
+  const params = useParams<{ projectId?: string; id?: string }>();
+  const isEditMode = !!params.id;
+  const templateId = params.id;
+  const projectIdFromParams = params.projectId;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  const { data: existingTemplate, isLoading: templateLoading } = useQuery<TemplateWithQuestions>({
+    queryKey: ["/api/templates", templateId],
+    enabled: isEditMode && !!templateId,
+  });
+
+  const projectId = isEditMode ? existingTemplate?.projectId : projectIdFromParams;
 
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -304,6 +321,35 @@ export default function TemplateBuilderPage() {
       ],
     },
   });
+
+  useEffect(() => {
+    if (isEditMode && existingTemplate) {
+      const questions = existingTemplate.questions || [];
+      form.reset({
+        name: existingTemplate.name,
+        objective: existingTemplate.objective || "",
+        tone: existingTemplate.tone || "professional",
+        constraints: existingTemplate.constraints || "",
+        questions: questions.length > 0 
+          ? questions.map(q => ({
+              questionText: q.questionText,
+              questionType: q.questionType as any,
+              guidance: q.guidance || "",
+              scaleMin: q.scaleMin ?? undefined,
+              scaleMax: q.scaleMax ?? undefined,
+              multiSelectOptions: q.multiSelectOptions || undefined,
+              timeHintSeconds: q.timeHintSeconds ?? undefined,
+              isRequired: q.isRequired,
+            }))
+          : [{
+              questionText: "",
+              questionType: "open" as const,
+              guidance: "",
+              isRequired: true,
+            }],
+      });
+    }
+  }, [existingTemplate, isEditMode, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -332,8 +378,35 @@ export default function TemplateBuilderPage() {
     },
   });
 
+  const updateTemplate = useMutation({
+    mutationFn: async (data: TemplateFormData) => {
+      const response = await apiRequest("PATCH", `/api/templates/${templateId}`, data);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/templates", templateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "templates"] });
+      toast({
+        title: "Template updated",
+        description: "Your interview template has been updated successfully.",
+      });
+      navigate(`/templates/${templateId}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update template",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: TemplateFormData) => {
-    createTemplate.mutate(data);
+    if (isEditMode) {
+      updateTemplate.mutate(data);
+    } else {
+      createTemplate.mutate(data);
+    }
   };
 
   const addQuestion = () => {
@@ -345,16 +418,37 @@ export default function TemplateBuilderPage() {
     });
   };
 
+  const isPending = createTemplate.isPending || updateTemplate.isPending;
+  const backLink = isEditMode ? `/templates/${templateId}` : `/projects/${projectId}`;
+
+  if (isEditMode && templateLoading) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="w-9 h-9" />
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        </div>
+        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/projects/${projectId}`}>
+        <Link href={backLink}>
           <Button variant="ghost" size="icon" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Create Template</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {isEditMode ? "Edit Template" : "Create Template"}
+          </h1>
           <p className="text-muted-foreground">
             {project?.name || "Loading..."}
           </p>
@@ -416,7 +510,7 @@ export default function TemplateBuilderPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Tone</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-template-tone">
                             <SelectValue placeholder="Select tone" />
@@ -506,18 +600,18 @@ export default function TemplateBuilderPage() {
           </div>
 
           <div className="flex justify-end gap-4 pt-6 border-t">
-            <Link href={`/projects/${projectId}`}>
+            <Link href={backLink}>
               <Button type="button" variant="outline" data-testid="button-cancel">
                 Cancel
               </Button>
             </Link>
             <Button 
               type="submit" 
-              disabled={createTemplate.isPending}
+              disabled={isPending}
               data-testid="button-save-template"
             >
               <Save className="w-4 h-4 mr-2" />
-              {createTemplate.isPending ? "Saving..." : "Save Template"}
+              {isPending ? "Saving..." : isEditMode ? "Update Template" : "Save Template"}
             </Button>
           </div>
         </form>
