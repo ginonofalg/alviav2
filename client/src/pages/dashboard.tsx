@@ -143,11 +143,11 @@ export default function DashboardPage() {
   });
 
   const { data: recentProjects, isLoading: projectsLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects", { limit: 4 }],
+    queryKey: ["/api/projects"],
   });
 
   const { data: recentSessions, isLoading: sessionsLoading } = useQuery<InterviewSession[]>({
-    queryKey: ["/api/sessions", { limit: 5 }],
+    queryKey: ["/api/sessions?limit=5"],
   });
 
   const greeting = () => {

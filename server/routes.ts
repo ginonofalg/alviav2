@@ -70,7 +70,7 @@ export async function registerRoutes(
     }
   });
 
-  const createProjectSchema = insertProjectSchema.extend({
+  const createProjectSchema = insertProjectSchema.omit({ workspaceId: true }).extend({
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
     objective: z.string().max(1000).optional(),
@@ -140,7 +140,7 @@ export async function registerRoutes(
     }
   });
 
-  const createTemplateWithQuestionsSchema = insertTemplateSchema.extend({
+  const createTemplateWithQuestionsSchema = insertTemplateSchema.omit({ projectId: true }).extend({
     name: z.string().min(1).max(100),
     questions: z.array(z.object({
       questionText: z.string().min(1),
@@ -255,7 +255,7 @@ export async function registerRoutes(
     }
   });
 
-  const createCollectionSchema = insertCollectionSchema.extend({
+  const createCollectionSchema = insertCollectionSchema.omit({ templateId: true }).extend({
     name: z.string().min(1).max(100),
     targetResponses: z.number().min(1).optional(),
   });
