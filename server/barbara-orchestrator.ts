@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const BARBARA_MODEL = "gpt-5-mini-2025-08-07";
+// Use gpt-4o-mini for fast, cost-effective analysis
+const BARBARA_MODEL = "gpt-4o-mini";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 

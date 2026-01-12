@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Alvia is a voice-based AI interview platform built with TypeScript. It enables researchers to conduct AI-powered interviews with real-time transcription using OpenAI's GPT-4o Real-time API.
+Alvia is a voice-based AI interview platform built with TypeScript. It enables researchers to conduct AI-powered interviews with real-time transcription. Alvia (the interviewer) uses OpenAI's Realtime API for voice conversations, while Barbara (the orchestrator) monitors transcripts and provides real-time guidance.
 
 ## Commands
 
@@ -25,7 +25,8 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 - **Backend**: Express.js with WebSocket support
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Replit OpenID Connect via Passport
-- **Voice**: OpenAI GPT-4o Real-time API over WebSocket
+- **Voice**: OpenAI Realtime API (`gpt-realtime-mini`) over WebSocket
+- **Orchestration**: Barbara (`gpt-5-mini`) monitors interviews and guides Alvia
 
 ### Directory Structure
 ```
@@ -52,8 +53,9 @@ shared/               # Isomorphic code
 **Voice interview flow**:
 1. Respondent joins via `/join/:collectionId` (consent screen)
 2. Interview at `/interview/:sessionId` opens WebSocket to `/ws/interview`
-3. Server bridges audio between client and OpenAI Real-time API
-4. Responses saved as Segments with transcripts, summaries, and extracted values
+3. Server bridges audio between client and OpenAI Realtime API (Alvia)
+4. After each respondent utterance, Barbara analyzes the transcript and injects guidance to Alvia (probe deeper, move on, acknowledge prior context)
+5. Responses saved as Segments with transcripts, summaries, and extracted values
 
 **Database operations**: All queries go through `DatabaseStorage` class in `server/storage.ts`. Schema definitions in `shared/schema.ts` generate types via `drizzle-zod`.
 
@@ -63,7 +65,8 @@ shared/               # Isomorphic code
 
 - `shared/schema.ts` - Database tables and relationships
 - `server/routes.ts` - REST API endpoints
-- `server/voice-interview.ts` - WebSocket + OpenAI integration
+- `server/voice-interview.ts` - WebSocket + OpenAI Realtime integration (Alvia)
+- `server/barbara-orchestrator.ts` - Interview orchestrator that guides Alvia
 - `client/src/App.tsx` - Frontend routing
 
 ## Environment Variables
