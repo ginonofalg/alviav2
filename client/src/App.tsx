@@ -16,6 +16,7 @@ import ProjectsPage from "@/pages/projects";
 import NewProjectPage from "@/pages/project-new";
 import ProjectDetailPage from "@/pages/project-detail";
 import TemplateBuilderPage from "@/pages/template-builder";
+import TemplateDetailPage from "@/pages/template-detail";
 import CollectionsPage from "@/pages/collections";
 import SessionsPage from "@/pages/sessions";
 import SessionDetailPage from "@/pages/session-detail";
@@ -59,6 +60,8 @@ function AuthenticatedRoutes() {
         <Route path="/projects/new" component={NewProjectPage} />
         <Route path="/projects/:id" component={ProjectDetailPage} />
         <Route path="/projects/:projectId/templates/new" component={TemplateBuilderPage} />
+        <Route path="/templates/:id" component={TemplateDetailPage} />
+        <Route path="/templates/:id/edit" component={TemplateBuilderPage} />
         <Route path="/collections" component={CollectionsPage} />
         <Route path="/sessions" component={SessionsPage} />
         <Route path="/sessions/:id" component={SessionDetailPage} />
