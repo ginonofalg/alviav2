@@ -195,15 +195,22 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
           voice: "alloy",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
+          input_audio_noise_reduction: {
+            type: "near_field",
+          },
           input_audio_transcription: {
-            model: "whisper-1",
+            model: "gpt-4o-mini-transcribe",
           },
           turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 700,
-            create_response: false, // Disable auto-response to allow Barbara analysis first
+            //type: "server_vad",
+            //threshold: 0.5,
+            //prefix_padding_ms: 300,
+            //silence_duration_ms: 700,
+            //create_response: false, // Disable auto-response to allow Barbara analysis first
+            type: "semantic_vad",
+            eagerness: "low",
+            create_response: false,
+            interrupt_response: true,
           },
         },
       }),
@@ -501,11 +508,10 @@ async function triggerBarbaraAnalysis(
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
 
-    console.log(
-      `[Barbara] Guidance for ${sessionId}:`,
-      guidance.action,
-      guidance.confidence,
-    );
+    console.log(`[Barbara] Guidance for ${sessionId}:`);
+    console.log(`  Action: ${guidance.action} (confidence: ${guidance.confidence})`);
+    console.log(`  Message: ${guidance.message}`);
+    console.log(`  Reasoning: ${guidance.reasoning}`);
 
     // Only inject guidance if Barbara has something meaningful to say
     if (guidance.action !== "none" && guidance.confidence > 0.6) {
@@ -671,7 +677,7 @@ function handleClientMessage(
       break;
 
     case "resume_interview":
-      // Handle resume from pause - ask AI to pick up where we left off
+      // Handle resume from pause - Alvia decides what to say based on transcript context
       state.isPaused = false;
       console.log(
         `[VoiceInterview] Interview resuming for session: ${sessionId}`,
@@ -679,12 +685,22 @@ function handleClientMessage(
 
       if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
         const currentQuestion = state.questions[state.currentQuestionIndex];
-        const lastPrompt =
-          state.lastAIPrompt ||
-          currentQuestion?.questionText ||
-          "our conversation";
-
-        // Create a system message to guide the resume
+        
+        // Check the transcript to determine how to resume
+        // Look at recent Alvia messages to see if she already welcomed back after a pause
+        const recentTranscript = state.transcriptLog.slice(-5);
+        const lastAlviaMessage = recentTranscript
+          .filter(entry => entry.speaker === "alvia")
+          .pop();
+        
+        // Build context for Alvia to decide what to say
+        const transcriptContext = recentTranscript
+          .map(entry => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
+          .join("\n");
+        
+        const currentQuestionText = currentQuestion?.questionText || "the question";
+        
+        // Let Alvia decide based on transcript context
         state.openaiWs.send(
           JSON.stringify({
             type: "conversation.item.create",
@@ -694,7 +710,17 @@ function handleClientMessage(
               content: [
                 {
                   type: "input_text",
-                  text: `[System: The interview was paused and has now resumed. Please acknowledge that we're picking up where we left off. Briefly summarize or repeat what you last asked: "${lastPrompt.substring(0, 200)}..." and invite them to continue their response. Be warm and encouraging.]`,
+                  text: `[System: The interview was paused and has now resumed. Review the recent transcript context below and decide how to welcome back the respondent:
+
+RECENT TRANSCRIPT:
+${transcriptContext || "(No recent messages)"}
+
+CURRENT QUESTION: "${currentQuestionText}"
+
+INSTRUCTIONS: 
+- If your last message already repeated or summarized the question (from a previous resume), DO NOT repeat the question again. Simply say something brief like "Welcome back! Please go ahead and continue your response whenever you're ready."
+- If the question hasn't been restated recently, briefly remind them of what you were discussing and invite them to continue.
+- Be warm and encouraging, but keep it concise.]`,
                 },
               ],
             },
