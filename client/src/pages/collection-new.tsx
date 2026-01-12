@@ -38,10 +38,10 @@ const collectionFormSchema = z.object({
 type CollectionFormData = z.infer<typeof collectionFormSchema>;
 
 export default function CollectionNewPage() {
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   
-  const searchParams = new URLSearchParams(location.split("?")[1] || "");
+  const searchParams = new URLSearchParams(window.location.search);
   const templateId = searchParams.get("templateId");
 
   const { data: template, isLoading: templateLoading } = useQuery<TemplateWithQuestions>({
@@ -91,18 +91,64 @@ export default function CollectionNewPage() {
     createCollection.mutate(data);
   };
 
+  const { data: allTemplates } = useQuery<InterviewTemplate[]>({
+    queryKey: ["/api/templates"],
+    enabled: !templateId,
+  });
+
   if (!templateId) {
     return (
-      <div className="p-8 max-w-2xl mx-auto">
-        <Card className="py-16">
-          <CardContent className="text-center">
-            <h3 className="text-lg font-medium mb-2">No template selected</h3>
-            <p className="text-muted-foreground mb-4">
-              Please select a template to create a collection.
-            </p>
-            <Link href="/projects">
-              <Button>Browse Projects</Button>
-            </Link>
+      <div className="p-8 max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/collections">
+            <Button variant="ghost" size="icon" data-testid="button-back">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Launch Collection</h1>
+            <p className="text-muted-foreground">Select a template to create a collection</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Select a Template</CardTitle>
+            <CardDescription>
+              Choose which interview template to use for this collection
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!allTemplates || allTemplates.length === 0 ? (
+              <div className="text-center py-8">
+                <Play className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
+                <h3 className="font-medium mb-2">No templates available</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Create a template in a project first.
+                </p>
+                <Link href="/projects">
+                  <Button>Go to Projects</Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {allTemplates.map((tmpl) => (
+                  <Link key={tmpl.id} href={`/collections/new?templateId=${tmpl.id}`}>
+                    <div className="flex items-center justify-between p-4 rounded-lg border hover-elevate cursor-pointer">
+                      <div>
+                        <p className="font-medium">{tmpl.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {tmpl.objective || "No objective set"}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline">
+                        Select
+                      </Button>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

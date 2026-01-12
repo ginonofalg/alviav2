@@ -26,6 +26,7 @@ export interface IStorage {
   // Templates
   getTemplate(id: string): Promise<InterviewTemplate | undefined>;
   getTemplatesByProject(projectId: string): Promise<InterviewTemplate[]>;
+  getAllTemplates(): Promise<InterviewTemplate[]>;
   createTemplate(template: InsertTemplate): Promise<InterviewTemplate>;
   updateTemplate(id: string, template: Partial<InsertTemplate>): Promise<InterviewTemplate | undefined>;
   
@@ -158,6 +159,11 @@ export class DatabaseStorage implements IStorage {
   async getTemplatesByProject(projectId: string): Promise<InterviewTemplate[]> {
     return await db.select().from(interviewTemplates)
       .where(eq(interviewTemplates.projectId, projectId))
+      .orderBy(desc(interviewTemplates.createdAt));
+  }
+
+  async getAllTemplates(): Promise<InterviewTemplate[]> {
+    return await db.select().from(interviewTemplates)
       .orderBy(desc(interviewTemplates.createdAt));
   }
 

@@ -130,6 +130,16 @@ export async function registerRoutes(
   });
 
   // Templates
+  app.get("/api/templates", isAuthenticated, async (req, res) => {
+    try {
+      const templates = await storage.getAllTemplates();
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ message: "Failed to fetch templates" });
+    }
+  });
+
   app.get("/api/projects/:projectId/templates", isAuthenticated, async (req, res) => {
     try {
       const templates = await storage.getTemplatesByProject(req.params.projectId);
