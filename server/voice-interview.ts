@@ -3,7 +3,7 @@ import type { IncomingMessage } from "http";
 import { storage } from "./storage";
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
-const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview";
+const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
 
 interface InterviewState {
   sessionId: string;
@@ -319,6 +319,33 @@ function handleClientMessage(sessionId: string, message: any, clientWs: WebSocke
         }));
         state.openaiWs.send(JSON.stringify({
           type: "response.create",
+        }));
+      }
+      break;
+
+    case "text_input":
+      // Handle text input from keyboard
+      if (state.openaiWs.readyState === WebSocket.OPEN && message.text) {
+        // Add user text as a conversation item
+        state.openaiWs.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: message.text,
+              },
+            ],
+          },
+        }));
+        // Trigger AI response
+        state.openaiWs.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+          },
         }));
       }
       break;

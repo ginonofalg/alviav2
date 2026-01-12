@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import { 
   Mic, 
   MicOff, 
@@ -17,7 +18,9 @@ import {
   Volume2,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  Send,
+  Keyboard
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -175,6 +178,8 @@ export default function InterviewPage() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [aiTranscriptBuffer, setAiTranscriptBuffer] = useState("");
+  const [textInput, setTextInput] = useState("");
+  const [isSendingText, setIsSendingText] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -523,6 +528,35 @@ export default function InterviewPage() {
     }
   };
 
+  const handleSendText = () => {
+    if (!textInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    
+    setIsSendingText(true);
+    
+    // Add to transcript immediately
+    setTranscript(prev => [...prev, {
+      speaker: "respondent",
+      text: textInput.trim(),
+      timestamp: Date.now(),
+    }]);
+    
+    // Send to server
+    wsRef.current.send(JSON.stringify({
+      type: "text_input",
+      text: textInput.trim(),
+    }));
+    
+    setTextInput("");
+    setIsSendingText(false);
+  };
+
+  const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendText();
+    }
+  };
+
   const handleEndInterview = () => {
     stopAudioCapture();
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -693,6 +727,30 @@ export default function InterviewPage() {
           )}
 
           <TranscriptPanel entries={transcript} />
+
+          {/* Chat input for keyboard users */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Keyboard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={handleTextKeyDown}
+                placeholder={isConnected ? "Type your response here..." : "Connect to start typing..."}
+                disabled={!isConnected || isSendingText}
+                className="pl-10 pr-12"
+                data-testid="input-chat-text"
+              />
+            </div>
+            <Button
+              onClick={handleSendText}
+              disabled={!isConnected || !textInput.trim() || isSendingText}
+              size="icon"
+              data-testid="button-send-text"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
 
           <div className="flex justify-center gap-4">
             {(totalQuestions > 0 || questions) && currentQuestionIndex < (totalQuestions || questions?.length || 0) - 1 ? (
