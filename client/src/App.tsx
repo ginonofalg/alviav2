@@ -18,6 +18,8 @@ import ProjectDetailPage from "@/pages/project-detail";
 import TemplateBuilderPage from "@/pages/template-builder";
 import TemplateDetailPage from "@/pages/template-detail";
 import CollectionsPage from "@/pages/collections";
+import CollectionNewPage from "@/pages/collection-new";
+import CollectionDetailPage from "@/pages/collection-detail";
 import SessionsPage from "@/pages/sessions";
 import SessionDetailPage from "@/pages/session-detail";
 import AnalyticsPage from "@/pages/analytics";
@@ -63,6 +65,8 @@ function AuthenticatedRoutes() {
         <Route path="/templates/:id" component={TemplateDetailPage} />
         <Route path="/templates/:id/edit" component={TemplateBuilderPage} />
         <Route path="/collections" component={CollectionsPage} />
+        <Route path="/collections/new" component={CollectionNewPage} />
+        <Route path="/collections/:id" component={CollectionDetailPage} />
         <Route path="/sessions" component={SessionsPage} />
         <Route path="/sessions/:id" component={SessionDetailPage} />
         <Route path="/analytics" component={AnalyticsPage} />
