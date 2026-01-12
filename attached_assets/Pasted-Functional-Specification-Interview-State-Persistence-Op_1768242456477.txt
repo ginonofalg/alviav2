@@ -1,0 +1,189 @@
+Functional Specification: Interview State Persistence (Option A)
+
+  Problem Statement
+
+  When a voice interview is paused for an extended period or the browser connection is lost, all in-memory state is discarded. On resume/reconnect:
+  - Alvia reverts to asking the original template question
+  - Barbara loses context and cannot provide meaningful guidance
+  - The respondent may need to repeat their answers
+
+  Goals
+
+  1. Persist interview state to survive connection loss and extended pauses
+  2. Enable Alvia to resume with full conversational context
+  3. Enable Barbara to continue analysis with complete transcript history
+  4. Minimize database writes while ensuring no significant data loss
+
+  ---
+  Data Model Changes
+
+  Table: interview_sessions
+
+  Add three new columns:
+  ┌─────────────────────┬───────┬───────────────────────────────────────────────────────────────┐
+  │       Column        │ Type  │                          Description                          │
+  ├─────────────────────┼───────┼───────────────────────────────────────────────────────────────┤
+  │ transcript          │ jsonb │ Array of transcript entries from the conversation             │
+  ├─────────────────────┼───────┼───────────────────────────────────────────────────────────────┤
+  │ lastBarbaraGuidance │ jsonb │ Most recent Barbara guidance object                           │
+  ├─────────────────────┼───────┼───────────────────────────────────────────────────────────────┤
+  │ questionStates      │ jsonb │ Per-question state tracking (answered, needs follow-up, etc.) │
+  └─────────────────────┴───────┴───────────────────────────────────────────────────────────────┘
+  Transcript Entry Schema:
+  interface TranscriptEntry {
+    speaker: "alvia" | "respondent";
+    text: string;
+    timestamp: number;        // Unix ms
+    questionIndex: number;    // Which question this relates to
+  }
+
+  Barbara Guidance Schema:
+  interface PersistedBarbaraGuidance {
+    action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none";
+    message: string;
+    confidence: number;
+    timestamp: number;        // When guidance was given
+    questionIndex: number;    // Which question it relates to
+  }
+
+  Question State Schema:
+  interface QuestionState {
+    questionIndex: number;
+    status: "not_started" | "in_progress" | "answered" | "skipped";
+    barbaraSuggestedMoveOn: boolean;  // Barbara recommended moving to next
+    respondentTurns: number;          // How many times respondent spoke on this question
+  }
+
+  ---
+  State Persistence Logic
+
+  When to persist currentQuestionIndex:
+  - Immediately when next_question message is received (before sending to OpenAI)
+
+  When to persist transcript:
+  - After each complete utterance (when response.audio_transcript.done or respondent speech finalized)
+  - Debounced write: if multiple utterances within 2 seconds, batch into single DB update
+
+  When to persist lastBarbaraGuidance:
+  - Immediately when Barbara returns guidance with action !== "none" and confidence > 0.6
+
+  When to persist questionStates:
+  - When Barbara suggests moving on (suggest_next_question)
+  - When next_question is received (mark previous as answered, new as in_progress)
+  - When respondent completes a turn on a question
+
+  ---
+  State Restoration Logic
+
+  On WebSocket connection (initializeInterview):
+
+  1. Load session from database including new fields
+  2. Restore in-memory state:
+  state.currentQuestionIndex = session.currentQuestionIndex;
+  state.transcriptLog = session.transcript || [];
+  state.lastBarbaraGuidance = session.lastBarbaraGuidance;
+  state.questionStates = session.questionStates || [];
+  3. Build Alvia's initial instructions with context:
+    - Include summary of conversation so far (last 10-15 transcript entries)
+    - Include current question and its state
+    - Include Barbara's last guidance if still relevant
+
+  On resume from pause (resume_interview):
+
+  1. Check questionStates to determine current question status
+  2. Check lastBarbaraGuidance to see if Barbara suggested moving on
+  3. Build resume prompt for Alvia:
+  [System: Interview resuming. Here is the conversation context:]
+
+  TRANSCRIPT SUMMARY:
+  ${last N transcript entries}
+
+  CURRENT QUESTION (${questionIndex + 1}/${total}): "${questionText}"
+  QUESTION STATUS: ${status from questionStates}
+
+  ${if barbaraSuggestedMoveOn}
+  NOTE: Before the pause, Barbara suggested the respondent had given a
+  comprehensive answer and you offered to move to the next question.
+  ${endif}
+
+  INSTRUCTIONS:
+  - Welcome them back briefly
+  - If Barbara suggested moving on, ask if they'd like to continue where
+    they left off or move to the next question
+  - Otherwise, invite them to continue their response
+
+  ---
+  Impact on Existing Flows
+
+  Pause/Resume (short pause, connection maintained):
+  - No change to user experience
+  - State already in memory, but now also persisted as backup
+
+  Reconnect (connection lost, browser reopened):
+  - Previously: Interview started from scratch
+  - Now: Full context restored, Alvia acknowledges where they left off
+
+  Barbara Guidance:
+  - Previously: Guidance lost on disconnect
+  - Now: Last guidance persisted and factored into resume behavior
+
+  Next Question:
+  - Previously: Only in-memory update
+  - Now: DB updated with new currentQuestionIndex and questionStates
+
+  Interview Completion:
+  - No change: transcript already in DB for post-interview analysis
+
+  ---
+  Edge Cases
+  ┌─────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+  │                            Scenario                             │                                  Behavior                                   │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Resume after Barbara suggested move-on, but user didn't advance │ Alvia offers choice: continue current question or move on                   │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Reconnect mid-utterance (partial transcript)                    │ Discard incomplete entry; Alvia acknowledges potential interruption         │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Multiple rapid reconnects                                       │ Debounce DB reads; use cached state if reconnect within 5 seconds           │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Very long interview (large transcript)                          │ Consider truncating older entries from in-memory state; keep full log in DB │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Concurrent browser tabs                                         │ Reject second connection; only one active session per sessionId             │
+  └─────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────┘
+  ---
+  Database Write Frequency
+  ┌────────────────────┬──────────────────────────────────────┐
+  │       Event        │             Write Fields             │
+  ├────────────────────┼──────────────────────────────────────┤
+  │ Utterance complete │ transcript (debounced 2s)            │
+  ├────────────────────┼──────────────────────────────────────┤
+  │ Barbara guidance   │ lastBarbaraGuidance, questionStates  │
+  ├────────────────────┼──────────────────────────────────────┤
+  │ Next question      │ currentQuestionIndex, questionStates │
+  ├────────────────────┼──────────────────────────────────────┤
+  │ Pause              │ pausedAt, status (existing)          │
+  ├────────────────────┼──────────────────────────────────────┤
+  │ Resume             │ status (existing)                    │
+  └────────────────────┴──────────────────────────────────────┘
+  Estimated writes per question: 3-6 (depending on respondent verbosity and Barbara interventions)
+
+  ---
+  Migration
+
+  1. Add columns with ALTER TABLE (nullable, no default needed)
+  2. Existing in-progress sessions will have null for new fields
+  3. Code handles null gracefully by falling back to empty arrays/objects
+  4. No backfill needed - only affects sessions started after deployment
+
+  ---
+  Files to Modify
+  ┌───────────────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+  │           File            │                                   Changes                                   │
+  ├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ shared/schema.ts          │ Add transcript, lastBarbaraGuidance, questionStates columns                 │
+  ├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ server/storage.ts         │ Update updateSession to handle JSONB fields                                 │
+  ├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ server/voice-interview.ts │ Persist state on utterance/guidance/question change; restore on init/resume │
+  ├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ server/routes.ts          │ Update updateSessionSchema to accept new fields                             │
+  └───────────────────────────┴─────────────────────────────────────────────────────────────────────────────┘
