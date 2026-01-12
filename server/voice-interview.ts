@@ -12,6 +12,8 @@ interface InterviewState {
   template: any;
   openaiWs: WebSocket | null;
   isConnected: boolean;
+  lastAIPrompt: string;
+  isPaused: boolean;
 }
 
 const interviewStates = new Map<string, InterviewState>();
@@ -36,6 +38,8 @@ export function handleVoiceInterview(clientWs: WebSocket, req: IncomingMessage) 
     template: null,
     openaiWs: null,
     isConnected: false,
+    lastAIPrompt: "",
+    isPaused: false,
   };
   interviewStates.set(sessionId, state);
 
@@ -260,6 +264,10 @@ function handleOpenAIEvent(sessionId: string, event: any, clientWs: WebSocket) {
       break;
 
     case "response.audio_transcript.done":
+      // Store the last AI prompt for resume functionality
+      if (event.transcript) {
+        state.lastAIPrompt = event.transcript;
+      }
       clientWs.send(JSON.stringify({
         type: "ai_transcript_done",
         transcript: event.transcript,
@@ -340,6 +348,45 @@ function handleClientMessage(sessionId: string, message: any, clientWs: WebSocke
             ],
           },
         }));
+        // Trigger AI response
+        state.openaiWs.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+          },
+        }));
+      }
+      break;
+
+    case "pause_interview":
+      state.isPaused = true;
+      console.log(`[VoiceInterview] Interview paused for session: ${sessionId}`);
+      break;
+
+    case "resume_interview":
+      // Handle resume from pause - ask AI to pick up where we left off
+      state.isPaused = false;
+      console.log(`[VoiceInterview] Interview resuming for session: ${sessionId}`);
+      
+      if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+        const currentQuestion = state.questions[state.currentQuestionIndex];
+        const lastPrompt = state.lastAIPrompt || currentQuestion?.questionText || "our conversation";
+        
+        // Create a system message to guide the resume
+        state.openaiWs.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `[System: The interview was paused and has now resumed. Please acknowledge that we're picking up where we left off. Briefly summarize or repeat what you last asked: "${lastPrompt.substring(0, 200)}..." and invite them to continue their response. Be warm and encouraging.]`,
+              },
+            ],
+          },
+        }));
+        
         // Trigger AI response
         state.openaiWs.send(JSON.stringify({
           type: "response.create",

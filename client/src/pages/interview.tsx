@@ -506,17 +506,23 @@ export default function InterviewPage() {
         setIsListening(true);
       }
     } else if (isPaused) {
-      // Resume
+      // Resume - send resume message to trigger AI continuation
       setIsPaused(false);
       setIsListening(true);
       await startAudioCapture();
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+      }
     } else if (isListening) {
-      // Pause
+      // Pause - send pause message
       setIsPaused(true);
       setIsListening(false);
       stopAudioCapture();
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+      }
     } else {
-      // Resume listening
+      // Resume listening (from stopped, not paused)
       setIsListening(true);
       await startAudioCapture();
     }
@@ -673,13 +679,21 @@ export default function InterviewPage() {
                 size="icon"
                 onClick={() => {
                   if (isPaused) {
+                    // Resume - send resume message to trigger AI continuation
                     setIsPaused(false);
                     setIsListening(true);
                     startAudioCapture();
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+                    }
                   } else {
+                    // Pause - send pause message
                     setIsPaused(true);
                     setIsListening(false);
                     stopAudioCapture();
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                      wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+                    }
                   }
                 }}
                 disabled={!isConnected}
