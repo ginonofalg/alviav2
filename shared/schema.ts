@@ -142,6 +142,9 @@ export const interviewSessions = pgTable("interview_sessions", {
   liveTranscript: jsonb("live_transcript"),
   lastBarbaraGuidance: jsonb("last_barbara_guidance"),
   questionStates: jsonb("question_states"),
+  // Resume token for browser recovery
+  resumeTokenHash: text("resume_token_hash"),
+  resumeTokenExpiresAt: timestamp("resume_token_expires_at"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),

@@ -74,6 +74,8 @@ export interface IStorage {
   createSession(session: InsertSession): Promise<InterviewSession>;
   updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined>;
   persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined>;
+  setResumeToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void>;
+  getSessionByResumeToken(tokenHash: string): Promise<InterviewSession | undefined>;
   
   // Segments
   getSegment(id: string): Promise<Segment | undefined>;
@@ -396,6 +398,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(interviewSessions.id, id))
       .returning();
     return updated;
+  }
+
+  async setResumeToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await db.update(interviewSessions)
+      .set({ resumeTokenHash: tokenHash, resumeTokenExpiresAt: expiresAt })
+      .where(eq(interviewSessions.id, sessionId));
+  }
+
+  async getSessionByResumeToken(tokenHash: string): Promise<InterviewSession | undefined> {
+    const [session] = await db.select()
+      .from(interviewSessions)
+      .where(eq(interviewSessions.resumeTokenHash, tokenHash));
+    return session;
   }
 
   // Segments
