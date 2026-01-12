@@ -422,6 +422,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         totalQuestions: state.questions.length,
         currentQuestion: currentQuestion?.questionText,
         isResumed: state.isRestoredSession,
+        persistedTranscript: state.isRestoredSession ? state.fullTranscriptForPersistence : undefined,
       }),
     );
   });

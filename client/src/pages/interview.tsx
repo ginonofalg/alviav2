@@ -312,6 +312,15 @@ export default function InterviewPage() {
         if (message.currentQuestion) {
           setCurrentQuestionText(message.currentQuestion);
         }
+        // Restore persisted transcript on resume
+        if (message.isResumed && message.persistedTranscript && Array.isArray(message.persistedTranscript)) {
+          const restoredEntries: TranscriptEntry[] = message.persistedTranscript.map((entry: any) => ({
+            speaker: entry.speaker,
+            text: entry.text,
+            timestamp: entry.timestamp,
+          }));
+          setTranscript(restoredEntries);
+        }
         break;
 
       case "audio":
