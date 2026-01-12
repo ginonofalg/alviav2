@@ -1,7 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
+import { handleVoiceInterview } from "./voice-interview";
 import { 
   insertProjectSchema, 
   insertTemplateSchema, 
@@ -21,6 +23,18 @@ export async function registerRoutes(
   // Setup authentication first
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  // Setup WebSocket server for voice interviews
+  const wss = new WebSocketServer({ server: httpServer, path: "/ws/interview" });
+  
+  wss.on("connection", (ws, req) => {
+    console.log("[WebSocket] New connection on /ws/interview");
+    handleVoiceInterview(ws, req);
+  });
+
+  wss.on("error", (error) => {
+    console.error("[WebSocket] Server error:", error);
+  });
 
   // Dashboard stats
   app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {

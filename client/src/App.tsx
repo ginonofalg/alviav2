@@ -26,6 +26,7 @@ import AnalyticsPage from "@/pages/analytics";
 import SettingsPage from "@/pages/settings";
 import InterviewConsentPage from "@/pages/interview-consent";
 import InterviewPage from "@/pages/interview";
+import InterviewCompletePage from "@/pages/interview-complete";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -108,6 +109,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/join/:collectionId" component={InterviewConsentPage} />
+      <Route path="/interview/complete" component={InterviewCompletePage} />
       <Route path="/interview/:sessionId" component={InterviewPage} />
       <Route>
         {isAuthenticated ? <AuthenticatedRoutes /> : <LandingPage />}
