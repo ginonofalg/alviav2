@@ -322,39 +322,44 @@ export default function TemplateBuilderPage() {
     },
   });
 
+  const { fields, append, remove, replace } = useFieldArray({
+    control: form.control,
+    name: "questions",
+  });
+
   useEffect(() => {
     if (isEditMode && existingTemplate) {
       const questions = existingTemplate.questions || [];
+      
       form.reset({
         name: existingTemplate.name,
         objective: existingTemplate.objective || "",
         tone: existingTemplate.tone || "professional",
         constraints: existingTemplate.constraints || "",
-        questions: questions.length > 0 
-          ? questions.map(q => ({
-              questionText: q.questionText,
-              questionType: q.questionType as any,
-              guidance: q.guidance || "",
-              scaleMin: q.scaleMin ?? undefined,
-              scaleMax: q.scaleMax ?? undefined,
-              multiSelectOptions: q.multiSelectOptions || undefined,
-              timeHintSeconds: q.timeHintSeconds ?? undefined,
-              isRequired: q.isRequired,
-            }))
-          : [{
-              questionText: "",
-              questionType: "open" as const,
-              guidance: "",
-              isRequired: true,
-            }],
+        questions: [],
       });
-    }
-  }, [existingTemplate, isEditMode, form]);
 
-  const { fields, append, remove } = useFieldArray({
-    control: form.control,
-    name: "questions",
-  });
+      const mappedQuestions = questions.length > 0 
+        ? questions.map(q => ({
+            questionText: q.questionText,
+            questionType: q.questionType as "open" | "yes_no" | "scale" | "numeric" | "multi_select",
+            guidance: q.guidance || "",
+            scaleMin: q.scaleMin ?? undefined,
+            scaleMax: q.scaleMax ?? undefined,
+            multiSelectOptions: q.multiSelectOptions || undefined,
+            timeHintSeconds: q.timeHintSeconds ?? undefined,
+            isRequired: q.isRequired,
+          }))
+        : [{
+            questionText: "",
+            questionType: "open" as const,
+            guidance: "",
+            isRequired: true,
+          }];
+      
+      replace(mappedQuestions);
+    }
+  }, [existingTemplate, isEditMode]);
 
   const createTemplate = useMutation({
     mutationFn: async (data: TemplateFormData) => {
