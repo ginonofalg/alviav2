@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 
-// Use gpt-4o-mini for fast, cost-effective analysis
-const BARBARA_MODEL = "gpt-4o-mini";
+// GPT-5-mini with low temperature for consistent, focused outputs
+const BARBARA_MODEL = "gpt-5-mini";
+const BARBARA_TEMPERATURE = 0.3;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -51,12 +52,13 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
 
     const response = await openai.chat.completions.create({
       model: BARBARA_MODEL,
+      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 500,
+      max_completion_tokens: 400,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -78,29 +80,24 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
 }
 
 function buildBarbaraSystemPrompt(): string {
-  return `You are Barbara, an intelligent interview orchestrator. Your role is to monitor voice interviews conducted by Alvia (the AI interviewer) and provide real-time guidance.
+  return `You are Barbara, interview orchestrator. Monitor Alvia (AI interviewer) and provide real-time guidance.
 
-Your responsibilities:
-1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier in the transcript. If so, Alvia should acknowledge this.
-2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest moving to the next question.
-3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting wrapping up.
+OUTPUT FORMAT (strict JSON):
+{"action":"<ACTION>","message":"<50 words max>","confidence":<0.0-1.0>,"reasoning":"<20 words max>"}
 
-You must respond with a JSON object containing:
-{
-  "action": "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none",
-  "message": "A brief, natural instruction for Alvia (max 100 words)",
-  "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation of your decision"
-}
+ACTIONS:
+- acknowledge_prior: Respondent covered this topic earlier. Tell Alvia to reference it.
+- probe_followup: Answer lacks depth. Give Alvia a specific follow-up.
+- suggest_next_question: Answer complete per guidance criteria. Move on.
+- time_reminder: >2min or >400 words. Wrap up.
+- none: No intervention needed.
 
-Action meanings:
-- "acknowledge_prior": The respondent mentioned something relevant earlier - remind Alvia to acknowledge this
-- "probe_followup": The answer lacks depth - suggest a specific follow-up probe
-- "suggest_next_question": The answer is complete - suggest transitioning to the next question
-- "time_reminder": The response is running long - suggest wrapping up
-- "none": No intervention needed - let the conversation flow naturally
-
-Be conservative - only intervene when there's a clear benefit. Most of the time, "none" is appropriate.`;
+RULES:
+1. Default to "none" unless clear benefit exists.
+2. Message must be a direct instruction to Alvia, not a description.
+3. Keep message under 50 words.
+4. Confidence 0.8+ required for any action except "none".
+5. Do not repeat what respondent said in message.`;
 }
 
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
@@ -130,30 +127,21 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
   Completeness: ${s.completenessAssessment}`)
     .join("\n\n");
 
-  return `INTERVIEW CONTEXT:
-Objective: ${input.templateObjective}
-Tone: ${input.templateTone}
+  return `OBJECTIVE: ${input.templateObjective}
+TONE: ${input.templateTone}
 
-CURRENT QUESTION (Q${input.currentQuestionIndex + 1}):
-"${input.currentQuestion.text}"
+CURRENT Q${input.currentQuestionIndex + 1}: "${input.currentQuestion.text}"
+GUIDANCE: ${input.currentQuestion.guidance || "None"}
 
-GUIDANCE FOR THIS QUESTION:
-${input.currentQuestion.guidance || "No specific guidance provided."}
+METRICS: ${wordCount} words, ${activeTimeSeconds}s, ${input.questionMetrics.turnCount} turns
 
-METRICS FOR CURRENT QUESTION:
-- Word count: ${wordCount}
-- Active speaking time: ${activeTimeSeconds} seconds
-- Number of turns: ${input.questionMetrics.turnCount}
+${previousQuestions ? `PRIOR QUESTIONS:\n${previousQuestions}\n\n` : ""}${summariesText ? `PRIOR SUMMARIES:\n${summariesText}\n\n` : ""}TRANSCRIPT:
+${transcriptSummary || "(empty)"}
 
-${summariesText ? `PREVIOUS QUESTIONS SUMMARY:\n${summariesText}\n\n` : ""}${previousQuestions ? `PREVIOUS QUESTIONS:\n${previousQuestions}\n` : ""}
+CURRENT ANSWER:
+${currentQuestionResponses || "(none)"}
 
-FULL TRANSCRIPT SO FAR:
-${transcriptSummary || "(No transcript yet)"}
-
-RESPONDENT'S ANSWER TO CURRENT QUESTION:
-${currentQuestionResponses || "(No response yet)"}
-
-Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
+Analyze and output JSON.`;
 }
 
 export function createEmptyMetrics(questionIndex: number): QuestionMetrics {
@@ -210,34 +198,27 @@ export async function generateQuestionSummary(
     .map(e => `[${e.speaker.toUpperCase()}]: ${e.text}`)
     .join("\n");
 
-  const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question.
+  const systemPrompt = `Summarize respondent's answer. Output strict JSON only.
 
-You must respond with a JSON object containing:
-{
-  "respondentSummary": "A 2-3 sentence summary of what the respondent said",
-  "keyInsights": ["3-5 bullet points of main themes, insights, or memorable quotes"],
-  "completenessAssessment": "Brief note on answer quality/depth (e.g., 'Comprehensive with specific examples' or 'Brief but covered key points')",
-  "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"]
-}
+FORMAT:
+{"respondentSummary":"<string>","keyInsights":["<string array>"],"completenessAssessment":"<string>","relevantToFutureQuestions":["<string array>"]}
 
-Focus on what the respondent actually said, not what the interviewer asked. Extract key themes and insights. Keep the summary concise (~200 words total).`;
+RULES:
+1. respondentSummary: 2-3 sentences on what respondent said. Ignore interviewer.
+2. keyInsights: 3-5 items covering main themes, insights, or quotes.
+3. completenessAssessment: Describe answer quality/depth (e.g., "Comprehensive with specific examples" or "Touched on topic but lacked detail").
+4. relevantToFutureQuestions: Topics that may connect to later questions.`;
 
-  const userPrompt = `INTERVIEW OBJECTIVE: ${templateObjective}
+  const userPrompt = `OBJECTIVE: ${templateObjective}
+Q${questionIndex + 1}: "${questionText}"
+GUIDANCE: ${questionGuidance || "None"}
 
-QUESTION (Q${questionIndex + 1}): "${questionText}"
-
-GUIDANCE FOR THIS QUESTION:
-${questionGuidance || "No specific guidance provided."}
-
-TRANSCRIPT FOR THIS QUESTION:
+TRANSCRIPT:
 ${transcriptFormatted}
 
-METRICS:
-- Word count: ${wordCount}
-- Number of turns: ${metrics.turnCount}
-- Active speaking time: ${Math.round(metrics.activeTimeMs / 1000)} seconds
+METRICS: ${wordCount} words, ${metrics.turnCount} turns, ${Math.round(metrics.activeTimeMs / 1000)}s
 
-Create a structured summary of the respondent's answer.`;
+Output JSON.`;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -246,12 +227,13 @@ Create a structured summary of the respondent's answer.`;
 
     const summaryPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
+      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 600,
+      max_completion_tokens: 500,
     });
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
@@ -328,18 +310,18 @@ export async function analyzeTopicOverlap(
     };
   }
 
-  const systemPrompt = `You are Barbara, an interview orchestrator. Your task is to analyze whether the upcoming interview question's topic has already been touched on by the respondent in previous answers.
+  const systemPrompt = `Detect if upcoming question's topic was already discussed. Output strict JSON only.
 
-You must respond with a JSON object containing:
-{
-  "hasOverlap": true/false,
-  "overlapSummary": "If hasOverlap is true, briefly describe what the respondent already said about this topic (1-2 sentences). Empty if no overlap.",
-  "suggestedIntro": "If hasOverlap is true, a natural way for the interviewer to introduce the question while acknowledging the prior mention (e.g., 'Earlier you mentioned X. I'd love to explore that more...'). Empty if no overlap.",
-  "relatedQuestionIndices": [array of question numbers where the topic was touched on],
-  "confidence": 0.0-1.0
-}
+FORMAT:
+{"hasOverlap":<bool>,"overlapSummary":"<string>","suggestedIntro":"<string>","relatedQuestionIndices":[<int array>],"confidence":<0.0-1.0>}
 
-Be conservative - only flag overlap when there's a clear, meaningful connection. Minor tangential mentions don't count.`;
+RULES:
+1. hasOverlap=true ONLY if respondent meaningfully discussed this topic before.
+2. Minor tangential mentions = hasOverlap=false.
+3. overlapSummary: 1-2 sentences describing what was previously said. Empty if no overlap.
+4. suggestedIntro: Natural transition acknowledging prior mention (e.g., "Earlier you mentioned X..."). Empty if no overlap.
+5. relatedQuestionIndices: Question numbers where topic was discussed.
+6. confidence 0.7+ required for hasOverlap=true.`;
 
   const summariesText = validSummaries
     .map(s => `Q${s.questionIndex + 1}: "${s.questionText}"
@@ -348,18 +330,15 @@ Be conservative - only flag overlap when there's a clear, meaningful connection.
   Topics for future: ${s.relevantToFutureQuestions.join("; ")}`)
     .join("\n\n");
 
-  const userPrompt = `INTERVIEW OBJECTIVE: ${templateObjective}
+  const userPrompt = `OBJECTIVE: ${templateObjective}
 
-UPCOMING QUESTION (Q${upcomingQuestionIndex + 1}):
-"${upcomingQuestion.text}"
+UPCOMING Q${upcomingQuestionIndex + 1}: "${upcomingQuestion.text}"
+GUIDANCE: ${upcomingQuestion.guidance || "None"}
 
-GUIDANCE FOR THIS QUESTION:
-${upcomingQuestion.guidance || "No specific guidance provided."}
-
-PREVIOUS ANSWERS SUMMARY:
+PRIOR ANSWERS:
 ${summariesText}
 
-Has the respondent already touched on the topic of the upcoming question? If so, how should the interviewer acknowledge this when asking the question?`;
+Output JSON.`;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -368,12 +347,13 @@ Has the respondent already touched on the topic of the upcoming question? If so,
 
     const analysisPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
+      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 400,
+      max_completion_tokens: 350,
     });
 
     const response = await Promise.race([analysisPromise, timeoutPromise]);
