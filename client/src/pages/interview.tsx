@@ -181,6 +181,7 @@ export default function InterviewPage() {
   const [textInput, setTextInput] = useState("");
   const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -363,6 +364,23 @@ export default function InterviewPage() {
         break;
 
       case "user_speaking_stopped":
+        break;
+
+      case "question_transition_started":
+        setIsTransitioning(true);
+        break;
+
+      case "question_transition_complete":
+        setIsTransitioning(false);
+        break;
+
+      case "question_transition_failed":
+        setIsTransitioning(false);
+        toast({
+          title: "Could not advance",
+          description: message.message || "Please try again.",
+          variant: "destructive",
+        });
         break;
 
       case "question_changed":
@@ -548,7 +566,7 @@ export default function InterviewPage() {
   };
 
   const handleNextQuestion = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN && !isTransitioning) {
       wsRef.current.send(JSON.stringify({ type: "next_question" }));
       setHighlightNextButton(false); // Reset highlight when clicking next
     }
@@ -733,7 +751,7 @@ export default function InterviewPage() {
                 variant="outline"
                 size="icon"
                 onClick={handleNextQuestion}
-                disabled={!isConnected || currentQuestionIndex >= (totalQuestions || questions?.length || 0) - 1}
+                disabled={!isConnected || isTransitioning || currentQuestionIndex >= (totalQuestions || questions?.length || 0) - 1}
                 data-testid="button-skip"
               >
                 <SkipForward className="w-4 h-4" />
@@ -790,12 +808,12 @@ export default function InterviewPage() {
             {(totalQuestions > 0 || questions) && currentQuestionIndex < (totalQuestions || questions?.length || 0) - 1 ? (
               <Button 
                 onClick={handleNextQuestion} 
-                disabled={!isConnected} 
+                disabled={!isConnected || isTransitioning} 
                 data-testid="button-next-question"
                 className={highlightNextButton ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/50" : ""}
               >
-                Next Question
-                <SkipForward className="w-4 h-4 ml-2" />
+                {isTransitioning ? "Please wait..." : "Next Question"}
+                {!isTransitioning && <SkipForward className="w-4 h-4 ml-2" />}
               </Button>
             ) : (
               <Button onClick={handleEndInterview} data-testid="button-complete-interview">

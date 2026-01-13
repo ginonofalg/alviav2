@@ -49,6 +49,9 @@ interface InterviewState {
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
+  // Question transition state (race condition prevention)
+  isTransitioningQuestion: boolean;
+  pendingTransitionResolve: (() => void) | null;
 }
 
 const PERSIST_DEBOUNCE_MS = 2000;
@@ -279,6 +282,9 @@ export function handleVoiceInterview(
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
+    // Question transition state (race condition prevention)
+    isTransitioningQuestion: false,
+    pendingTransitionResolve: null,
   };
   interviewStates.set(sessionId, state);
 
@@ -668,6 +674,13 @@ async function handleOpenAIEvent(
       }
       // Reset Barbara guidance flag after any session update
       state.isBarbaraGuidanceUpdate = false;
+      
+      // Resolve pending question transition if waiting for session.updated confirmation
+      if (state.isTransitioningQuestion && state.pendingTransitionResolve) {
+        console.log(`[VoiceInterview] Session.updated received, resolving transition promise`);
+        state.pendingTransitionResolve();
+        state.pendingTransitionResolve = null;
+      }
       break;
 
     case "response.audio.delta":
@@ -815,6 +828,12 @@ async function triggerBarbaraAnalysis(
 ): Promise<BarbaraGuidance | null> {
   const state = interviewStates.get(sessionId);
   if (!state || state.isWaitingForBarbara) return null;
+
+  // Skip Barbara during question transitions - guidance would be stale
+  if (state.isTransitioningQuestion) {
+    console.log(`[Barbara] Skipping analysis during question transition`);
+    return null;
+  }
 
   // Don't analyze if we don't have enough transcript
   if (state.transcriptLog.length < 2) return null;
@@ -1116,42 +1135,49 @@ INSTRUCTIONS:
       break;
 
     case "next_question":
-      // Move to next question
-      if (state.currentQuestionIndex < state.questions.length - 1) {
-        const previousIndex = state.currentQuestionIndex;
+      // Prevent concurrent transitions (race condition fix)
+      if (state.isTransitioningQuestion) {
+        console.log(`[VoiceInterview] Ignoring next_question - transition already in progress`);
+        return;
+      }
 
-        // Trigger summarization in background (don't await - non-blocking)
-        generateAndPersistSummary(sessionId, previousIndex).catch(() => {
-          // Error already logged in generateAndPersistSummary
-        });
+      if (state.currentQuestionIndex >= state.questions.length - 1) {
+        clientWs.send(JSON.stringify({ type: "interview_complete" }));
+        return;
+      }
 
-        // Immediately move to next question (don't wait for summary)
-        state.currentQuestionIndex++;
-        const nextQuestion = state.questions[state.currentQuestionIndex];
+      // Execute transition in async IIFE with proper serialization
+      (async () => {
+        state.isTransitioningQuestion = true;
 
-        // Initialize metrics for new question
-        state.questionMetrics.set(
-          state.currentQuestionIndex,
-          createEmptyMetrics(state.currentQuestionIndex),
-        );
-        
-        // Clear Barbara's last guidance as we're moving to a new question
-        state.lastBarbaraGuidance = null;
+        // Notify client to disable button and show waiting state
+        clientWs.send(JSON.stringify({
+          type: "question_transition_started",
+          message: "Moving to next question..."
+        }));
 
-        // Persist question state changes immediately
-        persistNextQuestion(sessionId, previousIndex, state.currentQuestionIndex);
+        try {
+          // 1. Cancel any in-flight OpenAI response first
+          if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+            state.openaiWs.send(JSON.stringify({ type: "response.cancel" }));
+          }
 
-        // Capture target index before async call to prevent race conditions
-        const targetQuestionIndex = state.currentQuestionIndex;
-        const targetQuestion = nextQuestion;
-        const summariesSnapshot = [...state.questionSummaries.filter(s => s != null)];
-        const templateSnapshot = state.template;
+          // 2. Capture current state before changes
+          const previousIndex = state.currentQuestionIndex;
+          const targetQuestionIndex = previousIndex + 1;
+          const targetQuestion = state.questions[targetQuestionIndex];
+          const summariesSnapshot = [...state.questionSummaries.filter(s => s != null)];
+          const templateSnapshot = state.template;
 
-        // Analyze topic overlap in background and then update Alvia's instructions
-        (async () => {
+          // 3. Generate summary for previous question (non-blocking, but log errors)
+          generateAndPersistSummary(sessionId, previousIndex).catch((error) => {
+            console.error(`[Summary] Background summary failed for Q${previousIndex + 1}:`, error);
+          });
+
+          // 4. Analyze topic overlap (blocking, has built-in 8s timeout)
+          let topicOverlap: TopicOverlapResult | undefined;
           try {
-            // Check if the upcoming question's topic was already discussed
-            const topicOverlap = await analyzeTopicOverlap(
+            topicOverlap = await analyzeTopicOverlap(
               {
                 text: targetQuestion?.questionText || "",
                 guidance: targetQuestion?.guidance || "",
@@ -1160,103 +1186,104 @@ INSTRUCTIONS:
               summariesSnapshot,
               templateSnapshot?.objective || "",
             );
-
-            // Short-circuit if user has advanced past this question
-            if (state.currentQuestionIndex !== targetQuestionIndex) {
-              console.log(`[VoiceInterview] Skipping stale topic overlap for Q${targetQuestionIndex + 1}, now on Q${state.currentQuestionIndex + 1}`);
-              return;
-            }
-
-            // Build instructions with topic overlap context
-            const instructions = buildInterviewInstructions(
-              templateSnapshot,
-              targetQuestion,
-              targetQuestionIndex,
-              state.questions.length,
-              undefined, // no Barbara guidance yet
-              topicOverlap,
-            );
-
-            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-              // Update session with context-aware instructions
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "session.update",
-                  session: {
-                    instructions: instructions,
-                  },
-                }),
-              );
-
-              // Trigger Alvia to ask the question with appropriate context
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
-                  },
-                }),
-              );
-            }
-
-            // Notify client about topic overlap if detected
-            if (topicOverlap.hasOverlap) {
-              clientWs.send(
-                JSON.stringify({
-                  type: "topic_overlap_detected",
-                  questionIndex: targetQuestionIndex,
-                  overlapSummary: topicOverlap.overlapSummary,
-                }),
-              );
-            }
           } catch (error) {
             console.error(`[VoiceInterview] Topic overlap analysis failed:`, error);
-            
-            // Short-circuit if user has advanced past this question
-            if (state.currentQuestionIndex !== targetQuestionIndex) {
-              return;
-            }
-
-            // Fallback: just ask the question normally
-            const instructions = buildInterviewInstructions(
-              templateSnapshot,
-              targetQuestion,
-              targetQuestionIndex,
-              state.questions.length,
-            );
-
-            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "session.update",
-                  session: {
-                    instructions: instructions,
-                  },
-                }),
-              );
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
-                  },
-                }),
-              );
-            }
           }
-        })();
 
-        clientWs.send(
-          JSON.stringify({
+          // 5. Build instructions with topic overlap context
+          const instructions = buildInterviewInstructions(
+            templateSnapshot,
+            targetQuestion,
+            targetQuestionIndex,
+            state.questions.length,
+            undefined, // no Barbara guidance yet
+            topicOverlap,
+          );
+
+          // 6. Send session.update and wait for confirmation before proceeding
+          if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+            // Create promise first (sets up the resolve handler)
+            const sessionUpdatePromise = new Promise<"confirmed" | "timeout">((resolve) => {
+              state.pendingTransitionResolve = () => resolve("confirmed");
+              // Timeout after 5 seconds - abort transition if no confirmation
+              setTimeout(() => {
+                if (state.pendingTransitionResolve) {
+                  console.warn(`[VoiceInterview] session.updated timeout - aborting transition`);
+                  state.pendingTransitionResolve = null;
+                  resolve("timeout");
+                }
+              }, 5000);
+            });
+
+            // Send message THEN await the promise
+            state.openaiWs.send(JSON.stringify({
+              type: "session.update",
+              session: { instructions: instructions },
+            }));
+
+            // Wait for OpenAI to confirm the instructions were applied
+            const result = await sessionUpdatePromise;
+
+            if (result === "timeout") {
+              // Abort transition - notify client of failure
+              console.error(`[VoiceInterview] Question transition aborted due to timeout`);
+              clientWs.send(JSON.stringify({
+                type: "question_transition_failed",
+                message: "Unable to move to next question. Please try again.",
+              }));
+              return; // Exit without updating state - finally block will clean up
+            }
+
+            // 7. NOW safe to update state and trigger response
+            state.currentQuestionIndex = targetQuestionIndex;
+            state.questionMetrics.set(targetQuestionIndex, createEmptyMetrics(targetQuestionIndex));
+            state.lastBarbaraGuidance = null;
+
+            // Persist question state changes
+            persistNextQuestion(sessionId, previousIndex, targetQuestionIndex);
+
+            // 8. Trigger Alvia to ask the question with new instructions
+            state.openaiWs.send(JSON.stringify({
+              type: "response.create",
+              response: { modalities: ["text", "audio"] },
+            }));
+          } else {
+            // WebSocket closed - abort transition
+            console.error(`[VoiceInterview] Question transition aborted - WebSocket closed`);
+            clientWs.send(JSON.stringify({
+              type: "question_transition_failed",
+              message: "Connection lost. Please reconnect and try again.",
+            }));
+            return; // Exit without updating state - finally block will clean up
+          }
+
+          // 9. Notify client about topic overlap if detected
+          if (topicOverlap?.hasOverlap) {
+            clientWs.send(JSON.stringify({
+              type: "topic_overlap_detected",
+              questionIndex: targetQuestionIndex,
+              overlapSummary: topicOverlap.overlapSummary,
+            }));
+          }
+
+          // 10. Notify client of question change (before transition_complete so UI updates first)
+          clientWs.send(JSON.stringify({
             type: "question_changed",
-            questionIndex: state.currentQuestionIndex,
+            questionIndex: targetQuestionIndex,
             totalQuestions: state.questions.length,
-            currentQuestion: nextQuestion?.questionText,
-          }),
-        );
-      } else {
-        clientWs.send(JSON.stringify({ type: "interview_complete" }));
-      }
+            currentQuestion: targetQuestion?.questionText,
+          }));
+
+        } finally {
+          // Always re-enable transitions
+          state.isTransitioningQuestion = false;
+          state.pendingTransitionResolve = null;
+
+          clientWs.send(JSON.stringify({
+            type: "question_transition_complete"
+          }));
+        }
+      })();
       break;
 
     case "end_interview":
