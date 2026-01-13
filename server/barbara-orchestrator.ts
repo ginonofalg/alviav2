@@ -52,6 +52,7 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
 
     const response = await openai.chat.completions.create({
       model: BARBARA_MODEL,
+      reasoning_effort: "low",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -226,6 +227,7 @@ Output JSON.`;
 
     const summaryPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
+      reasoning_effort: "low",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -345,6 +347,7 @@ Output JSON.`;
 
     const analysisPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
+      reasoning_effort: "low",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
