@@ -809,6 +809,12 @@ async function handleOpenAIEvent(
       break;
 
     case "error":
+      // Suppress benign errors that don't affect functionality
+      if (event.error?.code === "response_cancel_not_active") {
+        // This is expected when cancelling with no active response - not a problem
+        console.log(`[VoiceInterview] No active response to cancel (expected during transitions)`);
+        break;
+      }
       console.error(`[VoiceInterview] OpenAI error:`, event.error);
       clientWs.send(
         JSON.stringify({
