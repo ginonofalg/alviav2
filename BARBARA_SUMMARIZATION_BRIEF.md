@@ -61,7 +61,8 @@ export async function generateQuestionSummary(
 - Filter transcript to only entries for the specified `questionIndex`
 - Use a specialized system prompt that instructs Barbara to create structured summaries
 - Request JSON response with the `QuestionSummary` structure
-- Use same model (`gpt-4o-mini`) and timeout pattern as existing `analyzeWithBarbara()`
+- Use same model (`gpt-4o-mini`)
+- Use a **30-60 second timeout** (longer than real-time analysis since this runs in background)
 
 **Prompt guidance**:
 - Focus on what the respondent actually said, not what Alvia asked
@@ -91,48 +92,91 @@ if (session.questionSummaries && Array.isArray(session.questionSummaries)) {
 }
 ```
 
-### 4. Trigger Summarization on Question Transition
+### 4. Trigger Summarization on Question Transition (Background)
 
 **File**: `server/voice-interview.ts`
 
-Modify the `case "next_question":` handler (line ~1033) to generate a summary before moving on:
+**IMPORTANT**: Summarization must run in the **background** to avoid blocking the question transition. This provides zero perceived latency for users.
+
+First, create a helper function to handle background summarization:
+
+```typescript
+async function generateAndPersistSummary(
+  sessionId: string,
+  questionIndex: number,
+): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  const question = state.questions[questionIndex];
+  if (!question) return;
+
+  try {
+    const questionTranscript = state.fullTranscriptForPersistence.filter(
+      e => e.questionIndex === questionIndex
+    );
+    const metrics = state.questionMetrics.get(questionIndex) || createEmptyMetrics(questionIndex);
+
+    console.log(`[Summary] Generating summary for Q${questionIndex + 1} in background...`);
+
+    const summary = await generateQuestionSummary(
+      questionIndex,
+      question.questionText,
+      question.guidance || "",
+      questionTranscript as TranscriptEntry[],
+      metrics,
+      state.template?.objective || "",
+    );
+
+    // Add to state
+    state.questionSummaries.push(summary);
+    console.log(`[Summary] Summary completed for Q${questionIndex + 1}`);
+
+    // Persist immediately (don't debounce for summaries)
+    await storage.persistInterviewState(sessionId, {
+      questionSummaries: state.questionSummaries,
+    });
+  } catch (error) {
+    console.error(`[Summary] Failed to generate summary for Q${questionIndex + 1}:`, error);
+    // Fail silently - doesn't affect interview progress
+  }
+}
+```
+
+Then, modify the `case "next_question":` handler (line ~1033) to trigger background summarization:
 
 ```typescript
 case "next_question":
   if (state.currentQuestionIndex < state.questions.length - 1) {
     const previousIndex = state.currentQuestionIndex;
-    const previousQuestion = state.questions[previousIndex];
 
-    // Generate summary for the question we're leaving
-    try {
-      const questionTranscript = state.fullTranscriptForPersistence.filter(
-        e => e.questionIndex === previousIndex
-      );
-      const metrics = state.questionMetrics.get(previousIndex) || createEmptyMetrics(previousIndex);
+    // Trigger summarization in background (don't await - non-blocking)
+    generateAndPersistSummary(sessionId, previousIndex)
+      .catch(error => {
+        // Error already logged in generateAndPersistSummary
+      });
 
-      const summary = await generateQuestionSummary(
-        previousIndex,
-        previousQuestion.questionText,
-        previousQuestion.guidance || "",
-        questionTranscript as TranscriptEntry[],
-        metrics,
-        state.template?.objective || "",
-      );
-
-      state.questionSummaries.push(summary);
-      console.log(`[Summary] Generated summary for Q${previousIndex + 1}`);
-    } catch (error) {
-      console.error(`[Summary] Failed to generate summary for Q${previousIndex + 1}:`, error);
-      // Continue anyway - summarization failure shouldn't block progress
-    }
-
-    // Move to next question (existing logic)
+    // Immediately move to next question (don't wait for summary)
     state.currentQuestionIndex++;
-    // ... rest of existing code
+    const nextQuestion = state.questions[state.currentQuestionIndex];
+
+    // ... rest of existing code (initialize metrics, update instructions, etc.)
   }
 ```
 
-### 5. Update Barbara's Context
+### 5. Update Real-Time Barbara Timeout
+
+**File**: `server/voice-interview.ts`
+
+Since Barbara now processes larger context (previous question summaries + current transcript), increase the timeout for real-time analysis:
+
+```typescript
+const BARBARA_TIMEOUT_MS = 10000; // Increased from 5000 to 10000 (10 seconds)
+```
+
+This applies to the timeout used in `triggerBarbaraAnalysis()` around line 726.
+
+### 6. Update Barbara's Context
 
 **File**: `server/barbara-orchestrator.ts`
 
@@ -172,46 +216,65 @@ const analysisPromise = analyzeWithBarbara({
 });
 ```
 
-### 6. Persistence
+### 7. Persistence
 
 **File**: `server/storage.ts`
 
 Ensure `persistInterviewState()` handles the new `questionSummaries` field when saving to the database. It should work automatically if the schema is updated, but verify the field is included in the patch type.
 
+**Note**: The `generateAndPersistSummary()` helper function persists summaries immediately (not debounced) to ensure they're saved as soon as generation completes.
+
 ## Implementation Order
 
 1. ✅ Update schema in `shared/schema.ts` and run `npm run db:push`
-2. ✅ Create `generateQuestionSummary()` function in `barbara-orchestrator.ts`
-3. ✅ Update `InterviewState` interface and initialization in `voice-interview.ts`
-4. ✅ Add restoration logic in `initializeInterview()`
-5. ✅ Modify `next_question` handler to trigger summarization
-6. ✅ Update `BarbaraAnalysisInput` and `buildBarbaraUserPrompt()` in `barbara-orchestrator.ts`
-7. ✅ Update the `analyzeWithBarbara()` call to include summaries
-8. ✅ Test with a multi-question interview
+2. ✅ Create `generateQuestionSummary()` function in `barbara-orchestrator.ts` with 30-60 second timeout
+3. ✅ Update `BARBARA_TIMEOUT_MS` constant to 10000 (10 seconds) in `voice-interview.ts`
+4. ✅ Update `InterviewState` interface and initialization in `voice-interview.ts`
+5. ✅ Add restoration logic in `initializeInterview()`
+6. ✅ Create `generateAndPersistSummary()` helper function in `voice-interview.ts`
+7. ✅ Modify `next_question` handler to trigger background summarization (non-blocking)
+8. ✅ Update `BarbaraAnalysisInput` and `buildBarbaraUserPrompt()` in `barbara-orchestrator.ts`
+9. ✅ Update the `analyzeWithBarbara()` call to include summaries
+10. ✅ Test with a multi-question interview
 
 ## Testing Checklist
 
-- [ ] Summaries are generated when clicking "Next Question"
+- [ ] Summaries are generated in the background when clicking "Next Question"
+- [ ] Question transitions happen immediately (zero blocking time)
 - [ ] Summaries persist to database and restore on session resume
-- [ ] Barbara receives previous summaries in her context
+- [ ] Barbara receives previous summaries in her context (after they've completed)
 - [ ] Long interviews (10+ questions) maintain context awareness
-- [ ] Summarization failures don't block interview progress
+- [ ] Summarization failures don't block interview progress or cause errors
+- [ ] Barbara works correctly when summaries are still generating (partial data)
 - [ ] Database schema migration completes successfully
 - [ ] Existing interviews without summaries continue to work
+- [ ] Console logs show background summary generation progress
 
 ## Edge Cases to Handle
 
-1. **First question**: No previous summaries to include
-2. **Restored sessions**: Summaries should be loaded from database
-3. **Summarization timeout/failure**: Log error but don't block question transition
-4. **Empty responses**: Handle questions where respondent said very little
+1. **First question**: No previous summaries to include - Barbara works with transcript only
+2. **Restored sessions**: Summaries should be loaded from database and included in Barbara's context
+3. **Summarization timeout/failure**: Log error but don't block question transition or throw errors
+4. **Empty responses**: Handle questions where respondent said very little (generate minimal summary)
 5. **Interview end**: Consider generating a final summary when interview completes
+6. **Partial summary availability**: Barbara is called before a previous summary finishes generating
+   - Barbara should gracefully work with however many summaries are available in `state.questionSummaries`
+   - By question 3+, summaries for earlier questions should reliably be available
+   - This is acceptable - recent transcript context is most important for real-time guidance
+7. **Fast question progression**: User rapidly clicks "Next Question" before summaries complete
+   - Multiple background summarizations can run in parallel (one per question)
+   - Each operates on immutable historical transcript data (safe for concurrent execution)
+   - State updates (pushing to `questionSummaries` array) happen asynchronously but sequentially
 
 ## Performance Considerations
 
-- Summarization adds ~1-2 seconds to question transitions (acceptable)
-- Use same timeout pattern (5 seconds) as regular Barbara analysis
-- Summaries are compact (~200 words each), scaling linearly not exponentially
+- **Zero perceived latency**: Background summarization means question transitions are instant
+- **Real-time Barbara analysis**: Increased timeout to 10 seconds (from 5) to handle larger context with summaries
+- **Summarization timeout**: 30-60 seconds (generous since it runs in background)
+- **Summary size**: Compact (~200 words each), scaling linearly not exponentially
+- **Token efficiency**: For a 15-question interview, summaries total ~3,000 words vs tens of thousands for full transcripts
+- **Concurrent summarization**: Multiple summaries can generate in parallel if user moves quickly through questions (safe because each operates on immutable historical data)
+- **Database writes**: Summaries persist immediately after generation (not debounced), ensuring they're saved before potential crashes/disconnects
 
 ## Success Criteria
 
