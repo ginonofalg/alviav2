@@ -127,9 +127,11 @@ async function persistBarbaraGuidance(sessionId: string, guidance: BarbaraGuidan
   }
 
   try {
+    // Persist with all relevant fields to avoid overwriting concurrent summary persistence
     await storage.persistInterviewState(sessionId, {
       lastBarbaraGuidance: persistedGuidance,
       questionStates: state.questionStates,
+      questionSummaries: state.questionSummaries,
     });
     console.log(`[Persist] Barbara guidance saved for session: ${sessionId}`);
   } catch (error) {
@@ -207,9 +209,11 @@ async function generateAndPersistSummary(
     state.questionSummaries[questionIndex] = summary;
     console.log(`[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`);
 
-    // Persist immediately (don't debounce for summaries)
+    // Persist immediately with all relevant fields to avoid overwriting concurrent Barbara guidance
     await storage.persistInterviewState(sessionId, {
       questionSummaries: state.questionSummaries,
+      lastBarbaraGuidance: state.lastBarbaraGuidance,
+      questionStates: state.questionStates,
     });
     console.log(`[Summary] Summary persisted for Q${questionIndex + 1}`);
   } catch (error) {
