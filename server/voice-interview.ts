@@ -3,6 +3,7 @@ import type { IncomingMessage } from "http";
 import { storage, type InterviewStatePatch } from "./storage";
 import {
   analyzeWithBarbara,
+  analyzeTopicOverlap,
   createEmptyMetrics,
   generateQuestionSummary,
   type TranscriptEntry,
@@ -513,16 +514,38 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
   });
 }
 
+interface TopicOverlapContext {
+  hasOverlap: boolean;
+  overlapSummary: string | null;
+  relevantQuestionNumbers: number[];
+}
+
 function buildInterviewInstructions(
   template: any,
   currentQuestion: any,
   questionIndex: number,
   totalQuestions: number,
   barbaraGuidance?: string,
+  topicOverlap?: TopicOverlapContext,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
+
+  let questionIntro: string;
+  if (questionIndex === 0) {
+    questionIntro = `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.`;
+  } else if (topicOverlap?.hasOverlap && topicOverlap.overlapSummary) {
+    questionIntro = `IMPORTANT: The respondent has already touched on this topic earlier in the interview. ${topicOverlap.overlapSummary}
+
+When asking this question:
+1. First, acknowledge what they mentioned before (e.g., "Earlier you mentioned...")
+2. Read the question, but frame it as an opportunity to elaborate
+3. Ask if they'd like to add anything more or go deeper on this topic
+4. Example: "Earlier you mentioned [topic]. Our next question is about [question topic]. Would you like to elaborate on what you shared before, or is there anything new you'd like to add?"`;
+  } else {
+    questionIntro = "Read out the current question naturally and clearly.";
+  }
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
@@ -538,7 +561,7 @@ GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 
 INSTRUCTIONS:
-1. ${questionIndex === 0 ? `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
+1. ${questionIntro}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. Use the guidance to know what depth of answer is expected.
