@@ -49,6 +49,8 @@ interface InterviewState {
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
+  // Race condition fix: wait for session.updated before triggering response.create
+  pendingQuestionTransition: number | null;
 }
 
 const PERSIST_DEBOUNCE_MS = 2000;
@@ -279,6 +281,7 @@ export function handleVoiceInterview(
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
+    pendingQuestionTransition: null,
   };
   interviewStates.set(sessionId, state);
 
@@ -657,6 +660,25 @@ async function handleOpenAIEvent(
         state.openaiWs.readyState === WebSocket.OPEN
       ) {
         state.isInitialSession = false; // Mark initial setup complete
+        state.openaiWs.send(
+          JSON.stringify({
+            type: "response.create",
+            response: {
+              modalities: ["text", "audio"],
+            },
+          }),
+        );
+      }
+      // Handle pending question transition (race condition fix)
+      // Only trigger response.create after session.updated confirms new instructions applied
+      if (
+        state.pendingQuestionTransition !== null &&
+        state.openaiWs &&
+        state.openaiWs.readyState === WebSocket.OPEN
+      ) {
+        const targetIndex = state.pendingQuestionTransition;
+        state.pendingQuestionTransition = null; // Clear flag before sending
+        console.log(`[VoiceInterview] Triggering response for Q${targetIndex + 1} after session.updated`);
         state.openaiWs.send(
           JSON.stringify({
             type: "response.create",
@@ -1178,22 +1200,15 @@ INSTRUCTIONS:
             );
 
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              // Set pending flag - response.create will be triggered by session.updated handler
+              state.pendingQuestionTransition = targetQuestionIndex;
+              
               // Update session with context-aware instructions
               state.openaiWs.send(
                 JSON.stringify({
                   type: "session.update",
                   session: {
                     instructions: instructions,
-                  },
-                }),
-              );
-
-              // Trigger Alvia to ask the question with appropriate context
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
                   },
                 }),
               );
@@ -1226,19 +1241,14 @@ INSTRUCTIONS:
             );
 
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              // Set pending flag - response.create will be triggered by session.updated handler
+              state.pendingQuestionTransition = targetQuestionIndex;
+              
               state.openaiWs.send(
                 JSON.stringify({
                   type: "session.update",
                   session: {
                     instructions: instructions,
-                  },
-                }),
-              );
-              state.openaiWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
                   },
                 }),
               );
