@@ -6,13 +6,14 @@ import {
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
   type InterviewSession, type InsertSession, type Segment, type InsertSegment,
   type WorkspaceMember, type PersistedTranscriptEntry, type PersistedBarbaraGuidance,
-  type PersistedQuestionState
+  type PersistedQuestionState, type QuestionSummary
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
   liveTranscript?: PersistedTranscriptEntry[];
   lastBarbaraGuidance?: PersistedBarbaraGuidance | null;
   questionStates?: PersistedQuestionState[];
+  questionSummaries?: QuestionSummary[];
   currentQuestionIndex?: number;
   status?: InterviewSession["status"];
   pausedAt?: Date | null;
@@ -378,6 +379,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.questionStates !== undefined) {
       updateData.questionStates = patch.questionStates;
+    }
+    if (patch.questionSummaries !== undefined) {
+      updateData.questionSummaries = patch.questionSummaries;
     }
     if (patch.currentQuestionIndex !== undefined) {
       updateData.currentQuestionIndex = patch.currentQuestionIndex;

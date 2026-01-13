@@ -4,14 +4,17 @@ import { storage, type InterviewStatePatch } from "./storage";
 import {
   analyzeWithBarbara,
   createEmptyMetrics,
+  generateQuestionSummary,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
+  type QuestionSummary,
 } from "./barbara-orchestrator";
 import type { 
   PersistedTranscriptEntry, 
   PersistedBarbaraGuidance, 
-  PersistedQuestionState 
+  PersistedQuestionState,
+  QuestionSummary as PersistedQuestionSummary,
 } from "@shared/schema";
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
@@ -40,6 +43,7 @@ interface InterviewState {
   fullTranscriptForPersistence: PersistedTranscriptEntry[]; // Complete transcript history - never truncated
   lastBarbaraGuidance: PersistedBarbaraGuidance | null;
   questionStates: PersistedQuestionState[];
+  questionSummaries: QuestionSummary[]; // Index-based: questionSummaries[questionIndex] = summary
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
@@ -88,6 +92,7 @@ async function flushPersist(sessionId: string): Promise<void> {
     liveTranscript: state.fullTranscriptForPersistence,
     lastBarbaraGuidance: state.lastBarbaraGuidance,
     questionStates: state.questionStates,
+    questionSummaries: state.questionSummaries,
     currentQuestionIndex: state.currentQuestionIndex,
   };
 
@@ -168,6 +173,51 @@ async function persistNextQuestion(sessionId: string, previousIndex: number, new
   await flushPersist(sessionId);
 }
 
+async function generateAndPersistSummary(
+  sessionId: string,
+  questionIndex: number,
+): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  const question = state.questions[questionIndex];
+  if (!question) return;
+
+  // Check if summary already exists for this question (prevent duplicates)
+  if (state.questionSummaries[questionIndex]) {
+    console.log(`[Summary] Summary already exists for Q${questionIndex + 1}, skipping`);
+    return;
+  }
+
+  try {
+    const metrics = state.questionMetrics.get(questionIndex) || createEmptyMetrics(questionIndex);
+
+    console.log(`[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}) in background...`);
+
+    const summary = await generateQuestionSummary(
+      questionIndex,
+      question.questionText,
+      question.guidance || "",
+      state.fullTranscriptForPersistence as TranscriptEntry[],
+      metrics,
+      state.template?.objective || "",
+    );
+
+    // Use index-based assignment to prevent race conditions
+    state.questionSummaries[questionIndex] = summary;
+    console.log(`[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`);
+
+    // Persist immediately (don't debounce for summaries)
+    await storage.persistInterviewState(sessionId, {
+      questionSummaries: state.questionSummaries,
+    });
+    console.log(`[Summary] Summary persisted for Q${questionIndex + 1}`);
+  } catch (error) {
+    console.error(`[Summary] Failed to generate summary for Q${questionIndex + 1}:`, error);
+    // Fail silently - doesn't affect interview progress
+  }
+}
+
 export function handleVoiceInterview(
   clientWs: WebSocket,
   req: IncomingMessage,
@@ -219,6 +269,7 @@ export function handleVoiceInterview(
     fullTranscriptForPersistence: [], // Complete transcript history - never truncated
     lastBarbaraGuidance: null,
     questionStates: [],
+    questionSummaries: [], // Index-based array for question summaries
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
@@ -315,6 +366,12 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             startedAt: null,
           });
         }
+      }
+      
+      // Restore question summaries (index-based array)
+      if (session.questionSummaries && Array.isArray(session.questionSummaries)) {
+        state.questionSummaries = session.questionSummaries as QuestionSummary[];
+        console.log(`[VoiceInterview] Restored ${state.questionSummaries.length} question summaries`);
       }
       
       console.log(`[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}`);
@@ -723,7 +780,7 @@ async function handleOpenAIEvent(
   }
 }
 
-const BARBARA_TIMEOUT_MS = 5000; // 5 second timeout for Barbara analysis
+const BARBARA_TIMEOUT_MS = 10000; // 10 second timeout for Barbara analysis (increased for summary context)
 
 async function triggerBarbaraAnalysis(
   sessionId: string,
@@ -754,6 +811,7 @@ async function triggerBarbaraAnalysis(
 
     const analysisPromise = analyzeWithBarbara({
       transcriptLog: state.transcriptLog,
+      previousQuestionSummaries: state.questionSummaries.filter(s => s != null),
       currentQuestionIndex: state.currentQuestionIndex,
       currentQuestion: {
         text: currentQuestion?.questionText || "",
@@ -1034,6 +1092,13 @@ INSTRUCTIONS:
       // Move to next question
       if (state.currentQuestionIndex < state.questions.length - 1) {
         const previousIndex = state.currentQuestionIndex;
+
+        // Trigger summarization in background (don't await - non-blocking)
+        generateAndPersistSummary(sessionId, previousIndex).catch(() => {
+          // Error already logged in generateAndPersistSummary
+        });
+
+        // Immediately move to next question (don't wait for summary)
         state.currentQuestionIndex++;
         const nextQuestion = state.questions[state.currentQuestionIndex];
 
@@ -1082,6 +1147,10 @@ INSTRUCTIONS:
       break;
 
     case "end_interview":
+      // Trigger summarization for final question in background before cleanup
+      generateAndPersistSummary(sessionId, state.currentQuestionIndex).catch(() => {
+        // Error already logged in generateAndPersistSummary
+      });
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
       cleanupSession(sessionId);
       break;

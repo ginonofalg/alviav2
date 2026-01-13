@@ -142,6 +142,7 @@ export const interviewSessions = pgTable("interview_sessions", {
   liveTranscript: jsonb("live_transcript"),
   lastBarbaraGuidance: jsonb("last_barbara_guidance"),
   questionStates: jsonb("question_states"),
+  questionSummaries: jsonb("question_summaries"),
   // Resume token for browser recovery
   resumeTokenHash: text("resume_token_hash"),
   resumeTokenExpiresAt: timestamp("resume_token_expires_at"),
@@ -337,4 +338,17 @@ export type PersistedQuestionState = {
   wordCount: number;
   activeTimeMs: number;
   turnCount: number;
+};
+
+export type QuestionSummary = {
+  questionIndex: number;
+  questionText: string;
+  respondentSummary: string;
+  keyInsights: string[];
+  completenessAssessment: string;
+  relevantToFutureQuestions: string[];
+  wordCount: number;
+  turnCount: number;
+  activeTimeMs: number;
+  timestamp: number;
 };
