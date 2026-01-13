@@ -295,3 +295,122 @@ function createEmptySummary(questionIndex: number, questionText: string, metrics
     timestamp: Date.now(),
   };
 }
+
+// Topic overlap analysis for question transitions
+export interface TopicOverlapResult {
+  hasOverlap: boolean;
+  overlapSummary: string;
+  suggestedIntro: string;
+  relatedQuestionIndices: number[];
+  confidence: number;
+}
+
+const TOPIC_OVERLAP_TIMEOUT_MS = 8000;
+
+export async function analyzeTopicOverlap(
+  upcomingQuestion: { text: string; guidance: string },
+  upcomingQuestionIndex: number,
+  previousSummaries: QuestionSummary[],
+  templateObjective: string,
+): Promise<TopicOverlapResult> {
+  // Filter to only summaries that have actual content
+  const validSummaries = previousSummaries.filter(s => 
+    s && s.keyInsights.length > 0 && s.respondentSummary !== "Minimal or no response provided."
+  );
+
+  if (validSummaries.length === 0) {
+    return {
+      hasOverlap: false,
+      overlapSummary: "",
+      suggestedIntro: "",
+      relatedQuestionIndices: [],
+      confidence: 1.0,
+    };
+  }
+
+  const systemPrompt = `You are Barbara, an interview orchestrator. Your task is to analyze whether the upcoming interview question's topic has already been touched on by the respondent in previous answers.
+
+You must respond with a JSON object containing:
+{
+  "hasOverlap": true/false,
+  "overlapSummary": "If hasOverlap is true, briefly describe what the respondent already said about this topic (1-2 sentences). Empty if no overlap.",
+  "suggestedIntro": "If hasOverlap is true, a natural way for the interviewer to introduce the question while acknowledging the prior mention (e.g., 'Earlier you mentioned X. I'd love to explore that more...'). Empty if no overlap.",
+  "relatedQuestionIndices": [array of question numbers where the topic was touched on],
+  "confidence": 0.0-1.0
+}
+
+Be conservative - only flag overlap when there's a clear, meaningful connection. Minor tangential mentions don't count.`;
+
+  const summariesText = validSummaries
+    .map(s => `Q${s.questionIndex + 1}: "${s.questionText}"
+  Response: ${s.respondentSummary}
+  Key Insights: ${s.keyInsights.join("; ")}
+  Topics for future: ${s.relevantToFutureQuestions.join("; ")}`)
+    .join("\n\n");
+
+  const userPrompt = `INTERVIEW OBJECTIVE: ${templateObjective}
+
+UPCOMING QUESTION (Q${upcomingQuestionIndex + 1}):
+"${upcomingQuestion.text}"
+
+GUIDANCE FOR THIS QUESTION:
+${upcomingQuestion.guidance || "No specific guidance provided."}
+
+PREVIOUS ANSWERS SUMMARY:
+${summariesText}
+
+Has the respondent already touched on the topic of the upcoming question? If so, how should the interviewer acknowledge this when asking the question?`;
+
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Topic overlap timeout")), TOPIC_OVERLAP_TIMEOUT_MS);
+    });
+
+    const analysisPromise = openai.chat.completions.create({
+      model: BARBARA_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 400,
+    });
+
+    const response = await Promise.race([analysisPromise, timeoutPromise]);
+    const content = response.choices[0]?.message?.content;
+
+    if (!content) {
+      return {
+        hasOverlap: false,
+        overlapSummary: "",
+        suggestedIntro: "",
+        relatedQuestionIndices: [],
+        confidence: 0,
+      };
+    }
+
+    const parsed = JSON.parse(content);
+
+    console.log(`[Barbara] Topic overlap for Q${upcomingQuestionIndex + 1}: hasOverlap=${parsed.hasOverlap}, confidence=${parsed.confidence}`);
+    if (parsed.hasOverlap && parsed.suggestedIntro) {
+      console.log(`[Barbara] Suggested intro: "${parsed.suggestedIntro}"`);
+    }
+
+    return {
+      hasOverlap: parsed.hasOverlap === true,
+      overlapSummary: parsed.overlapSummary || "",
+      suggestedIntro: parsed.suggestedIntro || "",
+      relatedQuestionIndices: Array.isArray(parsed.relatedQuestionIndices) ? parsed.relatedQuestionIndices : [],
+      confidence: parsed.confidence || 0,
+    };
+  } catch (error) {
+    console.error(`[Barbara] Error analyzing topic overlap:`, error);
+    return {
+      hasOverlap: false,
+      overlapSummary: "",
+      suggestedIntro: "",
+      relatedQuestionIndices: [],
+      confidence: 0,
+    };
+  }
+}

@@ -3,12 +3,14 @@ import type { IncomingMessage } from "http";
 import { storage, type InterviewStatePatch } from "./storage";
 import {
   analyzeWithBarbara,
+  analyzeTopicOverlap,
   createEmptyMetrics,
   generateQuestionSummary,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
   type QuestionSummary,
+  type TopicOverlapResult,
 } from "./barbara-orchestrator";
 import type { 
   PersistedTranscriptEntry, 
@@ -519,10 +521,21 @@ function buildInterviewInstructions(
   questionIndex: number,
   totalQuestions: number,
   barbaraGuidance?: string,
+  topicOverlap?: TopicOverlapResult,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
+
+  // Determine how to introduce the question based on topic overlap
+  let questionIntro: string;
+  if (questionIndex === 0) {
+    questionIntro = `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.`;
+  } else if (topicOverlap?.hasOverlap && topicOverlap.suggestedIntro) {
+    questionIntro = `IMPORTANT: The respondent has already touched on this topic earlier. ${topicOverlap.suggestedIntro} Ask if they'd like to elaborate further on this, rather than asking the question as if it's completely new.`;
+  } else {
+    questionIntro = "Ask the current question naturally.";
+  }
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
@@ -535,10 +548,20 @@ CURRENT QUESTION TO ASK:
 "${currentQuestion?.questionText || "Please share your thoughts."}"
 
 GUIDANCE FOR THIS QUESTION:
-${guidance || "Listen carefully and probe for more details when appropriate."}
+${guidance || "Listen carefully and probe for more details when appropriate."}`;
+
+  // Add topic overlap context if detected
+  if (topicOverlap?.hasOverlap && topicOverlap.overlapSummary) {
+    instructions += `
+
+PRIOR CONTEXT (respondent already mentioned):
+${topicOverlap.overlapSummary}`;
+  }
+
+  instructions += `
 
 INSTRUCTIONS:
-1. ${questionIndex === 0 ? `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
+1. ${questionIntro}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. Use the guidance to know what depth of answer is expected.
@@ -1118,24 +1141,110 @@ INSTRUCTIONS:
         // Persist question state changes immediately
         persistNextQuestion(sessionId, previousIndex, state.currentQuestionIndex);
 
-        // Update session instructions for new question
-        const instructions = buildInterviewInstructions(
-          state.template,
-          nextQuestion,
-          state.currentQuestionIndex,
-          state.questions.length,
-        );
+        // Capture target index before async call to prevent race conditions
+        const targetQuestionIndex = state.currentQuestionIndex;
+        const targetQuestion = nextQuestion;
+        const summariesSnapshot = [...state.questionSummaries.filter(s => s != null)];
+        const templateSnapshot = state.template;
 
-        if (state.openaiWs.readyState === WebSocket.OPEN) {
-          state.openaiWs.send(
-            JSON.stringify({
-              type: "session.update",
-              session: {
-                instructions: instructions,
+        // Analyze topic overlap in background and then update Alvia's instructions
+        (async () => {
+          try {
+            // Check if the upcoming question's topic was already discussed
+            const topicOverlap = await analyzeTopicOverlap(
+              {
+                text: targetQuestion?.questionText || "",
+                guidance: targetQuestion?.guidance || "",
               },
-            }),
-          );
-        }
+              targetQuestionIndex,
+              summariesSnapshot,
+              templateSnapshot?.objective || "",
+            );
+
+            // Short-circuit if user has advanced past this question
+            if (state.currentQuestionIndex !== targetQuestionIndex) {
+              console.log(`[VoiceInterview] Skipping stale topic overlap for Q${targetQuestionIndex + 1}, now on Q${state.currentQuestionIndex + 1}`);
+              return;
+            }
+
+            // Build instructions with topic overlap context
+            const instructions = buildInterviewInstructions(
+              templateSnapshot,
+              targetQuestion,
+              targetQuestionIndex,
+              state.questions.length,
+              undefined, // no Barbara guidance yet
+              topicOverlap,
+            );
+
+            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              // Update session with context-aware instructions
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "session.update",
+                  session: {
+                    instructions: instructions,
+                  },
+                }),
+              );
+
+              // Trigger Alvia to ask the question with appropriate context
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
+                  },
+                }),
+              );
+            }
+
+            // Notify client about topic overlap if detected
+            if (topicOverlap.hasOverlap) {
+              clientWs.send(
+                JSON.stringify({
+                  type: "topic_overlap_detected",
+                  questionIndex: targetQuestionIndex,
+                  overlapSummary: topicOverlap.overlapSummary,
+                }),
+              );
+            }
+          } catch (error) {
+            console.error(`[VoiceInterview] Topic overlap analysis failed:`, error);
+            
+            // Short-circuit if user has advanced past this question
+            if (state.currentQuestionIndex !== targetQuestionIndex) {
+              return;
+            }
+
+            // Fallback: just ask the question normally
+            const instructions = buildInterviewInstructions(
+              templateSnapshot,
+              targetQuestion,
+              targetQuestionIndex,
+              state.questions.length,
+            );
+
+            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "session.update",
+                  session: {
+                    instructions: instructions,
+                  },
+                }),
+              );
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
+                  },
+                }),
+              );
+            }
+          }
+        })();
 
         clientWs.send(
           JSON.stringify({
