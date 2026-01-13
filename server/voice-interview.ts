@@ -49,10 +49,6 @@ interface InterviewState {
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
-  // Race condition fix: wait for session.updated before triggering response.create
-  // Version-based approach: only the latest transition is "active", earlier ones are cancelled
-  questionTransitionVersion: number;
-  pendingTransition: { version: number; questionIndex: number } | null;
 }
 
 const PERSIST_DEBOUNCE_MS = 2000;
@@ -283,8 +279,6 @@ export function handleVoiceInterview(
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
-    questionTransitionVersion: 0,
-    pendingTransition: null,
   };
   interviewStates.set(sessionId, state);
 
@@ -663,29 +657,6 @@ async function handleOpenAIEvent(
         state.openaiWs.readyState === WebSocket.OPEN
       ) {
         state.isInitialSession = false; // Mark initial setup complete
-        state.openaiWs.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              modalities: ["text", "audio"],
-            },
-          }),
-        );
-      }
-      // Handle pending question transition (version-based race condition fix)
-      // Only trigger response.create for the LATEST transition (matching version)
-      // Barbara guidance updates and stale transitions are ignored
-      if (
-        !state.isBarbaraGuidanceUpdate &&
-        state.pendingTransition !== null &&
-        state.pendingTransition.version === state.questionTransitionVersion &&
-        state.openaiWs &&
-        state.openaiWs.readyState === WebSocket.OPEN
-      ) {
-        const targetIndex = state.pendingTransition.questionIndex;
-        const version = state.pendingTransition.version;
-        state.pendingTransition = null;
-        console.log(`[VoiceInterview] Triggering response for Q${targetIndex + 1} (v${version})`);
         state.openaiWs.send(
           JSON.stringify({
             type: "response.create",
@@ -1149,11 +1120,6 @@ INSTRUCTIONS:
       if (state.currentQuestionIndex < state.questions.length - 1) {
         const previousIndex = state.currentQuestionIndex;
 
-        // Increment transition version - cancels any in-flight transitions from rapid clicks
-        state.questionTransitionVersion++;
-        const transitionVersion = state.questionTransitionVersion;
-        console.log(`[VoiceInterview] Starting transition to next question (v${transitionVersion})`);
-
         // Trigger summarization in background (don't await - non-blocking)
         generateAndPersistSummary(sessionId, previousIndex).catch(() => {
           // Error already logged in generateAndPersistSummary
@@ -1195,9 +1161,9 @@ INSTRUCTIONS:
               templateSnapshot?.objective || "",
             );
 
-            // Short-circuit if this transition was superseded by a newer one (rapid click)
-            if (transitionVersion !== state.questionTransitionVersion) {
-              console.log(`[VoiceInterview] Skipping stale transition v${transitionVersion}, now on v${state.questionTransitionVersion}`);
+            // Short-circuit if user has advanced past this question
+            if (state.currentQuestionIndex !== targetQuestionIndex) {
+              console.log(`[VoiceInterview] Skipping stale topic overlap for Q${targetQuestionIndex + 1}, now on Q${state.currentQuestionIndex + 1}`);
               return;
             }
 
@@ -1212,17 +1178,22 @@ INSTRUCTIONS:
             );
 
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-              // Set pending transition with captured version - will trigger response.create in session.updated handler
-              state.pendingTransition = { version: transitionVersion, questionIndex: targetQuestionIndex };
-              
-              console.log(`[VoiceInterview] Sending session.update for Q${targetQuestionIndex + 1} (v${transitionVersion})`);
-              
               // Update session with context-aware instructions
               state.openaiWs.send(
                 JSON.stringify({
                   type: "session.update",
                   session: {
                     instructions: instructions,
+                  },
+                }),
+              );
+
+              // Trigger Alvia to ask the question with appropriate context
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
                   },
                 }),
               );
@@ -1241,9 +1212,8 @@ INSTRUCTIONS:
           } catch (error) {
             console.error(`[VoiceInterview] Topic overlap analysis failed:`, error);
             
-            // Short-circuit if this transition was superseded by a newer one (rapid click)
-            if (transitionVersion !== state.questionTransitionVersion) {
-              console.log(`[VoiceInterview] Skipping stale fallback transition v${transitionVersion}, now on v${state.questionTransitionVersion}`);
+            // Short-circuit if user has advanced past this question
+            if (state.currentQuestionIndex !== targetQuestionIndex) {
               return;
             }
 
@@ -1256,16 +1226,19 @@ INSTRUCTIONS:
             );
 
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-              // Set pending transition with captured version - will trigger response.create in session.updated handler
-              state.pendingTransition = { version: transitionVersion, questionIndex: targetQuestionIndex };
-              
-              console.log(`[VoiceInterview] Sending fallback session.update for Q${targetQuestionIndex + 1} (v${transitionVersion})`);
-              
               state.openaiWs.send(
                 JSON.stringify({
                   type: "session.update",
                   session: {
                     instructions: instructions,
+                  },
+                }),
+              );
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
                   },
                 }),
               );
