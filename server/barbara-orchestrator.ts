@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 
-// GPT-5-mini with low temperature for consistent, focused outputs
+// GPT-5-mini for fast, cost-effective analysis
+// Note: gpt-5-mini only supports default temperature (1)
 const BARBARA_MODEL = "gpt-5-mini";
-const BARBARA_TEMPERATURE = 0.3;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -52,7 +52,6 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
 
     const response = await openai.chat.completions.create({
       model: BARBARA_MODEL,
-      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -227,7 +226,6 @@ Output JSON.`;
 
     const summaryPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
-      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -347,7 +345,6 @@ Output JSON.`;
 
     const analysisPromise = openai.chat.completions.create({
       model: BARBARA_MODEL,
-      temperature: BARBARA_TEMPERATURE,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
