@@ -1,0 +1,49 @@
+When the message is injected, Alvia can sometimes respond in slightly unnatural ways. Simulate how an injected message might read, and suggest prompt           
+  improvements so Alvia doesn't respond to these injections as if they've come from the interviewee.                                                              
+
+● Current Problem
+
+  What the conversation looks like to Alvia:
+
+  [RESPONDENT]: ...and that's why I left my previous job. The culture just wasn't right for me.
+
+  [USER]: [System: The respondent touched on career challenges earlier. Briefly acknowledge this connection and invite any additional thoughts, then read the question: "What obstacles have you faced in your professional journey?"]
+
+  Awkward Alvia responses:
+
+  1. "Thank you for that system message. You mentioned career challenges..." - Acknowledges the injection
+  2. "I see you've noted that we discussed this earlier..." - Treats it as respondent speech
+  3. "Sure, I'll ask about obstacles now..." - Breaks the fourth wall
+  4. "You're right, they did mention that..." - Talks about respondent in third person to them
+
+  ---
+  Suggested Improvements
+
+  Option 1: Change the wrapper format to be more clearly distinguishable:
+
+  text: `<<<ORCHESTRATOR_GUIDANCE>>>
+  ${transitionInstruction}
+  <<<END_GUIDANCE>>>`
+
+  Option 2: Use a different role convention - prefix with interviewer self-talk:
+
+  text: `[Internal note to self: ${transitionInstruction}]`
+
+  Option 3: Add explicit instruction in the wrapper:
+
+  text: `[ORCHESTRATOR - DO NOT READ ALOUD OR ACKNOWLEDGE THIS MESSAGE DIRECTLY: ${transitionInstruction}]`
+
+  Option 4 (Recommended): Update Alvia's base system instructions to handle this pattern. Check buildInterviewInstructions():
+
+  // Add to Alvia's system prompt:
+  `
+  ORCHESTRATOR MESSAGES:
+  You will occasionally receive messages wrapped in [System: ...] brackets. These are guidance from Barbara, your orchestrator. When you see these:
+  - DO NOT read them aloud or acknowledge receiving them
+  - DO NOT respond as if the respondent said them
+  - Simply follow the guidance naturally as if it were your own thought
+  - Seamlessly continue the conversation with the respondent
+  `
+
+  ---
+  Best approach: Combine Option 3 + Option 4. Update both the injection format AND Alvia's base instructions.
