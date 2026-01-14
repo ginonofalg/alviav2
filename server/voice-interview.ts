@@ -619,7 +619,16 @@ INSTRUCTIONS:
 ${barbaraGuidance}`;
   }
 
-  instructions += `\n\nRemember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
+  instructions += `
+
+ORCHESTRATOR MESSAGES:
+You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
+- DO NOT read them aloud or acknowledge receiving them
+- DO NOT respond as if the respondent said them
+- Simply follow the guidance naturally as if it were your own thought
+- Seamlessly continue the conversation with the respondent
+
+Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
 
   return instructions;
 }
@@ -691,6 +700,13 @@ RESUME INSTRUCTIONS:
 3. Do NOT repeat the full question unless specifically needed.
 4. Be encouraging and match the ${tone} tone.
 5. Keep your welcome-back message concise.
+
+ORCHESTRATOR MESSAGES:
+You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
+- DO NOT read them aloud or acknowledge receiving them
+- DO NOT respond as if the respondent said them
+- Simply follow the guidance naturally as if it were your own thought
+- Seamlessly continue the conversation with the respondent
 
 Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
 
@@ -1159,7 +1175,7 @@ function handleClientMessage(
               content: [
                 {
                   type: "input_text",
-                  text: `[System: The interview was paused and has now resumed. Review the recent transcript context below and decide how to welcome back the respondent:
+                  text: `[ORCHESTRATOR - DO NOT ACKNOWLEDGE THIS MESSAGE: The interview was paused and has now resumed. Review the recent transcript context below and decide how to welcome back the respondent:
 
 RECENT TRANSCRIPT:
 ${transcriptContext || "(No recent messages)"}
@@ -1286,7 +1302,7 @@ INSTRUCTIONS:
                     content: [
                       {
                         type: "input_text",
-                        text: `[System: ${transitionInstruction}]`,
+                        text: `[ORCHESTRATOR - DO NOT ACKNOWLEDGE THIS MESSAGE: ${transitionInstruction}]`,
                       },
                     ],
                   },
