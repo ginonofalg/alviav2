@@ -378,7 +378,8 @@ export default function InterviewPage() {
           title: "Interview completed",
           description: "Thank you for participating!",
         });
-        navigate("/interview/complete");
+        // Navigate to review page instead of complete page
+        navigate(`/review/${sessionId}`);
         break;
 
       case "error":
@@ -593,7 +594,8 @@ export default function InterviewPage() {
       title: "Interview completed",
       description: "Thank you for participating!",
     });
-    navigate("/interview/complete");
+    // Navigate to review page instead of complete page
+    navigate(`/review/${sessionId}`);
   };
 
   if (isLoading) {

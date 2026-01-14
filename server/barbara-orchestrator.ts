@@ -21,7 +21,12 @@ export interface QuestionMetrics {
 }
 
 export interface BarbaraGuidance {
-  action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none";
+  action:
+    | "acknowledge_prior"
+    | "probe_followup"
+    | "suggest_next_question"
+    | "time_reminder"
+    | "none";
   message: string;
   confidence: number;
   reasoning: string;
@@ -44,7 +49,9 @@ interface BarbaraAnalysisInput {
   templateTone: string;
 }
 
-export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<BarbaraGuidance> {
+export async function analyzeWithBarbara(
+  input: BarbaraAnalysisInput,
+): Promise<BarbaraGuidance> {
   try {
     const systemPrompt = buildBarbaraSystemPrompt();
     const userPrompt = buildBarbaraUserPrompt(input);
@@ -63,7 +70,12 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      return { action: "none", message: "", confidence: 0, reasoning: "No response from Barbara" };
+      return {
+        action: "none",
+        message: "",
+        confidence: 0,
+        reasoning: "No response from Barbara",
+      };
     }
 
     const parsed = JSON.parse(content);
@@ -75,7 +87,12 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
     };
   } catch (error) {
     console.error("[Barbara] Error analyzing:", error);
-    return { action: "none", message: "", confidence: 0, reasoning: "Error during analysis" };
+    return {
+      action: "none",
+      message: "",
+      confidence: 0,
+      reasoning: "Error during analysis",
+    };
   }
 }
 
@@ -107,7 +124,10 @@ Be conservative - only intervene when there's a clear benefit. Most of the time,
 
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
   const transcriptSummary = input.transcriptLog
-    .map(entry => `[${entry.speaker.toUpperCase()}] (Q${entry.questionIndex + 1}): ${entry.text}`)
+    .map(
+      (entry) =>
+        `[${entry.speaker.toUpperCase()}] (Q${entry.questionIndex + 1}): ${entry.text}`,
+    )
     .join("\n");
 
   const previousQuestions = input.allQuestions
@@ -116,20 +136,30 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
     .join("\n");
 
   const currentQuestionResponses = input.transcriptLog
-    .filter(e => e.questionIndex === input.currentQuestionIndex && e.speaker === "respondent")
-    .map(e => e.text)
+    .filter(
+      (e) =>
+        e.questionIndex === input.currentQuestionIndex &&
+        e.speaker === "respondent",
+    )
+    .map((e) => e.text)
     .join(" ");
 
-  const wordCount = currentQuestionResponses.split(/\s+/).filter(w => w.length > 0).length;
-  const activeTimeSeconds = Math.round(input.questionMetrics.activeTimeMs / 1000);
+  const wordCount = currentQuestionResponses
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+  const activeTimeSeconds = Math.round(
+    input.questionMetrics.activeTimeMs / 1000,
+  );
 
   // Build summaries text from available previous question summaries
   const summariesText = input.previousQuestionSummaries
-    .filter(s => s && s.questionIndex < input.currentQuestionIndex)
-    .map(s => `Q${s.questionIndex + 1}: ${s.questionText}
+    .filter((s) => s && s.questionIndex < input.currentQuestionIndex)
+    .map(
+      (s) => `Q${s.questionIndex + 1}: ${s.questionText}
   Response Summary: ${s.respondentSummary}
   Key Insights: ${s.keyInsights.join("; ")}
-  Completeness: ${s.completenessAssessment}`)
+  Completeness: ${s.completenessAssessment}`,
+    )
     .join("\n\n");
 
   return `INTERVIEW CONTEXT:
@@ -184,7 +214,7 @@ export interface QuestionSummary {
 export interface TopicOverlapResult {
   hasOverlap: boolean;
   overlappingTopics: string[];
-  coverageLevel: 'mentioned' | 'partially_covered' | 'fully_covered';
+  coverageLevel: "mentioned" | "partially_covered" | "fully_covered";
   sourceQuestionIndex: number | null;
 }
 
@@ -194,7 +224,7 @@ const TOPIC_OVERLAP_TIMEOUT_MS = 3000;
 export async function detectTopicOverlap(
   upcomingQuestionText: string,
   completedSummaries: QuestionSummary[],
-  recentTranscript: TranscriptEntry[]
+  recentTranscript: TranscriptEntry[],
 ): Promise<TopicOverlapResult | null> {
   const hasCompletedSummaries = completedSummaries.length > 0;
   const hasRecentTranscript = recentTranscript.length > 0;
@@ -205,7 +235,9 @@ export async function detectTopicOverlap(
   }
 
   const startTime = Date.now();
-  console.log(`[TopicOverlap] Starting detection with ${completedSummaries.length} summaries, ${recentTranscript.length} transcript entries`);
+  console.log(
+    `[TopicOverlap] Starting detection with ${completedSummaries.length} summaries, ${recentTranscript.length} transcript entries`,
+  );
 
   try {
     const systemPrompt = `You analyze interview transcripts to detect topic overlap.
@@ -227,12 +259,18 @@ Coverage levels:
 If no meaningful overlap, return { "hasOverlap": false, "overlappingTopics": [], "coverageLevel": "mentioned", "sourceQuestionIndex": null }`;
 
     const summaryContext = completedSummaries
-      .filter(s => s.relevantToFutureQuestions && s.relevantToFutureQuestions.length > 0)
-      .map(s => `Q${s.questionIndex + 1} ("${s.questionText}"):\n  Topics: ${s.relevantToFutureQuestions.join(", ")}\n  Summary: ${s.respondentSummary}`)
+      .filter(
+        (s) =>
+          s.relevantToFutureQuestions && s.relevantToFutureQuestions.length > 0,
+      )
+      .map(
+        (s) =>
+          `Q${s.questionIndex + 1} ("${s.questionText}"):\n  Topics: ${s.relevantToFutureQuestions.join(", ")}\n  Summary: ${s.respondentSummary}`,
+      )
       .join("\n\n");
 
     const transcriptContext = recentTranscript
-      .map(e => `- "${e.text}"`)
+      .map((e) => `- "${e.text}"`)
       .join("\n");
 
     const userPrompt = `UPCOMING QUESTION:
@@ -244,16 +282,20 @@ ${transcriptContext ? `RECENT STATEMENTS FROM LAST QUESTION:\n${transcriptContex
 Does the upcoming question's topic overlap with what the respondent has already discussed?`;
 
     const promptLength = systemPrompt.length + userPrompt.length;
-    console.log(`[TopicOverlap] Calling OpenAI (model: ${BARBARA_MODEL}, prompt: ${promptLength} chars)`);
+    console.log(
+      `[TopicOverlap] Calling OpenAI (model: ${BARBARA_MODEL}, prompt: ${promptLength} chars)`,
+    );
 
     let timedOut = false;
-    const timeoutPromise = new Promise<null>(resolve => 
+    const timeoutPromise = new Promise<null>((resolve) =>
       setTimeout(() => {
         timedOut = true;
         const elapsed = Date.now() - startTime;
-        console.log(`[TopicOverlap] Detection timed out after ${elapsed}ms (limit: ${TOPIC_OVERLAP_TIMEOUT_MS}ms)`);
+        console.log(
+          `[TopicOverlap] Detection timed out after ${elapsed}ms (limit: ${TOPIC_OVERLAP_TIMEOUT_MS}ms)`,
+        );
         resolve(null);
-      }, TOPIC_OVERLAP_TIMEOUT_MS)
+      }, TOPIC_OVERLAP_TIMEOUT_MS),
     );
 
     const detectionPromise = openai.chat.completions.create({
@@ -263,32 +305,36 @@ Does the upcoming question's topic overlap with what the respondent has already 
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 200,
+      max_completion_tokens: 200,
       reasoning_effort: "low",
       verbosity: "low",
     } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const response = await Promise.race([detectionPromise, timeoutPromise]);
-    
+
     if (timedOut) {
       return null;
     }
 
     const elapsed = Date.now() - startTime;
-    
-    if (!response || !('choices' in response)) {
+
+    if (!response || !("choices" in response)) {
       console.log(`[TopicOverlap] No valid response after ${elapsed}ms`);
       return null;
     }
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      console.log(`[TopicOverlap] Empty content in response after ${elapsed}ms`);
+      console.log(
+        `[TopicOverlap] Empty content in response after ${elapsed}ms`,
+      );
       return null;
     }
 
     const parsed = JSON.parse(content) as TopicOverlapResult;
-    console.log(`[TopicOverlap] Completed in ${elapsed}ms - hasOverlap: ${parsed.hasOverlap}, topics: [${parsed.overlappingTopics.join(", ")}], coverage: ${parsed.coverageLevel}`);
+    console.log(
+      `[TopicOverlap] Completed in ${elapsed}ms - hasOverlap: ${parsed.hasOverlap}, topics: [${parsed.overlappingTopics.join(", ")}], coverage: ${parsed.coverageLevel}`,
+    );
     return parsed;
   } catch (error) {
     const elapsed = Date.now() - startTime;
@@ -305,25 +351,29 @@ export async function generateQuestionSummary(
   metrics: QuestionMetrics,
   templateObjective: string,
 ): Promise<QuestionSummary> {
-  const questionTranscript = transcript.filter(e => e.questionIndex === questionIndex);
-  
+  const questionTranscript = transcript.filter(
+    (e) => e.questionIndex === questionIndex,
+  );
+
   if (questionTranscript.length === 0) {
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 
   const respondentText = questionTranscript
-    .filter(e => e.speaker === "respondent")
-    .map(e => e.text)
+    .filter((e) => e.speaker === "respondent")
+    .map((e) => e.text)
     .join(" ");
 
-  const wordCount = respondentText.split(/\s+/).filter(w => w.length > 0).length;
+  const wordCount = respondentText
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
 
   if (wordCount < 10) {
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 
   const transcriptFormatted = questionTranscript
-    .map(e => `[${e.speaker.toUpperCase()}]: ${e.text}`)
+    .map((e) => `[${e.speaker.toUpperCase()}]: ${e.text}`)
     .join("\n");
 
   const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question.
@@ -357,7 +407,10 @@ Create a structured summary of the respondent's answer.`;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Summary generation timeout")), SUMMARY_TIMEOUT_MS);
+      setTimeout(
+        () => reject(new Error("Summary generation timeout")),
+        SUMMARY_TIMEOUT_MS,
+      );
     });
 
     const summaryPromise = openai.chat.completions.create({
@@ -386,20 +439,30 @@ Create a structured summary of the respondent's answer.`;
       questionText,
       respondentSummary: parsed.respondentSummary || "No summary available.",
       keyInsights: Array.isArray(parsed.keyInsights) ? parsed.keyInsights : [],
-      completenessAssessment: parsed.completenessAssessment || "Assessment unavailable.",
-      relevantToFutureQuestions: Array.isArray(parsed.relevantToFutureQuestions) ? parsed.relevantToFutureQuestions : [],
+      completenessAssessment:
+        parsed.completenessAssessment || "Assessment unavailable.",
+      relevantToFutureQuestions: Array.isArray(parsed.relevantToFutureQuestions)
+        ? parsed.relevantToFutureQuestions
+        : [],
       wordCount,
       turnCount: metrics.turnCount,
       activeTimeMs: metrics.activeTimeMs,
       timestamp: Date.now(),
     };
   } catch (error) {
-    console.error(`[Barbara] Error generating summary for Q${questionIndex + 1}:`, error);
+    console.error(
+      `[Barbara] Error generating summary for Q${questionIndex + 1}:`,
+      error,
+    );
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 }
 
-function createEmptySummary(questionIndex: number, questionText: string, metrics: QuestionMetrics): QuestionSummary {
+function createEmptySummary(
+  questionIndex: number,
+  questionText: string,
+  metrics: QuestionMetrics,
+): QuestionSummary {
   return {
     questionIndex,
     questionText,
