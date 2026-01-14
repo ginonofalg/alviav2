@@ -179,7 +179,97 @@ export interface QuestionSummary {
   timestamp: number;
 }
 
+export interface TopicOverlapResult {
+  hasOverlap: boolean;
+  overlappingTopics: string[];
+  coverageLevel: 'mentioned' | 'partially_covered' | 'fully_covered';
+  sourceQuestionIndex: number | null;
+}
+
 const SUMMARY_TIMEOUT_MS = 45000;
+const TOPIC_OVERLAP_TIMEOUT_MS = 1500;
+
+export async function detectTopicOverlap(
+  upcomingQuestionText: string,
+  completedSummaries: QuestionSummary[],
+  recentTranscript: TranscriptEntry[]
+): Promise<TopicOverlapResult | null> {
+  const hasCompletedSummaries = completedSummaries.length > 0;
+  const hasRecentTranscript = recentTranscript.length > 0;
+
+  if (!hasCompletedSummaries && !hasRecentTranscript) {
+    return null;
+  }
+
+  try {
+    const systemPrompt = `You analyze interview transcripts to detect topic overlap.
+Given an upcoming question and prior context (summaries and/or recent statements), determine if the respondent has already addressed the topic.
+
+Return JSON:
+{
+  "hasOverlap": boolean,
+  "overlappingTopics": string[], // 1-3 specific topics that overlap
+  "coverageLevel": "mentioned" | "partially_covered" | "fully_covered",
+  "sourceQuestionIndex": number | null // 0-based index, or null if from recent transcript
+}
+
+Coverage levels:
+- "mentioned": Topic came up briefly but wasn't explored
+- "partially_covered": Some aspects discussed but room for more depth
+- "fully_covered": Topic was thoroughly addressed
+
+If no meaningful overlap, return { "hasOverlap": false, "overlappingTopics": [], "coverageLevel": "mentioned", "sourceQuestionIndex": null }`;
+
+    const summaryContext = completedSummaries
+      .filter(s => s.relevantToFutureQuestions && s.relevantToFutureQuestions.length > 0)
+      .map(s => `Q${s.questionIndex + 1} ("${s.questionText}"):\n  Topics: ${s.relevantToFutureQuestions.join(", ")}\n  Summary: ${s.respondentSummary}`)
+      .join("\n\n");
+
+    const transcriptContext = recentTranscript
+      .map(e => `- "${e.text}"`)
+      .join("\n");
+
+    const userPrompt = `UPCOMING QUESTION:
+"${upcomingQuestionText}"
+
+${summaryContext ? `PRIOR QUESTION SUMMARIES:\n${summaryContext}\n` : ""}
+${transcriptContext ? `RECENT STATEMENTS FROM LAST QUESTION:\n${transcriptContext}` : ""}
+
+Does the upcoming question's topic overlap with what the respondent has already discussed?`;
+
+    const timeoutPromise = new Promise<null>(resolve => 
+      setTimeout(() => {
+        console.log("[TopicOverlap] Detection timed out after 1.5s");
+        resolve(null);
+      }, TOPIC_OVERLAP_TIMEOUT_MS)
+    );
+
+    const detectionPromise = openai.chat.completions.create({
+      model: BARBARA_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 200,
+    });
+
+    const response = await Promise.race([detectionPromise, timeoutPromise]);
+    
+    if (!response || !('choices' in response)) {
+      return null;
+    }
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content) as TopicOverlapResult;
+    return parsed;
+  } catch (error) {
+    console.error("[TopicOverlap] Detection failed:", error);
+    return null;
+  }
+}
 
 export async function generateQuestionSummary(
   questionIndex: number,

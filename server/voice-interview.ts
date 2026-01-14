@@ -5,10 +5,12 @@ import {
   analyzeWithBarbara,
   createEmptyMetrics,
   generateQuestionSummary,
+  detectTopicOverlap,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
   type QuestionSummary,
+  type TopicOverlapResult,
 } from "./barbara-orchestrator";
 import type {
   PersistedTranscriptEntry,
@@ -622,6 +624,20 @@ ${barbaraGuidance}`;
   return instructions;
 }
 
+function buildOverlapInstruction(result: TopicOverlapResult, questionText: string): string {
+  const topics = result.overlappingTopics.slice(0, 2).join(" and ");
+
+  switch (result.coverageLevel) {
+    case 'fully_covered':
+      return `The respondent already covered ${topics} thoroughly earlier. Acknowledge this and ask if they'd like to add anything new, or if they're ready to move on. The question for reference: "${questionText}"`;
+    case 'partially_covered':
+      return `The respondent touched on ${topics} earlier. Briefly acknowledge this connection and invite any additional thoughts, then read the question: "${questionText}"`;
+    case 'mentioned':
+    default:
+      return `The respondent mentioned ${topics} earlier. Briefly acknowledge this, then read the question: "${questionText}"`;
+  }
+}
+
 function buildResumeInstructions(state: InterviewState): string {
   const template = state.template;
   const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -1221,16 +1237,52 @@ INSTRUCTIONS:
             }),
           );
 
-          // Trigger Alvia to read the new question aloud
-          state.openaiWs.send(
-            JSON.stringify({
-              type: "response.create",
-              response: {
-                modalities: ["text", "audio"],
-                instructions: `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`,
-              },
-            }),
-          );
+          // Handle overlap detection and response asynchronously
+          (async () => {
+            let transitionInstruction = `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`;
+
+            // Gather context for overlap detection
+            const completedSummaries = state.questionSummaries.filter(
+              (s): s is QuestionSummary => s != null
+            );
+
+            // Get recent respondent statements from the question we just left (last 10 entries)
+            const recentTranscript = state.transcriptLog
+              .filter(e => e.questionIndex === previousIndex && e.speaker === "respondent")
+              .slice(-10);
+
+            // Only attempt detection if we have some context
+            if (completedSummaries.length > 0 || recentTranscript.length > 0) {
+              try {
+                const overlapResult = await detectTopicOverlap(
+                  nextQuestion?.questionText || "",
+                  completedSummaries,
+                  recentTranscript
+                );
+
+                if (overlapResult?.hasOverlap && overlapResult.overlappingTopics.length > 0) {
+                  transitionInstruction = buildOverlapInstruction(overlapResult, nextQuestion?.questionText || "");
+                  console.log(`[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`);
+                }
+              } catch (error) {
+                console.error("[TopicOverlap] Error during detection:", error);
+                // Continue with default instruction on error
+              }
+            }
+
+            // Trigger Alvia to read the new question aloud
+            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
+                    instructions: transitionInstruction,
+                  },
+                }),
+              );
+            }
+          })();
         }
 
         clientWs.send(
