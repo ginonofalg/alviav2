@@ -531,8 +531,10 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
             model: "gpt-4o-mini-transcribe",
           },
           turn_detection: {
-            type: "semantic_vad",
-            eagerness: "low",
+            type: "server_vad",
+            threshold: 0.7,
+            silence_duration_ms: 800,
+            prefix_padding_ms: 300,
             create_response: false,
             interrupt_response: true,
           },
