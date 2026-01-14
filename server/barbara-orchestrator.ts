@@ -2,6 +2,8 @@ import OpenAI from "openai";
 
 // Use gpt-4o-mini for fast, cost-effective analysis
 const BARBARA_MODEL = "gpt-4o-mini";
+// Use gpt-5-mini for summarisation with reasoning capabilities
+const BARBARA_SUMMARY_MODEL = "gpt-5-mini";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -357,14 +359,16 @@ Create a structured summary of the respondent's answer.`;
     });
 
     const summaryPromise = openai.chat.completions.create({
-      model: BARBARA_MODEL,
+      model: BARBARA_SUMMARY_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 600,
-    });
+      reasoning_effort: "low",
+      verbosity: "low",
+    } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
     const content = response.choices[0]?.message?.content;
