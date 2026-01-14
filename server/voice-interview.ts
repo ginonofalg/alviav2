@@ -1276,12 +1276,28 @@ INSTRUCTIONS:
             // Trigger Alvia to read the new question aloud
             console.log(`[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`);
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+              // Inject the transition instruction as a conversation item first
+              state.openaiWs.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "message",
+                    role: "user",
+                    content: [
+                      {
+                        type: "input_text",
+                        text: `[System: ${transitionInstruction}]`,
+                      },
+                    ],
+                  },
+                }),
+              );
+              // Then trigger the response
               state.openaiWs.send(
                 JSON.stringify({
                   type: "response.create",
                   response: {
                     modalities: ["text", "audio"],
-                    instructions: transitionInstruction,
                   },
                 }),
               );
