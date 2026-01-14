@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import crypto from "crypto";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { handleVoiceInterview } from "./voice-interview";
@@ -12,7 +13,8 @@ import {
   insertCollectionSchema,
   insertRespondentSchema,
   insertSessionSchema,
-  insertSegmentSchema
+  insertSegmentSchema,
+  type ReviewRatings
 } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -643,6 +645,215 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating segment:", error);
       res.status(500).json({ message: "Failed to update segment" });
+    }
+  });
+
+  // Post-interview review endpoints
+  const reviewRatingsSchema = z.object({
+    questionClarity: z.number().min(1).max(5).nullable().optional(),
+    alviaUnderstanding: z.number().min(1).max(5).nullable().optional(),
+    conversationFlow: z.number().min(1).max(5).nullable().optional(),
+    comfortLevel: z.number().min(1).max(5).nullable().optional(),
+    technicalQuality: z.number().min(1).max(5).nullable().optional(),
+    overallExperience: z.number().min(1).max(5).nullable().optional(),
+  });
+
+  const submitReviewSchema = z.object({
+    ratings: reviewRatingsSchema.optional(),
+    segmentComments: z.array(z.object({
+      segmentId: z.string().min(1),
+      comment: z.string().max(2000),
+    })).optional(),
+    closingComments: z.string().max(5000).optional(),
+    skipped: z.boolean().optional(),
+  });
+
+  // Helper to validate review access (authenticated user OR valid token)
+  async function validateReviewAccess(sessionId: string, tokenHeader: string | undefined, req: any): Promise<{ valid: boolean; session: any; error?: string; statusCode?: number }> {
+    const session = await storage.getSession(sessionId);
+    if (!session) {
+      return { valid: false, session: null, error: "Session not found", statusCode: 404 };
+    }
+
+    // Check if user is authenticated (staff access)
+    if (req.isAuthenticated?.()) {
+      return { valid: true, session };
+    }
+
+    // Check for token-based access
+    if (tokenHeader) {
+      const tokenHash = crypto.createHash("sha256").update(tokenHeader).digest("hex");
+      if (session.reviewAccessToken === tokenHash) {
+        if (session.reviewAccessExpiresAt && new Date() > session.reviewAccessExpiresAt) {
+          return { valid: false, session, error: "Review window has expired", statusCode: 410 };
+        }
+        return { valid: true, session };
+      }
+    }
+
+    // Check if review was already completed (no token needed for immediate review after interview)
+    if (session.reviewCompletedAt) {
+      return { valid: false, session, error: "Review already submitted", statusCode: 400 };
+    }
+
+    // Allow access for immediate review (within same session, no token required for fresh completed sessions)
+    if (session.status === "completed" && !session.reviewAccessToken) {
+      return { valid: true, session };
+    }
+
+    return { valid: false, session: null, error: "Unauthorized", statusCode: 401 };
+  }
+
+  // GET /api/sessions/:id/review - Fetch review data (requires auth or valid token)
+  app.get("/api/sessions/:id/review", async (req, res) => {
+    try {
+      const tokenHeader = req.headers["x-review-token"] as string | undefined;
+      const { valid, session, error, statusCode } = await validateReviewAccess(req.params.id, tokenHeader, req);
+      
+      if (!valid) {
+        return res.status(statusCode || 401).json({ message: error });
+      }
+
+      if (session.status !== "completed") {
+        return res.status(400).json({ message: "Session not completed" });
+      }
+
+      // Fetch full session with segments
+      const fullSession = await storage.getSessionWithSegments(req.params.id);
+
+      // Return limited data for respondents (exclude sensitive fields)
+      const safeSession = {
+        id: fullSession.id,
+        status: fullSession.status,
+        closingComments: fullSession.closingComments,
+        reviewRatings: fullSession.reviewRatings,
+        reviewCompletedAt: fullSession.reviewCompletedAt,
+        segments: fullSession.segments?.map((seg: any) => ({
+          id: seg.id,
+          questionId: seg.questionId,
+          transcript: seg.transcript,
+          summaryBullets: seg.summaryBullets,
+          respondentComment: seg.respondentComment,
+          question: seg.question ? {
+            questionText: seg.question.questionText,
+            questionType: seg.question.questionType,
+          } : null,
+        })),
+      };
+
+      res.json(safeSession);
+    } catch (error) {
+      console.error("Error fetching review data:", error);
+      res.status(500).json({ message: "Failed to fetch review data" });
+    }
+  });
+
+  // POST /api/sessions/:id/review - Submit review (requires auth or valid token)
+  app.post("/api/sessions/:id/review", async (req, res) => {
+    try {
+      const parseResult = submitReviewSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const tokenHeader = req.headers["x-review-token"] as string | undefined;
+      const { valid, session, error, statusCode } = await validateReviewAccess(req.params.id, tokenHeader, req);
+      
+      if (!valid) {
+        return res.status(statusCode || 401).json({ message: error });
+      }
+
+      // Already completed check
+      if (session.reviewCompletedAt) {
+        return res.status(400).json({ message: "Review already submitted" });
+      }
+
+      const { ratings, segmentComments, closingComments, skipped } = parseResult.data;
+
+      // Update segment comments with error handling
+      const failedUpdates: string[] = [];
+      if (segmentComments && !skipped) {
+        for (const { segmentId, comment } of segmentComments) {
+          try {
+            await storage.updateSegmentComment(segmentId, comment);
+          } catch (err) {
+            console.error(`Failed to update segment ${segmentId}:`, err);
+            failedUpdates.push(segmentId);
+          }
+        }
+      }
+
+      if (failedUpdates.length > 0) {
+        return res.status(500).json({ 
+          message: "Some comments failed to save", 
+          failedSegments: failedUpdates 
+        });
+      }
+
+      // Update session with review data - clear token after submission
+      const updated = await storage.submitSessionReview(req.params.id, {
+        reviewRatings: skipped ? null : (ratings as ReviewRatings),
+        closingComments: skipped ? null : closingComments,
+        reviewSkipped: skipped ?? false,
+        reviewCompletedAt: new Date(),
+        reviewAccessToken: null,
+        reviewAccessExpiresAt: null,
+      });
+
+      res.json({ success: true, session: updated });
+    } catch (error) {
+      console.error("Error submitting review:", error);
+      res.status(500).json({ message: "Failed to submit review" });
+    }
+  });
+
+  // POST /api/sessions/:id/review/generate-link - Generate return link
+  app.post("/api/sessions/:id/review/generate-link", async (req, res) => {
+    try {
+      const session = await storage.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      // Generate random token
+      const token = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+      await storage.setReviewAccessToken(session.id, tokenHash, expiresAt);
+
+      const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+      res.json({
+        token,
+        expiresAt,
+        url: `${baseUrl}/review/${token}`,
+      });
+    } catch (error) {
+      console.error("Error generating review link:", error);
+      res.status(500).json({ message: "Failed to generate review link" });
+    }
+  });
+
+  // GET /api/review/:token - Validate token and get session ID
+  app.get("/api/review/:token", async (req, res) => {
+    try {
+      const tokenHash = crypto.createHash("sha256").update(req.params.token).digest("hex");
+      const session = await storage.getSessionByReviewToken(tokenHash);
+
+      if (!session) {
+        return res.status(404).json({ message: "Invalid or expired link" });
+      }
+
+      if (session.reviewAccessExpiresAt && new Date() > session.reviewAccessExpiresAt) {
+        return res.status(410).json({ message: "This review link has expired" });
+      }
+
+      res.json({ sessionId: session.id });
+    } catch (error) {
+      console.error("Error validating review token:", error);
+      res.status(500).json({ message: "Failed to validate token" });
     }
   });
 

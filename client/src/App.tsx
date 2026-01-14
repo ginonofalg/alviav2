@@ -27,6 +27,8 @@ import SettingsPage from "@/pages/settings";
 import InterviewConsentPage from "@/pages/interview-consent";
 import InterviewPage from "@/pages/interview";
 import InterviewCompletePage from "@/pages/interview-complete";
+import InterviewReviewPage from "@/pages/interview-review";
+import ReviewTokenPage from "@/pages/review-token";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -111,6 +113,12 @@ function Router() {
       <Route path="/join/:collectionId" component={InterviewConsentPage} />
       <Route path="/interview/complete" component={InterviewCompletePage} />
       <Route path="/interview/:sessionId" component={InterviewPage} />
+      <Route path="/review/:sessionId">{(params) => {
+        if (params.sessionId && params.sessionId.length === 64) {
+          return <ReviewTokenPage />;
+        }
+        return <InterviewReviewPage />;
+      }}</Route>
       <Route>
         {isAuthenticated ? <AuthenticatedRoutes /> : <LandingPage />}
       </Route>

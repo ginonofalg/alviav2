@@ -146,6 +146,12 @@ export const interviewSessions = pgTable("interview_sessions", {
   // Resume token for browser recovery
   resumeTokenHash: text("resume_token_hash"),
   resumeTokenExpiresAt: timestamp("resume_token_expires_at"),
+  // Post-interview review fields
+  reviewCompletedAt: timestamp("review_completed_at"),
+  reviewAccessToken: text("review_access_token"),
+  reviewAccessExpiresAt: timestamp("review_access_expires_at"),
+  reviewSkipped: boolean("review_skipped").default(false),
+  reviewRatings: jsonb("review_ratings"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -165,6 +171,7 @@ export const segments = pgTable("segments", {
   extractedValues: jsonb("extracted_values"),
   confidence: integer("confidence"),
   qualityFlags: text("quality_flags").array(),
+  respondentComment: text("respondent_comment"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -352,3 +359,24 @@ export type QuestionSummary = {
   activeTimeMs: number;
   timestamp: number;
 };
+
+// Post-interview review types
+export type ReviewRatings = {
+  questionClarity: number | null;
+  alviaUnderstanding: number | null;
+  conversationFlow: number | null;
+  comfortLevel: number | null;
+  technicalQuality: number | null;
+  overallExperience: number | null;
+};
+
+export const RATING_DIMENSIONS = [
+  { key: "questionClarity", label: "Question Clarity", description: "Were the interview questions clear and easy to understand?" },
+  { key: "alviaUnderstanding", label: "Alvia Understanding", description: "Did Alvia understand your responses well?" },
+  { key: "conversationFlow", label: "Conversation Flow", description: "How natural did the conversation feel?" },
+  { key: "comfortLevel", label: "Comfort Level", description: "How comfortable were you during the interview?" },
+  { key: "technicalQuality", label: "Technical Quality", description: "How was the audio and connection quality?" },
+  { key: "overallExperience", label: "Overall Experience", description: "Overall, how was your interview experience?" },
+] as const;
+
+export type RatingDimensionKey = typeof RATING_DIMENSIONS[number]["key"];

@@ -6,7 +6,7 @@ import {
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
   type InterviewSession, type InsertSession, type Segment, type InsertSegment,
   type WorkspaceMember, type PersistedTranscriptEntry, type PersistedBarbaraGuidance,
-  type PersistedQuestionState, type QuestionSummary
+  type PersistedQuestionState, type QuestionSummary, type ReviewRatings
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -77,6 +77,17 @@ export interface IStorage {
   persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined>;
   setResumeToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void>;
   getSessionByResumeToken(tokenHash: string): Promise<InterviewSession | undefined>;
+  
+  // Review methods
+  updateSegmentComment(segmentId: string, comment: string): Promise<Segment | undefined>;
+  setReviewAccessToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void>;
+  getSessionByReviewToken(tokenHash: string): Promise<InterviewSession | undefined>;
+  submitSessionReview(id: string, data: {
+    reviewRatings?: ReviewRatings;
+    closingComments?: string;
+    reviewSkipped?: boolean;
+    reviewCompletedAt?: Date;
+  }): Promise<InterviewSession | undefined>;
   
   // Segments
   getSegment(id: string): Promise<Segment | undefined>;
@@ -415,6 +426,43 @@ export class DatabaseStorage implements IStorage {
       .from(interviewSessions)
       .where(eq(interviewSessions.resumeTokenHash, tokenHash));
     return session;
+  }
+
+  // Review methods
+  async updateSegmentComment(segmentId: string, comment: string): Promise<Segment | undefined> {
+    const [updated] = await db.update(segments)
+      .set({ respondentComment: comment })
+      .where(eq(segments.id, segmentId))
+      .returning();
+    return updated;
+  }
+
+  async setReviewAccessToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await db.update(interviewSessions)
+      .set({ reviewAccessToken: tokenHash, reviewAccessExpiresAt: expiresAt })
+      .where(eq(interviewSessions.id, sessionId));
+  }
+
+  async getSessionByReviewToken(tokenHash: string): Promise<InterviewSession | undefined> {
+    const [session] = await db.select()
+      .from(interviewSessions)
+      .where(eq(interviewSessions.reviewAccessToken, tokenHash));
+    return session;
+  }
+
+  async submitSessionReview(id: string, data: {
+    reviewRatings?: ReviewRatings | null;
+    closingComments?: string | null;
+    reviewSkipped?: boolean;
+    reviewCompletedAt?: Date;
+    reviewAccessToken?: string | null;
+    reviewAccessExpiresAt?: Date | null;
+  }): Promise<InterviewSession | undefined> {
+    const [updated] = await db.update(interviewSessions)
+      .set(data)
+      .where(eq(interviewSessions.id, id))
+      .returning();
+    return updated;
   }
 
   // Segments
