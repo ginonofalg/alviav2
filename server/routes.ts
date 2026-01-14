@@ -718,27 +718,69 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Session not completed" });
       }
 
-      // Fetch full session with segments
-      const fullSession = await storage.getSessionWithSegments(req.params.id);
+      // Fetch full session
+      const fullSession = await storage.getSession(req.params.id);
+      if (!fullSession) {
+        return res.status(404).json({ message: "Session not found" });
+      }
 
-      // Return limited data for respondents (exclude sensitive fields)
+      // Get the collection to find template and questions
+      const collection = await storage.getCollection(fullSession.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      // Get questions for this template
+      const questions = await storage.getQuestionsByTemplate(collection.templateId);
+      
+      // Build per-question data from session's stored transcript and summaries
+      const liveTranscript = (fullSession.liveTranscript || []) as Array<{ speaker: string; text: string; timestamp: number; questionIndex: number }>;
+      const questionSummaries = (fullSession.questionSummaries || []) as Array<{ questionIndex: number; respondentSummary: string; keyInsights: string[] }>;
+
+      // Group transcript entries by question index
+      const transcriptByQuestion = new Map<number, string>();
+      for (const entry of liveTranscript) {
+        const existing = transcriptByQuestion.get(entry.questionIndex) || "";
+        const speaker = entry.speaker === "alvia" ? "Alvia" : "You";
+        transcriptByQuestion.set(entry.questionIndex, existing + `${speaker}: ${entry.text}\n\n`);
+      }
+
+      // Map summaries by question index
+      const summaryByQuestion = new Map<number, { respondentSummary: string; keyInsights: string[] }>();
+      for (const summary of questionSummaries) {
+        summaryByQuestion.set(summary.questionIndex, {
+          respondentSummary: summary.respondentSummary,
+          keyInsights: summary.keyInsights,
+        });
+      }
+
+      // Get existing review comments
+      const reviewComments = (fullSession.reviewComments || {}) as Record<string, string>;
+
+      // Build segments from questions with their transcript and summary data
+      const segments = questions.map((q, index) => {
+        const summary = summaryByQuestion.get(index);
+        return {
+          id: `q-${index}`,
+          questionId: q.id,
+          transcript: transcriptByQuestion.get(index) || null,
+          summaryBullets: summary?.keyInsights || null,
+          respondentComment: reviewComments[String(index)] || null,
+          question: {
+            questionText: q.questionText,
+            questionType: q.questionType,
+          },
+        };
+      });
+
+      // Return limited data for respondents
       const safeSession = {
         id: fullSession.id,
         status: fullSession.status,
         closingComments: fullSession.closingComments,
         reviewRatings: fullSession.reviewRatings,
         reviewCompletedAt: fullSession.reviewCompletedAt,
-        segments: fullSession.segments?.map((seg: any) => ({
-          id: seg.id,
-          questionId: seg.questionId,
-          transcript: seg.transcript,
-          summaryBullets: seg.summaryBullets,
-          respondentComment: seg.respondentComment,
-          question: seg.question ? {
-            questionText: seg.question.questionText,
-            questionType: seg.question.questionType,
-          } : null,
-        })),
+        segments,
       };
 
       res.json(safeSession);
@@ -771,30 +813,22 @@ export async function registerRoutes(
 
       const { ratings, segmentComments, closingComments, skipped } = parseResult.data;
 
-      // Update segment comments with error handling
-      const failedUpdates: string[] = [];
+      // Convert segment comments to reviewComments format (questionIndex -> comment)
+      let reviewComments: Record<string, string> | null = null;
       if (segmentComments && !skipped) {
+        reviewComments = {};
         for (const { segmentId, comment } of segmentComments) {
-          try {
-            await storage.updateSegmentComment(segmentId, comment);
-          } catch (err) {
-            console.error(`Failed to update segment ${segmentId}:`, err);
-            failedUpdates.push(segmentId);
-          }
+          // segmentId is in format "q-{index}"
+          const indexStr = segmentId.replace("q-", "");
+          reviewComments[indexStr] = comment;
         }
-      }
-
-      if (failedUpdates.length > 0) {
-        return res.status(500).json({ 
-          message: "Some comments failed to save", 
-          failedSegments: failedUpdates 
-        });
       }
 
       // Update session with review data - clear token after submission
       const updated = await storage.submitSessionReview(req.params.id, {
         reviewRatings: skipped ? null : (ratings as ReviewRatings),
         closingComments: skipped ? null : closingComments,
+        reviewComments: skipped ? null : reviewComments,
         reviewSkipped: skipped ?? false,
         reviewCompletedAt: new Date(),
         reviewAccessToken: null,

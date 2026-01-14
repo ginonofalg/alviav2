@@ -1,0 +1,908 @@
+Post-Interview Review Feature - Full Implementation Plan
+
+  Overview
+
+  After completing an interview, respondents should see a review page where they can:
+  - View the full transcript per question
+  - See AI-generated summaries for each response
+  - Add clarifying comments per question
+  - Rate the interview across 6 dimensions
+  - Provide final closing comments
+  - Optionally return later via a time-limited link (48 hours)
+
+  Design decisions:
+  - Review is optional - respondents can skip entirely
+  - Per-question comments (not inline text annotations)
+  - 48-hour time-limited return link for reviewing later
+
+  ---
+  1. Schema Changes
+
+  File: shared/schema.ts
+
+  1.1 Add fields to interviewSessions table (around line 128):
+
+  export const interviewSessions = pgTable("interview_sessions", {
+    // ... existing fields ...
+
+    // ADD THESE NEW FIELDS:
+    reviewCompletedAt: timestamp("review_completed_at"),
+    reviewAccessToken: text("review_access_token"),           // Hashed token for return access
+    reviewAccessExpiresAt: timestamp("review_access_expires_at"),
+    reviewSkipped: boolean("review_skipped").default(false),
+    reviewRatings: jsonb("review_ratings"),                   // Type: ReviewRatings
+  });
+
+  1.2 Add field to segments table (around line 155):
+
+  export const segments = pgTable("segments", {
+    // ... existing fields ...
+
+    // ADD THIS NEW FIELD:
+    respondentComment: text("respondent_comment"),
+  });
+
+  1.3 Add new types (at end of file, around line 360):
+
+  // Review ratings type - 6 dimensions with 1-5 scale
+  export type ReviewRatings = {
+    questionClarity: number | null;      // 1-5: Were questions clear?
+    alviaUnderstanding: number | null;   // 1-5: Did AI understand responses?
+    conversationFlow: number | null;     // 1-5: Natural conversation flow?
+    comfortLevel: number | null;         // 1-5: Comfort during interview?
+    technicalQuality: number | null;     // 1-5: Audio/connection quality?
+    overallExperience: number | null;    // 1-5: Overall satisfaction?
+  };
+
+  // Rating dimension metadata for UI rendering
+  export const RATING_DIMENSIONS = [
+    { key: "questionClarity", label: "Question Clarity", description: "Were the interview questions clear and easy to understand?" },
+    { key: "alviaUnderstanding", label: "Alvia Understanding", description: "Did Alvia understand your responses well?" },
+    { key: "conversationFlow", label: "Conversation Flow", description: "How natural did the conversation feel?" },
+    { key: "comfortLevel", label: "Comfort Level", description: "How comfortable were you during the interview?" },
+    { key: "technicalQuality", label: "Technical Quality", description: "How was the audio and connection quality?" },
+    { key: "overallExperience", label: "Overall Experience", description: "Overall, how was your interview experience?" },
+  ] as const;
+
+  export type RatingDimensionKey = typeof RATING_DIMENSIONS[number]["key"];
+
+  1.4 Apply schema changes:
+
+  npm run db:push
+
+  ---
+  2. Storage Layer Changes
+
+  File: server/storage.ts
+
+  2.1 Add to IStorage interface (around line 60):
+
+  // Review-related methods
+  getSessionForReview(id: string): Promise<{
+    session: InterviewSession;
+    segments: Array<Segment & { question: Question }>;
+  } | undefined>;
+  updateSegmentComment(segmentId: string, comment: string): Promise<Segment | undefined>;
+  setReviewAccessToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void>;
+  getSessionByReviewToken(tokenHash: string): Promise<InterviewSession | undefined>;
+  submitSessionReview(id: string, data: {
+    reviewRatings?: ReviewRatings;
+    closingComments?: string;
+    reviewSkipped?: boolean;
+    reviewCompletedAt?: Date;
+  }): Promise<InterviewSession | undefined>;
+
+  2.2 Implement methods in DatabaseStorage class:
+
+  async getSessionForReview(id: string) {
+    const session = await this.getSession(id);
+    if (!session) return undefined;
+
+    const segmentsWithQuestions = await db
+      .select()
+      .from(segments)
+      .leftJoin(questions, eq(segments.questionId, questions.id))
+      .where(eq(segments.sessionId, id))
+      .orderBy(questions.orderIndex);
+
+    return {
+      session,
+      segments: segmentsWithQuestions.map(row => ({
+        ...row.segments,
+        question: row.questions!,
+      })),
+    };
+  }
+
+  async updateSegmentComment(segmentId: string, comment: string) {
+    const [updated] = await db
+      .update(segments)
+      .set({ respondentComment: comment })
+      .where(eq(segments.id, segmentId))
+      .returning();
+    return updated;
+  }
+
+  async setReviewAccessToken(sessionId: string, tokenHash: string, expiresAt: Date) {
+    await db
+      .update(interviewSessions)
+      .set({
+        reviewAccessToken: tokenHash,
+        reviewAccessExpiresAt: expiresAt
+      })
+      .where(eq(interviewSessions.id, sessionId));
+  }
+
+  async getSessionByReviewToken(tokenHash: string) {
+    const [session] = await db
+      .select()
+      .from(interviewSessions)
+      .where(eq(interviewSessions.reviewAccessToken, tokenHash));
+    return session;
+  }
+
+  async submitSessionReview(id: string, data: {
+    reviewRatings?: ReviewRatings;
+    closingComments?: string;
+    reviewSkipped?: boolean;
+    reviewCompletedAt?: Date;
+  }) {
+    const [updated] = await db
+      .update(interviewSessions)
+      .set(data)
+      .where(eq(interviewSessions.id, id))
+      .returning();
+    return updated;
+  }
+
+  ---
+  3. API Endpoints
+
+  File: server/routes.ts
+
+  3.1 Add Zod schemas (near other schemas around line 30):
+
+  import { ReviewRatings } from "@shared/schema";
+  import crypto from "crypto";
+
+  const reviewRatingsSchema = z.object({
+    questionClarity: z.number().min(1).max(5).nullable().optional(),
+    alviaUnderstanding: z.number().min(1).max(5).nullable().optional(),
+    conversationFlow: z.number().min(1).max(5).nullable().optional(),
+    comfortLevel: z.number().min(1).max(5).nullable().optional(),
+    technicalQuality: z.number().min(1).max(5).nullable().optional(),
+    overallExperience: z.number().min(1).max(5).nullable().optional(),
+  });
+
+  const submitReviewSchema = z.object({
+    ratings: reviewRatingsSchema.optional(),
+    segmentComments: z.array(z.object({
+      segmentId: z.string().min(1),
+      comment: z.string().max(2000),
+    })).optional(),
+    closingComments: z.string().max(5000).optional(),
+    skipped: z.boolean().optional(),
+  });
+
+  3.2 Add endpoints (after existing session routes):
+
+  // GET /api/sessions/:id/review - Fetch review data
+  app.get("/api/sessions/:id/review", async (req, res) => {
+    const { id } = req.params;
+
+    const data = await storage.getSessionForReview(id);
+    if (!data) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (data.session.status !== "completed") {
+      return res.status(400).json({ error: "Session not completed" });
+    }
+
+    res.json(data);
+  });
+
+  // POST /api/sessions/:id/review - Submit review
+  app.post("/api/sessions/:id/review", async (req, res) => {
+    const { id } = req.params;
+    const parsed = submitReviewSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.message });
+    }
+
+    const session = await storage.getSession(id);
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const { ratings, segmentComments, closingComments, skipped } = parsed.data;
+
+    // Update segment comments
+    if (segmentComments) {
+      for (const { segmentId, comment } of segmentComments) {
+        await storage.updateSegmentComment(segmentId, comment);
+      }
+    }
+
+    // Update session with review data
+    const updated = await storage.submitSessionReview(id, {
+      reviewRatings: ratings as ReviewRatings,
+      closingComments,
+      reviewSkipped: skipped ?? false,
+      reviewCompletedAt: new Date(),
+    });
+
+    res.json({ success: true, session: updated });
+  });
+
+  // POST /api/sessions/:id/review/generate-link - Generate return link
+  app.post("/api/sessions/:id/review/generate-link", async (req, res) => {
+    const { id } = req.params;
+
+    const session = await storage.getSession(id);
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    // Generate random token
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+    await storage.setReviewAccessToken(id, tokenHash, expiresAt);
+
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+    res.json({
+      token,
+      expiresAt,
+      url: `${baseUrl}/review/${token}`,
+    });
+  });
+
+  // GET /api/review/:token - Validate token and get session ID
+  app.get("/api/review/:token", async (req, res) => {
+    const { token } = req.params;
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const session = await storage.getSessionByReviewToken(tokenHash);
+
+    if (!session) {
+      return res.status(404).json({ error: "Invalid or expired link" });
+    }
+
+    if (session.reviewAccessExpiresAt && new Date() > session.reviewAccessExpiresAt) {
+      return res.status(410).json({ error: "This review link has expired" });
+    }
+
+    res.json({ sessionId: session.id });
+  });
+
+  ---
+  4. UI Components
+
+  4.1 Create client/src/components/review/StarRating.tsx:
+
+  import { cn } from "@/lib/utils";
+
+  interface StarRatingProps {
+    value: number | null;
+    onChange: (value: number) => void;
+    max?: number;
+    label?: string;
+    description?: string;
+    disabled?: boolean;
+  }
+
+  export function StarRating({
+    value,
+    onChange,
+    max = 5,
+    label,
+    description,
+    disabled = false,
+  }: StarRatingProps) {
+    return (
+      <div className="space-y-2">
+        {label && (
+          <div>
+            <div className="text-sm font-medium">{label}</div>
+            {description && (
+              <div className="text-xs text-muted-foreground">{description}</div>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {[...Array(max)].map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(i + 1)}
+                className={cn(
+                  "w-6 h-6 rounded-full border-2 transition-colors",
+                  value !== null && i < value
+                    ? "bg-primary border-primary"
+                    : "bg-background border-muted-foreground/30 hover:border-primary/50",
+                  disabled && "cursor-not-allowed opacity-50"
+                )}
+                aria-label={`Rate ${i + 1} out of ${max}`}
+              />
+            ))}
+          </div>
+          {value !== null && (
+            <span className="text-sm text-muted-foreground">{value}/{max}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  4.2 Create client/src/components/review/QuestionReviewCard.tsx:
+
+  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  import { Badge } from "@/components/ui/badge";
+  import { Textarea } from "@/components/ui/textarea";
+  import { Label } from "@/components/ui/label";
+  import { ChevronDown, MessageSquare, Quote } from "lucide-react";
+  import { useState } from "react";
+
+  interface QuestionReviewCardProps {
+    questionNumber: number;
+    questionText: string;
+    questionType: string;
+    transcript: string | null;
+    summaryBullets: string[] | null;
+    comment: string;
+    onCommentChange: (value: string) => void;
+  }
+
+  export function QuestionReviewCard({
+    questionNumber,
+    questionText,
+    questionType,
+    transcript,
+    summaryBullets,
+    comment,
+    onCommentChange,
+  }: QuestionReviewCardProps) {
+    const [showTranscript, setShowTranscript] = useState(false);
+
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Q{questionNumber}</Badge>
+              <Badge variant="secondary" className="text-xs">
+                {questionType}
+              </Badge>
+            </div>
+          </div>
+          <CardTitle className="text-base font-medium mt-2">
+            {questionText}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Summary */}
+          {summaryBullets && summaryBullets.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Summary</div>
+              <ul className="space-y-1">
+                {summaryBullets.map((bullet, i) => (
+                  <li key={i} className="text-sm flex items-start gap-2">
+                    <span className="text-primary mt-1">•</span>
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Transcript (collapsible) */}
+          {transcript && (
+            <details className="group">
+              <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
+                <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+                View full transcript
+              </summary>
+              <div className="mt-2 p-3 bg-muted/50 rounded-lg text-sm whitespace-pre-wrap">
+                {transcript}
+              </div>
+            </details>
+          )}
+
+          {/* Comment input */}
+          <div className="space-y-2 pt-2 border-t">
+            <Label htmlFor={`comment-${questionNumber}`} className="text-sm flex items-center gap-2">
+              <MessageSquare className="w-4 h-4" />
+              Add a comment (optional)
+            </Label>
+            <Textarea
+              id={`comment-${questionNumber}`}
+              placeholder="Clarify meaning, correct errors, or add context..."
+              value={comment}
+              onChange={(e) => onCommentChange(e.target.value)}
+              className="min-h-[80px] resize-none"
+            />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  4.3 Create client/src/components/review/RatingSection.tsx:
+
+  import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+  import { StarRating } from "./StarRating";
+  import { RATING_DIMENSIONS, ReviewRatings, RatingDimensionKey } from "@shared/schema";
+
+  interface RatingSectionProps {
+    ratings: ReviewRatings;
+    onChange: (key: RatingDimensionKey, value: number) => void;
+  }
+
+  export function RatingSection({ ratings, onChange }: RatingSectionProps) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Rate Your Experience</CardTitle>
+          <CardDescription>
+            Help us improve by rating different aspects of your interview (optional)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {RATING_DIMENSIONS.map((dim) => (
+              <StarRating
+                key={dim.key}
+                label={dim.label}
+                description={dim.description}
+                value={ratings[dim.key as RatingDimensionKey]}
+                onChange={(value) => onChange(dim.key as RatingDimensionKey, value)}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  4.4 Create client/src/components/review/ReviewLaterModal.tsx:
+
+  import { useState } from "react";
+  import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+  import { Button } from "@/components/ui/button";
+  import { Input } from "@/components/ui/input";
+  import { Copy, Check, Clock } from "lucide-react";
+  import { useToast } from "@/hooks/use-toast";
+  import { apiRequest } from "@/lib/queryClient";
+
+  interface ReviewLaterModalProps {
+    sessionId: string;
+    isOpen: boolean;
+    onClose: () => void;
+  }
+
+  export function ReviewLaterModal({ sessionId, isOpen, onClose }: ReviewLaterModalProps) {
+    const [link, setLink] = useState<string | null>(null);
+    const [expiresAt, setExpiresAt] = useState<Date | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const { toast } = useToast();
+
+    const generateLink = async () => {
+      setLoading(true);
+      try {
+        const response = await apiRequest("POST", `/api/sessions/${sessionId}/review/generate-link`);
+        const data = await response.json();
+        setLink(data.url);
+        setExpiresAt(new Date(data.expiresAt));
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to generate review link",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const copyLink = async () => {
+      if (!link) return;
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      toast({ title: "Link copied to clipboard" });
+      setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Review Later</DialogTitle>
+            <DialogDescription>
+              Generate a link to return and complete your review within 48 hours.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            {!link ? (
+              <Button onClick={generateLink} disabled={loading} className="w-full">
+                {loading ? "Generating..." : "Generate Review Link"}
+              </Button>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <Input value={link} readOnly className="font-mono text-sm" />
+                  <Button variant="outline" size="icon" onClick={copyLink}>
+                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+
+                {expiresAt && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="w-4 h-4" />
+                    Expires: {expiresAt.toLocaleString()}
+                  </div>
+                )}
+
+                <p className="text-sm text-muted-foreground">
+                  Save this link - you can return within 48 hours to complete your review.
+                </p>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  ---
+  5. Main Review Page
+
+  Create client/src/pages/interview-review.tsx:
+
+  import { useState, useEffect } from "react";
+  import { useParams, useLocation } from "wouter";
+  import { useQuery, useMutation } from "@tanstack/react-query";
+  import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+  import { Button } from "@/components/ui/button";
+  import { Textarea } from "@/components/ui/textarea";
+  import { Label } from "@/components/ui/label";
+  import { Skeleton } from "@/components/ui/skeleton";
+  import { ArrowLeft, Clock, SkipForward, MessageSquare } from "lucide-react";
+  import { useToast } from "@/hooks/use-toast";
+  import { apiRequest } from "@/lib/queryClient";
+  import { QuestionReviewCard } from "@/components/review/QuestionReviewCard";
+  import { RatingSection } from "@/components/review/RatingSection";
+  import { ReviewLaterModal } from "@/components/review/ReviewLaterModal";
+  import { ReviewRatings, RatingDimensionKey, RATING_DIMENSIONS } from "@shared/schema";
+
+  export default function InterviewReviewPage() {
+    const { sessionId } = useParams<{ sessionId: string }>();
+    const [, navigate] = useLocation();
+    const { toast } = useToast();
+
+    const [showLaterModal, setShowLaterModal] = useState(false);
+    const [ratings, setRatings] = useState<ReviewRatings>({
+      questionClarity: null,
+      alviaUnderstanding: null,
+      conversationFlow: null,
+      comfortLevel: null,
+      technicalQuality: null,
+      overallExperience: null,
+    });
+    const [segmentComments, setSegmentComments] = useState<Record<string, string>>({});
+    const [closingComments, setClosingComments] = useState("");
+
+    // Fetch review data
+    const { data, isLoading, error } = useQuery({
+      queryKey: ["/api/sessions", sessionId, "review"],
+      queryFn: async () => {
+        const response = await apiRequest("GET", `/api/sessions/${sessionId}/review`);
+        return response.json();
+      },
+      enabled: !!sessionId,
+    });
+
+    // Initialize comments from existing data
+    useEffect(() => {
+      if (data?.segments) {
+        const comments: Record<string, string> = {};
+        data.segments.forEach((seg: any) => {
+          comments[seg.id] = seg.respondentComment || "";
+        });
+        setSegmentComments(comments);
+      }
+      if (data?.session?.closingComments) {
+        setClosingComments(data.session.closingComments);
+      }
+      if (data?.session?.reviewRatings) {
+        setRatings(data.session.reviewRatings);
+      }
+    }, [data]);
+
+    // Submit mutation
+    const submitMutation = useMutation({
+      mutationFn: async (skipped: boolean) => {
+        const response = await apiRequest("POST", `/api/sessions/${sessionId}/review`, {
+          ratings: skipped ? undefined : ratings,
+          segmentComments: skipped ? undefined : Object.entries(segmentComments)
+            .filter(([_, comment]) => comment.trim())
+            .map(([segmentId, comment]) => ({ segmentId, comment })),
+          closingComments: skipped ? undefined : closingComments,
+          skipped,
+        });
+        return response.json();
+      },
+      onSuccess: () => {
+        toast({ title: "Review submitted", description: "Thank you for your feedback!" });
+        navigate("/interview/complete");
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to submit review", variant: "destructive" });
+      },
+    });
+
+    const handleRatingChange = (key: RatingDimensionKey, value: number) => {
+      setRatings(prev => ({ ...prev, [key]: value }));
+    };
+
+    const handleCommentChange = (segmentId: string, comment: string) => {
+      setSegmentComments(prev => ({ ...prev, [segmentId]: comment }));
+    };
+
+    if (isLoading) {
+      return (
+        <div className="p-8 max-w-3xl mx-auto space-y-6">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      );
+    }
+
+    if (error || !data) {
+      return (
+        <div className="p-8 max-w-3xl mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">Unable to load review data.</p>
+              <Button variant="outline" className="mt-4" onClick={() => navigate("/")}>
+                Return Home
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    const { session, segments } = data;
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="p-8 max-w-3xl mx-auto space-y-6">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Review Your Interview</h1>
+              <p className="text-muted-foreground mt-1">
+                Review your responses and provide feedback (optional)
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowLaterModal(true)}>
+                <Clock className="w-4 h-4 mr-2" />
+                Review Later
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => submitMutation.mutate(true)}
+                disabled={submitMutation.isPending}
+              >
+                <SkipForward className="w-4 h-4 mr-2" />
+                Skip Review
+              </Button>
+            </div>
+          </div>
+
+          {/* Question Cards */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium">Your Responses</h2>
+            {segments.map((segment: any, index: number) => (
+              <QuestionReviewCard
+                key={segment.id}
+                questionNumber={index + 1}
+                questionText={segment.question?.questionText || "Question"}
+                questionType={segment.question?.questionType || "open"}
+                transcript={segment.transcript}
+                summaryBullets={segment.summaryBullets}
+                comment={segmentComments[segment.id] || ""}
+                onCommentChange={(value) => handleCommentChange(segment.id, value)}
+              />
+            ))}
+          </div>
+
+          {/* Ratings */}
+          <RatingSection ratings={ratings} onChange={handleRatingChange} />
+
+          {/* Closing Comments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                Final Thoughts
+              </CardTitle>
+              <CardDescription>
+                Any additional comments about your interview experience?
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Textarea
+                placeholder="Share any final thoughts, suggestions, or feedback..."
+                value={closingComments}
+                onChange={(e) => setClosingComments(e.target.value)}
+                className="min-h-[100px]"
+              />
+            </CardContent>
+          </Card>
+
+          {/* Submit */}
+          <div className="flex justify-end gap-4 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => submitMutation.mutate(true)}
+              disabled={submitMutation.isPending}
+            >
+              Skip & Finish
+            </Button>
+            <Button
+              onClick={() => submitMutation.mutate(false)}
+              disabled={submitMutation.isPending}
+            >
+              {submitMutation.isPending ? "Submitting..." : "Submit Review"}
+            </Button>
+          </div>
+        </div>
+
+        <ReviewLaterModal
+          sessionId={sessionId!}
+          isOpen={showLaterModal}
+          onClose={() => setShowLaterModal(false)}
+        />
+      </div>
+    );
+  }
+
+  ---
+  6. Token Redirect Component
+
+  Create client/src/pages/review-token-redirect.tsx:
+
+  import { useEffect, useState } from "react";
+  import { useParams, useLocation } from "wouter";
+  import { Card, CardContent } from "@/components/ui/card";
+  import { Button } from "@/components/ui/button";
+  import { Loader2, AlertCircle } from "lucide-react";
+  import { apiRequest } from "@/lib/queryClient";
+
+  export default function ReviewTokenRedirect() {
+    const { token } = useParams<{ token: string }>();
+    const [, navigate] = useLocation();
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+      const validateToken = async () => {
+        try {
+          const response = await apiRequest("GET", `/api/review/${token}`);
+          if (!response.ok) {
+            const data = await response.json();
+            setError(data.error || "Invalid link");
+            return;
+          }
+          const { sessionId } = await response.json();
+          navigate(`/interview/${sessionId}/review`, { replace: true });
+        } catch (e) {
+          setError("Failed to validate review link");
+        }
+      };
+
+      if (token) {
+        validateToken();
+      }
+    }, [token, navigate]);
+
+    if (error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <Card className="max-w-md">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6 text-destructive" />
+              </div>
+              <h2 className="text-xl font-semibold">Link Invalid</h2>
+              <p className="text-muted-foreground">{error}</p>
+              <Button variant="outline" onClick={() => navigate("/")}>
+                Return Home
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  ---
+  7. Routing Updates
+
+  File: client/src/App.tsx
+
+  Add imports and routes:
+
+  // Add imports
+  import InterviewReviewPage from "@/pages/interview-review";
+  import ReviewTokenRedirect from "@/pages/review-token-redirect";
+
+  // Add routes in the Switch (after interview routes)
+  <Route path="/interview/:sessionId/review" component={InterviewReviewPage} />
+  <Route path="/review/:token" component={ReviewTokenRedirect} />
+
+  ---
+  8. Interview Flow Update
+
+  File: client/src/pages/interview.tsx
+
+  Find the interview completion handler (around line 376-381) and change navigation:
+
+  // BEFORE:
+  navigate("/interview/complete");
+
+  // AFTER:
+  navigate(`/interview/${sessionId}/review`);
+
+  ---
+  9. Update Interview Complete Page
+
+  File: client/src/pages/interview-complete.tsx
+
+  Update to handle coming from review:
+
+  // Add message variation based on review status
+  // The page already shows a thank you - can optionally add:
+  // "Your feedback has been submitted" if coming from review
+
+  ---
+  Implementation Order
+
+  1. Schema changes (shared/schema.ts) + run npm run db:push
+  2. Storage layer (server/storage.ts)
+  3. API endpoints (server/routes.ts)
+  4. UI components (client/src/components/review/)
+  5. Review page (client/src/pages/interview-review.tsx)
+  6. Token redirect (client/src/pages/review-token-redirect.tsx)
+  7. Routing (client/src/App.tsx)
+  8. Interview flow update (client/src/pages/interview.tsx)
+
+  ---
+  Verification Steps
+
+  1. Run npm run check to verify TypeScript compiles
+  2. Run npm run dev and complete an interview
+  3. Verify redirect to review page after completion
+  4. Test skipping the review
+  5. Test submitting ratings and comments
+  6. Test "Review Later" link generation
+  7. Copy the link, close browser, reopen and verify it works
+  8. Wait 48+ hours (or modify DB) and verify expired link shows error
+  9. Check session detail page shows the submitted review data

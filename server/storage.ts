@@ -457,6 +457,7 @@ export class DatabaseStorage implements IStorage {
   async submitSessionReview(id: string, data: {
     reviewRatings?: ReviewRatings | null;
     closingComments?: string | null;
+    reviewComments?: Record<string, string> | null;
     reviewSkipped?: boolean;
     reviewCompletedAt?: Date;
     reviewAccessToken?: string | null;

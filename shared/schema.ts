@@ -152,6 +152,7 @@ export const interviewSessions = pgTable("interview_sessions", {
   reviewAccessExpiresAt: timestamp("review_access_expires_at"),
   reviewSkipped: boolean("review_skipped").default(false),
   reviewRatings: jsonb("review_ratings"),
+  reviewComments: jsonb("review_comments"), // Type: Record<string, string> - questionIndex -> comment
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
