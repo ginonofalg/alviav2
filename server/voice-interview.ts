@@ -633,15 +633,18 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
   return instructions;
 }
 
-function buildOverlapInstruction(result: TopicOverlapResult, questionText: string): string {
+function buildOverlapInstruction(
+  result: TopicOverlapResult,
+  questionText: string,
+): string {
   const topics = result.overlappingTopics.slice(0, 2).join(" and ");
 
   switch (result.coverageLevel) {
-    case 'fully_covered':
+    case "fully_covered":
       return `The respondent already covered ${topics} thoroughly earlier. Acknowledge this and ask if they'd like to add anything new, or if they're ready to move on. The question for reference: "${questionText}"`;
-    case 'partially_covered':
+    case "partially_covered":
       return `The respondent touched on ${topics} earlier. Briefly acknowledge this connection and invite any additional thoughts, then read the question: "${questionText}"`;
-    case 'mentioned':
+    case "mentioned":
     default:
       return `The respondent mentioned ${topics} earlier. Briefly acknowledge this, then read the question: "${questionText}"`;
   }
@@ -1175,7 +1178,7 @@ function handleClientMessage(
               content: [
                 {
                   type: "input_text",
-                  text: `[ORCHESTRATOR - DO NOT ACKNOWLEDGE THIS MESSAGE: The interview was paused and has now resumed. Review the recent transcript context below and decide how to welcome back the respondent:
+                  text: `[ORCHESTRATOR: The interview was paused and has now resumed. Review the recent transcript context below and decide how to welcome back the respondent:
 
 RECENT TRANSCRIPT:
 ${transcriptContext || "(No recent messages)"}
@@ -1255,33 +1258,49 @@ INSTRUCTIONS:
 
           // Handle overlap detection and response asynchronously
           (async () => {
-            let transitionInstruction = `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`;
+            let transitionInstruction = `Smoothly transition to the next question. You may give a short acknowledgment like *Great* or *Thank you* only if it feels natural, then read the question aloud: "${nextQuestion?.questionText}"`;
 
             // Gather context for overlap detection
             const completedSummaries = state.questionSummaries.filter(
-              (s): s is QuestionSummary => s != null
+              (s): s is QuestionSummary => s != null,
             );
 
             // Get recent respondent statements from the question we just left (last 10 entries)
             const recentTranscript = state.transcriptLog
-              .filter(e => e.questionIndex === previousIndex && e.speaker === "respondent")
+              .filter(
+                (e) =>
+                  e.questionIndex === previousIndex &&
+                  e.speaker === "respondent",
+              )
               .slice(-10);
 
             // Only attempt detection if we have some context
             if (completedSummaries.length > 0 || recentTranscript.length > 0) {
-              console.log(`[TopicOverlap] Checking Q${state.currentQuestionIndex + 1} against ${completedSummaries.length} summaries and ${recentTranscript.length} transcript entries`);
+              console.log(
+                `[TopicOverlap] Checking Q${state.currentQuestionIndex + 1} against ${completedSummaries.length} summaries and ${recentTranscript.length} transcript entries`,
+              );
               try {
                 const overlapResult = await detectTopicOverlap(
                   nextQuestion?.questionText || "",
                   completedSummaries,
-                  recentTranscript
+                  recentTranscript,
                 );
 
-                if (overlapResult?.hasOverlap && overlapResult.overlappingTopics.length > 0) {
-                  transitionInstruction = buildOverlapInstruction(overlapResult, nextQuestion?.questionText || "");
-                  console.log(`[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`);
+                if (
+                  overlapResult?.hasOverlap &&
+                  overlapResult.overlappingTopics.length > 0
+                ) {
+                  transitionInstruction = buildOverlapInstruction(
+                    overlapResult,
+                    nextQuestion?.questionText || "",
+                  );
+                  console.log(
+                    `[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`,
+                  );
                 } else {
-                  console.log(`[TopicOverlap] No overlap detected for Q${state.currentQuestionIndex + 1}`);
+                  console.log(
+                    `[TopicOverlap] No overlap detected for Q${state.currentQuestionIndex + 1}`,
+                  );
                 }
               } catch (error) {
                 console.error("[TopicOverlap] Error during detection:", error);
@@ -1290,8 +1309,13 @@ INSTRUCTIONS:
             }
 
             // Trigger Alvia to read the new question aloud
-            console.log(`[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`);
-            if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+            console.log(
+              `[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`,
+            );
+            if (
+              state.openaiWs &&
+              state.openaiWs.readyState === WebSocket.OPEN
+            ) {
               // Inject the transition instruction as a conversation item first
               state.openaiWs.send(
                 JSON.stringify({
@@ -1302,7 +1326,7 @@ INSTRUCTIONS:
                     content: [
                       {
                         type: "input_text",
-                        text: `[ORCHESTRATOR - DO NOT ACKNOWLEDGE THIS MESSAGE: ${transitionInstruction}]`,
+                        text: `[ORCHESTRATOR: ${transitionInstruction}]`,
                       },
                     ],
                   },
@@ -1318,7 +1342,9 @@ INSTRUCTIONS:
                 }),
               );
             } else {
-              console.warn("[TopicOverlap] WebSocket closed before sending transition instruction");
+              console.warn(
+                "[TopicOverlap] WebSocket closed before sending transition instruction",
+              );
             }
           })();
         }
