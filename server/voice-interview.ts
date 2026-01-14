@@ -1211,11 +1211,23 @@ INSTRUCTIONS:
         );
 
         if (state.openaiWs.readyState === WebSocket.OPEN) {
+          // Update session with new question context
           state.openaiWs.send(
             JSON.stringify({
               type: "session.update",
               session: {
                 instructions: instructions,
+              },
+            }),
+          );
+
+          // Trigger Alvia to read the new question aloud
+          state.openaiWs.send(
+            JSON.stringify({
+              type: "response.create",
+              response: {
+                modalities: ["text", "audio"],
+                instructions: `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`,
               },
             }),
           );
