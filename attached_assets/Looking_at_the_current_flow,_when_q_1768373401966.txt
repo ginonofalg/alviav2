@@ -1,0 +1,44 @@
+Looking at the current flow, when questions transition, Alvia gets updated instructions with the new question text but the instruction just says "Ask the current question naturally" - which may lead to paraphrasing or not reading it at all.
+
+  Proposed Approach
+
+  Modify buildInterviewInstructions() to add an explicit "read the question" instruction when transitioning:
+
+  // Add a new parameter to track if this is a question transition
+  function buildInterviewInstructions(
+    template: any,
+    currentQuestion: any,
+    questionIndex: number,
+    totalQuestions: number,
+    barbaraGuidance?: string,
+    isQuestionTransition?: boolean,  // NEW
+  ): string {
+    // ... existing code ...
+
+    let instructions = `You are Alvia...
+
+  INSTRUCTIONS:
+  1. ${questionIndex === 0 
+      ? `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.` 
+      : isQuestionTransition 
+        ? `Read the current question aloud to the respondent exactly as written: "${currentQuestion?.questionText}"`
+        : "Continue the conversation about the current question."}
+  // ... rest of instructions
+
+  Then, where the question transition happens, pass isQuestionTransition: true and optionally trigger an immediate response:
+
+  // After updating session with new instructions, prompt Alvia to speak
+  openaiWs.send(JSON.stringify({
+    type: "response.create",
+    response: {
+      modalities: ["audio", "text"],
+      instructions: `Now transition to the next question. Read it aloud exactly as written: "${newQuestion.questionText}"`
+    }
+  }));
+
+  Key Changes Needed
+
+  1. buildInterviewInstructions() - Add isQuestionTransition flag to differentiate between initial load vs. active transition
+  2. Question transition handler - Where currentQuestionIndex is incremented, send both:
+    - session.update with new instructions
+    - response.create to prompt Alvia to immediately speak the question

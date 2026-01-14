@@ -10,9 +10,9 @@ import {
   type BarbaraGuidance,
   type QuestionSummary,
 } from "./barbara-orchestrator";
-import type { 
-  PersistedTranscriptEntry, 
-  PersistedBarbaraGuidance, 
+import type {
+  PersistedTranscriptEntry,
+  PersistedBarbaraGuidance,
   PersistedQuestionState,
   QuestionSummary as PersistedQuestionSummary,
 } from "@shared/schema";
@@ -54,10 +54,13 @@ const MAX_TRANSCRIPT_IN_MEMORY = 100;
 
 const interviewStates = new Map<string, InterviewState>();
 
-function addTranscriptEntry(state: InterviewState, entry: TranscriptEntry): void {
+function addTranscriptEntry(
+  state: InterviewState,
+  entry: TranscriptEntry,
+): void {
   // Add to full persistence buffer (never truncated)
   state.fullTranscriptForPersistence.push(entry as PersistedTranscriptEntry);
-  
+
   // Add to in-memory log (limited to MAX_TRANSCRIPT_IN_MEMORY for processing)
   state.transcriptLog.push(entry);
   if (state.transcriptLog.length > MAX_TRANSCRIPT_IN_MEMORY) {
@@ -99,13 +102,18 @@ async function flushPersist(sessionId: string): Promise<void> {
   try {
     await storage.persistInterviewState(sessionId, patch);
     state.lastPersistAt = Date.now();
-    console.log(`[Persist] State saved for session: ${sessionId}, transcript entries: ${state.fullTranscriptForPersistence.length}`);
+    console.log(
+      `[Persist] State saved for session: ${sessionId}, transcript entries: ${state.fullTranscriptForPersistence.length}`,
+    );
   } catch (error) {
     console.error(`[Persist] Error saving state for ${sessionId}:`, error);
   }
 }
 
-async function persistBarbaraGuidance(sessionId: string, guidance: BarbaraGuidance): Promise<void> {
+async function persistBarbaraGuidance(
+  sessionId: string,
+  guidance: BarbaraGuidance,
+): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
@@ -120,7 +128,9 @@ async function persistBarbaraGuidance(sessionId: string, guidance: BarbaraGuidan
   state.lastBarbaraGuidance = persistedGuidance;
 
   if (guidance.action === "suggest_next_question") {
-    const questionState = state.questionStates.find(qs => qs.questionIndex === state.currentQuestionIndex);
+    const questionState = state.questionStates.find(
+      (qs) => qs.questionIndex === state.currentQuestionIndex,
+    );
     if (questionState) {
       questionState.barbaraSuggestedMoveOn = true;
     }
@@ -135,15 +145,26 @@ async function persistBarbaraGuidance(sessionId: string, guidance: BarbaraGuidan
     });
     console.log(`[Persist] Barbara guidance saved for session: ${sessionId}`);
   } catch (error) {
-    console.error(`[Persist] Error saving Barbara guidance for ${sessionId}:`, error);
+    console.error(
+      `[Persist] Error saving Barbara guidance for ${sessionId}:`,
+      error,
+    );
   }
 }
 
-function updateQuestionState(state: InterviewState, questionIndex: number, updates: Partial<PersistedQuestionState>): void {
-  let questionState = state.questionStates.find(qs => qs.questionIndex === questionIndex);
-  
+function updateQuestionState(
+  state: InterviewState,
+  questionIndex: number,
+  updates: Partial<PersistedQuestionState>,
+): void {
+  let questionState = state.questionStates.find(
+    (qs) => qs.questionIndex === questionIndex,
+  );
+
   if (!questionState) {
-    const metrics = state.questionMetrics.get(questionIndex) || createEmptyMetrics(questionIndex);
+    const metrics =
+      state.questionMetrics.get(questionIndex) ||
+      createEmptyMetrics(questionIndex);
     questionState = {
       questionIndex,
       status: "not_started",
@@ -165,7 +186,11 @@ function updateQuestionState(state: InterviewState, questionIndex: number, updat
   }
 }
 
-async function persistNextQuestion(sessionId: string, previousIndex: number, newIndex: number): Promise<void> {
+async function persistNextQuestion(
+  sessionId: string,
+  previousIndex: number,
+  newIndex: number,
+): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
@@ -187,14 +212,20 @@ async function generateAndPersistSummary(
 
   // Check if summary already exists for this question (prevent duplicates)
   if (state.questionSummaries[questionIndex]) {
-    console.log(`[Summary] Summary already exists for Q${questionIndex + 1}, skipping`);
+    console.log(
+      `[Summary] Summary already exists for Q${questionIndex + 1}, skipping`,
+    );
     return;
   }
 
   try {
-    const metrics = state.questionMetrics.get(questionIndex) || createEmptyMetrics(questionIndex);
+    const metrics =
+      state.questionMetrics.get(questionIndex) ||
+      createEmptyMetrics(questionIndex);
 
-    console.log(`[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}) in background...`);
+    console.log(
+      `[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}) in background...`,
+    );
 
     const summary = await generateQuestionSummary(
       questionIndex,
@@ -207,7 +238,9 @@ async function generateAndPersistSummary(
 
     // Use index-based assignment to prevent race conditions
     state.questionSummaries[questionIndex] = summary;
-    console.log(`[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`);
+    console.log(
+      `[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`,
+    );
 
     // Persist immediately with all relevant fields to avoid overwriting concurrent Barbara guidance
     await storage.persistInterviewState(sessionId, {
@@ -217,7 +250,10 @@ async function generateAndPersistSummary(
     });
     console.log(`[Summary] Summary persisted for Q${questionIndex + 1}`);
   } catch (error) {
-    console.error(`[Summary] Failed to generate summary for Q${questionIndex + 1}:`, error);
+    console.error(
+      `[Summary] Failed to generate summary for Q${questionIndex + 1}:`,
+      error,
+    );
     // Fail silently - doesn't affect interview progress
   }
 }
@@ -237,13 +273,21 @@ export function handleVoiceInterview(
 
   // Check for concurrent tab - reject if session already has an active connection
   const existingState = interviewStates.get(sessionId);
-  if (existingState && existingState.clientWs && existingState.clientWs.readyState === WebSocket.OPEN) {
-    console.log(`[VoiceInterview] Rejecting concurrent connection for session: ${sessionId}`);
-    clientWs.send(JSON.stringify({ 
-      type: "error", 
-      code: "SESSION_ACTIVE_ELSEWHERE",
-      message: "This interview is already active in another tab or window" 
-    }));
+  if (
+    existingState &&
+    existingState.clientWs &&
+    existingState.clientWs.readyState === WebSocket.OPEN
+  ) {
+    console.log(
+      `[VoiceInterview] Rejecting concurrent connection for session: ${sessionId}`,
+    );
+    clientWs.send(
+      JSON.stringify({
+        type: "error",
+        code: "SESSION_ACTIVE_ELSEWHERE",
+        message: "This interview is already active in another tab or window",
+      }),
+    );
     clientWs.close(1008, "Session active elsewhere");
     return;
   }
@@ -338,28 +382,38 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
 
     // Restore persisted state if available
-    const hasPersistedState = session.liveTranscript && Array.isArray(session.liveTranscript) && session.liveTranscript.length > 0;
-    
+    const hasPersistedState =
+      session.liveTranscript &&
+      Array.isArray(session.liveTranscript) &&
+      session.liveTranscript.length > 0;
+
     if (hasPersistedState) {
-      console.log(`[VoiceInterview] Restoring persisted state for session: ${sessionId}`);
+      console.log(
+        `[VoiceInterview] Restoring persisted state for session: ${sessionId}`,
+      );
       state.isRestoredSession = true;
-      
+
       // Restore FULL transcript to persistence buffer (never truncated - prevents data loss)
-      const persistedTranscript = session.liveTranscript as PersistedTranscriptEntry[];
+      const persistedTranscript =
+        session.liveTranscript as PersistedTranscriptEntry[];
       state.fullTranscriptForPersistence = [...persistedTranscript];
-      
+
       // Only keep last MAX_TRANSCRIPT_IN_MEMORY entries in memory for processing
-      state.transcriptLog = persistedTranscript.slice(-MAX_TRANSCRIPT_IN_MEMORY) as TranscriptEntry[];
-      
+      state.transcriptLog = persistedTranscript.slice(
+        -MAX_TRANSCRIPT_IN_MEMORY,
+      ) as TranscriptEntry[];
+
       // Restore Barbara guidance
       if (session.lastBarbaraGuidance) {
-        state.lastBarbaraGuidance = session.lastBarbaraGuidance as PersistedBarbaraGuidance;
+        state.lastBarbaraGuidance =
+          session.lastBarbaraGuidance as PersistedBarbaraGuidance;
       }
-      
+
       // Restore question states
       if (session.questionStates && Array.isArray(session.questionStates)) {
-        state.questionStates = session.questionStates as PersistedQuestionState[];
-        
+        state.questionStates =
+          session.questionStates as PersistedQuestionState[];
+
         // Rebuild questionMetrics from persisted states
         for (const qs of state.questionStates) {
           state.questionMetrics.set(qs.questionIndex, {
@@ -371,14 +425,22 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
           });
         }
       }
-      
+
       // Restore question summaries (index-based array)
-      if (session.questionSummaries && Array.isArray(session.questionSummaries)) {
-        state.questionSummaries = session.questionSummaries as QuestionSummary[];
-        console.log(`[VoiceInterview] Restored ${state.questionSummaries.length} question summaries`);
+      if (
+        session.questionSummaries &&
+        Array.isArray(session.questionSummaries)
+      ) {
+        state.questionSummaries =
+          session.questionSummaries as QuestionSummary[];
+        console.log(
+          `[VoiceInterview] Restored ${state.questionSummaries.length} question summaries`,
+        );
       }
-      
-      console.log(`[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}`);
+
+      console.log(
+        `[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}`,
+      );
     } else {
       // Initialize metrics for first question (new session)
       state.questionMetrics.set(0, createEmptyMetrics(0));
@@ -434,12 +496,14 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
 
     // Configure the session
     const currentQuestion = state.questions[state.currentQuestionIndex];
-    
+
     // Use resume instructions if restoring a session with transcript history
     let instructions: string;
     if (state.isRestoredSession && state.transcriptLog.length > 0) {
       instructions = buildResumeInstructions(state);
-      console.log(`[VoiceInterview] Using resume instructions for restored session: ${sessionId}`);
+      console.log(
+        `[VoiceInterview] Using resume instructions for restored session: ${sessionId}`,
+      );
     } else {
       instructions = buildInterviewInstructions(
         state.template,
@@ -483,7 +547,9 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         totalQuestions: state.questions.length,
         currentQuestion: currentQuestion?.questionText,
         isResumed: state.isRestoredSession,
-        persistedTranscript: state.isRestoredSession ? state.fullTranscriptForPersistence : undefined,
+        persistedTranscript: state.isRestoredSession
+          ? state.fullTranscriptForPersistence
+          : undefined,
       }),
     );
   });
@@ -543,7 +609,7 @@ INSTRUCTIONS:
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. Use the guidance to know what depth of answer is expected.
 5. Be encouraging and conversational, matching the ${tone} tone.
-6. When the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
+6. If Barbara's guidance is that the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
 7. Keep responses concise - this is a voice conversation.`;
 
   if (barbaraGuidance) {
@@ -561,21 +627,23 @@ function buildResumeInstructions(state: InterviewState): string {
   const currentQuestion = state.questions[state.currentQuestionIndex];
   const questionIndex = state.currentQuestionIndex;
   const totalQuestions = state.questions.length;
-  
+
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
-  
+
   // Build transcript summary (last 10-15 entries)
   const recentTranscript = state.transcriptLog.slice(-15);
   const transcriptSummary = recentTranscript
-    .map(entry => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
+    .map((entry) => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
     .join("\n");
-  
+
   // Check question state
-  const questionState = state.questionStates.find(qs => qs.questionIndex === questionIndex);
+  const questionState = state.questionStates.find(
+    (qs) => qs.questionIndex === questionIndex,
+  );
   const status = questionState?.status || "in_progress";
   const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
-  
+
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
 
 INTERVIEW CONTEXT:
@@ -599,9 +667,11 @@ NOTE: Before the interruption, the respondent had given a comprehensive answer a
   instructions += `
 RESUME INSTRUCTIONS:
 1. Welcome them back briefly and warmly.
-2. ${barbaraSuggestedMoveOn 
-    ? "Ask if they'd like to continue where they left off or move to the next question."
-    : "Briefly remind them what you were discussing and invite them to continue their response."}
+2. ${
+    barbaraSuggestedMoveOn
+      ? "Ask if they'd like to continue where they left off or move to the next question."
+      : "Briefly remind them what you were discussing and invite them to continue their response."
+  }
 3. Do NOT repeat the full question unless specifically needed.
 4. Be encouraging and match the ${tone} tone.
 5. Keep your welcome-back message concise.
@@ -715,10 +785,12 @@ async function handleOpenAIEvent(
             .filter((w: string) => w.length > 0).length;
           metrics.turnCount++;
           state.questionMetrics.set(state.currentQuestionIndex, metrics);
-          
+
           // Update question state with metrics
-          updateQuestionState(state, state.currentQuestionIndex, { status: "in_progress" });
-          
+          updateQuestionState(state, state.currentQuestionIndex, {
+            status: "in_progress",
+          });
+
           // Schedule debounced persist
           scheduleDebouncedPersist(sessionId);
 
@@ -815,7 +887,9 @@ async function triggerBarbaraAnalysis(
 
     const analysisPromise = analyzeWithBarbara({
       transcriptLog: state.transcriptLog,
-      previousQuestionSummaries: state.questionSummaries.filter(s => s != null),
+      previousQuestionSummaries: state.questionSummaries.filter(
+        (s) => s != null,
+      ),
       currentQuestionIndex: state.currentQuestionIndex,
       currentQuestion: {
         text: currentQuestion?.questionText || "",
@@ -833,7 +907,9 @@ async function triggerBarbaraAnalysis(
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
 
     console.log(`[Barbara] Guidance for ${sessionId}:`);
-    console.log(`  Action: ${guidance.action} (confidence: ${guidance.confidence})`);
+    console.log(
+      `  Action: ${guidance.action} (confidence: ${guidance.confidence})`,
+    );
     console.log(`  Message: ${guidance.message}`);
     console.log(`  Reasoning: ${guidance.reasoning}`);
 
@@ -844,7 +920,8 @@ async function triggerBarbaraAnalysis(
       // For suggest_next_question, craft a specific message that invites the respondent to add more
       let guidanceMessage = guidance.message;
       if (guidance.action === "suggest_next_question") {
-        guidanceMessage = "The respondent has given a comprehensive answer. Acknowledge their response warmly, then ask if there's anything else they'd like to add before moving on. Say something like: 'That's really insightful, thank you. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+        guidanceMessage =
+          "The respondent has given a comprehensive answer. Acknowledge their response warmly, then ask if there's anything else they'd like to add before moving on. Say something like: 'That's really insightful, thank you. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
       }
 
       // Inject guidance by updating session instructions (system context)
@@ -960,8 +1037,10 @@ function handleClientMessage(
           state.questionMetrics.set(state.currentQuestionIndex, metrics);
 
           // Update question state
-          updateQuestionState(state, state.currentQuestionIndex, { status: "in_progress" });
-          
+          updateQuestionState(state, state.currentQuestionIndex, {
+            status: "in_progress",
+          });
+
           // Schedule debounced persist
           scheduleDebouncedPersist(sessionId);
 
@@ -1015,9 +1094,9 @@ function handleClientMessage(
       // Flush pending persist immediately on pause
       flushPersist(sessionId);
       // Also update session status in database
-      storage.persistInterviewState(sessionId, { 
-        status: "paused", 
-        pausedAt: new Date() 
+      storage.persistInterviewState(sessionId, {
+        status: "paused",
+        pausedAt: new Date(),
       });
       console.log(
         `[VoiceInterview] Interview paused for session: ${sessionId}`,
@@ -1028,9 +1107,9 @@ function handleClientMessage(
       // Handle resume from pause - Alvia decides what to say based on transcript context
       state.isPaused = false;
       // Update session status back to in_progress
-      storage.persistInterviewState(sessionId, { 
-        status: "in_progress", 
-        pausedAt: null 
+      storage.persistInterviewState(sessionId, {
+        status: "in_progress",
+        pausedAt: null,
       });
       console.log(
         `[VoiceInterview] Interview resuming for session: ${sessionId}`,
@@ -1038,21 +1117,22 @@ function handleClientMessage(
 
       if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
         const currentQuestion = state.questions[state.currentQuestionIndex];
-        
+
         // Check the transcript to determine how to resume
         // Look at recent Alvia messages to see if she already welcomed back after a pause
         const recentTranscript = state.transcriptLog.slice(-5);
         const lastAlviaMessage = recentTranscript
-          .filter(entry => entry.speaker === "alvia")
+          .filter((entry) => entry.speaker === "alvia")
           .pop();
-        
+
         // Build context for Alvia to decide what to say
         const transcriptContext = recentTranscript
-          .map(entry => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
+          .map((entry) => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
           .join("\n");
-        
-        const currentQuestionText = currentQuestion?.questionText || "the question";
-        
+
+        const currentQuestionText =
+          currentQuestion?.questionText || "the question";
+
         // Let Alvia decide based on transcript context
         state.openaiWs.send(
           JSON.stringify({
@@ -1111,12 +1191,16 @@ INSTRUCTIONS:
           state.currentQuestionIndex,
           createEmptyMetrics(state.currentQuestionIndex),
         );
-        
+
         // Clear Barbara's last guidance as we're moving to a new question
         state.lastBarbaraGuidance = null;
 
         // Persist question state changes immediately
-        persistNextQuestion(sessionId, previousIndex, state.currentQuestionIndex);
+        persistNextQuestion(
+          sessionId,
+          previousIndex,
+          state.currentQuestionIndex,
+        );
 
         // Update session instructions for new question
         const instructions = buildInterviewInstructions(
@@ -1152,9 +1236,11 @@ INSTRUCTIONS:
 
     case "end_interview":
       // Trigger summarization for final question in background before cleanup
-      generateAndPersistSummary(sessionId, state.currentQuestionIndex).catch(() => {
-        // Error already logged in generateAndPersistSummary
-      });
+      generateAndPersistSummary(sessionId, state.currentQuestionIndex).catch(
+        () => {
+          // Error already logged in generateAndPersistSummary
+        },
+      );
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
       cleanupSession(sessionId);
       break;
@@ -1166,7 +1252,7 @@ async function cleanupSession(sessionId: string) {
   if (state) {
     // Flush any pending persist before cleanup
     await flushPersist(sessionId);
-    
+
     if (state.openaiWs) {
       state.openaiWs.close();
     }
