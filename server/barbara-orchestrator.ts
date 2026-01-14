@@ -1,9 +1,7 @@
 import OpenAI from "openai";
 
-// Use gpt-4o-mini for fast, cost-effective analysis
-const BARBARA_MODEL = "gpt-4o-mini";
-// Use gpt-5-mini for summarisation with reasoning capabilities
-const BARBARA_SUMMARY_MODEL = "gpt-5-mini";
+// Use gpt-5-mini for all Barbara functions with reasoning capabilities
+const BARBARA_MODEL = "gpt-5-mini";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -59,7 +57,9 @@ export async function analyzeWithBarbara(input: BarbaraAnalysisInput): Promise<B
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 500,
-    });
+      reasoning_effort: "low",
+      verbosity: "low",
+    } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -264,7 +264,9 @@ Does the upcoming question's topic overlap with what the respondent has already 
       ],
       response_format: { type: "json_object" },
       max_tokens: 200,
-    });
+      reasoning_effort: "low",
+      verbosity: "low",
+    } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const response = await Promise.race([detectionPromise, timeoutPromise]);
     
@@ -359,7 +361,7 @@ Create a structured summary of the respondent's answer.`;
     });
 
     const summaryPromise = openai.chat.completions.create({
-      model: BARBARA_SUMMARY_MODEL,
+      model: BARBARA_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

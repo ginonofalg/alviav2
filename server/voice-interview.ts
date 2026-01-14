@@ -529,12 +529,13 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
           },
           input_audio_transcription: {
             model: "gpt-4o-mini-transcribe",
+            language: "en",
           },
           turn_detection: {
             type: "server_vad",
-            threshold: 0.7,
+            threshold: 0.3,
             silence_duration_ms: 800,
-            prefix_padding_ms: 300,
+            prefix_padding_ms: 150,
             create_response: false,
             interrupt_response: true,
           },
