@@ -198,8 +198,12 @@ export async function detectTopicOverlap(
   const hasRecentTranscript = recentTranscript.length > 0;
 
   if (!hasCompletedSummaries && !hasRecentTranscript) {
+    console.log("[TopicOverlap] Skipping - no context available");
     return null;
   }
+
+  const startTime = Date.now();
+  console.log(`[TopicOverlap] Starting detection with ${completedSummaries.length} summaries, ${recentTranscript.length} transcript entries`);
 
   try {
     const systemPrompt = `You analyze interview transcripts to detect topic overlap.
@@ -237,9 +241,15 @@ ${transcriptContext ? `RECENT STATEMENTS FROM LAST QUESTION:\n${transcriptContex
 
 Does the upcoming question's topic overlap with what the respondent has already discussed?`;
 
+    const promptLength = systemPrompt.length + userPrompt.length;
+    console.log(`[TopicOverlap] Calling OpenAI (model: ${BARBARA_MODEL}, prompt: ${promptLength} chars)`);
+
+    let timedOut = false;
     const timeoutPromise = new Promise<null>(resolve => 
       setTimeout(() => {
-        console.log("[TopicOverlap] Detection timed out after 3s");
+        timedOut = true;
+        const elapsed = Date.now() - startTime;
+        console.log(`[TopicOverlap] Detection timed out after ${elapsed}ms (limit: ${TOPIC_OVERLAP_TIMEOUT_MS}ms)`);
         resolve(null);
       }, TOPIC_OVERLAP_TIMEOUT_MS)
     );
@@ -256,17 +266,29 @@ Does the upcoming question's topic overlap with what the respondent has already 
 
     const response = await Promise.race([detectionPromise, timeoutPromise]);
     
+    if (timedOut) {
+      return null;
+    }
+
+    const elapsed = Date.now() - startTime;
+    
     if (!response || !('choices' in response)) {
+      console.log(`[TopicOverlap] No valid response after ${elapsed}ms`);
       return null;
     }
 
     const content = response.choices[0]?.message?.content;
-    if (!content) return null;
+    if (!content) {
+      console.log(`[TopicOverlap] Empty content in response after ${elapsed}ms`);
+      return null;
+    }
 
     const parsed = JSON.parse(content) as TopicOverlapResult;
+    console.log(`[TopicOverlap] Completed in ${elapsed}ms - hasOverlap: ${parsed.hasOverlap}, topics: [${parsed.overlappingTopics.join(", ")}], coverage: ${parsed.coverageLevel}`);
     return parsed;
   } catch (error) {
-    console.error("[TopicOverlap] Detection failed:", error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[TopicOverlap] Detection failed after ${elapsed}ms:`, error);
     return null;
   }
 }
