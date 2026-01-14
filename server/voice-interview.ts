@@ -1013,7 +1013,7 @@ async function triggerBarbaraAnalysis(
   }
 }
 
-function handleClientMessage(
+async function handleClientMessage(
   sessionId: string,
   message: any,
   clientWs: WebSocket,
@@ -1361,7 +1361,13 @@ INSTRUCTIONS:
           }),
         );
       } else {
+        // Update session status to completed before sending message
+        await storage.persistInterviewState(sessionId, {
+          status: "completed",
+          completedAt: new Date(),
+        });
         clientWs.send(JSON.stringify({ type: "interview_complete" }));
+        cleanupSession(sessionId);
       }
       break;
 
@@ -1372,6 +1378,11 @@ INSTRUCTIONS:
           // Error already logged in generateAndPersistSummary
         },
       );
+      // Update session status to completed
+      await storage.persistInterviewState(sessionId, {
+        status: "completed",
+        completedAt: new Date(),
+      });
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
       cleanupSession(sessionId);
       break;

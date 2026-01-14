@@ -17,6 +17,7 @@ export interface InterviewStatePatch {
   currentQuestionIndex?: number;
   status?: InterviewSession["status"];
   pausedAt?: Date | null;
+  completedAt?: Date | null;
 }
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
@@ -402,6 +403,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.pausedAt !== undefined) {
       updateData.pausedAt = patch.pausedAt;
+    }
+    if (patch.completedAt !== undefined) {
+      updateData.completedAt = patch.completedAt;
     }
 
     if (Object.keys(updateData).length === 0) {
