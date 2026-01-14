@@ -187,7 +187,7 @@ export interface TopicOverlapResult {
 }
 
 const SUMMARY_TIMEOUT_MS = 45000;
-const TOPIC_OVERLAP_TIMEOUT_MS = 1500;
+const TOPIC_OVERLAP_TIMEOUT_MS = 3000;
 
 export async function detectTopicOverlap(
   upcomingQuestionText: string,
@@ -239,7 +239,7 @@ Does the upcoming question's topic overlap with what the respondent has already 
 
     const timeoutPromise = new Promise<null>(resolve => 
       setTimeout(() => {
-        console.log("[TopicOverlap] Detection timed out after 1.5s");
+        console.log("[TopicOverlap] Detection timed out after 3s");
         resolve(null);
       }, TOPIC_OVERLAP_TIMEOUT_MS)
     );

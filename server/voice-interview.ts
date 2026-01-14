@@ -1253,6 +1253,7 @@ INSTRUCTIONS:
 
             // Only attempt detection if we have some context
             if (completedSummaries.length > 0 || recentTranscript.length > 0) {
+              console.log(`[TopicOverlap] Checking Q${state.currentQuestionIndex + 1} against ${completedSummaries.length} summaries and ${recentTranscript.length} transcript entries`);
               try {
                 const overlapResult = await detectTopicOverlap(
                   nextQuestion?.questionText || "",
@@ -1263,6 +1264,8 @@ INSTRUCTIONS:
                 if (overlapResult?.hasOverlap && overlapResult.overlappingTopics.length > 0) {
                   transitionInstruction = buildOverlapInstruction(overlapResult, nextQuestion?.questionText || "");
                   console.log(`[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`);
+                } else {
+                  console.log(`[TopicOverlap] No overlap detected for Q${state.currentQuestionIndex + 1}`);
                 }
               } catch (error) {
                 console.error("[TopicOverlap] Error during detection:", error);
@@ -1271,6 +1274,7 @@ INSTRUCTIONS:
             }
 
             // Trigger Alvia to read the new question aloud
+            console.log(`[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`);
             if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
               state.openaiWs.send(
                 JSON.stringify({
@@ -1281,6 +1285,8 @@ INSTRUCTIONS:
                   },
                 }),
               );
+            } else {
+              console.warn("[TopicOverlap] WebSocket closed before sending transition instruction");
             }
           })();
         }
