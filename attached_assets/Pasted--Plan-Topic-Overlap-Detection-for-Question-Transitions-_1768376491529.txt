@@ -1,0 +1,109 @@
+  │ Plan: Topic-Overlap Detection for Question Transitions                                                                                                                 │
+     │                                                                                                                                                                        │
+     │ Overview                                                                                                                                                               │
+     │                                                                                                                                                                        │
+     │ When moving to the next question, Barbara should detect if the upcoming topic has already been touched on by the interviewee. If so, Alvia should acknowledge this     │
+     │ naturally and ask if they want to elaborate rather than repeat themselves.                                                                                             │
+     │                                                                                                                                                                        │
+     │ Key Insight                                                                                                                                                            │
+     │                                                                                                                                                                        │
+     │ The QuestionSummary type already includes a relevantToFutureQuestions: string[] field that captures topics mentioned that may connect to later questions. This data is │
+     │ available at transition time.                                                                                                                                          │
+     │                                                                                                                                                                        │
+     │ Implementation Steps                                                                                                                                                   │
+     │                                                                                                                                                                        │
+     │ Step 1: Add Topic-Overlap Detection Function                                                                                                                           │
+     │                                                                                                                                                                        │
+     │ File: server/barbara-orchestrator.ts                                                                                                                                   │
+     │                                                                                                                                                                        │
+     │ Add a new exported function and interface:                                                                                                                             │
+     │                                                                                                                                                                        │
+     │ export interface TopicOverlapResult {                                                                                                                                  │
+     │   hasOverlap: boolean;                                                                                                                                                 │
+     │   overlappingTopics: string[];                                                                                                                                         │
+     │   sourceQuestionIndices: number[];                                                                                                                                     │
+     │   acknowledgmentPhrase: string;                                                                                                                                        │
+     │ }                                                                                                                                                                      │
+     │                                                                                                                                                                        │
+     │ export async function detectTopicOverlap(                                                                                                                              │
+     │   upcomingQuestionText: string,                                                                                                                                        │
+     │   previousSummaries: QuestionSummary[]                                                                                                                                 │
+     │ ): Promise<TopicOverlapResult>                                                                                                                                         │
+     │                                                                                                                                                                        │
+     │ Logic:                                                                                                                                                                 │
+     │ 1. Collect all relevantToFutureQuestions entries from prior summaries                                                                                                  │
+     │ 2. Use gpt-4o-mini to check if any are semantically related to the upcoming question                                                                                   │
+     │ 3. If overlap found, generate a natural acknowledgment phrase for Alvia                                                                                                │
+     │ 4. Include a timeout (2 seconds) to avoid blocking                                                                                                                     │
+     │                                                                                                                                                                        │
+     │ Step 2: Modify Question Transition Handler                                                                                                                             │
+     │                                                                                                                                                                        │
+     │ File: server/voice-interview.ts (lines 1175-1247)                                                                                                                      │
+     │                                                                                                                                                                        │
+     │ Before sending response.create to Alvia:                                                                                                                               │
+     │                                                                                                                                                                        │
+     │ 1. Gather available question summaries                                                                                                                                 │
+     │ 2. Call detectTopicOverlap() with the upcoming question                                                                                                                │
+     │ 3. If overlap detected, modify the transition instructions                                                                                                             │
+     │                                                                                                                                                                        │
+     │ Current code (line 1230):                                                                                                                                              │
+     │ instructions: `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`   │
+     │                                                                                                                                                                        │
+     │ Modified code:                                                                                                                                                         │
+     │ instructions: topicOverlapResult?.hasOverlap                                                                                                                           │
+     │   ? `Before asking this question, acknowledge that the respondent already touched on ${topicOverlapResult.overlappingTopics.join(" and ")} earlier.                    │
+     │ ${topicOverlapResult.acknowledgmentPhrase} Then ask if they'd like to elaborate or share additional thoughts, before reading the question:                             │
+     │ "${nextQuestion?.questionText}"`                                                                                                                                       │
+     │   : `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`             │
+     │                                                                                                                                                                        │
+     │ Step 3: Handle Async Without Blocking                                                                                                                                  │
+     │                                                                                                                                                                        │
+     │ Use Promise.race with a timeout to ensure question transitions aren't delayed:                                                                                         │
+     │                                                                                                                                                                        │
+     │ const TOPIC_OVERLAP_TIMEOUT_MS = 2000;                                                                                                                                 │
+     │                                                                                                                                                                        │
+     │ const overlapPromise = detectTopicOverlap(nextQuestion.questionText, summaries);                                                                                       │
+     │ const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), TOPIC_OVERLAP_TIMEOUT_MS));                                                        │
+     │ const topicOverlapResult = await Promise.race([overlapPromise, timeoutPromise]);                                                                                       │
+     │                                                                                                                                                                        │
+     │ If timeout occurs, proceed without overlap acknowledgment (graceful degradation).                                                                                      │
+     │                                                                                                                                                                        │
+     │ Files to Modify                                                                                                                                                        │
+     │                                                                                                                                                                        │
+     │ ┌────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐                  │
+     │ │              File              │                                                     Changes                                                      │                  │
+     │ ├────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                  │
+     │ │ server/barbara-orchestrator.ts │ Add TopicOverlapResult interface, detectTopicOverlap() function                                                  │                  │
+     │ ├────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                  │
+     │ │ server/voice-interview.ts      │ Modify next_question case (lines 1175-1247) to call overlap detection and adjust Alvia's transition instructions │                  │
+     │ └────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘                  │
+     │ LLM Prompt for Overlap Detection                                                                                                                                       │
+     │                                                                                                                                                                        │
+     │ Given an upcoming interview question and topics mentioned by the respondent in previous answers, determine if there is meaningful overlap.                             │
+     │                                                                                                                                                                        │
+     │ Upcoming question: "${upcomingQuestionText}"                                                                                                                           │
+     │                                                                                                                                                                        │
+     │ Previously mentioned topics:                                                                                                                                           │
+     │ ${relevantTopics.map(t => `- "${t}" (from Q${t.sourceIndex + 1})`).join('\n')}                                                                                         │
+     │                                                                                                                                                                        │
+     │ If the respondent has already touched on the topic of the upcoming question:                                                                                           │
+     │ 1. Return hasOverlap: true                                                                                                                                             │
+     │ 2. List the specific overlapping topics                                                                                                                                │
+     │ 3. Provide a natural acknowledgment phrase like "Earlier you mentioned [topic]..."                                                                                     │
+     │                                                                                                                                                                        │
+     │ If no meaningful overlap, return hasOverlap: false.                                                                                                                    │
+     │                                                                                                                                                                        │
+     │ Edge Cases                                                                                                                                                             │
+     │                                                                                                                                                                        │
+     │ 1. First question (Q1): No summaries exist, skip overlap detection                                                                                                     │
+     │ 2. Summary still generating: Only use completed summaries (already in state.questionSummaries)                                                                         │
+     │ 3. Timeout: Proceed without acknowledgment if detection takes >2s                                                                                                      │
+     │ 4. Multiple overlaps: Limit to top 2 most relevant topics to avoid overwhelming                                                                                        │
+     │                                                                                                                                                                        │
+     │ Verification                                                                                                                                                           │
+     │                                                                                                                                                                        │
+     │ 1. Run npm run check to ensure no type errors                                                                                                                          │
+     │ 2. Start dev server with npm run dev                                                                                                                                   │
+     │ 3. Create a test interview where Q1 answer mentions topics from Q2                                                                                                     │
+     │ 4. Verify Alvia acknowledges the prior mention when transitioning to Q2                                                                                                │
+     │ 5. Test timeout handling by adding artificial delay 

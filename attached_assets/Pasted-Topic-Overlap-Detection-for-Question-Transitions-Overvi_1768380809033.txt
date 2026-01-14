@@ -1,0 +1,226 @@
+Topic-Overlap Detection for Question Transitions
+
+  Overview
+
+  When moving to the next question, detect if the upcoming topic has already been touched on by the interviewee. If so, provide context to Alvia so she can acknowledge this naturally and ask if they want to elaborate rather than repeat themselves.
+
+  Data Sources for Overlap Detection
+
+  Two complementary sources ensure we always have context:
+
+  1. Completed summaries - For earlier questions, use relevantToFutureQuestions from QuestionSummary
+  2. Recent transcript - For the question just left (where summary isn't ready yet), use raw transcript entries
+
+  This handles the race condition where Q1's summary isn't complete when transitioning to Q2.
+
+  ---
+  Implementation
+
+  Step 1: Add Types and Function to server/barbara-orchestrator.ts
+
+  Add after the existing BarbaraGuidance interface (~line 28):
+
+  export interface TopicOverlapResult {
+    hasOverlap: boolean;
+    overlappingTopics: string[];
+    coverageLevel: 'mentioned' | 'partially_covered' | 'fully_covered';
+    sourceQuestionIndex: number | null; // Which question mentioned this, null if from recent transcript
+  }
+
+  const TOPIC_OVERLAP_TIMEOUT_MS = 1500;
+
+  export async function detectTopicOverlap(
+    upcomingQuestionText: string,
+    completedSummaries: QuestionSummary[],
+    recentTranscript: TranscriptEntry[]
+  ): Promise<TopicOverlapResult | null> {
+    // Skip if no prior context available
+    const hasCompletedSummaries = completedSummaries.length > 0;
+    const hasRecentTranscript = recentTranscript.length > 0;
+
+    if (!hasCompletedSummaries && !hasRecentTranscript) {
+      return null;
+    }
+
+    try {
+      const systemPrompt = `You analyze interview transcripts to detect topic overlap.
+  Given an upcoming question and prior context (summaries and/or recent statements), determine if the respondent has already addressed the topic.
+
+  Return JSON:
+  {
+    "hasOverlap": boolean,
+    "overlappingTopics": string[], // 1-3 specific topics that overlap
+    "coverageLevel": "mentioned" | "partially_covered" | "fully_covered",
+    "sourceQuestionIndex": number | null // 0-based index, or null if from recent transcript
+  }
+
+  Coverage levels:
+  - "mentioned": Topic came up briefly but wasn't explored
+  - "partially_covered": Some aspects discussed but room for more depth
+  - "fully_covered": Topic was thoroughly addressed
+
+  If no meaningful overlap, return { "hasOverlap": false, "overlappingTopics": [], "coverageLevel": "mentioned", "sourceQuestionIndex": null }`;
+
+      // Build context from summaries
+      const summaryContext = completedSummaries
+        .filter(s => s.relevantToFutureQuestions && s.relevantToFutureQuestions.length > 0)
+        .map(s => `Q${s.questionIndex + 1} ("${s.questionText}"):\n  Topics: ${s.relevantToFutureQuestions.join(", ")}\n  Summary: ${s.respondentSummary}`)
+        .join("\n\n");
+
+      // Build context from recent transcript
+      const transcriptContext = recentTranscript
+        .map(e => `- "${e.text}"`)
+        .join("\n");
+
+      const userPrompt = `UPCOMING QUESTION:
+  "${upcomingQuestionText}"
+
+  ${summaryContext ? `PRIOR QUESTION SUMMARIES:\n${summaryContext}\n` : ""}
+  ${transcriptContext ? `RECENT STATEMENTS FROM LAST QUESTION:\n${transcriptContext}` : ""}
+
+  Does the upcoming question's topic overlap with what the respondent has already discussed?`;
+
+      const response = await openai.chat.completions.create({
+        model: BARBARA_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 200,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) return null;
+
+      const parsed = JSON.parse(content) as TopicOverlapResult;
+      return parsed;
+    } catch (error) {
+      console.error("[TopicOverlap] Detection failed:", error);
+      return null;
+    }
+  }
+
+  Step 2: Add Helper Function to server/voice-interview.ts
+
+  Add near other helper functions (around line 580, near buildInterviewInstructions):
+
+  function buildOverlapInstruction(result: TopicOverlapResult, questionText: string): string {
+    const topics = result.overlappingTopics.slice(0, 2).join(" and ");
+
+    switch (result.coverageLevel) {
+      case 'fully_covered':
+        return `The respondent already covered ${topics} thoroughly earlier. Acknowledge this and ask if they'd like to add anything new, or if they're ready to move on. The question for reference: "${questionText}"`;
+      case 'partially_covered':
+        return `The respondent touched on ${topics} earlier. Briefly acknowledge this connection and invite any additional thoughts, then read the question: "${questionText}"`;
+      case 'mentioned':
+      default:
+        return `The respondent mentioned ${topics} earlier. Briefly acknowledge this, then read the question: "${questionText}"`;
+    }
+  }
+
+  Step 3: Modify next_question Handler in server/voice-interview.ts
+
+  Replace lines 1224-1233 (the response.create block) with:
+
+  // Detect topic overlap before asking next question
+  let transitionInstruction = `Smoothly transition to the next question. Acknowledge their previous response briefly, then read the question aloud: "${nextQuestion?.questionText}"`;
+
+  // Gather context for overlap detection
+  const completedSummaries = state.questionSummaries.filter((s): s is QuestionSummary => s != null);
+
+  // Get recent respondent statements from the question we just left (last 10 entries)
+  const recentTranscript = state.transcriptLog
+    .filter(e => e.questionIndex === previousIndex && e.speaker === "respondent")
+    .slice(-10);
+
+  // Only attempt detection if we have some context
+  if (completedSummaries.length > 0 || recentTranscript.length > 0) {
+    try {
+      const overlapResult = await Promise.race([
+        detectTopicOverlap(
+          nextQuestion?.questionText || "",
+          completedSummaries,
+          recentTranscript
+        ),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 1500))
+      ]);
+
+      if (overlapResult?.hasOverlap && overlapResult.overlappingTopics.length > 0) {
+        transitionInstruction = buildOverlapInstruction(overlapResult, nextQuestion?.questionText || "");
+        console.log(`[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`);
+      }
+    } catch (error) {
+      console.error("[TopicOverlap] Error during detection:", error);
+      // Continue with default instruction on error
+    }
+  }
+
+  // Trigger Alvia to read the new question aloud
+  state.openaiWs.send(
+    JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["text", "audio"],
+        instructions: transitionInstruction,
+      },
+    }),
+  );
+
+  Step 4: Add Import to server/voice-interview.ts
+
+  Update the import from barbara-orchestrator (around line 8):
+
+  import {
+    analyzeWithBarbara,
+    generateQuestionSummary,
+    detectTopicOverlap,
+    type QuestionSummary,
+    type TranscriptEntry
+  } from "./barbara-orchestrator";
+
+  ---
+  Files to Modify
+  ┌────────────────────────────────┬─────────────────┬────────────────────────────────────────────────────────────────────┐
+  │              File              │    Location     │                              Changes                               │
+  ├────────────────────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────┤
+  │ server/barbara-orchestrator.ts │ After line ~28  │ Add TopicOverlapResult interface and detectTopicOverlap() function │
+  ├────────────────────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────┤
+  │ server/voice-interview.ts      │ Line ~8         │ Update import to include detectTopicOverlap                        │
+  ├────────────────────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────┤
+  │ server/voice-interview.ts      │ Line ~580       │ Add buildOverlapInstruction() helper function                      │
+  ├────────────────────────────────┼─────────────────┼────────────────────────────────────────────────────────────────────┤
+  │ server/voice-interview.ts      │ Lines 1224-1233 │ Replace response.create block with overlap-aware version           │
+  └────────────────────────────────┴─────────────────┴────────────────────────────────────────────────────────────────────┘
+  ---
+  Behavior Summary
+  ┌───────────────────────────────────┬──────────────────────────────────────────────────────────────────────────┐
+  │             Scenario              │                               What Happens                               │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Q1 → Q2, no summaries yet         │ Uses recent transcript from Q1 to detect overlap                         │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Q2 → Q3, Q1 summary complete      │ Uses Q1 summary + Q2 transcript                                          │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Q3 → Q4, Q1+Q2 summaries complete │ Uses Q1+Q2 summaries + Q3 transcript                                     │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Timeout (>1.5s)                   │ Falls back to standard transition                                        │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ No overlap detected               │ Standard transition: "Acknowledge briefly, then read question"           │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Topic mentioned                   │ "The respondent mentioned X earlier. Briefly acknowledge, then read..."  │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Topic partially covered           │ "...touched on X earlier. Acknowledge and invite additional thoughts..." │
+  ├───────────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ Topic fully covered               │ "...covered X thoroughly. Ask if they'd like to add anything new..."     │
+  └───────────────────────────────────┴──────────────────────────────────────────────────────────────────────────┘
+  ---
+  Verification
+
+  1. Run npm run check to verify no type errors
+  2. Run npm run dev to start the server
+  3. Test scenarios:
+    - Q1 answer mentions a topic from Q2 → verify Alvia acknowledges on transition
+    - Q1 answer thoroughly covers Q3's topic → verify Alvia offers to skip/elaborate
+    - Fast respondent (summary not ready) → verify transcript fallback works
+    - Slow LLM response → verify timeout doesn't block transition
+  4. Check server logs for [TopicOverlap] entries to monitor detection rates
