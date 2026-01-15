@@ -104,8 +104,8 @@ export default function LandingPage() {
               <motion.div variants={fadeInUp} className="space-y-8">
                 <div className="space-y-4">
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-semibold tracking-tight leading-tight">
-                    Voice interviews at scale,{" "}
-                    <span className="text-primary">without losing depth</span>
+                    Interview depth,{" "}
+                    <span className="text-primary">survey scale</span>
                   </h1>
                   <p className="text-lg text-muted-foreground max-w-xl leading-relaxed">
                     Alvia is a voice-led hybrid survey-interview tool that captures rich, qualitative insights from respondents with the flexibility of an interviewer and the repeatability of a survey.

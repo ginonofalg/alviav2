@@ -204,7 +204,7 @@ export interface QuestionSummary {
   questionIndex: number;
   questionText: string;
   respondentSummary: string;
-  keyInsights: string[];
+  keyInsights: strin10[];
   completenessAssessment: string;
   relevantToFutureQuestions: string[];
   wordCount: number;

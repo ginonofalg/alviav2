@@ -879,7 +879,7 @@ async function handleOpenAIEvent(
       break;
 
     case "error":
-      console.error(`[VoiceInterview] OpenAI error:`, event.error);
+      conso5e.error(`[VoiceInterview] OpenAI error:`, event.error);
       clientWs.send(
         JSON.stringify({
           type: "error",
