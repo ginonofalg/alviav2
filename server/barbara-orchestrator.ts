@@ -1,9 +1,88 @@
 import OpenAI from "openai";
 
-// Use gpt-5-mini for all Barbara functions with reasoning capabilities
-const BARBARA_MODEL = "gpt-5-mini";
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Barbara configuration types
+export type ReasoningEffort = "low" | "medium" | "high";
+export type Verbosity = "low" | "medium" | "high";
+
+// Allowed models for Barbara use cases
+export const ALLOWED_MODELS = [
+  "gpt-5-mini",
+  "gpt-5",
+  "gpt-4o",
+  "gpt-4o-mini",
+  "o1",
+  "o1-mini",
+  "o1-pro",
+  "o3-mini",
+] as const;
+
+export type AllowedModel = typeof ALLOWED_MODELS[number];
+
+export interface BarbaraUseCaseConfig {
+  model: AllowedModel;
+  verbosity: Verbosity;
+  reasoningEffort: ReasoningEffort;
+}
+
+export interface BarbaraConfig {
+  analysis: BarbaraUseCaseConfig;
+  topicOverlap: BarbaraUseCaseConfig;
+  summarisation: BarbaraUseCaseConfig;
+}
+
+// Default configuration - can be updated at runtime
+const barbaraConfig: BarbaraConfig = {
+  analysis: {
+    model: "gpt-5-mini",
+    verbosity: "low",
+    reasoningEffort: "low",
+  },
+  topicOverlap: {
+    model: "gpt-5-mini",
+    verbosity: "low",
+    reasoningEffort: "low",
+  },
+  summarisation: {
+    model: "gpt-5-mini",
+    verbosity: "low",
+    reasoningEffort: "low",
+  },
+};
+
+// Getters and setters for Barbara configuration
+export function getBarbaraConfig(): BarbaraConfig {
+  return { ...barbaraConfig };
+}
+
+export function updateBarbaraConfig(updates: Partial<BarbaraConfig>): BarbaraConfig {
+  if (updates.analysis) {
+    Object.assign(barbaraConfig.analysis, updates.analysis);
+  }
+  if (updates.topicOverlap) {
+    Object.assign(barbaraConfig.topicOverlap, updates.topicOverlap);
+  }
+  if (updates.summarisation) {
+    Object.assign(barbaraConfig.summarisation, updates.summarisation);
+  }
+  return getBarbaraConfig();
+}
+
+export function updateAnalysisConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.analysis, config);
+  return { ...barbaraConfig.analysis };
+}
+
+export function updateTopicOverlapConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.topicOverlap, config);
+  return { ...barbaraConfig.topicOverlap };
+}
+
+export function updateSummarisationConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.summarisation, config);
+  return { ...barbaraConfig.summarisation };
+}
 
 export interface TranscriptEntry {
   speaker: "alvia" | "respondent";
@@ -56,16 +135,17 @@ export async function analyzeWithBarbara(
     const systemPrompt = buildBarbaraSystemPrompt();
     const userPrompt = buildBarbaraUserPrompt(input);
 
+    const config = barbaraConfig.analysis;
     const response = await openai.chat.completions.create({
-      model: BARBARA_MODEL,
+      model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 500,
-      reasoning_effort: "low",
-      verbosity: "low",
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const content = response.choices[0]?.message?.content;
@@ -204,7 +284,7 @@ export interface QuestionSummary {
   questionIndex: number;
   questionText: string;
   respondentSummary: string;
-  keyInsights: strin10[];
+  keyInsights: string[];
   completenessAssessment: string;
   relevantToFutureQuestions: string[];
   wordCount: number;
@@ -283,9 +363,10 @@ ${transcriptContext ? `RECENT STATEMENTS FROM LAST QUESTION:\n${transcriptContex
 
 Does the upcoming question's topic overlap with what the respondent has already discussed?`;
 
+    const config = barbaraConfig.topicOverlap;
     const promptLength = systemPrompt.length + userPrompt.length;
     console.log(
-      `[TopicOverlap] Calling OpenAI (model: ${BARBARA_MODEL}, prompt: ${promptLength} chars)`,
+      `[TopicOverlap] Calling OpenAI (model: ${config.model}, prompt: ${promptLength} chars)`,
     );
 
     let timedOut = false;
@@ -301,15 +382,15 @@ Does the upcoming question's topic overlap with what the respondent has already 
     );
 
     const detectionPromise = openai.chat.completions.create({
-      model: BARBARA_MODEL,
+      model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 200,
-      reasoning_effort: "low",
-      verbosity: "low",
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const response = await Promise.race([detectionPromise, timeoutPromise]);
@@ -415,16 +496,17 @@ Create a structured summary of the respondent's answer.`;
       );
     });
 
+    const config = barbaraConfig.summarisation;
     const summaryPromise = openai.chat.completions.create({
-      model: BARBARA_MODEL,
+      model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 600,
-      reasoning_effort: "low",
-      verbosity: "low",
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);

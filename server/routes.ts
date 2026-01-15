@@ -7,6 +7,14 @@ import { storage } from "./storage";
 import { handleVoiceInterview } from "./voice-interview";
 import { generateResumeToken, hashToken, getTokenExpiryDate, isTokenExpired } from "./resume-token";
 import { 
+  getBarbaraConfig, 
+  updateBarbaraConfig, 
+  updateAnalysisConfig, 
+  updateTopicOverlapConfig, 
+  updateSummarisationConfig,
+  ALLOWED_MODELS
+} from "./barbara-orchestrator";
+import { 
   insertProjectSchema, 
   insertTemplateSchema, 
   insertQuestionSchema,
@@ -888,6 +896,98 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error validating review token:", error);
       res.status(500).json({ message: "Failed to validate token" });
+    }
+  });
+
+  // Barbara Configuration API
+  const barbaraUseCaseConfigSchema = z.object({
+    model: z.enum(ALLOWED_MODELS as unknown as [string, ...string[]]).optional(),
+    verbosity: z.enum(["low", "medium", "high"]).optional(),
+    reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+  });
+
+  const barbaraConfigSchema = z.object({
+    analysis: barbaraUseCaseConfigSchema.optional(),
+    topicOverlap: barbaraUseCaseConfigSchema.optional(),
+    summarisation: barbaraUseCaseConfigSchema.optional(),
+  });
+
+  // GET /api/barbara/config - Get current Barbara configuration
+  app.get("/api/barbara/config", isAuthenticated, async (req, res) => {
+    try {
+      const config = getBarbaraConfig();
+      res.json(config);
+    } catch (error) {
+      console.error("Error fetching Barbara config:", error);
+      res.status(500).json({ message: "Failed to fetch Barbara configuration" });
+    }
+  });
+
+  // PATCH /api/barbara/config - Update Barbara configuration (all use cases)
+  app.patch("/api/barbara/config", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = barbaraConfigSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updatedConfig = updateBarbaraConfig(parseResult.data);
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating Barbara config:", error);
+      res.status(500).json({ message: "Failed to update Barbara configuration" });
+    }
+  });
+
+  // PATCH /api/barbara/config/analysis - Update analysis configuration
+  app.patch("/api/barbara/config/analysis", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = barbaraUseCaseConfigSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updatedConfig = updateAnalysisConfig(parseResult.data);
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating analysis config:", error);
+      res.status(500).json({ message: "Failed to update analysis configuration" });
+    }
+  });
+
+  // PATCH /api/barbara/config/topic-overlap - Update topic overlap configuration
+  app.patch("/api/barbara/config/topic-overlap", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = barbaraUseCaseConfigSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updatedConfig = updateTopicOverlapConfig(parseResult.data);
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating topic overlap config:", error);
+      res.status(500).json({ message: "Failed to update topic overlap configuration" });
+    }
+  });
+
+  // PATCH /api/barbara/config/summarisation - Update summarisation configuration
+  app.patch("/api/barbara/config/summarisation", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = barbaraUseCaseConfigSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updatedConfig = updateSummarisationConfig(parseResult.data);
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating summarisation config:", error);
+      res.status(500).json({ message: "Failed to update summarisation configuration" });
     }
   });
 
