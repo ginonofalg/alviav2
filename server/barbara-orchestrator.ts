@@ -265,9 +265,9 @@ FULL TRANSCRIPT SO FAR:
 ${transcriptSummary || "(No transcript yet)"}
 
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
-${currentQuestionResponses || "(No response yet)"}
+${currentQuestionResponses || "(No response yet)"} //check this gets pushed
 
-Based on this context, should Alvia receive any guidance? Respond with  //check this gets pushedyour analysis in JSON format.`;
+Based on this context, should Alvia receive any guidance? Respond with  your analysis in JSON format.`;
 }
 
 export function createEmptyMetrics(questionIndex: number): QuestionMetrics {
