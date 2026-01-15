@@ -538,7 +538,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
             //prefix_padding_ms: 150,
             type: "semantic_vad",
             eagerness: "low",
-            create_response: false,
+            create_response: true, // Alvia responds immediately; Barbara's guidance applies to NEXT turn
             interrupt_response: true,
           },
         },
@@ -805,7 +805,7 @@ async function handleOpenAIEvent(
 
     case "conversation.item.input_audio_transcription.completed":
       // User's speech transcript (from Whisper)
-      // Use async IIFE to await Barbara before triggering response
+      // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
       (async () => {
         if (event.transcript) {
           // Add to transcript log (both in-memory and persistence buffer)
@@ -834,20 +834,12 @@ async function handleOpenAIEvent(
           // Schedule debounced persist
           scheduleDebouncedPersist(sessionId);
 
-          // Await Barbara analysis before triggering AI response
-          await triggerBarbaraAnalysis(sessionId, clientWs);
-
-          // Manually trigger AI response after Barbara has analyzed and injected guidance
-          if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-            state.openaiWs.send(
-              JSON.stringify({
-                type: "response.create",
-                response: {
-                  modalities: ["text", "audio"],
-                },
-              }),
-            );
-          }
+          // Trigger Barbara analysis asynchronously (non-blocking)
+          // Her guidance will apply to the NEXT turn, not this one
+          // Response is automatically created by OpenAI due to create_response: true
+          triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
+            console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
+          });
         }
         clientWs.send(
           JSON.stringify({
@@ -896,7 +888,9 @@ async function handleOpenAIEvent(
   }
 }
 
-const BARBARA_TIMEOUT_MS = 10000; // 10 second timeout for Barbara analysis (increased for summary context)
+// Reduced timeout since Barbara analysis is now non-blocking (lag-by-one-turn architecture)
+// Barbara has more time to analyze since her guidance applies to the NEXT turn
+const BARBARA_TIMEOUT_MS = 5000;
 
 async function triggerBarbaraAnalysis(
   sessionId: string,
@@ -1101,10 +1095,14 @@ async function handleClientMessage(
             }),
           );
 
-          // Await Barbara analysis before triggering AI response
-          await triggerBarbaraAnalysis(sessionId, clientWs);
+          // Trigger Barbara analysis asynchronously (non-blocking)
+          // Her guidance will apply to the NEXT turn, not this one
+          triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
+            console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
+          });
 
-          // Trigger AI response after Barbara has had a chance to inject guidance
+          // For text input, we still need to manually trigger response
+          // (unlike audio mode where create_response: true handles it)
           if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
             state.openaiWs.send(
               JSON.stringify({
