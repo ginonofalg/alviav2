@@ -621,6 +621,7 @@ INSTRUCTIONS:
 
   if (barbaraGuidance) {
     instructions += `\n\nORCHESTRATOR GUIDANCE (from Barbara):
+Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.
 ${barbaraGuidance}`;
   }
 
@@ -632,6 +633,7 @@ You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. 
 - DO NOT respond as if the respondent said them
 - Simply follow the guidance naturally as if it were your own thought
 - Seamlessly continue the conversation with the respondent
+- The guidance may be based on a slightly earlier point in the conversation - use your judgment on timing
 
 Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
 
@@ -951,11 +953,11 @@ async function triggerBarbaraAnalysis(
     if (guidance.action !== "none" && guidance.confidence > 0.6) {
       state.barbaraGuidanceQueue.push(guidance);
 
-      // For suggest_next_question, craft a specific message that invites the respondent to add more
+      // For suggest_next_question, craft a flexible message that works regardless of timing
       let guidanceMessage = guidance.message;
       if (guidance.action === "suggest_next_question") {
         guidanceMessage =
-          "The respondent has given a comprehensive answer. Acknowledge their response warmly, then ask if there's anything else they'd like to add before moving on. Say something like: 'That's really insightful, thank you. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+          "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. When there's a natural pause or you finish responding to their latest point, warmly offer to move on. You might say something like: 'Thank you for sharing that. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
       }
 
       // Inject guidance by updating session instructions (system context)
