@@ -56,6 +56,7 @@ The core data model follows this hierarchy:
 - **Form validation**: Zod schemas with react-hook-form for type-safe form handling
 - **API pattern**: REST endpoints under `/api/*` with authentication middleware
 - **Component library**: shadcn/ui components built on Radix primitives with Tailwind styling
+- **Lag-by-one-turn guidance**: Barbara's orchestrator analysis runs asynchronously (non-blocking). Her guidance is injected into session instructions and applies to Alvia's NEXT response, not the current one. This eliminates response latency while keeping guidance contextually relevant.
 
 ## External Dependencies
 
