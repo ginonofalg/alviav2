@@ -37,12 +37,12 @@ const barbaraConfig: BarbaraConfig = {
   analysis: {
     model: "gpt-5-mini",
     verbosity: "low",
-    reasoningEffort: "low",
+    reasoningEffort: "minimal",
   },
   topicOverlap: {
     model: "gpt-5-mini",
     verbosity: "low",
-    reasoningEffort: "low",
+    reasoningEffort: "minimal",
   },
   summarisation: {
     model: "gpt-5-mini",
@@ -267,7 +267,7 @@ ${transcriptSummary || "(No transcript yet)"}
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
 ${currentQuestionResponses || "(No response yet)"}
 
-Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
+Based on this context, should Alvia receive any guidance? Respond with  //check this gets pushedyour analysis in JSON format.`;
 }
 
 export function createEmptyMetrics(questionIndex: number): QuestionMetrics {
@@ -284,7 +284,7 @@ export interface QuestionSummary {
   questionIndex: number;
   questionText: string;
   respondentSummary: string;
-  keyInsights: string[];
+  keyInsights: strin10[];
   completenessAssessment: string;
   relevantToFutureQuestions: string[];
   wordCount: number;
