@@ -3,7 +3,7 @@
 ## Problem Statement
 
 ### Current Architecture
-The voice interview system uses OpenAI's Realtime API with server-side Voice Activity Detection (VAD). Currently, turn detection is configured with `create_response: false` at `server/voice-interview.ts:539`. This means when the user stops speaking, the API does NOT automatically generate a response.
+The voice interview system uses OpenAI's Realtime API with semantic Voice Activity Detection (VAD). Currently, turn detection is configured with `create_response: false` at `server/voice-interview.ts:541`. This means when the user stops speaking, the API does NOT automatically generate a response.
 
 Instead, the flow is:
 1. User stops speaking → VAD detects turn end
@@ -19,7 +19,7 @@ Instead, the flow is:
 - Network latency adds delay
 - The OpenAI API has any processing lag
 
-The 10-second timeout (`BARBARA_TIMEOUT_MS` at line 897) means conversations could have multi-second pauses after every user utterance.
+The 10-second timeout (`BARBARA_TIMEOUT_MS` at line 899) means conversations could have multi-second pauses after every user utterance.
 
 ### Why Current Approach Exists
 The sequential approach ensures Barbara's guidance is included in Alvia's immediate response. For example, if Barbara detects "the respondent has fully answered," Alvia immediately offers to move to the next question.
@@ -50,7 +50,7 @@ However, this creates a user experience problem: **perceived latency is worse th
 - ⚠️ **First turn has no guidance** - The very first response in the interview won't have Barbara's input (though the initial session instructions are still comprehensive)
 
 ### Why This Is Better Than Conversation Items
-The code currently uses conversation items for orchestrator messages in some places (e.g., `next_question` handler at lines 1323-1336):
+The code currently uses conversation items for orchestrator messages in some places (e.g., `next_question` handler at lines 1325-1339):
 
 ```typescript
 state.openaiWs.send(
@@ -74,14 +74,12 @@ However, **conversation items can confuse Alvia** - even with explicit instructi
 
 ### File: `server/voice-interview.ts`
 
-#### 1. Change Turn Detection Configuration (Line 539)
+#### 1. Change Turn Detection Configuration (Line 534)
 **Current:**
 ```typescript
 turn_detection: {
-  type: "server_vad",
-  threshold: 0.3,
-  silence_duration_ms: 800,
-  prefix_padding_ms: 150,
+  type: "semantic_vad",
+  eagerness: "low", 
   create_response: false,  // ← CHANGE THIS
   interrupt_response: true,
 },
@@ -90,16 +88,14 @@ turn_detection: {
 **New:**
 ```typescript
 turn_detection: {
-  type: "server_vad",
-  threshold: 0.3,
-  silence_duration_ms: 800,
-  prefix_padding_ms: 150,
+  type: "semantic_vad",
+  eagerness: "low",
   create_response: true,  // ← CHANGED: Alvia responds immediately
   interrupt_response: true,
 },
 ```
 
-#### 2. Remove Manual Response Triggering After Audio Transcription (Lines 836-848)
+#### 2. Remove Manual Response Triggering After Audio Transcription (Lines 837-850)
 **Current:**
 ```typescript
 // Await Barbara analysis before triggering AI response
@@ -130,7 +126,7 @@ triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
 // No need to manually trigger response.create
 ```
 
-#### 3. Remove Manual Response Triggering After Text Input (Lines 1102-1115)
+#### 3. Remove Manual Response Triggering After Text Input (Lines 1104-1117)
 **Current:**
 ```typescript
 // Await Barbara analysis before triggering AI response
@@ -161,7 +157,7 @@ triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
 // No need to manually trigger response.create
 ```
 
-#### 4. Update Comment (Line 1039)
+#### 4. Update Comment (Line 1041)
 **Current:**
 ```typescript
 // With server_vad and create_response: false, the transcription handler triggers the response
@@ -173,7 +169,7 @@ triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
 // Barbara's guidance is injected asynchronously and applies to the next turn
 ```
 
-#### 5. Consider Removing Response Trigger on Initial Session (Lines 744-752)
+#### 5. Consider Removing Response Trigger on Initial Session (Lines 740-755)
 **Current behavior:** On `session.updated` event after initial setup, code manually triggers `response.create` to start the interview.
 
 **New behavior:** With `create_response: true`, you may want Alvia to wait for user input rather than greeting immediately. If you want to keep the initial greeting, you can leave this as-is. If you want user to speak first, remove this block:
@@ -202,7 +198,7 @@ if (
 ### Optional Enhancement: Reduce Barbara Timeout
 Since Barbara's analysis is no longer blocking the conversation, you could reduce the timeout from 10 seconds to something shorter (e.g., 5 seconds) to catch failures faster:
 
-**Line 897:**
+**Line 899:**
 ```typescript
 const BARBARA_TIMEOUT_MS = 5000; // Reduced from 10000
 ```
@@ -253,5 +249,5 @@ After implementing these changes, test:
 
 - The `triggerBarbaraAnalysis` function already returns `Promise<BarbaraGuidance | null>`, so changing from `await` to fire-and-forget is straightforward
 - Barbara's guidance updates session instructions via `session.update`, which persists across turns until updated again
-- The `isBarbaraGuidanceUpdate` flag (lines 755) may no longer be necessary but won't cause issues if left in place
+- The `isBarbaraGuidanceUpdate` flag (lines 757) may no longer be necessary but won't cause issues if left in place
 - All transcript logging, metrics tracking, and persistence remain unchanged
