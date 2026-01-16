@@ -21,10 +21,17 @@ import {
   Info,
   Download
 } from "lucide-react";
-import type { InterviewSession, Segment, Question } from "@shared/schema";
+import type { InterviewSession, Segment, Question, QuestionSummary } from "@shared/schema";
 import { format, formatDuration, intervalToDuration } from "date-fns";
 
-interface SessionWithSegments extends InterviewSession {
+interface TranscriptEntry {
+  text: string;
+  speaker: "alvia" | "respondent";
+  timestamp: number;
+  questionIndex: number;
+}
+
+interface SessionWithDetails extends InterviewSession {
   segments?: (Segment & { question?: Question })[];
 }
 
@@ -161,7 +168,7 @@ export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
   const sessionId = params.id;
 
-  const { data: session, isLoading } = useQuery<SessionWithSegments>({
+  const { data: session, isLoading } = useQuery<SessionWithDetails>({
     queryKey: ["/api/sessions", sessionId],
     enabled: !!sessionId,
   });
@@ -290,7 +297,59 @@ export default function SessionDetailPage() {
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
-          {session.segments && session.segments.length > 0 ? (
+          {Array.isArray(session.questionSummaries) && session.questionSummaries.length > 0 ? (
+            (session.questionSummaries as QuestionSummary[]).map((summary: QuestionSummary, index: number) => (
+              <Card key={index} className="mb-4" data-testid={`card-summary-${index}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">Q{summary.questionIndex + 1}</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {summary.turnCount} turns, {summary.wordCount} words
+                        </span>
+                      </div>
+                      <CardTitle className="text-base font-medium">
+                        {summary.questionText}
+                      </CardTitle>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" />
+                      Summary
+                    </h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {summary.respondentSummary}
+                    </p>
+                  </div>
+
+                  {summary.keyInsights && summary.keyInsights.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium flex items-center gap-2">
+                        <Quote className="w-4 h-4 text-primary" />
+                        Key Insights
+                      </h4>
+                      <ul className="space-y-1.5">
+                        {summary.keyInsights.map((insight, i) => (
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-primary mt-1.5">•</span>
+                            <span>{insight}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="text-xs text-muted-foreground pt-2 border-t">
+                    <span className="font-medium">Completeness:</span> {summary.completenessAssessment}
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          ) : session.segments && session.segments.length > 0 ? (
             session.segments.map((segment, index) => (
               <SegmentCard key={segment.id} segment={segment} index={index} />
             ))
@@ -298,7 +357,7 @@ export default function SessionDetailPage() {
             <Card className="py-12">
               <CardContent className="text-center">
                 <FileText className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
-                <h3 className="font-medium mb-2">No segments yet</h3>
+                <h3 className="font-medium mb-2">No summaries yet</h3>
                 <p className="text-sm text-muted-foreground">
                   Question summaries will appear here as the interview progresses.
                 </p>
@@ -316,7 +375,41 @@ export default function SessionDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {session.segments && session.segments.length > 0 ? (
+              {Array.isArray(session.liveTranscript) && session.liveTranscript.length > 0 ? (
+                <ScrollArea className="h-[600px] pr-4">
+                  <div className="space-y-3">
+                    {(session.liveTranscript as TranscriptEntry[]).map((entry: TranscriptEntry, index: number) => (
+                      <div 
+                        key={index} 
+                        className={`flex gap-3 ${entry.speaker === "alvia" ? "" : "flex-row-reverse"}`}
+                      >
+                        <div 
+                          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                            entry.speaker === "alvia" 
+                              ? "bg-primary/10 text-primary" 
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {entry.speaker === "alvia" ? "A" : "R"}
+                        </div>
+                        <div 
+                          className={`flex-1 max-w-[80%] p-3 rounded-lg text-sm ${
+                            entry.speaker === "alvia" 
+                              ? "bg-primary/5 border border-primary/10" 
+                              : "bg-muted"
+                          }`}
+                        >
+                          <p className="leading-relaxed">{entry.text}</p>
+                          <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="text-xs py-0">Q{entry.questionIndex + 1}</Badge>
+                            <span>{format(new Date(entry.timestamp), "h:mm:ss a")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : session.segments && session.segments.length > 0 ? (
                 <ScrollArea className="h-[600px] pr-4">
                   <div className="space-y-6">
                     {session.segments.map((segment, index) => (
