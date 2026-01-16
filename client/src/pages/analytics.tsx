@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   BarChart3, 
   TrendingUp, 
@@ -9,8 +11,20 @@ import {
   Clock,
   MessageSquare,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Filter
 } from "lucide-react";
+
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface Collection {
+  id: string;
+  name: string;
+  projectId: string;
+}
 
 interface AnalyticsData {
   totalSessions: number;
@@ -123,8 +137,44 @@ function QuestionStatRow({
 }
 
 export default function AnalyticsPage() {
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string>("");
+
+  const { data: projects } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const { data: collections } = useQuery<Collection[]>({
+    queryKey: ["/api/projects", selectedProjectId, "collections"],
+    queryFn: async () => {
+      if (!selectedProjectId) return [];
+      const res = await fetch(`/api/projects/${selectedProjectId}/collections`);
+      if (!res.ok) throw new Error("Failed to fetch collections");
+      return res.json();
+    },
+    enabled: !!selectedProjectId,
+  });
+
+  const analyticsQueryKey = selectedCollectionId 
+    ? ["/api/analytics", { collectionId: selectedCollectionId }]
+    : selectedProjectId 
+      ? ["/api/analytics", { projectId: selectedProjectId }]
+      : ["/api/analytics"];
+
+  const analyticsQueryFn = async () => {
+    const params = new URLSearchParams();
+    if (selectedCollectionId) params.set("collectionId", selectedCollectionId);
+    else if (selectedProjectId) params.set("projectId", selectedProjectId);
+    
+    const url = `/api/analytics${params.toString() ? `?${params}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch analytics");
+    return res.json();
+  };
+
   const { data: analytics, isLoading } = useQuery<AnalyticsData>({
-    queryKey: ["/api/analytics"],
+    queryKey: analyticsQueryKey,
+    queryFn: analyticsQueryFn,
   });
 
   const formatDuration = (minutes: number) => {
@@ -134,13 +184,71 @@ export default function AnalyticsPage() {
     return `${hours}h ${mins}m`;
   };
 
+  const handleProjectChange = (value: string) => {
+    setSelectedProjectId(value === "all" ? "" : value);
+    setSelectedCollectionId("");
+  };
+
+  const handleCollectionChange = (value: string) => {
+    setSelectedCollectionId(value === "all" ? "" : value);
+  };
+
+  const getFilterLabel = () => {
+    if (selectedCollectionId && collections) {
+      const collection = collections.find(c => c.id === selectedCollectionId);
+      return collection?.name || "Collection";
+    }
+    if (selectedProjectId && projects) {
+      const project = projects.find(p => p.id === selectedProjectId);
+      return project?.name || "Project";
+    }
+    return "All interviews";
+  };
+
   return (
     <div className="p-8 space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Analytics</h1>
-        <p className="text-muted-foreground mt-1">
-          Insights across all your interviews
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Analytics</h1>
+          <p className="text-muted-foreground mt-1">
+            Insights across {getFilterLabel().toLowerCase()}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          <Select value={selectedProjectId || "all"} onValueChange={handleProjectChange}>
+            <SelectTrigger className="w-[180px]" data-testid="select-project-filter">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projects?.map(project => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select 
+            value={selectedCollectionId || "all"} 
+            onValueChange={handleCollectionChange}
+            disabled={!selectedProjectId}
+          >
+            <SelectTrigger className="w-[180px]" data-testid="select-collection-filter">
+              <SelectValue placeholder="All Collections" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Collections</SelectItem>
+              {collections?.map(collection => (
+                <SelectItem key={collection.id} value={collection.id}>
+                  {collection.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
