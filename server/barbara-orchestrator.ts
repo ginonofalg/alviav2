@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ChatCompletion } from "openai/resources/chat/completions";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -154,7 +155,7 @@ export async function analyzeWithBarbara(
       max_completion_tokens: 500,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
+    } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -288,18 +289,8 @@ export function createEmptyMetrics(questionIndex: number): QuestionMetrics {
   };
 }
 
-export interface QuestionSummary {
-  questionIndex: number;
-  questionText: string;
-  respondentSummary: string;
-  keyInsights: string[];
-  completenessAssessment: string;
-  relevantToFutureQuestions: string[];
-  wordCount: number;
-  turnCount: number;
-  activeTimeMs: number;
-  timestamp: number;
-}
+import type { QuestionSummary, QualityFlag } from "@shared/schema";
+export type { QuestionSummary };
 
 export interface TopicOverlapResult {
   hasOverlap: boolean;
@@ -467,15 +458,28 @@ export async function generateQuestionSummary(
     .map((e) => `[${e.speaker.toUpperCase()}]: ${e.text}`)
     .join("\n");
 
-  const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question.
+  const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question, including quality analysis.
 
 You must respond with a JSON object containing:
 {
   "respondentSummary": "A 2-3 sentence summary of what the respondent said",
   "keyInsights": ["3-5 bullet points of main themes, insights, or memorable quotes"],
   "completenessAssessment": "Brief note on answer quality/depth (e.g., 'Comprehensive with specific examples' or 'Brief but covered key points')",
-  "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"]
+  "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"],
+  "qualityFlags": ["Array of applicable flags from: incomplete, ambiguous, contradiction, distress_cue, off_topic, low_engagement"],
+  "qualityScore": 0-100,
+  "qualityNotes": "Brief explanation of quality assessment"
 }
+
+Quality flags definitions:
+- incomplete: Answer doesn't address key aspects of the question
+- ambiguous: Response is unclear or could be interpreted multiple ways
+- contradiction: Contains conflicting statements
+- distress_cue: Shows signs of discomfort, anxiety, or distress
+- off_topic: Significantly strays from the question topic
+- low_engagement: Very short or disengaged responses
+
+Quality score (0-100): Rate overall answer quality based on depth, relevance, and engagement.
 
 Focus on what the respondent actually said, not what the interviewer asked. Extract key themes and insights. Keep the summary concise (~200 words total).`;
 
@@ -515,7 +519,7 @@ Create a structured summary of the respondent's answer.`;
       max_completion_tokens: 600,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
+    } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
     const content = response.choices[0]?.message?.content;
@@ -525,6 +529,11 @@ Create a structured summary of the respondent's answer.`;
     }
 
     const parsed = JSON.parse(content);
+
+    const validFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
+    const qualityFlags = Array.isArray(parsed.qualityFlags)
+      ? parsed.qualityFlags.filter((f: string) => validFlags.includes(f as QualityFlag))
+      : [];
 
     return {
       questionIndex,
@@ -540,6 +549,9 @@ Create a structured summary of the respondent's answer.`;
       turnCount: metrics.turnCount,
       activeTimeMs: metrics.activeTimeMs,
       timestamp: Date.now(),
+      qualityFlags,
+      qualityScore: typeof parsed.qualityScore === "number" ? Math.min(100, Math.max(0, parsed.qualityScore)) : undefined,
+      qualityNotes: parsed.qualityNotes || undefined,
     };
   } catch (error) {
     console.error(
@@ -566,5 +578,8 @@ function createEmptySummary(
     turnCount: metrics.turnCount,
     activeTimeMs: metrics.activeTimeMs,
     timestamp: Date.now(),
+    qualityFlags: ["low_engagement"],
+    qualityScore: 20,
+    qualityNotes: "Minimal or no response provided",
   };
 }
