@@ -1014,6 +1014,12 @@ async function triggerBarbaraAnalysis(
           state.questions,
         );
 
+        // Log the complete Alvia prompt when Barbara issues guidance
+        console.log(`\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`);
+        console.log("=".repeat(80));
+        console.log(updatedInstructions);
+        console.log("=".repeat(80) + "\n");
+
         state.openaiWs.send(
           JSON.stringify({
             type: "session.update",
