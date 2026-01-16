@@ -301,6 +301,14 @@ export type Respondent = typeof respondents.$inferSelect;
 export type InsertRespondent = z.infer<typeof insertRespondentSchema>;
 export type InterviewSession = typeof interviewSessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
+
+// Session with respondent info for display
+export interface SessionWithRespondent extends InterviewSession {
+  respondent?: {
+    fullName: string | null;
+    informalName: string | null;
+  };
+}
 export type Segment = typeof segments.$inferSelect;
 export type InsertSegment = z.infer<typeof insertSegmentSchema>;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;

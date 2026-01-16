@@ -15,7 +15,7 @@ import {
   BarChart3
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Collection, InterviewTemplate, Project, InterviewSession } from "@shared/schema";
+import type { Collection, InterviewTemplate, Project, SessionWithRespondent } from "@shared/schema";
 
 interface CollectionWithDetails extends Collection {
   template?: InterviewTemplate;
@@ -32,7 +32,7 @@ export default function CollectionDetailPage() {
     enabled: !!collectionId,
   });
 
-  const { data: sessions } = useQuery<InterviewSession[]>({
+  const { data: sessions } = useQuery<SessionWithRespondent[]>({
     queryKey: ["/api/collections", collectionId, "sessions"],
     enabled: !!collectionId,
   });
@@ -229,26 +229,29 @@ export default function CollectionDetailPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {sessions.slice(0, 5).map((session) => (
-                <Link key={session.id} href={`/sessions/${session.id}`}>
-                  <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Users className="w-4 h-4 text-primary" />
+              {sessions.slice(0, 5).map((session) => {
+                const displayName = session.respondent?.informalName || session.respondent?.fullName || "Anonymous";
+                return (
+                  <Link key={session.id} href={`/sessions/${session.id}`}>
+                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer" data-testid={`session-row-${session.id}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          <Users className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm" data-testid={`session-name-${session.id}`}>{displayName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(session.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">Session</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(session.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
+                      <Badge variant={session.status === "completed" ? "default" : "secondary"}>
+                        {session.status}
+                      </Badge>
                     </div>
-                    <Badge variant={session.status === "completed" ? "default" : "secondary"}>
-                      {session.status}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </CardContent>

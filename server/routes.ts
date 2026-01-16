@@ -493,7 +493,22 @@ export async function registerRoutes(
       }
 
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);
-      res.json(sessions);
+      
+      // Enrich sessions with respondent info
+      const sessionsWithRespondents = await Promise.all(
+        sessions.map(async (session) => {
+          const respondent = await storage.getRespondent(session.respondentId);
+          return {
+            ...session,
+            respondent: respondent ? {
+              fullName: respondent.fullName,
+              informalName: respondent.informalName,
+            } : undefined,
+          };
+        })
+      );
+      
+      res.json(sessionsWithRespondents);
     } catch (error) {
       console.error("Error fetching collection sessions:", error);
       res.status(500).json({ message: "Failed to fetch sessions" });
