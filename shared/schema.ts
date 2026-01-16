@@ -110,6 +110,10 @@ export const collections = pgTable("collections", {
   targetResponses: integer("target_responses"),
   createdAt: timestamp("created_at").defaultNow(),
   closedAt: timestamp("closed_at"),
+  // Analytics metadata
+  lastAnalyzedAt: timestamp("last_analyzed_at"),
+  analyzedSessionCount: integer("analyzed_session_count").default(0),
+  analyticsData: jsonb("analytics_data"),
 });
 
 // Respondents
@@ -358,6 +362,8 @@ export type PersistedQuestionState = {
   turnCount: number;
 };
 
+export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
+
 export type QuestionSummary = {
   questionIndex: number;
   questionText: string;
@@ -369,6 +375,31 @@ export type QuestionSummary = {
   turnCount: number;
   activeTimeMs: number;
   timestamp: number;
+  // Quality analysis (added post-interview or during summarization)
+  qualityFlags?: QualityFlag[];
+  qualityScore?: number; // 0-100 AI-rated quality
+  qualityNotes?: string;
+};
+
+// Collection-level analytics data (stored in collections.analyticsData)
+export type CollectionAnalytics = {
+  themes: { theme: string; count: number; sessions: string[] }[];
+  questionPerformance: {
+    questionIndex: number;
+    questionText: string;
+    avgWordCount: number;
+    avgTurnCount: number;
+    avgQualityScore: number;
+    responseCount: number;
+    qualityFlagCounts: Record<QualityFlag, number>;
+  }[];
+  overallStats: {
+    totalCompletedSessions: number;
+    avgSessionDuration: number;
+    avgQualityScore: number;
+    commonQualityIssues: { flag: QualityFlag; count: number }[];
+  };
+  generatedAt: number;
 };
 
 // Post-interview review types
