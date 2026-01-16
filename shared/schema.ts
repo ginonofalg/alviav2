@@ -119,6 +119,8 @@ export const respondents = pgTable("respondents", {
   userId: varchar("user_id"),
   email: text("email"),
   displayName: text("display_name"),
+  fullName: text("full_name"),
+  informalName: text("informal_name"),
   profileFields: jsonb("profile_fields"),
   invitedAt: timestamp("invited_at").defaultNow(),
   consentGivenAt: timestamp("consent_given_at"),
