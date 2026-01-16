@@ -546,8 +546,13 @@ export class DatabaseStorage implements IStorage {
     const completedSessions = completedSessionsList.length;
     
     const durations = allSessions
-      .filter(s => s.totalDurationMs && s.totalDurationMs > 0)
-      .map(s => s.totalDurationMs!);
+      .filter(s => s.startedAt && s.completedAt)
+      .map(s => {
+        const start = new Date(s.startedAt!).getTime();
+        const end = new Date(s.completedAt!).getTime();
+        return end - start;
+      })
+      .filter(d => d > 0);
     const averageDuration = durations.length > 0 
       ? durations.reduce((a, b) => a + b, 0) / durations.length / 60000 
       : 0;
