@@ -608,9 +608,9 @@ function buildInterviewInstructions(
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
   
-  // Build personalization context
+  // Build personalization context - only use name at the very start, not repeatedly
   const nameContext = respondentName 
-    ? `The respondent's name is "${respondentName}". Address them by name occasionally throughout the conversation to keep it personal.`
+    ? `The respondent's name is "${respondentName}". Only use their name once at the very beginning of the interview as a greeting. After that, do NOT use their name again - just continue the conversation naturally without addressing them by name.`
     : "The respondent has not provided their name. Address them in a friendly but general manner.";
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
@@ -699,9 +699,9 @@ function buildResumeInstructions(state: InterviewState): string {
   const status = questionState?.status || "in_progress";
   const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
 
-  // Build personalization context
+  // Build personalization context - only use name once when welcoming back
   const nameContext = respondentName 
-    ? `The respondent's name is "${respondentName}". Use their name in the welcome-back greeting.`
+    ? `The respondent's name is "${respondentName}". Use their name once in the welcome-back greeting, then do not use it again.`
     : "The respondent has not provided their name.";
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
