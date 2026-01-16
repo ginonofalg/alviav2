@@ -609,14 +609,14 @@ function buildInterviewInstructions(
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
-  
+
   // Build personalization context - only use name at the very start, not repeatedly
-  const nameContext = respondentName 
+  const nameContext = respondentName
     ? `The respondent's name is "${respondentName}". Only use their name once at the very beginning of the interview as a greeting. After that, do NOT use their name again - just continue the conversation naturally without addressing them by name.`
     : "The respondent has not provided their name. Address them in a friendly but general manner.";
 
   // Build upcoming questions list to avoid duplicating follow-ups
-  const upcomingQuestions = allQuestions 
+  const upcomingQuestions = allQuestions
     ? allQuestions
         .slice(questionIndex + 1)
         .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
@@ -638,24 +638,28 @@ CURRENT QUESTION TO ASK:
 
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
-${upcomingQuestions ? `
+${
+  upcomingQuestions
+    ? `
 UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
 ${upcomingQuestions}
-` : ""}
+`
+    : ""
+}
 INSTRUCTIONS:
 1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
-4. Use the guidance to know what depth of answer is expected.
+4. Use the guidance for this question to know what depth of answer is expected.
 5. Be encouraging and conversational, matching the ${tone} tone.
-6. If Barbara's guidance is that the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
+6. If the ORCHESTRATOR'S STEER is that the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
 7. Keep responses concise - this is a voice conversation.
 8. IMPORTANT: Before asking any follow-up, check if it overlaps with an upcoming question - if so, skip it and move on.`;
 
   if (barbaraGuidance) {
-    instructions += `\n\nORCHESTRATOR GUIDANCE (from Barbara):
-Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.
-${barbaraGuidance}`;
+    instructions += `\n\nORCHESTRATOR'S STEER:
+${barbaraGuidance}
+Note: This steer is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this naturally when appropriate, not necessarily immediately.`;
   }
 
   instructions += `
@@ -714,7 +718,7 @@ function buildResumeInstructions(state: InterviewState): string {
   const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
 
   // Build personalization context - only use name once when welcoming back
-  const nameContext = respondentName 
+  const nameContext = respondentName
     ? `The respondent's name is "${respondentName}". Use their name once in the welcome-back greeting, then do not use it again.`
     : "The respondent has not provided their name.";
 
@@ -1015,7 +1019,9 @@ async function triggerBarbaraAnalysis(
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
-        console.log(`\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`);
+        console.log(
+          `\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`,
+        );
         console.log("=".repeat(80));
         console.log(updatedInstructions);
         console.log("=".repeat(80) + "\n");
