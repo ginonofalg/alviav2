@@ -12,7 +12,8 @@ import {
   updateAnalysisConfig, 
   updateTopicOverlapConfig, 
   updateSummarisationConfig,
-  ALLOWED_MODELS
+  ALLOWED_MODELS,
+  generateCrossInterviewAnalysis
 } from "./barbara-orchestrator";
 import { 
   insertProjectSchema, 
@@ -22,7 +23,9 @@ import {
   insertRespondentSchema,
   insertSessionSchema,
   insertSegmentSchema,
-  type ReviewRatings
+  type ReviewRatings,
+  type QuestionSummary,
+  type CollectionAnalytics
 } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -67,6 +70,91 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching analytics:", error);
       res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
+  // Collection Analytics - Get analytics for a specific collection
+  app.get("/api/collections/:collectionId/analytics", isAuthenticated, async (req, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const sessions = await storage.getSessionsByCollection(req.params.collectionId);
+      const completedSessions = sessions.filter(s => s.status === "completed");
+      
+      const isStale = !collection.lastAnalyzedAt || 
+        completedSessions.length !== collection.analyzedSessionCount;
+      
+      res.json({
+        analytics: collection.analyticsData as CollectionAnalytics | null,
+        lastAnalyzedAt: collection.lastAnalyzedAt,
+        analyzedSessionCount: collection.analyzedSessionCount || 0,
+        currentSessionCount: completedSessions.length,
+        isStale,
+      });
+    } catch (error) {
+      console.error("Error fetching collection analytics:", error);
+      res.status(500).json({ message: "Failed to fetch collection analytics" });
+    }
+  });
+
+  // Collection Analytics - Trigger cross-interview analysis
+  app.post("/api/collections/:collectionId/analytics/refresh", isAuthenticated, async (req, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const template = await storage.getTemplate(collection.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const questions = await storage.getQuestionsByTemplate(template.id);
+      const sessions = await storage.getSessionsByCollection(req.params.collectionId);
+      const completedSessions = sessions.filter(s => s.status === "completed");
+
+      if (completedSessions.length === 0) {
+        return res.status(400).json({ message: "No completed sessions to analyze" });
+      }
+
+      const sessionsWithSummaries = completedSessions.map(s => ({
+        sessionId: s.id,
+        questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
+        durationMs: s.totalDurationMs || 0,
+      }));
+
+      const project = await storage.getProject(template.projectId);
+      const analysisResult = await generateCrossInterviewAnalysis({
+        sessions: sessionsWithSummaries,
+        templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidanceNotes || "" })),
+        templateObjective: project?.objective || "",
+      });
+
+      const analyticsData: CollectionAnalytics = {
+        ...analysisResult,
+        generatedAt: Date.now(),
+      };
+
+      await storage.updateCollection(req.params.collectionId, {
+        lastAnalyzedAt: new Date(),
+        analyzedSessionCount: completedSessions.length,
+        analyticsData,
+      } as any);
+
+      res.json({
+        analytics: analyticsData,
+        lastAnalyzedAt: new Date(),
+        analyzedSessionCount: completedSessions.length,
+        currentSessionCount: completedSessions.length,
+        isStale: false,
+      });
+    } catch (error) {
+      console.error("Error generating collection analytics:", error);
+      res.status(500).json({ message: "Failed to generate collection analytics" });
     }
   });
 

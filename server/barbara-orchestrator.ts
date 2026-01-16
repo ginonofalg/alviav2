@@ -583,3 +583,199 @@ function createEmptySummary(
     qualityNotes: "Minimal or no response provided",
   };
 }
+
+export interface CrossInterviewAnalysisInput {
+  sessions: {
+    sessionId: string;
+    questionSummaries: QuestionSummary[];
+    durationMs: number;
+  }[];
+  templateQuestions: { text: string; guidance: string }[];
+  templateObjective: string;
+}
+
+export interface ThemeResult {
+  theme: string;
+  count: number;
+  sessions: string[];
+}
+
+const CROSS_ANALYSIS_TIMEOUT_MS = 60000;
+
+export async function generateCrossInterviewAnalysis(
+  input: CrossInterviewAnalysisInput,
+): Promise<{
+  themes: ThemeResult[];
+  questionPerformance: {
+    questionIndex: number;
+    questionText: string;
+    avgWordCount: number;
+    avgTurnCount: number;
+    avgQualityScore: number;
+    responseCount: number;
+    qualityFlagCounts: Record<QualityFlag, number>;
+  }[];
+  overallStats: {
+    totalCompletedSessions: number;
+    avgSessionDuration: number;
+    avgQualityScore: number;
+    commonQualityIssues: { flag: QualityFlag; count: number }[];
+  };
+}> {
+  const allFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
+  
+  const questionPerformance = input.templateQuestions.map((q, idx) => {
+    const responses = input.sessions
+      .map(s => s.questionSummaries.find(qs => qs.questionIndex === idx))
+      .filter((qs): qs is QuestionSummary => qs !== undefined);
+    
+    const flagCounts: Record<QualityFlag, number> = {
+      incomplete: 0, ambiguous: 0, contradiction: 0, 
+      distress_cue: 0, off_topic: 0, low_engagement: 0
+    };
+    
+    responses.forEach(r => {
+      (r.qualityFlags || []).forEach(f => {
+        if (allFlags.includes(f)) flagCounts[f]++;
+      });
+    });
+    
+    const avgWordCount = responses.length > 0 
+      ? responses.reduce((sum, r) => sum + r.wordCount, 0) / responses.length : 0;
+    const avgTurnCount = responses.length > 0
+      ? responses.reduce((sum, r) => sum + r.turnCount, 0) / responses.length : 0;
+    const qualityScores = responses.filter(r => r.qualityScore !== undefined).map(r => r.qualityScore!);
+    const avgQualityScore = qualityScores.length > 0
+      ? qualityScores.reduce((sum, s) => sum + s, 0) / qualityScores.length : 0;
+    
+    return {
+      questionIndex: idx,
+      questionText: q.text,
+      avgWordCount: Math.round(avgWordCount),
+      avgTurnCount: Math.round(avgTurnCount * 10) / 10,
+      avgQualityScore: Math.round(avgQualityScore),
+      responseCount: responses.length,
+      qualityFlagCounts: flagCounts,
+    };
+  });
+
+  const allQualityScores = input.sessions.flatMap(s => 
+    s.questionSummaries.filter(qs => qs.qualityScore !== undefined).map(qs => qs.qualityScore!)
+  );
+  const avgQualityScore = allQualityScores.length > 0
+    ? allQualityScores.reduce((sum, s) => sum + s, 0) / allQualityScores.length : 0;
+
+  const totalFlagCounts: Record<QualityFlag, number> = {
+    incomplete: 0, ambiguous: 0, contradiction: 0, 
+    distress_cue: 0, off_topic: 0, low_engagement: 0
+  };
+  input.sessions.forEach(s => {
+    s.questionSummaries.forEach(qs => {
+      (qs.qualityFlags || []).forEach(f => {
+        if (allFlags.includes(f)) totalFlagCounts[f]++;
+      });
+    });
+  });
+
+  const commonQualityIssues = allFlags
+    .map(f => ({ flag: f, count: totalFlagCounts[f] }))
+    .filter(i => i.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const avgDuration = input.sessions.length > 0
+    ? input.sessions.reduce((sum, s) => sum + s.durationMs, 0) / input.sessions.length : 0;
+
+  const themes = await extractThemesWithAI(input);
+
+  return {
+    themes,
+    questionPerformance,
+    overallStats: {
+      totalCompletedSessions: input.sessions.length,
+      avgSessionDuration: Math.round(avgDuration / 60000),
+      avgQualityScore: Math.round(avgQualityScore),
+      commonQualityIssues,
+    },
+  };
+}
+
+async function extractThemesWithAI(input: CrossInterviewAnalysisInput): Promise<ThemeResult[]> {
+  if (input.sessions.length === 0) return [];
+
+  const allInsights: { sessionId: string; insight: string }[] = [];
+  input.sessions.forEach(s => {
+    s.questionSummaries.forEach(qs => {
+      qs.keyInsights.forEach(insight => {
+        allInsights.push({ sessionId: s.sessionId, insight });
+      });
+    });
+  });
+
+  if (allInsights.length === 0) return [];
+
+  const systemPrompt = `You are Barbara, an interview analysis assistant. Analyze the key insights from multiple interview sessions and identify common themes.
+
+Return a JSON object with:
+{
+  "themes": [
+    {
+      "theme": "Brief theme name (2-5 words)",
+      "description": "One sentence description",
+      "relatedInsights": ["insight1", "insight2"]
+    }
+  ]
+}
+
+Identify 3-8 significant themes. Focus on recurring topics, sentiments, or patterns across interviews.`;
+
+  const insightsBySession = input.sessions.map(s => ({
+    sessionId: s.sessionId,
+    insights: s.questionSummaries.flatMap(qs => qs.keyInsights),
+  }));
+
+  const userPrompt = `INTERVIEW OBJECTIVE: ${input.templateObjective}
+
+INSIGHTS FROM ${input.sessions.length} INTERVIEW SESSIONS:
+${insightsBySession.map(s => `Session ${s.sessionId}: ${s.insights.join("; ")}`).join("\n")}
+
+Identify common themes across these interviews.`;
+
+  try {
+    const config = barbaraConfig.summarisation;
+    const response = await openai.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 1000,
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
+    } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed.themes)) return [];
+
+    return parsed.themes.map((t: { theme: string; relatedInsights?: string[] }) => {
+      const relatedInsights = Array.isArray(t.relatedInsights) ? t.relatedInsights : [];
+      const matchingSessions = input.sessions
+        .filter(s => s.questionSummaries.some(qs => 
+          qs.keyInsights.some(ki => relatedInsights.some(ri => ki.toLowerCase().includes(ri.toLowerCase().substring(0, 20)))))
+        )
+        .map(s => s.sessionId);
+      
+      return {
+        theme: t.theme,
+        count: matchingSessions.length || 1,
+        sessions: matchingSessions.length > 0 ? matchingSessions : [input.sessions[0]?.sessionId].filter(Boolean),
+      };
+    });
+  } catch (error) {
+    console.error("[Barbara] Error extracting themes:", error);
+    return [];
+  }
+}
