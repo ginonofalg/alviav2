@@ -241,7 +241,7 @@ export default function CollectionDetailPage() {
                         <div>
                           <p className="font-medium text-sm" data-testid={`session-name-${session.id}`}>{displayName}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(session.createdAt).toLocaleDateString()}
+                            {session.createdAt ? new Date(session.createdAt).toLocaleDateString() : ""}
                           </p>
                         </div>
                       </div>
