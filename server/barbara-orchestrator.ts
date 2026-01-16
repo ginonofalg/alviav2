@@ -3,7 +3,7 @@ import OpenAI from "openai";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Barbara configuration types
-export type ReasoningEffort = "low" | "medium" | "high";
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 export type Verbosity = "low" | "medium" | "high";
 
 // Allowed models for Barbara use cases
@@ -18,7 +18,7 @@ export const ALLOWED_MODELS = [
   "o3-mini",
 ] as const;
 
-export type AllowedModel = typeof ALLOWED_MODELS[number];
+export type AllowedModel = (typeof ALLOWED_MODELS)[number];
 
 export interface BarbaraUseCaseConfig {
   model: AllowedModel;
@@ -56,7 +56,9 @@ export function getBarbaraConfig(): BarbaraConfig {
   return { ...barbaraConfig };
 }
 
-export function updateBarbaraConfig(updates: Partial<BarbaraConfig>): BarbaraConfig {
+export function updateBarbaraConfig(
+  updates: Partial<BarbaraConfig>,
+): BarbaraConfig {
   if (updates.analysis) {
     Object.assign(barbaraConfig.analysis, updates.analysis);
   }
@@ -69,17 +71,23 @@ export function updateBarbaraConfig(updates: Partial<BarbaraConfig>): BarbaraCon
   return getBarbaraConfig();
 }
 
-export function updateAnalysisConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+export function updateAnalysisConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.analysis, config);
   return { ...barbaraConfig.analysis };
 }
 
-export function updateTopicOverlapConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+export function updateTopicOverlapConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.topicOverlap, config);
   return { ...barbaraConfig.topicOverlap };
 }
 
-export function updateSummarisationConfig(config: Partial<BarbaraUseCaseConfig>): BarbaraUseCaseConfig {
+export function updateSummarisationConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.summarisation, config);
   return { ...barbaraConfig.summarisation };
 }
@@ -284,7 +292,7 @@ export interface QuestionSummary {
   questionIndex: number;
   questionText: string;
   respondentSummary: string;
-  keyInsights: strin10[];
+  keyInsights: string[];
   completenessAssessment: string;
   relevantToFutureQuestions: string[];
   wordCount: number;
@@ -301,7 +309,7 @@ export interface TopicOverlapResult {
 }
 
 const SUMMARY_TIMEOUT_MS = 45000;
-const TOPIC_OVERLAP_TIMEOUT_MS = 3000;
+const TOPIC_OVERLAP_TIMEOUT_MS = 10001;
 
 export async function detectTopicOverlap(
   upcomingQuestionText: string,
