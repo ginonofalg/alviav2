@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,37 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  BarChart3
+  BarChart3,
+  RefreshCw,
+  AlertTriangle,
+  MessageSquare,
+  TrendingUp
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Collection, InterviewTemplate, Project, SessionWithRespondent } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Collection, InterviewTemplate, Project, SessionWithRespondent, CollectionAnalytics, QualityFlag } from "@shared/schema";
 
 interface CollectionWithDetails extends Collection {
   template?: InterviewTemplate;
   project?: Project;
 }
+
+interface AnalyticsResponse {
+  analytics: CollectionAnalytics | null;
+  lastAnalyzedAt: string | null;
+  analyzedSessionCount: number;
+  currentSessionCount: number;
+  isStale: boolean;
+}
+
+const QUALITY_FLAG_LABELS: Record<QualityFlag, { label: string; color: string }> = {
+  incomplete: { label: "Incomplete", color: "text-yellow-600" },
+  ambiguous: { label: "Ambiguous", color: "text-orange-500" },
+  contradiction: { label: "Contradiction", color: "text-red-500" },
+  distress_cue: { label: "Distress Cue", color: "text-purple-500" },
+  off_topic: { label: "Off Topic", color: "text-blue-500" },
+  low_engagement: { label: "Low Engagement", color: "text-gray-500" },
+};
 
 export default function CollectionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -35,6 +57,32 @@ export default function CollectionDetailPage() {
   const { data: sessions } = useQuery<SessionWithRespondent[]>({
     queryKey: ["/api/collections", collectionId, "sessions"],
     enabled: !!collectionId,
+  });
+
+  const { data: analyticsData, isLoading: isLoadingAnalytics } = useQuery<AnalyticsResponse>({
+    queryKey: ["/api/collections", collectionId, "analytics"],
+    enabled: !!collectionId,
+  });
+
+  const refreshAnalyticsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/collections/${collectionId}/analytics/refresh`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/collections", collectionId, "analytics"] });
+      toast({
+        title: "Analysis complete",
+        description: "Analytics have been refreshed with the latest data.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Analysis failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const copyShareLink = () => {
@@ -101,7 +149,7 @@ export default function CollectionDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">{collection.name}</h1>
-              {collection.isOpen ? (
+              {collection.isActive ? (
                 <Badge className="gap-1">
                   <CheckCircle2 className="w-3 h-3" />
                   Open
@@ -252,6 +300,173 @@ export default function CollectionDetailPage() {
                   </Link>
                 );
               })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                Analytics
+              </CardTitle>
+              <CardDescription>
+                Cross-interview insights and quality analysis
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {analyticsData?.isStale && (
+                <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-600/30">
+                  <AlertTriangle className="w-3 h-3" />
+                  Out of date
+                </Badge>
+              )}
+              {analyticsData?.lastAnalyzedAt && (
+                <span className="text-xs text-muted-foreground">
+                  Last updated: {new Date(analyticsData.lastAnalyzedAt).toLocaleDateString()}
+                </span>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => refreshAnalyticsMutation.mutate()}
+                disabled={refreshAnalyticsMutation.isPending || completedSessions === 0}
+                data-testid="button-refresh-analytics"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${refreshAnalyticsMutation.isPending ? "animate-spin" : ""}`} />
+                {refreshAnalyticsMutation.isPending ? "Analyzing..." : "Refresh"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingAnalytics ? (
+            <div className="space-y-4">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : !analyticsData?.analytics ? (
+            <div className="text-center py-8">
+              <BarChart3 className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
+              <h3 className="font-medium mb-2">No analysis yet</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {completedSessions === 0 
+                  ? "Complete some interviews to generate analytics."
+                  : "Click Refresh to analyze your completed interviews."}
+              </p>
+              {completedSessions > 0 && (
+                <Button 
+                  onClick={() => refreshAnalyticsMutation.mutate()}
+                  disabled={refreshAnalyticsMutation.isPending}
+                  data-testid="button-run-first-analysis"
+                >
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Run Analysis
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Sessions Analyzed</span>
+                  </div>
+                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.totalCompletedSessions}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Avg Duration</span>
+                  </div>
+                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.avgSessionDuration} min</p>
+                </div>
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Avg Quality</span>
+                  </div>
+                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.avgQualityScore}%</p>
+                </div>
+              </div>
+
+              {analyticsData.analytics.themes.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-primary" />
+                    Key Themes
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analyticsData.analytics.themes.map((theme, index) => (
+                      <Badge key={index} variant="secondary" className="gap-1">
+                        {theme.theme}
+                        <span className="text-muted-foreground">({theme.count})</span>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {analyticsData.analytics.overallStats.commonQualityIssues.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                    Quality Issues
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analyticsData.analytics.overallStats.commonQualityIssues.map((issue, index) => (
+                      <Badge key={index} variant="outline" className={`gap-1 ${QUALITY_FLAG_LABELS[issue.flag]?.color || ""}`}>
+                        {QUALITY_FLAG_LABELS[issue.flag]?.label || issue.flag}
+                        <span className="text-muted-foreground">({issue.count})</span>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {analyticsData.analytics.questionPerformance.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-primary" />
+                    Question Performance
+                  </h4>
+                  <div className="space-y-2">
+                    {analyticsData.analytics.questionPerformance.map((q, index) => (
+                      <div key={index} className="p-3 rounded-lg border flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">Q{q.questionIndex + 1}: {q.questionText}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {q.responseCount} responses | Avg {q.avgWordCount} words | {q.avgTurnCount} turns
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-0.5">
+                            {[...Array(5)].map((_, i) => (
+                              <div
+                                key={i}
+                                className={`w-1.5 h-3 rounded-sm ${
+                                  i < Math.ceil(q.avgQualityScore / 20) 
+                                    ? q.avgQualityScore >= 80 ? "bg-green-500" : q.avgQualityScore >= 50 ? "bg-yellow-500" : "bg-red-500"
+                                    : "bg-muted"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className={`text-sm font-medium ${
+                            q.avgQualityScore >= 80 ? "text-green-500" : q.avgQualityScore >= 50 ? "text-yellow-500" : "text-red-500"
+                          }`}>
+                            {q.avgQualityScore}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

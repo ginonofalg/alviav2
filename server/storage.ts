@@ -531,7 +531,8 @@ export class DatabaseStorage implements IStorage {
   }> {
     const allSessions = await this.getAllSessions();
     const totalSessions = allSessions.length;
-    const completedSessions = allSessions.filter(s => s.status === "completed").length;
+    const completedSessionsList = allSessions.filter(s => s.status === "completed");
+    const completedSessions = completedSessionsList.length;
     
     const durations = allSessions
       .filter(s => s.totalDurationMs && s.totalDurationMs > 0)
@@ -542,13 +543,62 @@ export class DatabaseStorage implements IStorage {
     
     const completionRate = totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0;
 
+    const themeCounts: Map<string, number> = new Map();
+    const questionStatsMap: Map<number, { text: string; scores: number[]; count: number }> = new Map();
+
+    for (const session of completedSessionsList) {
+      const summaries = (session.questionSummaries as Array<{
+        questionIndex: number;
+        questionText: string;
+        keyInsights: string[];
+        qualityScore?: number;
+      }>) || [];
+
+      for (const summary of summaries) {
+        for (const insight of summary.keyInsights || []) {
+          const words = insight.toLowerCase().split(/\s+/).slice(0, 3).join(" ");
+          if (words.length > 5) {
+            themeCounts.set(words, (themeCounts.get(words) || 0) + 1);
+          }
+        }
+
+        if (!questionStatsMap.has(summary.questionIndex)) {
+          questionStatsMap.set(summary.questionIndex, { 
+            text: summary.questionText, 
+            scores: [], 
+            count: 0 
+          });
+        }
+        const stat = questionStatsMap.get(summary.questionIndex)!;
+        stat.count++;
+        if (typeof summary.qualityScore === "number") {
+          stat.scores.push(summary.qualityScore);
+        }
+      }
+    }
+
+    const topThemes = Array.from(themeCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([theme, count]) => ({ theme, count }));
+
+    const questionStats = Array.from(questionStatsMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([_, stat]) => ({
+        questionText: stat.text,
+        avgConfidence: stat.scores.length > 0 
+          ? Math.round(stat.scores.reduce((a, b) => a + b, 0) / stat.scores.length)
+          : 0,
+        responseCount: stat.count,
+      }));
+
     return {
       totalSessions,
       completedSessions,
       averageDuration,
       completionRate,
-      topThemes: [],
-      questionStats: [],
+      topThemes,
+      questionStats,
     };
   }
 }

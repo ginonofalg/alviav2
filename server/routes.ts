@@ -130,7 +130,7 @@ export async function registerRoutes(
       const project = await storage.getProject(template.projectId);
       const analysisResult = await generateCrossInterviewAnalysis({
         sessions: sessionsWithSummaries,
-        templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidanceNotes || "" })),
+        templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
         templateObjective: project?.objective || "",
       });
 
