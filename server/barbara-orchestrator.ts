@@ -192,7 +192,7 @@ IMPORTANT TIMING: Your guidance will be incorporated into Alvia's NEXT response,
 Your responsibilities:
 1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier in the transcript. If so, Alvia should acknowledge this.
 2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question.
-3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting wrapping up.
+3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question.
 
 You must respond with a JSON object containing:
 {
@@ -204,9 +204,9 @@ You must respond with a JSON object containing:
 
 Action meanings:
 - "acknowledge_prior": The respondent mentioned something relevant earlier - remind Alvia to acknowledge this when appropriate
-- "probe_followup": The answer lacks depth - suggest a specific follow-up probe for when the opportunity arises
+- "probe_followup": The answer lacks depth - suggest a specific follow-up probe for when the opportunity arises.
 - "suggest_next_question": The answer appears complete - Alvia should offer to move on when there's a natural pause
-- "time_reminder": The response is running long - suggest wrapping up gracefully
+- "time_reminder": The response is running long - suggest moving the next question gracefully
 - "none": No intervention needed - let the conversation flow naturally
 
 Be conservative - only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Phrase guidance flexibly since the conversation may have progressed by the time Alvia uses it.`;

@@ -484,6 +484,22 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/collections/:collectionId/sessions - Get sessions for a collection
+  app.get("/api/collections/:collectionId/sessions", isAuthenticated, async (req, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const sessions = await storage.getSessionsByCollection(req.params.collectionId);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching collection sessions:", error);
+      res.status(500).json({ message: "Failed to fetch sessions" });
+    }
+  });
+
   const startSessionSchema = z.object({
     consents: z.object({
       participation: z.boolean(),
