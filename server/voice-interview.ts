@@ -33,6 +33,8 @@ interface InterviewState {
   isConnected: boolean;
   lastAIPrompt: string;
   isPaused: boolean;
+  // Respondent info
+  respondentInformalName: string | null;
   // Barbara-related state
   transcriptLog: TranscriptEntry[]; // Limited to MAX_TRANSCRIPT_IN_MEMORY for processing
   questionMetrics: Map<number, QuestionMetrics>;
@@ -307,6 +309,8 @@ export function handleVoiceInterview(
     isConnected: false,
     lastAIPrompt: "",
     isPaused: false,
+    // Respondent info
+    respondentInformalName: null,
     // Barbara-related state
     transcriptLog: [],
     questionMetrics: new Map(),
@@ -378,6 +382,10 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     const questions = await storage.getQuestionsByTemplate(
       collection.templateId,
     );
+
+    // Load respondent data for personalization
+    const respondent = await storage.getRespondent(session.respondentId);
+    state.respondentInformalName = respondent?.informalName || null;
 
     state.template = template;
     state.questions = questions;
@@ -512,6 +520,8 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         currentQuestion,
         state.currentQuestionIndex,
         state.questions.length,
+        undefined,
+        state.respondentInformalName,
       );
     }
 
@@ -592,10 +602,16 @@ function buildInterviewInstructions(
   questionIndex: number,
   totalQuestions: number,
   barbaraGuidance?: string,
+  respondentName?: string | null,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
+  
+  // Build personalization context
+  const nameContext = respondentName 
+    ? `The respondent's name is "${respondentName}". Address them by name occasionally throughout the conversation to keep it personal.`
+    : "The respondent has not provided their name. Address them in a friendly but general manner.";
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
@@ -604,6 +620,9 @@ INTERVIEW CONTEXT:
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
+RESPONDENT:
+${nameContext}
+
 CURRENT QUESTION TO ASK:
 "${currentQuestion?.questionText || "Please share your thoughts."}"
 
@@ -611,7 +630,7 @@ GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 
 INSTRUCTIONS:
-1. ${questionIndex === 0 ? `Start with a warm greeting and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
+1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. Use the guidance to know what depth of answer is expected.
@@ -662,6 +681,7 @@ function buildResumeInstructions(state: InterviewState): string {
   const currentQuestion = state.questions[state.currentQuestionIndex];
   const questionIndex = state.currentQuestionIndex;
   const totalQuestions = state.questions.length;
+  const respondentName = state.respondentInformalName;
 
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -679,12 +699,20 @@ function buildResumeInstructions(state: InterviewState): string {
   const status = questionState?.status || "in_progress";
   const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
 
+  // Build personalization context
+  const nameContext = respondentName 
+    ? `The respondent's name is "${respondentName}". Use their name in the welcome-back greeting.`
+    : "The respondent has not provided their name.";
+
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
+
+RESPONDENT:
+${nameContext}
 
 TRANSCRIPT SUMMARY (recent conversation):
 ${transcriptSummary || "(No previous conversation recorded)"}
@@ -701,7 +729,7 @@ NOTE: Before the interruption, the respondent had given a comprehensive answer a
 
   instructions += `
 RESUME INSTRUCTIONS:
-1. Welcome them back briefly and warmly.
+1. Welcome them back briefly and warmly${respondentName ? `, using their name "${respondentName}"` : ""}.
 2. ${
     barbaraSuggestedMoveOn
       ? "Ask if they'd like to continue where they left off or move to the next question."
@@ -968,6 +996,7 @@ async function triggerBarbaraAnalysis(
           state.currentQuestionIndex,
           state.questions.length,
           guidanceMessage,
+          state.respondentInformalName,
         );
 
         state.openaiWs.send(
@@ -1248,6 +1277,8 @@ INSTRUCTIONS:
           nextQuestion,
           state.currentQuestionIndex,
           state.questions.length,
+          undefined,
+          state.respondentInformalName,
         );
 
         if (state.openaiWs.readyState === WebSocket.OPEN) {
