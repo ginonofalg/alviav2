@@ -521,7 +521,7 @@ export class DatabaseStorage implements IStorage {
     return { projectCount, collectionCount, sessionCount, completedSessions };
   }
 
-  async getAnalytics(): Promise<{
+  async getAnalytics(filters?: { projectId?: string; collectionId?: string }): Promise<{
     totalSessions: number;
     completedSessions: number;
     averageDuration: number;
@@ -529,7 +529,18 @@ export class DatabaseStorage implements IStorage {
     topThemes: { theme: string; count: number }[];
     questionStats: { questionText: string; avgConfidence: number; responseCount: number }[];
   }> {
-    const allSessions = await this.getAllSessions();
+    let allSessions: Awaited<ReturnType<typeof this.getAllSessions>>;
+    
+    if (filters?.collectionId) {
+      allSessions = await this.getSessionsByCollection(filters.collectionId);
+    } else if (filters?.projectId) {
+      const collections = await this.getCollectionsByProject(filters.projectId);
+      const sessionPromises = collections.map(c => this.getSessionsByCollection(c.id));
+      const sessionArrays = await Promise.all(sessionPromises);
+      allSessions = sessionArrays.flat();
+    } else {
+      allSessions = await this.getAllSessions();
+    }
     const totalSessions = allSessions.length;
     const completedSessionsList = allSessions.filter(s => s.status === "completed");
     const completedSessions = completedSessionsList.length;

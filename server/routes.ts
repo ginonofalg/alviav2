@@ -65,7 +65,10 @@ export async function registerRoutes(
   // Analytics
   app.get("/api/analytics", isAuthenticated, async (req, res) => {
     try {
-      const analytics = await storage.getAnalytics();
+      const projectId = req.query.projectId as string | undefined;
+      const collectionId = req.query.collectionId as string | undefined;
+      
+      const analytics = await storage.getAnalytics({ projectId, collectionId });
       res.json(analytics);
     } catch (error) {
       console.error("Error fetching analytics:", error);
