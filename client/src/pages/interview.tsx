@@ -19,7 +19,8 @@ import {
   Send,
   Keyboard,
   MessageSquareText,
-  ChevronRight
+  ChevronRight,
+  Play
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -66,13 +67,18 @@ function MicButton({
   isListening, 
   isConnecting,
   isTextOnlyMode,
+  isConnected,
   onToggle 
 }: { 
   isListening: boolean;
   isConnecting: boolean;
   isTextOnlyMode: boolean;
+  isConnected: boolean;
   onToggle: () => void;
 }) {
+  // Paused state: connected but not listening (and not in text-only mode)
+  const isPaused = isConnected && !isListening && !isTextOnlyMode;
+  
   return (
     <motion.button
       onClick={onToggle}
@@ -82,6 +88,8 @@ function MicButton({
           ? "bg-muted text-muted-foreground cursor-wait"
           : isTextOnlyMode
           ? "bg-muted text-muted-foreground cursor-not-allowed"
+          : isPaused
+          ? "bg-yellow-500 text-white"
           : isListening 
           ? "bg-primary text-primary-foreground" 
           : "bg-muted text-muted-foreground"
@@ -100,6 +108,8 @@ function MicButton({
         <Loader2 className="w-8 h-8 animate-spin" />
       ) : isTextOnlyMode ? (
         <MicOff className="w-8 h-8 opacity-50" />
+      ) : isPaused ? (
+        <Play className="w-8 h-8" />
       ) : isListening ? (
         <Mic className="w-8 h-8" />
       ) : (
@@ -716,6 +726,7 @@ export default function InterviewPage() {
                 isListening={isListening}
                 isConnecting={isConnecting}
                 isTextOnlyMode={isTextOnlyMode}
+                isConnected={isConnected}
                 onToggle={toggleListening}
               />
 
@@ -731,6 +742,8 @@ export default function InterviewPage() {
                 ? "Text-only mode — type your responses below"
                 : isListening 
                 ? "Listening... speak naturally" 
+                : isConnected
+                ? "Paused — click to resume"
                 : "Click the microphone to start the interview"}
             </p>
           </div>
