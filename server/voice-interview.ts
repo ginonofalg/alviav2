@@ -522,6 +522,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         state.questions.length,
         undefined,
         state.respondentInformalName,
+        state.questions,
       );
     }
 
@@ -603,6 +604,7 @@ function buildInterviewInstructions(
   totalQuestions: number,
   barbaraGuidance?: string,
   respondentName?: string | null,
+  allQuestions?: Array<{ questionText: string }>,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -612,6 +614,14 @@ function buildInterviewInstructions(
   const nameContext = respondentName 
     ? `The respondent's name is "${respondentName}". Only use their name once at the very beginning of the interview as a greeting. After that, do NOT use their name again - just continue the conversation naturally without addressing them by name.`
     : "The respondent has not provided their name. Address them in a friendly but general manner.";
+
+  // Build upcoming questions list to avoid duplicating follow-ups
+  const upcomingQuestions = allQuestions 
+    ? allQuestions
+        .slice(questionIndex + 1)
+        .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
+        .join("\n")
+    : "";
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
@@ -628,7 +638,10 @@ CURRENT QUESTION TO ASK:
 
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
-
+${upcomingQuestions ? `
+UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
+${upcomingQuestions}
+` : ""}
 INSTRUCTIONS:
 1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
@@ -636,7 +649,8 @@ INSTRUCTIONS:
 4. Use the guidance to know what depth of answer is expected.
 5. Be encouraging and conversational, matching the ${tone} tone.
 6. If Barbara's guidance is that the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
-7. Keep responses concise - this is a voice conversation.`;
+7. Keep responses concise - this is a voice conversation.
+8. IMPORTANT: Before asking any follow-up, check if it overlaps with an upcoming question - if so, skip it and move on.`;
 
   if (barbaraGuidance) {
     instructions += `\n\nORCHESTRATOR GUIDANCE (from Barbara):
@@ -997,6 +1011,7 @@ async function triggerBarbaraAnalysis(
           state.questions.length,
           guidanceMessage,
           state.respondentInformalName,
+          state.questions,
         );
 
         state.openaiWs.send(
@@ -1279,6 +1294,7 @@ INSTRUCTIONS:
           state.questions.length,
           undefined,
           state.respondentInformalName,
+          state.questions,
         );
 
         if (state.openaiWs.readyState === WebSocket.OPEN) {

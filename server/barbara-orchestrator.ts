@@ -194,6 +194,7 @@ Your responsibilities:
 1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier in the transcript. If so, Alvia should acknowledge this.
 2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question.
 3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question.
+4. QUESTION DEDUPLICATION: Review the UPCOMING QUESTIONS list. If Alvia is about to ask a follow-up that overlaps with a future template question, guide her to avoid that topic - it will be covered later. This prevents repetitive questioning and maintains interview flow.
 
 You must respond with a JSON object containing:
 {
@@ -224,6 +225,11 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
   const previousQuestions = input.allQuestions
     .slice(0, input.currentQuestionIndex)
     .map((q, i) => `Q${i + 1}: ${q.text}`)
+    .join("\n");
+
+  const upcomingQuestions = input.allQuestions
+    .slice(input.currentQuestionIndex + 1)
+    .map((q, i) => `Q${input.currentQuestionIndex + 2 + i}: ${q.text}`)
     .join("\n");
 
   const currentQuestionResponses = input.transcriptLog
@@ -268,7 +274,7 @@ METRICS FOR CURRENT QUESTION:
 - Active speaking time: ${activeTimeSeconds} seconds
 - Number of turns: ${input.questionMetrics.turnCount}
 
-${summariesText ? `PREVIOUS QUESTIONS SUMMARY:\n${summariesText}\n\n` : ""}${previousQuestions ? `PREVIOUS QUESTIONS:\n${previousQuestions}\n` : ""}
+${summariesText ? `PREVIOUS QUESTIONS SUMMARY:\n${summariesText}\n\n` : ""}${previousQuestions ? `PREVIOUS QUESTIONS:\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `UPCOMING QUESTIONS (avoid asking follow-ups that overlap with these):\n${upcomingQuestions}\n` : ""}
 
 FULL TRANSCRIPT SO FAR:
 ${transcriptSummary || "(No transcript yet)"}
