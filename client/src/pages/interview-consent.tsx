@@ -89,7 +89,8 @@ export default function InterviewConsentPage() {
           createdAt: Date.now(),
         }));
       }
-      navigate(`/interview/${data.id}`);
+      // Navigate to welcome page for name capture before interview
+      navigate(`/welcome/${data.id}`);
     },
     onError: (error: Error) => {
       toast({

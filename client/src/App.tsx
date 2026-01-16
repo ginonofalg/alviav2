@@ -25,6 +25,7 @@ import SessionDetailPage from "@/pages/session-detail";
 import AnalyticsPage from "@/pages/analytics";
 import SettingsPage from "@/pages/settings";
 import InterviewConsentPage from "@/pages/interview-consent";
+import InterviewWelcomePage from "@/pages/interview-welcome";
 import InterviewPage from "@/pages/interview";
 import InterviewCompletePage from "@/pages/interview-complete";
 import InterviewReviewPage from "@/pages/interview-review";
@@ -111,6 +112,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/join/:collectionId" component={InterviewConsentPage} />
+      <Route path="/welcome/:sessionId" component={InterviewWelcomePage} />
       <Route path="/interview/complete" component={InterviewCompletePage} />
       <Route path="/interview/:sessionId" component={InterviewPage} />
       <Route path="/review/:sessionId">{(params) => {

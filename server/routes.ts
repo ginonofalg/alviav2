@@ -500,6 +500,36 @@ export async function registerRoutes(
     }
   });
 
+  // PATCH /api/respondents/:respondentId/names - Update respondent names (public route for respondents)
+  const updateRespondentNamesSchema = z.object({
+    fullName: z.string().max(200).nullable().optional(),
+    informalName: z.string().max(100).nullable().optional(),
+  });
+
+  app.patch("/api/respondents/:respondentId/names", async (req, res) => {
+    try {
+      const parseResult = updateRespondentNamesSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const respondent = await storage.updateRespondent(req.params.respondentId, {
+        fullName: parseResult.data.fullName ?? undefined,
+        informalName: parseResult.data.informalName ?? undefined,
+      });
+
+      if (!respondent) {
+        return res.status(404).json({ message: "Respondent not found" });
+      }
+
+      res.json(respondent);
+    } catch (error) {
+      console.error("Error updating respondent names:", error);
+      res.status(500).json({ message: "Failed to update names" });
+    }
+  });
+
   const startSessionSchema = z.object({
     consents: z.object({
       participation: z.boolean(),
