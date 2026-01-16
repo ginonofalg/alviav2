@@ -13,14 +13,15 @@ import {
   MicOff, 
   Pause, 
   Play, 
-  SkipForward,
   X,
   Volume2,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Send,
-  Keyboard
+  Keyboard,
+  MessageSquareText,
+  ArrowRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -67,11 +68,15 @@ function MicButton({
   isListening, 
   isPaused,
   isConnecting,
+  isTextOnlyMode,
+  isConnected,
   onToggle 
 }: { 
   isListening: boolean;
   isPaused: boolean;
   isConnecting: boolean;
+  isTextOnlyMode: boolean;
+  isConnected: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -81,6 +86,8 @@ function MicButton({
       className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-colors ${
         isConnecting
           ? "bg-muted text-muted-foreground cursor-wait"
+          : isTextOnlyMode && isConnected && !isPaused
+          ? "bg-green-500 text-white"
           : isListening 
           ? "bg-primary text-primary-foreground" 
           : isPaused
@@ -90,9 +97,9 @@ function MicButton({
       whileTap={{ scale: 0.95 }}
       data-testid="button-mic-toggle"
     >
-      {isListening && (
+      {(isListening || (isTextOnlyMode && isConnected && !isPaused)) && (
         <motion.div
-          className="absolute inset-0 rounded-full border-4 border-primary"
+          className={`absolute inset-0 rounded-full border-4 ${isTextOnlyMode ? "border-green-500" : "border-primary"}`}
           animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
           transition={{ duration: 1.5, repeat: Infinity }}
         />
@@ -101,6 +108,8 @@ function MicButton({
         <Loader2 className="w-8 h-8 animate-spin" />
       ) : isPaused ? (
         <Play className="w-8 h-8" />
+      ) : isTextOnlyMode ? (
+        isConnected ? <Keyboard className="w-8 h-8" /> : <Keyboard className="w-8 h-8" />
       ) : isListening ? (
         <Mic className="w-8 h-8" />
       ) : (
@@ -181,6 +190,7 @@ export default function InterviewPage() {
   const [textInput, setTextInput] = useState("");
   const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
+  const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -521,19 +531,24 @@ export default function InterviewPage() {
     if (!isConnected) {
       // Start interview
       connectWebSocket();
-      const success = await startAudioCapture();
-      if (success) {
-        setIsListening(true);
+      if (!isTextOnlyMode) {
+        const success = await startAudioCapture();
+        if (success) {
+          setIsListening(true);
+        }
       }
+      // In text-only mode, we don't start audio capture but still connect
     } else if (isPaused) {
       // Resume - send resume message to trigger AI continuation
       setIsPaused(false);
-      setIsListening(true);
-      await startAudioCapture();
+      if (!isTextOnlyMode) {
+        setIsListening(true);
+        await startAudioCapture();
+      }
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
       }
-    } else if (isListening) {
+    } else if (isListening || (isTextOnlyMode && isConnected)) {
       // Pause - send pause message
       setIsPaused(true);
       setIsListening(false);
@@ -542,9 +557,11 @@ export default function InterviewPage() {
         wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
       }
     } else {
-      // Resume listening (from stopped, not paused)
-      setIsListening(true);
-      await startAudioCapture();
+      // Resume listening (from stopped, not paused) - only in voice mode
+      if (!isTextOnlyMode) {
+        setIsListening(true);
+        await startAudioCapture();
+      }
     }
   };
 
@@ -697,49 +714,35 @@ export default function InterviewPage() {
             
             <div className="flex items-center gap-4">
               <Button
-                variant="outline"
+                variant={isTextOnlyMode ? "default" : "outline"}
                 size="icon"
                 onClick={() => {
-                  if (isPaused) {
-                    // Resume - send resume message to trigger AI continuation
-                    setIsPaused(false);
-                    setIsListening(true);
-                    startAudioCapture();
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
-                    }
-                  } else {
-                    // Pause - send pause message
-                    setIsPaused(true);
-                    setIsListening(false);
-                    stopAudioCapture();
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
-                      wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+                  if (isConnected && !isPaused) {
+                    // If switching modes while active, stop audio capture
+                    if (!isTextOnlyMode && isListening) {
+                      stopAudioCapture();
+                      setIsListening(false);
                     }
                   }
+                  setIsTextOnlyMode(!isTextOnlyMode);
                 }}
-                disabled={!isConnected}
-                data-testid="button-pause"
+                disabled={isConnecting}
+                title={isTextOnlyMode ? "Switch to voice input" : "Switch to text-only input (for noisy environments)"}
+                data-testid="button-text-mode-toggle"
               >
-                {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                {isTextOnlyMode ? <Mic className="w-4 h-4" /> : <MessageSquareText className="w-4 h-4" />}
               </Button>
 
               <MicButton
                 isListening={isListening}
                 isPaused={isPaused}
                 isConnecting={isConnecting}
+                isTextOnlyMode={isTextOnlyMode}
+                isConnected={isConnected}
                 onToggle={toggleListening}
               />
 
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleNextQuestion}
-                disabled={!isConnected || currentQuestionIndex >= (totalQuestions || questions?.length || 0) - 1}
-                data-testid="button-skip"
-              >
-                <SkipForward className="w-4 h-4" />
-              </Button>
+              <div className="w-9" />
             </div>
 
             <p className="text-sm text-muted-foreground">
@@ -749,6 +752,8 @@ export default function InterviewPage() {
                 ? "Alvia is speaking..."
                 : isPaused 
                 ? "Interview paused. Click to resume." 
+                : isTextOnlyMode
+                ? (isConnected ? "Text-only mode - type your responses below" : "Click to start the interview in text-only mode")
                 : isListening 
                 ? "Listening... speak naturally" 
                 : "Click the microphone to start the interview"}
@@ -797,7 +802,7 @@ export default function InterviewPage() {
                 className={highlightNextButton ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/50" : ""}
               >
                 Next Question
-                <SkipForward className="w-4 h-4 ml-2" />
+                <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
               <Button onClick={handleEndInterview} data-testid="button-complete-interview">
