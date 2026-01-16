@@ -11,16 +11,16 @@ import { Input } from "@/components/ui/input";
 import { 
   Mic, 
   MicOff, 
+  Pause, 
+  Play, 
+  SkipForward,
   X,
   Volume2,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Send,
-  Keyboard,
-  MessageSquareText,
-  ChevronRight,
-  Play
+  Keyboard
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -65,39 +65,32 @@ function WaveformVisualizer({ isActive, isAiSpeaking }: { isActive: boolean; isA
 
 function MicButton({ 
   isListening, 
+  isPaused,
   isConnecting,
-  isTextOnlyMode,
-  isConnected,
   onToggle 
 }: { 
   isListening: boolean;
+  isPaused: boolean;
   isConnecting: boolean;
-  isTextOnlyMode: boolean;
-  isConnected: boolean;
   onToggle: () => void;
 }) {
-  // Paused state: connected but not listening (and not in text-only mode)
-  const isPaused = isConnected && !isListening && !isTextOnlyMode;
-  
   return (
     <motion.button
       onClick={onToggle}
-      disabled={isConnecting || isTextOnlyMode}
+      disabled={isConnecting}
       className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-colors ${
         isConnecting
           ? "bg-muted text-muted-foreground cursor-wait"
-          : isTextOnlyMode
-          ? "bg-muted text-muted-foreground cursor-not-allowed"
-          : isPaused
-          ? "bg-yellow-500 text-white"
           : isListening 
           ? "bg-primary text-primary-foreground" 
+          : isPaused
+          ? "bg-yellow-500 text-white"
           : "bg-muted text-muted-foreground"
       }`}
       whileTap={{ scale: 0.95 }}
       data-testid="button-mic-toggle"
     >
-      {isListening && !isTextOnlyMode && (
+      {isListening && (
         <motion.div
           className="absolute inset-0 rounded-full border-4 border-primary"
           animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
@@ -106,8 +99,6 @@ function MicButton({
       )}
       {isConnecting ? (
         <Loader2 className="w-8 h-8 animate-spin" />
-      ) : isTextOnlyMode ? (
-        <MicOff className="w-8 h-8 opacity-50" />
       ) : isPaused ? (
         <Play className="w-8 h-8" />
       ) : isListening ? (
@@ -177,7 +168,7 @@ export default function InterviewPage() {
   const { toast } = useToast();
 
   const [isListening, setIsListening] = useState(false);
-  const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -525,7 +516,7 @@ export default function InterviewPage() {
   }, [stopAudioCapture]);
 
   const toggleListening = async () => {
-    if (isConnecting || isTextOnlyMode) return;
+    if (isConnecting) return;
 
     if (!isConnected) {
       // Start interview
@@ -534,12 +525,24 @@ export default function InterviewPage() {
       if (success) {
         setIsListening(true);
       }
+    } else if (isPaused) {
+      // Resume - send resume message to trigger AI continuation
+      setIsPaused(false);
+      setIsListening(true);
+      await startAudioCapture();
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+      }
     } else if (isListening) {
-      // Stop listening
+      // Pause - send pause message
+      setIsPaused(true);
       setIsListening(false);
       stopAudioCapture();
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+      }
     } else {
-      // Resume listening
+      // Resume listening (from stopped, not paused)
       setIsListening(true);
       await startAudioCapture();
     }
@@ -690,47 +693,53 @@ export default function InterviewPage() {
           </AnimatePresence>
 
           <div className="flex flex-col items-center gap-6">
-            <WaveformVisualizer isActive={isListening && !isTextOnlyMode} isAiSpeaking={isAiSpeaking} />
+            <WaveformVisualizer isActive={isListening} isAiSpeaking={isAiSpeaking} />
             
             <div className="flex items-center gap-4">
               <Button
-                variant={isTextOnlyMode ? "default" : "outline"}
+                variant="outline"
                 size="icon"
                 onClick={() => {
-                  if (!isTextOnlyMode) {
-                    // Switch to text-only mode - stop audio capture
-                    setIsTextOnlyMode(true);
+                  if (isPaused) {
+                    // Resume - send resume message to trigger AI continuation
+                    setIsPaused(false);
+                    setIsListening(true);
+                    startAudioCapture();
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+                    }
+                  } else {
+                    // Pause - send pause message
+                    setIsPaused(true);
                     setIsListening(false);
                     stopAudioCapture();
-                    toast({
-                      title: "Text-only mode enabled",
-                      description: "Type your responses below. Alvia will still speak her responses.",
-                    });
-                  } else {
-                    // Switch back to voice mode
-                    setIsTextOnlyMode(false);
-                    toast({
-                      title: "Voice mode enabled",
-                      description: "Click the microphone to start speaking.",
-                    });
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                      wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+                    }
                   }
                 }}
                 disabled={!isConnected}
-                data-testid="button-text-mode-toggle"
-                title={isTextOnlyMode ? "Switch to voice mode" : "Switch to text-only mode (for noisy environments)"}
+                data-testid="button-pause"
               >
-                <MessageSquareText className="w-4 h-4" />
+                {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
               </Button>
 
               <MicButton
                 isListening={isListening}
+                isPaused={isPaused}
                 isConnecting={isConnecting}
-                isTextOnlyMode={isTextOnlyMode}
-                isConnected={isConnected}
                 onToggle={toggleListening}
               />
 
-              <div className="w-9" />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleNextQuestion}
+                disabled={!isConnected || currentQuestionIndex >= (totalQuestions || questions?.length || 0) - 1}
+                data-testid="button-skip"
+              >
+                <SkipForward className="w-4 h-4" />
+              </Button>
             </div>
 
             <p className="text-sm text-muted-foreground">
@@ -738,12 +747,10 @@ export default function InterviewPage() {
                 ? "Connecting to Alvia..."
                 : isAiSpeaking
                 ? "Alvia is speaking..."
-                : isTextOnlyMode
-                ? "Text-only mode — type your responses below"
+                : isPaused 
+                ? "Interview paused. Click to resume." 
                 : isListening 
                 ? "Listening... speak naturally" 
-                : isConnected
-                ? "Paused — click to resume"
                 : "Click the microphone to start the interview"}
             </p>
           </div>
@@ -790,7 +797,7 @@ export default function InterviewPage() {
                 className={highlightNextButton ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/50" : ""}
               >
                 Next Question
-                <ChevronRight className="w-4 h-4 ml-2" />
+                <SkipForward className="w-4 h-4 ml-2" />
               </Button>
             ) : (
               <Button onClick={handleEndInterview} data-testid="button-complete-interview">
