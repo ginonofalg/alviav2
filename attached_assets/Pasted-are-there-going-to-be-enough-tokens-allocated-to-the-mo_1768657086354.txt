@@ -1,0 +1,45 @@
+are there going to be enough tokens allocated to the model for this analysis?                                                                                    
+                                                                                                                                                                   
+● Good question. Let me check the token allocation and estimate requirements.                                                                                      
+                                                                                                                                                                   
+● Search(pattern: "max_completion_tokens|max_tokens|context|token", path: "server/barbara-orchestrator.ts", output_mode: "content")                                
+  ⎿  Found 8 lines (ctrl+o to expand)                                                                                                                              
+                                                                                                                                                                   
+● Here's the token analysis:                                                                                                                                       
+                                                                                                                                                                   
+  Current Allocation                                                                                                                                               
+                                                                                                                                                                   
+  - Output: max_completion_tokens: 16000 (line 970)                                                                                                                
+  - Input: No explicit limit, but using gpt-5-mini                                                                                                                 
+                                                                                                                                                                   
+  Token Estimates                                                                                                                                                  
+  ┌──────────────────────────┬───────────────────────────────────────┬─────────────────┐                                                                           
+  │         Scenario         │              Calculation              │  Input Tokens   │                                                                           
+  ├──────────────────────────┼───────────────────────────────────────┼─────────────────┤                                                                           
+  │ Current (summaries only) │ 10 sessions × ~400 words              │ ~6,000          │                                                                           
+  ├──────────────────────────┼───────────────────────────────────────┼─────────────────┤                                                                           
+  │ Full transcripts         │ 10 sessions × 8 questions × 500 words │ ~60,000-100,000 │                                                                           
+  └──────────────────────────┴───────────────────────────────────────┴─────────────────┘                                                                           
+  Problem: Passing full transcripts for 10+ sessions could easily hit 100K+ tokens, which:                                                                         
+  - Significantly increases API costs                                                                                                                              
+  - May hit context limits                                                                                                                                         
+  - Degrades model quality on long contexts                                                                                                                        
+  - Increases timeout risk (already at 90s)                                                                                                                        
+                                                                                                                                                                   
+  Better Approaches                                                                                                                                                
+                                                                                                                                                                   
+  Option A: Extract quotes during per-question summarization                                                                                                       
+  - In generateQuestionSummary() (which already has the transcript), extract 2-3 actual quotes                                                                     
+  - Store these in QuestionSummary as a new keyQuotes field                                                                                                        
+  - Cross-interview analysis uses stored quotes, not raw transcripts                                                                                               
+  - Tokens stay manageable                                                                                                                                         
+                                                                                                                                                                   
+  Option B: Pass only respondent utterances                                                                                                                        
+  - Filter transcripts to just respondent text                                                                                                                     
+  - Still could be large for many sessions                                                                                                                         
+                                                                                                                                                                   
+  Option C: Two-pass analysis                                                                                                                                      
+  - First pass: identify themes from summaries                                                                                                                     
+  - Second pass: targeted quote extraction per theme (query specific sessions)                                                                                     
+                                                                                                                                                                   
+  Option A is cleanest - quotes get extracted at the right time (when we have single-question context) and stored for later use.                                   
