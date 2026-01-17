@@ -39,6 +39,7 @@ interface InterviewState {
   transcriptLog: TranscriptEntry[]; // Limited to MAX_TRANSCRIPT_IN_MEMORY for processing
   questionMetrics: Map<number, QuestionMetrics>;
   speakingStartTime: number | null;
+  questionIndexAtSpeechStart: number | null; // Track which question the user was answering when they started speaking
   barbaraGuidanceQueue: BarbaraGuidance[];
   isWaitingForBarbara: boolean;
   isBarbaraGuidanceUpdate: boolean;
@@ -96,9 +97,10 @@ async function flushPersist(sessionId: string): Promise<void> {
 
   // Normalize questionSummaries to avoid sparse array nulls during JSON serialization
   // Each summary has its questionIndex stored, so we can reconstruct the array on restore
-  const normalizedSummaries = state.questionSummaries.map((s, idx) => 
-    s ? { ...s, questionIndex: idx } : null
-  );
+  // Filter out nulls to create a clean array for persistence
+  const normalizedSummaries = state.questionSummaries
+    .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+    .filter((s): s is QuestionSummary => s !== null);
 
   // Use fullTranscriptForPersistence to avoid data loss from in-memory truncation
   const patch: InterviewStatePatch = {
@@ -148,9 +150,9 @@ async function persistBarbaraGuidance(
 
   try {
     // Normalize questionSummaries to avoid sparse array nulls
-    const normalizedSummaries = state.questionSummaries.map((s, idx) => 
-      s ? { ...s, questionIndex: idx } : null
-    );
+    const normalizedSummaries = state.questionSummaries
+      .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+      .filter((s): s is QuestionSummary => s !== null);
     
     // Persist with all relevant fields to avoid overwriting concurrent summary persistence
     await storage.persistInterviewState(sessionId, {
@@ -271,9 +273,9 @@ async function generateAndPersistSummary(
     );
 
     // Normalize array for persistence: filter out undefined/null entries and create a dense map
-    const normalizedSummaries = state.questionSummaries.map((s, idx) => 
-      s ? { ...s, questionIndex: idx } : null
-    );
+    const normalizedSummaries = state.questionSummaries
+      .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+      .filter((s): s is QuestionSummary => s !== null);
 
     // Persist immediately with all relevant fields to avoid overwriting concurrent Barbara guidance
     await storage.persistInterviewState(sessionId, {
@@ -344,6 +346,7 @@ export function handleVoiceInterview(
     transcriptLog: [],
     questionMetrics: new Map(),
     speakingStartTime: null,
+    questionIndexAtSpeechStart: null, // Track question at speech start for correct transcript tagging
     barbaraGuidanceQueue: [],
     isWaitingForBarbara: false,
     isBarbaraGuidanceUpdate: false,
@@ -889,13 +892,20 @@ async function handleOpenAIEvent(
       // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
       (async () => {
         if (event.transcript) {
+          // CRITICAL: Use questionIndexAtSpeechStart if available to avoid race condition
+          // where user clicks "next_question" before transcription completes
+          const correctQuestionIndex = state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
+          
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
             text: event.transcript,
             timestamp: Date.now(),
-            questionIndex: state.currentQuestionIndex,
+            questionIndex: correctQuestionIndex,
           });
+          
+          // Clear the speech start tracking
+          state.questionIndexAtSpeechStart = null;
 
           // Update question metrics and state
           const metrics =
@@ -932,23 +942,29 @@ async function handleOpenAIEvent(
       break;
 
     case "input_audio_buffer.speech_started":
-      // Start timing when user starts speaking
+      // Start timing when user starts speaking and capture the current question index
+      // This ensures transcript entries are tagged with the question they were answering,
+      // not the question that's current when the transcription completes (race condition fix)
       if (!state.isPaused) {
         state.speakingStartTime = Date.now();
+        state.questionIndexAtSpeechStart = state.currentQuestionIndex;
       }
       clientWs.send(JSON.stringify({ type: "user_speaking_started" }));
       break;
 
     case "input_audio_buffer.speech_stopped":
-      // Stop timing and accumulate
+      // Stop timing and accumulate - use questionIndexAtSpeechStart for consistency
       if (state.speakingStartTime && !state.isPaused) {
         const elapsed = Date.now() - state.speakingStartTime;
+        // Use the question index at speech start to correctly attribute time
+        const correctQuestionIndex = state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
         const metrics =
-          state.questionMetrics.get(state.currentQuestionIndex) ||
-          createEmptyMetrics(state.currentQuestionIndex);
+          state.questionMetrics.get(correctQuestionIndex) ||
+          createEmptyMetrics(correctQuestionIndex);
         metrics.activeTimeMs += elapsed;
-        state.questionMetrics.set(state.currentQuestionIndex, metrics);
+        state.questionMetrics.set(correctQuestionIndex, metrics);
         state.speakingStartTime = null;
+        // Note: don't clear questionIndexAtSpeechStart here - transcription may still be pending
       }
       clientWs.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
@@ -958,7 +974,7 @@ async function handleOpenAIEvent(
       break;
 
     case "error":
-      conso5e.error(`[VoiceInterview] OpenAI error:`, event.error);
+      console.error(`[VoiceInterview] OpenAI error:`, event.error);
       clientWs.send(
         JSON.stringify({
           type: "error",
@@ -1469,7 +1485,9 @@ INSTRUCTIONS:
 
     case "end_interview":
       // Trigger summarization for final question in background before cleanup
-      generateAndPersistSummary(sessionId, state.currentQuestionIndex).catch(
+      // Capture transcript snapshot for the final question
+      const finalTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+      generateAndPersistSummary(sessionId, state.currentQuestionIndex, finalTranscriptSnapshot).catch(
         () => {
           // Error already logged in generateAndPersistSummary
         },

@@ -443,12 +443,23 @@ export async function generateQuestionSummary(
     (e) => e.questionIndex === questionIndex,
   );
 
+  // Debug logging to trace transcript filtering issues
+  const speakerBreakdown = questionTranscript.reduce((acc, e) => {
+    acc[e.speaker] = (acc[e.speaker] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  console.log(
+    `[Summary] Q${questionIndex + 1} transcript breakdown: ${JSON.stringify(speakerBreakdown)}, ` +
+    `entries: ${questionTranscript.length}`
+  );
+
   if (questionTranscript.length === 0) {
+    console.log(`[Summary] Q${questionIndex + 1}: No transcript entries found, returning empty summary`);
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 
-  const respondentText = questionTranscript
-    .filter((e) => e.speaker === "respondent")
+  const respondentEntries = questionTranscript.filter((e) => e.speaker === "respondent");
+  const respondentText = respondentEntries
     .map((e) => e.text)
     .join(" ");
 
@@ -456,7 +467,12 @@ export async function generateQuestionSummary(
     .split(/\s+/)
     .filter((w) => w.length > 0).length;
 
+  console.log(
+    `[Summary] Q${questionIndex + 1}: ${respondentEntries.length} respondent entries, ${wordCount} words`
+  );
+
   if (wordCount < 10) {
+    console.log(`[Summary] Q${questionIndex + 1}: Only ${wordCount} words from respondent (threshold: 10), returning empty summary`);
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 

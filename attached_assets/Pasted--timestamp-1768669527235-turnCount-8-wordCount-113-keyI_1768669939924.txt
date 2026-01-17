@@ -1,0 +1,47 @@
+[
+  {
+    "timestamp": 1768669527235,
+    "turnCount": 8,
+    "wordCount": 113,
+    "keyInsights": [
+      "Primary motivation is social connection—enjoys being with like-minded people in a Shoreham photo club.",
+      "Received positive recognition (newcomer of the year), which produced pride but little change in practice.",
+      "Photographic interests: landscapes and buildings; experimenting with street photography as personal challenge.",
+      "Street photography was attempted to push boundaries, but the respondent found it 'hugely daunting' and offered no specific memorable moments."
+    ],
+    "activeTimeMs": 0,
+    "qualityFlags": [
+      "incomplete",
+      "low_engagement"
+    ],
+    "qualityNotes": "Answers are relevant and coherent but concise and surface-level. Respondent gives clear motivations and genres but provides few specifics, anecdotes, or technical details; several prompts elicited short or no elaboration.",
+    "qualityScore": 55,
+    "questionText": "Explain to me what you love about taking photographs.",
+    "questionIndex": 0,
+    "respondentSummary": "The respondent says they love the social side of photography, especially being part of a local photo club where they won a newcomer award and feel accepted. They typically shoot landscapes and architecture and have recently pushed themselves into street photography in Brighton, finding it daunting but a deliberate stretch outside their comfort zone.",
+    "completenessAssessment": "Brief but covered key points (social motivation, genres, a recent experiment) with limited depth and few examples.",
+    "relevantToFutureQuestions": [
+      "Club activities and relationships (could reveal influences, mentoring, or critique practices)",
+      "Details of award-winning work (technique, subject, feedback received)",
+      "Street photography experiences in Brighton (specific moments, techniques, emotional responses)",
+      "Artistic goals and whether recognition changes practice"
+    ]
+  },
+  {
+    "timestamp": 1768669717443,
+    "turnCount": 4,
+    "wordCount": 0,
+    "keyInsights": [],
+    "activeTimeMs": 0,
+    "qualityFlags": [
+      "low_engagement"
+    ],
+    "qualityNotes": "Minimal or no response provided",
+    "qualityScore": 20,
+    "questionText": "What are your views on the impact of AI on creativity?",
+    "questionIndex": 1,
+    "respondentSummary": "Minimal or no response provided.",
+    "completenessAssessment": "Insufficient response for assessment.",
+    "relevantToFutureQuestions": []
+  }
+]
