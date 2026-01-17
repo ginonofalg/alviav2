@@ -849,6 +849,7 @@ async function extractEnhancedAnalysis(
       participantLabel: `Participant ${idx + 1}`,
       sessionId: s.sessionId,
       summariesByQuestion,
+      transcript: s.transcript || "",
     };
   });
 
@@ -935,7 +936,9 @@ Guidelines:
     const responses = s.summariesByQuestion.map(q => 
       `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}`
     ).join("\n");
-    return `${s.participantLabel}:\n${responses}`;
+    // Include actual transcript quotes for verbatim extraction
+    const transcriptSection = s.transcript ? `\n  ACTUAL RESPONDENT QUOTES:\n${s.transcript}` : "";
+    return `${s.participantLabel}:\n${responses}${transcriptSection}`;
   }).join("\n\n");
 
   const userPrompt = `INTERVIEW OBJECTIVE: ${input.templateObjective}
@@ -946,7 +949,9 @@ ${questionList}
 INTERVIEW DATA FROM ${input.sessions.length} PARTICIPANTS:
 ${sessionSummaries}
 
-Analyze these interviews and provide comprehensive insights with anonymized verbatims.`;
+IMPORTANT: When selecting verbatims/quotes, you MUST use the ACTUAL RESPONDENT QUOTES provided above. Do not paraphrase or fabricate quotes. Only include quotes that appear verbatim in the "ACTUAL RESPONDENT QUOTES" sections. Apply PII anonymization to these real quotes.
+
+Analyze these interviews and provide comprehensive insights with anonymized verbatims from the actual respondent quotes.`;
 
   try {
     console.log("[Barbara] Building enhanced analysis prompt with", sessionData.length, "sessions");
