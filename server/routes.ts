@@ -124,11 +124,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No completed sessions to analyze" });
       }
 
-      const sessionsWithSummaries = completedSessions.map(s => ({
-        sessionId: s.id,
-        questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
-        durationMs: s.totalDurationMs || 0,
-      }));
+      const sessionsWithSummaries = completedSessions.map(s => {
+        // Calculate duration from timestamps if totalDurationMs is not set
+        let durationMs = s.totalDurationMs || 0;
+        if (durationMs === 0 && s.startedAt && s.completedAt) {
+          const startTime = new Date(s.startedAt).getTime();
+          const endTime = new Date(s.completedAt).getTime();
+          durationMs = endTime - startTime;
+        }
+        return {
+          sessionId: s.id,
+          questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
+          durationMs,
+        };
+      });
 
       console.log("[Analytics] Starting analysis for collection:", req.params.collectionId);
       console.log("[Analytics] Sessions to analyze:", completedSessions.length);
