@@ -145,7 +145,7 @@ export async function analyzeWithBarbara(
     const userPrompt = buildBarbaraUserPrompt(input);
 
     const config = barbaraConfig.analysis;
-    const response = await openai.chat.completions.create({
+    const response = (await openai.chat.completions.create({
       model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -155,7 +155,9 @@ export async function analyzeWithBarbara(
       max_completion_tokens: 500,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
+    } as Parameters<
+      typeof openai.chat.completions.create
+    >[0])) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -444,35 +446,42 @@ export async function generateQuestionSummary(
   );
 
   // Debug logging to trace transcript filtering issues
-  const speakerBreakdown = questionTranscript.reduce((acc, e) => {
-    acc[e.speaker] = (acc[e.speaker] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const speakerBreakdown = questionTranscript.reduce(
+    (acc, e) => {
+      acc[e.speaker] = (acc[e.speaker] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
   console.log(
     `[Summary] Q${questionIndex + 1} transcript breakdown: ${JSON.stringify(speakerBreakdown)}, ` +
-    `entries: ${questionTranscript.length}`
+      `entries: ${questionTranscript.length}`,
   );
 
   if (questionTranscript.length === 0) {
-    console.log(`[Summary] Q${questionIndex + 1}: No transcript entries found, returning empty summary`);
+    console.log(
+      `[Summary] Q${questionIndex + 1}: No transcript entries found, returning empty summary`,
+    );
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 
-  const respondentEntries = questionTranscript.filter((e) => e.speaker === "respondent");
-  const respondentText = respondentEntries
-    .map((e) => e.text)
-    .join(" ");
+  const respondentEntries = questionTranscript.filter(
+    (e) => e.speaker === "respondent",
+  );
+  const respondentText = respondentEntries.map((e) => e.text).join(" ");
 
   const wordCount = respondentText
     .split(/\s+/)
     .filter((w) => w.length > 0).length;
 
   console.log(
-    `[Summary] Q${questionIndex + 1}: ${respondentEntries.length} respondent entries, ${wordCount} words`
+    `[Summary] Q${questionIndex + 1}: ${respondentEntries.length} respondent entries, ${wordCount} words`,
   );
 
   if (wordCount < 10) {
-    console.log(`[Summary] Q${questionIndex + 1}: Only ${wordCount} words from respondent (threshold: 10), returning empty summary`);
+    console.log(
+      `[Summary] Q${questionIndex + 1}: Only ${wordCount} words from respondent (threshold: 10), returning empty summary`,
+    );
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 
@@ -516,12 +525,17 @@ PII ANONYMIZATION (CRITICAL - apply to all verbatim quotes):
 - Replace phone/email with [Contact]
 
 Quality flags definitions:
-- incomplete: Answer doesn't address key aspects of the question
-- ambiguous: Response is unclear or could be interpreted multiple ways
+- incomplete: Answer doesn't address significant key aspects of the question
+- ambiguous: Response is very unclear or could be interpreted multiple ways
 - contradiction: Contains conflicting statements
 - distress_cue: Shows signs of discomfort, anxiety, or distress
 - off_topic: Significantly strays from the question topic
-- low_engagement: Very short or disengaged responses
+- low_engagement: Extremely short or disengaged responses (e.g., "I don't know" or "Yeah")
+
+Quality flags guidance:
+- Apply flags conservatively - most responses should have zero or one flag at most
+- Remember these are spoken responses - casual phrasing and natural pauses are normal, not signs of low engagement
+- Only flag 'incomplete' if the response completely ignores the core question, not for partial answers
 
 Quality score (0-100): Rate overall answer quality based on depth, relevance, and engagement.
 
@@ -563,55 +577,99 @@ Create a structured summary of the respondent's answer.`;
       max_completion_tokens: 1500, // Increased from 800 to handle full JSON structure with verbatims
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
+    } as Parameters<
+      typeof openai.chat.completions.create
+    >[0]) as Promise<ChatCompletion>;
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
     const finishReason = response.choices[0]?.finish_reason;
-    console.log(`[Summary] Q${questionIndex + 1}: OpenAI API call completed, finish_reason: ${finishReason}`);
-    
+    console.log(
+      `[Summary] Q${questionIndex + 1}: OpenAI API call completed, finish_reason: ${finishReason}`,
+    );
+
     // Warn if we're hitting token limits - indicates we may need to increase max_completion_tokens
-    if (finishReason === 'length') {
-      console.warn(`[Summary] Q${questionIndex + 1}: WARNING - Response truncated due to token limit! Consider increasing max_completion_tokens.`);
+    if (finishReason === "length") {
+      console.warn(
+        `[Summary] Q${questionIndex + 1}: WARNING - Response truncated due to token limit! Consider increasing max_completion_tokens.`,
+      );
     }
-    
+
     const content = response.choices[0]?.message?.content;
 
     if (!content) {
-      console.log(`[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response structure:`, 
-        JSON.stringify({
-          hasChoices: !!response.choices,
-          choicesLength: response.choices?.length,
-          firstChoice: response.choices?.[0] ? {
-            hasMessage: !!response.choices[0].message,
-            messageContent: response.choices[0].message?.content?.substring(0, 100),
-            finishReason: response.choices[0].finish_reason,
-          } : null,
-        }, null, 2)
+      console.log(
+        `[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response structure:`,
+        JSON.stringify(
+          {
+            hasChoices: !!response.choices,
+            choicesLength: response.choices?.length,
+            firstChoice: response.choices?.[0]
+              ? {
+                  hasMessage: !!response.choices[0].message,
+                  messageContent:
+                    response.choices[0].message?.content?.substring(0, 100),
+                  finishReason: response.choices[0].finish_reason,
+                }
+              : null,
+          },
+          null,
+          2,
+        ),
       );
       return createEmptySummary(questionIndex, questionText, metrics);
     }
 
-    console.log(`[Summary] Q${questionIndex + 1}: Parsing OpenAI response (${content.length} chars)`);
+    console.log(
+      `[Summary] Q${questionIndex + 1}: Parsing OpenAI response (${content.length} chars)`,
+    );
     const parsed = JSON.parse(content);
-    console.log(`[Summary] Q${questionIndex + 1}: Parsed summary - respondentSummary: "${parsed.respondentSummary?.substring(0, 50)}...", keyInsights count: ${parsed.keyInsights?.length || 0}`);
+    console.log(
+      `[Summary] Q${questionIndex + 1}: Parsed summary - respondentSummary: "${parsed.respondentSummary?.substring(0, 50)}...", keyInsights count: ${parsed.keyInsights?.length || 0}`,
+    );
 
-    const validFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
+    const validFlags: QualityFlag[] = [
+      "incomplete",
+      "ambiguous",
+      "contradiction",
+      "distress_cue",
+      "off_topic",
+      "low_engagement",
+    ];
     const qualityFlags = Array.isArray(parsed.qualityFlags)
-      ? parsed.qualityFlags.filter((f: string) => validFlags.includes(f as QualityFlag))
+      ? parsed.qualityFlags.filter((f: string) =>
+          validFlags.includes(f as QualityFlag),
+        )
       : [];
 
     // Parse and validate verbatims
-    const validSentiments = ["positive", "negative", "neutral", "mixed"] as const;
-    type ValidSentiment = typeof validSentiments[number];
+    const validSentiments = [
+      "positive",
+      "negative",
+      "neutral",
+      "mixed",
+    ] as const;
+    type ValidSentiment = (typeof validSentiments)[number];
     const verbatims = Array.isArray(parsed.verbatims)
       ? parsed.verbatims
-          .filter((v: { quote?: string; context?: string }) => v && typeof v.quote === "string" && v.quote.trim().length > 0)
-          .map((v: { quote: string; context?: string; sentiment?: string; themeTag?: string }) => ({
-            quote: v.quote.trim(),
-            context: v.context?.trim() || "Response to question",
-            sentiment: validSentiments.includes(v.sentiment as ValidSentiment) ? v.sentiment as ValidSentiment : undefined,
-            themeTag: v.themeTag?.trim() || undefined,
-          }))
+          .filter(
+            (v: { quote?: string; context?: string }) =>
+              v && typeof v.quote === "string" && v.quote.trim().length > 0,
+          )
+          .map(
+            (v: {
+              quote: string;
+              context?: string;
+              sentiment?: string;
+              themeTag?: string;
+            }) => ({
+              quote: v.quote.trim(),
+              context: v.context?.trim() || "Response to question",
+              sentiment: validSentiments.includes(v.sentiment as ValidSentiment)
+                ? (v.sentiment as ValidSentiment)
+                : undefined,
+              themeTag: v.themeTag?.trim() || undefined,
+            }),
+          )
           .slice(0, 4) // Max 4 verbatims per question
       : [];
 
@@ -630,19 +688,25 @@ Create a structured summary of the respondent's answer.`;
       activeTimeMs: metrics.activeTimeMs,
       timestamp: Date.now(),
       qualityFlags,
-      qualityScore: typeof parsed.qualityScore === "number" ? Math.min(100, Math.max(0, parsed.qualityScore)) : undefined,
+      qualityScore:
+        typeof parsed.qualityScore === "number"
+          ? Math.min(100, Math.max(0, parsed.qualityScore))
+          : undefined,
       qualityNotes: parsed.qualityNotes || undefined,
       verbatims: verbatims.length > 0 ? verbatims : undefined,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout');
+    const isTimeout = errorMessage.includes("timeout");
     console.error(
-      `[Summary] Q${questionIndex + 1}: Error generating summary${isTimeout ? ' (TIMEOUT)' : ''}:`,
+      `[Summary] Q${questionIndex + 1}: Error generating summary${isTimeout ? " (TIMEOUT)" : ""}:`,
       errorMessage,
     );
     if (error instanceof Error && error.stack) {
-      console.error(`[Summary] Q${questionIndex + 1}: Stack trace:`, error.stack.split('\n').slice(0, 3).join('\n'));
+      console.error(
+        `[Summary] Q${questionIndex + 1}: Stack trace:`,
+        error.stack.split("\n").slice(0, 3).join("\n"),
+      );
     }
     return createEmptySummary(questionIndex, questionText, metrics);
   }
@@ -681,54 +745,77 @@ export interface CrossInterviewAnalysisInput {
   templateObjective: string;
 }
 
-import type { 
-  EnhancedTheme, 
-  ThemeVerbatim, 
-  ThemeSentiment, 
-  KeyFinding, 
-  ConsensusPoint, 
-  DivergencePoint, 
+import type {
+  EnhancedTheme,
+  ThemeVerbatim,
+  ThemeSentiment,
+  KeyFinding,
+  ConsensusPoint,
+  DivergencePoint,
   Recommendation,
   EnhancedQuestionPerformance,
-  CollectionAnalytics 
+  CollectionAnalytics,
 } from "@shared/schema";
 
 const CROSS_ANALYSIS_TIMEOUT_MS = 90000;
 
 export async function generateCrossInterviewAnalysis(
   input: CrossInterviewAnalysisInput,
-): Promise<Omit<CollectionAnalytics, 'generatedAt'>> {
-  const allFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
-  
+): Promise<Omit<CollectionAnalytics, "generatedAt">> {
+  const allFlags: QualityFlag[] = [
+    "incomplete",
+    "ambiguous",
+    "contradiction",
+    "distress_cue",
+    "off_topic",
+    "low_engagement",
+  ];
+
   // Calculate basic question performance metrics
   const baseQuestionPerformance = input.templateQuestions.map((q, idx) => {
     const responses = input.sessions
-      .map(s => s.questionSummaries.find(qs => qs.questionIndex === idx))
+      .map((s) => s.questionSummaries.find((qs) => qs.questionIndex === idx))
       .filter((qs): qs is QuestionSummary => qs !== undefined);
-    
+
     const flagCounts: Record<QualityFlag, number> = {
-      incomplete: 0, ambiguous: 0, contradiction: 0, 
-      distress_cue: 0, off_topic: 0, low_engagement: 0
+      incomplete: 0,
+      ambiguous: 0,
+      contradiction: 0,
+      distress_cue: 0,
+      off_topic: 0,
+      low_engagement: 0,
     };
-    
-    responses.forEach(r => {
-      (r.qualityFlags || []).forEach(f => {
+
+    responses.forEach((r) => {
+      (r.qualityFlags || []).forEach((f) => {
         if (allFlags.includes(f)) flagCounts[f]++;
       });
     });
-    
-    const avgWordCount = responses.length > 0 
-      ? responses.reduce((sum, r) => sum + r.wordCount, 0) / responses.length : 0;
-    const avgTurnCount = responses.length > 0
-      ? responses.reduce((sum, r) => sum + r.turnCount, 0) / responses.length : 0;
-    const qualityScores = responses.filter(r => r.qualityScore !== undefined).map(r => r.qualityScore!);
-    const avgQualityScore = qualityScores.length > 0
-      ? qualityScores.reduce((sum, s) => sum + s, 0) / qualityScores.length : 0;
-    
+
+    const avgWordCount =
+      responses.length > 0
+        ? responses.reduce((sum, r) => sum + r.wordCount, 0) / responses.length
+        : 0;
+    const avgTurnCount =
+      responses.length > 0
+        ? responses.reduce((sum, r) => sum + r.turnCount, 0) / responses.length
+        : 0;
+    const qualityScores = responses
+      .filter((r) => r.qualityScore !== undefined)
+      .map((r) => r.qualityScore!);
+    const avgQualityScore =
+      qualityScores.length > 0
+        ? qualityScores.reduce((sum, s) => sum + s, 0) / qualityScores.length
+        : 0;
+
     // Determine response richness based on average word count
-    const responseRichness: "brief" | "moderate" | "detailed" = 
-      avgWordCount < 30 ? "brief" : avgWordCount < 100 ? "moderate" : "detailed";
-    
+    const responseRichness: "brief" | "moderate" | "detailed" =
+      avgWordCount < 30
+        ? "brief"
+        : avgWordCount < 100
+          ? "moderate"
+          : "detailed";
+
     return {
       questionIndex: idx,
       questionText: q.text,
@@ -738,76 +825,103 @@ export async function generateCrossInterviewAnalysis(
       responseCount: responses.length,
       qualityFlagCounts: flagCounts,
       responseRichness,
-      summaries: responses.map(r => r.respondentSummary),
+      summaries: responses.map((r) => r.respondentSummary),
     };
   });
 
   // Calculate overall stats
-  const allQualityScores = input.sessions.flatMap(s => 
-    s.questionSummaries.filter(qs => qs.qualityScore !== undefined).map(qs => qs.qualityScore!)
+  const allQualityScores = input.sessions.flatMap((s) =>
+    s.questionSummaries
+      .filter((qs) => qs.qualityScore !== undefined)
+      .map((qs) => qs.qualityScore!),
   );
-  const avgQualityScore = allQualityScores.length > 0
-    ? allQualityScores.reduce((sum, s) => sum + s, 0) / allQualityScores.length : 0;
+  const avgQualityScore =
+    allQualityScores.length > 0
+      ? allQualityScores.reduce((sum, s) => sum + s, 0) /
+        allQualityScores.length
+      : 0;
 
   const totalFlagCounts: Record<QualityFlag, number> = {
-    incomplete: 0, ambiguous: 0, contradiction: 0, 
-    distress_cue: 0, off_topic: 0, low_engagement: 0
+    incomplete: 0,
+    ambiguous: 0,
+    contradiction: 0,
+    distress_cue: 0,
+    off_topic: 0,
+    low_engagement: 0,
   };
-  input.sessions.forEach(s => {
-    s.questionSummaries.forEach(qs => {
-      (qs.qualityFlags || []).forEach(f => {
+  input.sessions.forEach((s) => {
+    s.questionSummaries.forEach((qs) => {
+      (qs.qualityFlags || []).forEach((f) => {
         if (allFlags.includes(f)) totalFlagCounts[f]++;
       });
     });
   });
 
   const commonQualityIssues = allFlags
-    .map(f => ({ flag: f, count: totalFlagCounts[f] }))
-    .filter(i => i.count > 0)
+    .map((f) => ({ flag: f, count: totalFlagCounts[f] }))
+    .filter((i) => i.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const avgDuration = input.sessions.length > 0
-    ? input.sessions.reduce((sum, s) => sum + s.durationMs, 0) / input.sessions.length : 0;
+  const avgDuration =
+    input.sessions.length > 0
+      ? input.sessions.reduce((sum, s) => sum + s.durationMs, 0) /
+        input.sessions.length
+      : 0;
 
   // Run AI-powered analysis in parallel
   console.log("[Barbara] Starting enhanced cross-interview analysis...");
-  
+
   const [enhancedAnalysis] = await Promise.all([
     extractEnhancedAnalysis(input, baseQuestionPerformance),
   ]);
 
   // Generate recommendations based on metrics
-  const recommendations = generateRecommendations(baseQuestionPerformance, enhancedAnalysis.themes, input);
+  const recommendations = generateRecommendations(
+    baseQuestionPerformance,
+    enhancedAnalysis.themes,
+    input,
+  );
 
   // Calculate theme stats
-  const themesPerSession = input.sessions.map(s => {
-    const sessionInsights = s.questionSummaries.flatMap(qs => qs.keyInsights);
-    return enhancedAnalysis.themes.filter(t => t.sessions.includes(s.sessionId)).length;
+  const themesPerSession = input.sessions.map((s) => {
+    const sessionInsights = s.questionSummaries.flatMap((qs) => qs.keyInsights);
+    return enhancedAnalysis.themes.filter((t) =>
+      t.sessions.includes(s.sessionId),
+    ).length;
   });
-  const avgThemesPerSession = themesPerSession.length > 0
-    ? themesPerSession.reduce((sum, t) => sum + t, 0) / themesPerSession.length : 0;
-  
-  const themeDepthScore = enhancedAnalysis.themes.length > 0
-    ? Math.round(enhancedAnalysis.themes.reduce((sum, t) => sum + t.depthScore, 0) / enhancedAnalysis.themes.length)
-    : 0;
+  const avgThemesPerSession =
+    themesPerSession.length > 0
+      ? themesPerSession.reduce((sum, t) => sum + t, 0) /
+        themesPerSession.length
+      : 0;
+
+  const themeDepthScore =
+    enhancedAnalysis.themes.length > 0
+      ? Math.round(
+          enhancedAnalysis.themes.reduce((sum, t) => sum + t.depthScore, 0) /
+            enhancedAnalysis.themes.length,
+        )
+      : 0;
 
   // Build enhanced question performance
-  const questionPerformance: EnhancedQuestionPerformance[] = baseQuestionPerformance.map((q, idx) => ({
-    questionIndex: q.questionIndex,
-    questionText: q.questionText,
-    avgWordCount: q.avgWordCount,
-    avgTurnCount: q.avgTurnCount,
-    avgQualityScore: q.avgQualityScore,
-    responseCount: q.responseCount,
-    qualityFlagCounts: q.qualityFlagCounts,
-    primaryThemes: enhancedAnalysis.themes
-      .filter(t => t.relatedQuestions.includes(idx))
-      .slice(0, 3)
-      .map(t => t.theme),
-    verbatims: enhancedAnalysis.questionVerbatims[idx] || [],
-    perspectiveRange: enhancedAnalysis.questionPerspectives[idx] || "moderate",
-    responseRichness: q.responseRichness,
-  }));
+  const questionPerformance: EnhancedQuestionPerformance[] =
+    baseQuestionPerformance.map((q, idx) => ({
+      questionIndex: q.questionIndex,
+      questionText: q.questionText,
+      avgWordCount: q.avgWordCount,
+      avgTurnCount: q.avgTurnCount,
+      avgQualityScore: q.avgQualityScore,
+      responseCount: q.responseCount,
+      qualityFlagCounts: q.qualityFlagCounts,
+      primaryThemes: enhancedAnalysis.themes
+        .filter((t) => t.relatedQuestions.includes(idx))
+        .slice(0, 3)
+        .map((t) => t.theme),
+      verbatims: enhancedAnalysis.questionVerbatims[idx] || [],
+      perspectiveRange:
+        enhancedAnalysis.questionPerspectives[idx] || "moderate",
+      responseRichness: q.responseRichness,
+    }));
 
   console.log("[Barbara] Enhanced analysis complete:", {
     themes: enhancedAnalysis.themes.length,
@@ -837,14 +951,20 @@ export async function generateCrossInterviewAnalysis(
 }
 
 function generateRecommendations(
-  questionPerformance: { questionIndex: number; questionText: string; avgQualityScore: number; avgWordCount: number; responseRichness: string }[],
+  questionPerformance: {
+    questionIndex: number;
+    questionText: string;
+    avgQualityScore: number;
+    avgWordCount: number;
+    responseRichness: string;
+  }[],
   themes: EnhancedTheme[],
-  input: CrossInterviewAnalysisInput
+  input: CrossInterviewAnalysisInput,
 ): Recommendation[] {
   const recommendations: Recommendation[] = [];
 
   // Flag underperforming questions
-  questionPerformance.forEach(q => {
+  questionPerformance.forEach((q) => {
     if (q.avgQualityScore < 50 && q.avgQualityScore > 0) {
       recommendations.push({
         type: "question_improvement",
@@ -866,7 +986,7 @@ function generateRecommendations(
   });
 
   // Flag shallow themes
-  themes.forEach(t => {
+  themes.forEach((t) => {
     if (t.depth === "mentioned" && t.count >= 2) {
       recommendations.push({
         type: "explore_deeper",
@@ -879,15 +999,17 @@ function generateRecommendations(
   });
 
   // Flag emergent themes as coverage gaps
-  themes.filter(t => t.isEmergent).forEach(t => {
-    recommendations.push({
-      type: "coverage_gap",
-      title: `Add questions about "${t.theme}"`,
-      description: `${t.description} This topic emerged organically and may warrant dedicated questions in the template.`,
-      relatedThemes: [t.id],
-      priority: t.count >= 3 ? "high" : "medium",
+  themes
+    .filter((t) => t.isEmergent)
+    .forEach((t) => {
+      recommendations.push({
+        type: "coverage_gap",
+        title: `Add questions about "${t.theme}"`,
+        description: `${t.description} This topic emerged organically and may warrant dedicated questions in the template.`,
+        relatedThemes: [t.id],
+        priority: t.count >= 3 ? "high" : "medium",
+      });
     });
-  });
 
   return recommendations.slice(0, 10); // Limit to top 10 recommendations
 }
@@ -899,12 +1021,20 @@ interface EnhancedAnalysisResult {
   divergencePoints: DivergencePoint[];
   questionVerbatims: Record<number, ThemeVerbatim[]>;
   questionPerspectives: Record<number, "narrow" | "moderate" | "diverse">;
-  sentimentDistribution: { positive: number; neutral: number; negative: number };
+  sentimentDistribution: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
 }
 
 async function extractEnhancedAnalysis(
   input: CrossInterviewAnalysisInput,
-  questionPerformance: { questionIndex: number; questionText: string; summaries: string[] }[]
+  questionPerformance: {
+    questionIndex: number;
+    questionText: string;
+    summaries: string[];
+  }[],
 ): Promise<EnhancedAnalysisResult> {
   if (input.sessions.length === 0) {
     return {
@@ -920,7 +1050,7 @@ async function extractEnhancedAnalysis(
 
   // Build comprehensive session data for AI analysis including pre-extracted verbatims
   const sessionData = input.sessions.map((s, idx) => {
-    const summariesByQuestion = s.questionSummaries.map(qs => ({
+    const summariesByQuestion = s.questionSummaries.map((qs) => ({
       questionIndex: qs.questionIndex,
       summary: qs.respondentSummary,
       insights: qs.keyInsights,
@@ -1010,17 +1140,24 @@ Guidelines:
 - Identify 1-3 consensus points and 1-3 divergence points
 - For each question, select 2-4 representative verbatims showing the range of responses`;
 
-  const questionList = input.templateQuestions.map((q, i) => `Q${i + 1}: ${q.text}`).join("\n");
-  
-  const sessionSummaries = sessionData.map(s => {
-    const responses = s.summariesByQuestion.map(q => {
-      const verbatimText = q.verbatims.length > 0 
-        ? ` | Verbatims: ${q.verbatims.map(v => `"${v.quote}" [${v.sentiment || 'neutral'}${v.themeTag ? `, ${v.themeTag}` : ''}]`).join("; ")}` 
-        : '';
-      return `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}${verbatimText}`;
-    }).join("\n");
-    return `${s.participantLabel}:\n${responses}`;
-  }).join("\n\n");
+  const questionList = input.templateQuestions
+    .map((q, i) => `Q${i + 1}: ${q.text}`)
+    .join("\n");
+
+  const sessionSummaries = sessionData
+    .map((s) => {
+      const responses = s.summariesByQuestion
+        .map((q) => {
+          const verbatimText =
+            q.verbatims.length > 0
+              ? ` | Verbatims: ${q.verbatims.map((v) => `"${v.quote}" [${v.sentiment || "neutral"}${v.themeTag ? `, ${v.themeTag}` : ""}]`).join("; ")}`
+              : "";
+          return `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}${verbatimText}`;
+        })
+        .join("\n");
+      return `${s.participantLabel}:\n${responses}`;
+    })
+    .join("\n\n");
 
   const userPrompt = `INTERVIEW OBJECTIVE: ${input.templateObjective}
 
@@ -1033,13 +1170,20 @@ ${sessionSummaries}
 Analyze these interviews and provide comprehensive insights with anonymized verbatims.`;
 
   try {
-    console.log("[Barbara] Building enhanced analysis prompt with", sessionData.length, "sessions");
-    console.log("[Barbara] Session summaries preview:", sessionSummaries.substring(0, 500));
-    
+    console.log(
+      "[Barbara] Building enhanced analysis prompt with",
+      sessionData.length,
+      "sessions",
+    );
+    console.log(
+      "[Barbara] Session summaries preview:",
+      sessionSummaries.substring(0, 500),
+    );
+
     const config = barbaraConfig.summarisation;
     console.log("[Barbara] Using model:", config.model);
-    
-    const response = await openai.chat.completions.create({
+
+    const response = (await openai.chat.completions.create({
       model: config.model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1049,21 +1193,34 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       max_completion_tokens: 16000,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
+    } as Parameters<
+      typeof openai.chat.completions.create
+    >[0])) as ChatCompletion;
 
-    console.log("[Barbara] Full API response:", JSON.stringify(response, null, 2).substring(0, 1000));
-    
+    console.log(
+      "[Barbara] Full API response:",
+      JSON.stringify(response, null, 2).substring(0, 1000),
+    );
+
     const content = response.choices[0]?.message?.content;
     if (!content) {
       console.error("[Barbara] No content in AI response");
-      console.error("[Barbara] Response choices:", JSON.stringify(response.choices, null, 2));
+      console.error(
+        "[Barbara] Response choices:",
+        JSON.stringify(response.choices, null, 2),
+      );
       return createEmptyAnalysis();
     }
 
     console.log("[Barbara] AI response received, length:", content.length);
     const parsed = JSON.parse(content);
-    console.log("[Barbara] Parsed response - themes:", parsed.themes?.length || 0, "findings:", parsed.keyFindings?.length || 0);
-    
+    console.log(
+      "[Barbara] Parsed response - themes:",
+      parsed.themes?.length || 0,
+      "findings:",
+      parsed.keyFindings?.length || 0,
+    );
+
     return processAnalysisResponse(parsed, sessionData, input.sessions.length);
   } catch (error) {
     console.error("[Barbara] Error in enhanced analysis:", error);
@@ -1090,20 +1247,27 @@ function createEmptyAnalysis(): EnhancedAnalysisResult {
 function processAnalysisResponse(
   parsed: any,
   sessionData: { participantLabel: string; sessionId: string }[],
-  totalSessions: number
+  totalSessions: number,
 ): EnhancedAnalysisResult {
   const themes: EnhancedTheme[] = (parsed.themes || []).map((t: any) => {
     const verbatims: ThemeVerbatim[] = (t.verbatims || []).map((v: any) => ({
       quote: v.quote || "",
       questionIndex: v.questionIndex || 0,
-      sessionId: sessionData[v.participantIndex]?.sessionId || sessionData[0]?.sessionId || "",
+      sessionId:
+        sessionData[v.participantIndex]?.sessionId ||
+        sessionData[0]?.sessionId ||
+        "",
       sentiment: validateSentiment(v.sentiment),
     }));
 
-    const sessionsWithTheme = Array.from(new Set(verbatims.map(v => v.sessionId)));
+    const sessionsWithTheme = Array.from(
+      new Set(verbatims.map((v) => v.sessionId)),
+    );
 
     return {
-      id: t.id || `theme_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id:
+        t.id ||
+        `theme_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       theme: t.theme || "Unnamed Theme",
       description: t.description || "",
       count: sessionsWithTheme.length || 1,
@@ -1111,68 +1275,91 @@ function processAnalysisResponse(
       prevalence: Math.round((sessionsWithTheme.length / totalSessions) * 100),
       verbatims: verbatims.slice(0, 7),
       sentiment: validateSentiment(t.sentiment),
-      sentimentBreakdown: t.sentimentBreakdown || { positive: 0, neutral: 0, negative: 0 },
+      sentimentBreakdown: t.sentimentBreakdown || {
+        positive: 0,
+        neutral: 0,
+        negative: 0,
+      },
       depth: validateDepth(t.depth),
       depthScore: Math.min(100, Math.max(0, t.depthScore || 50)),
-      relatedQuestions: Array.isArray(t.relatedQuestions) ? t.relatedQuestions : [],
+      relatedQuestions: Array.isArray(t.relatedQuestions)
+        ? t.relatedQuestions
+        : [],
       subThemes: Array.isArray(t.subThemes) ? t.subThemes : undefined,
       isEmergent: t.isEmergent === true,
     };
   });
 
-  const keyFindings: KeyFinding[] = (parsed.keyFindings || []).slice(0, 5).map((f: any) => ({
-    finding: f.finding || "",
-    significance: f.significance || "",
-    supportingVerbatims: (f.supportingVerbatims || []).slice(0, 3).map((v: any) => ({
-      quote: v.quote || "",
-      questionIndex: v.questionIndex || 0,
-      sessionId: sessionData[v.participantIndex]?.sessionId || "",
-      sentiment: validateSentiment(v.sentiment),
-    })),
-    relatedThemes: Array.isArray(f.relatedThemes) ? f.relatedThemes : [],
-  }));
+  const keyFindings: KeyFinding[] = (parsed.keyFindings || [])
+    .slice(0, 5)
+    .map((f: any) => ({
+      finding: f.finding || "",
+      significance: f.significance || "",
+      supportingVerbatims: (f.supportingVerbatims || [])
+        .slice(0, 3)
+        .map((v: any) => ({
+          quote: v.quote || "",
+          questionIndex: v.questionIndex || 0,
+          sessionId: sessionData[v.participantIndex]?.sessionId || "",
+          sentiment: validateSentiment(v.sentiment),
+        })),
+      relatedThemes: Array.isArray(f.relatedThemes) ? f.relatedThemes : [],
+    }));
 
-  const consensusPoints: ConsensusPoint[] = (parsed.consensusPoints || []).slice(0, 3).map((c: any) => ({
-    topic: c.topic || "",
-    position: c.position || "",
-    agreementLevel: Math.min(100, Math.max(0, c.agreementLevel || 0)),
-    verbatims: (c.verbatims || []).slice(0, 3).map((v: any) => ({
-      quote: v.quote || "",
-      questionIndex: v.questionIndex || 0,
-      sessionId: sessionData[v.participantIndex]?.sessionId || "",
-      sentiment: validateSentiment(v.sentiment),
-    })),
-  }));
-
-  const divergencePoints: DivergencePoint[] = (parsed.divergencePoints || []).slice(0, 3).map((d: any) => ({
-    topic: d.topic || "",
-    perspectives: (d.perspectives || []).map((p: any) => ({
-      position: p.position || "",
-      count: p.count || 0,
-      verbatims: (p.verbatims || []).slice(0, 2).map((v: any) => ({
+  const consensusPoints: ConsensusPoint[] = (parsed.consensusPoints || [])
+    .slice(0, 3)
+    .map((c: any) => ({
+      topic: c.topic || "",
+      position: c.position || "",
+      agreementLevel: Math.min(100, Math.max(0, c.agreementLevel || 0)),
+      verbatims: (c.verbatims || []).slice(0, 3).map((v: any) => ({
         quote: v.quote || "",
         questionIndex: v.questionIndex || 0,
         sessionId: sessionData[v.participantIndex]?.sessionId || "",
         sentiment: validateSentiment(v.sentiment),
       })),
-    })),
-  }));
+    }));
+
+  const divergencePoints: DivergencePoint[] = (parsed.divergencePoints || [])
+    .slice(0, 3)
+    .map((d: any) => ({
+      topic: d.topic || "",
+      perspectives: (d.perspectives || []).map((p: any) => ({
+        position: p.position || "",
+        count: p.count || 0,
+        verbatims: (p.verbatims || []).slice(0, 2).map((v: any) => ({
+          quote: v.quote || "",
+          questionIndex: v.questionIndex || 0,
+          sessionId: sessionData[v.participantIndex]?.sessionId || "",
+          sentiment: validateSentiment(v.sentiment),
+        })),
+      })),
+    }));
 
   const questionVerbatims: Record<number, ThemeVerbatim[]> = {};
-  const questionPerspectives: Record<number, "narrow" | "moderate" | "diverse"> = {};
-  
+  const questionPerspectives: Record<
+    number,
+    "narrow" | "moderate" | "diverse"
+  > = {};
+
   (parsed.questionAnalysis || []).forEach((qa: any) => {
     const qIdx = qa.questionIndex;
-    questionVerbatims[qIdx] = (qa.keyVerbatims || []).slice(0, 4).map((v: any) => ({
-      quote: v.quote || "",
-      questionIndex: qIdx,
-      sessionId: sessionData[v.participantIndex]?.sessionId || "",
-      sentiment: validateSentiment(v.sentiment),
-    }));
+    questionVerbatims[qIdx] = (qa.keyVerbatims || [])
+      .slice(0, 4)
+      .map((v: any) => ({
+        quote: v.quote || "",
+        questionIndex: qIdx,
+        sessionId: sessionData[v.participantIndex]?.sessionId || "",
+        sentiment: validateSentiment(v.sentiment),
+      }));
     questionPerspectives[qIdx] = validatePerspective(qa.perspectiveRange);
   });
 
-  const sentimentDistribution = parsed.overallSentiment || { positive: 0, neutral: 0, negative: 0 };
+  const sentimentDistribution = parsed.overallSentiment || {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+  };
 
   return {
     themes,
@@ -1186,12 +1373,14 @@ function processAnalysisResponse(
 }
 
 function validateSentiment(s: any): ThemeSentiment {
-  if (s === "positive" || s === "negative" || s === "neutral" || s === "mixed") return s;
+  if (s === "positive" || s === "negative" || s === "neutral" || s === "mixed")
+    return s;
   return "neutral";
 }
 
 function validateDepth(d: any): "mentioned" | "explored" | "deeply_explored" {
-  if (d === "mentioned" || d === "explored" || d === "deeply_explored") return d;
+  if (d === "mentioned" || d === "explored" || d === "deeply_explored")
+    return d;
   return "explored";
 }
 
