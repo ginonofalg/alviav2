@@ -8,20 +8,22 @@ import {
   TrendingUp,
   AlertCircle
 } from "lucide-react";
-import type { KeyFinding, ConsensusPoint, DivergencePoint, ThemeVerbatim } from "@shared/schema";
+import type { KeyFinding, ConsensusPoint, DivergencePoint, ThemeVerbatim, EnhancedTheme } from "@shared/schema";
 import { VerbatimQuote, SentimentIndicator } from "./ThemeCard";
 
 interface InsightPanelProps {
   keyFindings: KeyFinding[];
   consensusPoints: ConsensusPoint[];
   divergencePoints: DivergencePoint[];
+  themes?: EnhancedTheme[];
   participantLabels?: Map<string, string>;
 }
 
-function KeyFindingCard({ finding, index, participantLabels }: { 
+function KeyFindingCard({ finding, index, participantLabels, themeMap }: { 
   finding: KeyFinding; 
   index: number;
   participantLabels?: Map<string, string>;
+  themeMap?: Map<string, string>;
 }) {
   const verbatims = finding.supportingVerbatims || [];
   const relatedThemes = finding.relatedThemes || [];
@@ -41,7 +43,7 @@ function KeyFindingCard({ finding, index, participantLabels }: {
               <div className="flex flex-wrap gap-1 mt-2">
                 {relatedThemes.map((t, i) => (
                   <Badge key={i} variant="outline" className="text-xs" data-testid={`badge-related-theme-${index}-${i}`}>
-                    {t}
+                    {themeMap?.get(t) || t}
                   </Badge>
                 ))}
               </div>
@@ -136,8 +138,19 @@ export function InsightPanel({
   keyFindings, 
   consensusPoints, 
   divergencePoints,
+  themes,
   participantLabels 
 }: InsightPanelProps) {
+  // Build a map from theme ID to theme name
+  const themeMap = new Map<string, string>();
+  if (themes) {
+    themes.forEach(t => {
+      if (t.id && t.theme) {
+        themeMap.set(t.id, t.theme);
+      }
+    });
+  }
+  
   const hasContent = keyFindings.length > 0 || consensusPoints.length > 0 || divergencePoints.length > 0;
   
   if (!hasContent) {
@@ -164,7 +177,7 @@ export function InsightPanel({
           </h3>
           <div className="space-y-4">
             {keyFindings.map((f, i) => (
-              <KeyFindingCard key={i} finding={f} index={i} participantLabels={participantLabels} />
+              <KeyFindingCard key={i} finding={f} index={i} participantLabels={participantLabels} themeMap={themeMap} />
             ))}
           </div>
         </div>

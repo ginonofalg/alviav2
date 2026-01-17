@@ -422,6 +422,7 @@ export default function CollectionDetailPage() {
                   keyFindings={analyticsData.analytics.keyFindings || []}
                   consensusPoints={analyticsData.analytics.consensusPoints || []}
                   divergencePoints={analyticsData.analytics.divergencePoints || []}
+                  themes={analyticsData.analytics.themes || []}
                 />
 
                 {analyticsData.analytics.recommendations && analyticsData.analytics.recommendations.length > 0 && (
