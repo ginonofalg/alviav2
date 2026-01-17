@@ -1,0 +1,366 @@
+Collection Analytics Improvements Plan                                                                                                                       
+                                                                                                                                                              
+ Goal                                                                                                                                                         
+                                                                                                                                                              
+ Transform Collection analytics from basic metrics into rich, explorable insights with anonymized verbatims, sentiment analysis, and actionable               
+ recommendations.                                                                                                                                             
+                                                                                                                                                              
+ ---                                                                                                                                                          
+ Current State                                                                                                                                                
+                                                                                                                                                              
+ - Basic stats (sessions analyzed, avg duration, avg quality)                                                                                                 
+ - Themes as simple badges with counts                                                                                                                        
+ - Quality issues as badges                                                                                                                                   
+ - Question performance with word/turn counts and quality scores                                                                                              
+                                                                                                                                                              
+ ---                                                                                                                                                          
+ Proposed Enhancements                                                                                                                                        
+                                                                                                                                                              
+ 1. Theme Deep Dives with Verbatims                                                                                                                           
+                                                                                                                                                              
+ Transform themes from simple labels into rich, explorable insights:                                                                                          
+                                                                                                                                                              
+ - Expandable theme cards showing supporting evidence                                                                                                         
+ - Anonymized verbatim quotes extracted from responses supporting each theme                                                                                  
+ - Sentiment indicator (positive/negative/neutral/mixed) with breakdown                                                                                       
+ - Prevalence bar showing percentage of respondents mentioning this theme                                                                                     
+ - Depth score (shallow mention → moderate detail → rich exploration)                                                                                         
+ - Question correlation showing which questions most often surfaced this theme                                                                                
+ - Sub-themes for hierarchical breakdown                                                                                                                      
+ - Co-occurrence links to related themes frequently mentioned together                                                                                        
+                                                                                                                                                              
+ 2. Insight Highlights Panel (Executive Summary)                                                                                                              
+                                                                                                                                                              
+ A curated summary section with:                                                                                                                              
+                                                                                                                                                              
+ - Top 3-5 most impactful findings with supporting quotes                                                                                                     
+ - Unexpected discoveries - themes that emerged organically beyond template questions                                                                         
+ - Areas of consensus - where most respondents agreed                                                                                                         
+ - Points of divergence - where opinions split significantly                                                                                                  
+ - Outlier insights - unique perspectives worth noting                                                                                                        
+                                                                                                                                                              
+ 3. Question-Level Verbatims                                                                                                                                  
+                                                                                                                                                              
+ Expand question performance to show:                                                                                                                         
+                                                                                                                                                              
+ - Sample verbatim quotes (anonymized) for each question                                                                                                      
+ - Range of perspectives - quotes representing different viewpoints                                                                                           
+ - Response richness indicator - one-word answers vs detailed narratives                                                                                      
+ - Primary themes surfaced by each question                                                                                                                   
+                                                                                                                                                              
+ 4. Respondent Journey Insights                                                                                                                               
+                                                                                                                                                              
+ Aggregate patterns across interviews:                                                                                                                        
+                                                                                                                                                              
+ - Engagement curve - did respondents warm up or fatigue over time?                                                                                           
+ - Question difficulty - which questions caused hesitation or confusion?                                                                                      
+ - Topic connections - which themes naturally linked together?                                                                                                
+ - Theme co-occurrences - themes frequently mentioned together                                                                                                
+                                                                                                                                                              
+ 5. Actionable Recommendations                                                                                                                                
+                                                                                                                                                              
+ AI-generated suggestions:                                                                                                                                    
+                                                                                                                                                              
+ - Questions needing attention - consistently underperform, may need rewording                                                                                
+ - Themes worth exploring deeper in follow-up research                                                                                                        
+ - Coverage gaps - topics respondents brought up not in the template                                                                                          
+ - Themes needing more probing in future interviews                                                                                                           
+                                                                                                                                                              
+ 6. UI Structure                                                                                                                                              
+                                                                                                                                                              
+ Tabbed analytics view:                                                                                                                                       
+ - Overview - Key stats and executive summary                                                                                                                 
+ - Themes - Expandable theme cards with verbatims                                                                                                             
+ - Questions - Per-question performance with verbatims                                                                                                        
+ - Insights - Journey patterns and recommendations                                                                                                            
+                                                                                                                                                              
+ ---                                                                                                                                                          
+ Implementation                                                                                                                                               
+                                                                                                                                                              
+ Phase 1: Schema Changes                                                                                                                                      
+                                                                                                                                                              
+ File: shared/schema.ts                                                                                                                                       
+                                                                                                                                                              
+ // Theme types                                                                                                                                               
+ type ThemeSentiment = "positive" | "neutral" | "negative" | "mixed"                                                                                          
+                                                                                                                                                              
+ type ThemeVerbatim = {                                                                                                                                       
+   quote: string              // Anonymized quote (PII removed)                                                                                               
+   questionIndex: number      // Which question elicited this                                                                                                 
+   sessionId: string          // For "Participant X" labeling                                                                                                 
+   sentiment: ThemeSentiment                                                                                                                                  
+ }                                                                                                                                                            
+                                                                                                                                                              
+ type EnhancedTheme = {                                                                                                                                       
+   id: string                                                                                                                                                 
+   theme: string              // 2-5 word name                                                                                                                
+   description: string        // One sentence                                                                                                                 
+   count: number                                                                                                                                              
+   sessions: string[]                                                                                                                                         
+   prevalence: number         // Percentage of respondents (0-100)                                                                                            
+   verbatims: ThemeVerbatim[] // 3-7 supporting quotes                                                                                                        
+   sentiment: ThemeSentiment                                                                                                                                  
+   sentimentBreakdown: { positive: number; neutral: number; negative: number }                                                                                
+   depth: "mentioned" | "explored" | "deeply_explored"                                                                                                        
+   depthScore: number         // 0-100                                                                                                                        
+   relatedQuestions: number[]                                                                                                                                 
+   subThemes?: string[]                                                                                                                                       
+   coOccursWith: string[]     // Related theme IDs                                                                                                            
+   isEmergent?: boolean       // Emerged beyond template questions                                                                                            
+ }                                                                                                                                                            
+                                                                                                                                                              
+ type ThemeCoOccurrence = {                                                                                                                                   
+   themeA: string                                                                                                                                             
+   themeB: string                                                                                                                                             
+   count: number                                                                                                                                              
+   sessionIds: string[]                                                                                                                                       
+ }                                                                                                                                                            
+                                                                                                                                                              
+ // Insight types                                                                                                                                             
+ type KeyFinding = {                                                                                                                                          
+   finding: string                                                                                                                                            
+   significance: string                                                                                                                                       
+   supportingVerbatims: ThemeVerbatim[]                                                                                                                       
+   relatedThemes: string[]                                                                                                                                    
+ }                                                                                                                                                            
+                                                                                                                                                              
+ type ConsensusPoint = {                                                                                                                                      
+   topic: string                                                                                                                                              
+   position: string                                                                                                                                           
+   agreementLevel: number     // Percentage who agreed                                                                                                        
+   verbatims: ThemeVerbatim[]                                                                                                                                 
+ }                                                                                                                                                            
+                                                                                                                                                              
+ type DivergencePoint = {                                                                                                                                     
+   topic: string                                                                                                                                              
+   perspectives: { position: string; count: number; verbatims: ThemeVerbatim[] }[]                                                                            
+ }                                                                                                                                                            
+                                                                                                                                                              
+ type OutlierInsight = {                                                                                                                                      
+   insight: string                                                                                                                                            
+   sessionId: string                                                                                                                                          
+   questionIndex: number                                                                                                                                      
+   significance: string                                                                                                                                       
+ }                                                                                                                                                            
+                                                                                                                                                              
+ // Recommendations                                                                                                                                           
+ type Recommendation = {                                                                                                                                      
+   type: "question_improvement" | "explore_deeper" | "coverage_gap" | "needs_probing"                                                                         
+   title: string                                                                                                                                              
+   description: string                                                                                                                                        
+   relatedQuestions?: number[]                                                                                                                                
+   relatedThemes?: string[]                                                                                                                                   
+   priority: "high" | "medium" | "low"                                                                                                                        
+ }                                                                                                                                                            
+                                                                                                                                                              
+ // Question-level verbatims                                                                                                                                  
+ type QuestionVerbatims = {                                                                                                                                   
+   questionIndex: number                                                                                                                                      
+   verbatims: ThemeVerbatim[]                                                                                                                                 
+   perspectiveRange: "narrow" | "moderate" | "diverse"                                                                                                        
+   responseRichness: "brief" | "moderate" | "detailed"                                                                                                        
+ }                                                                                                                                                            
+                                                                                                                                                              
+ // Journey insights                                                                                                                                          
+ type JourneyInsights = {                                                                                                                                     
+   engagementCurve: { questionIndex: number; engagementScore: number }[]                                                                                      
+   difficultQuestions: { questionIndex: number; indicators: string[] }[]                                                                                      
+   topicConnections: { themeA: string; themeB: string; strength: number }[]                                                                                   
+ }                                                                                                                                                            
+                                                                                                                                                              
+ // Updated CollectionAnalytics                                                                                                                               
+ type CollectionAnalytics = {                                                                                                                                 
+   // Enhanced themes                                                                                                                                         
+   themes: EnhancedTheme[]                                                                                                                                    
+   themeCoOccurrences: ThemeCoOccurrence[]                                                                                                                    
+                                                                                                                                                              
+   // Executive summary / Insight highlights                                                                                                                  
+   keyFindings: KeyFinding[]                                                                                                                                  
+   consensusPoints: ConsensusPoint[]                                                                                                                          
+   divergencePoints: DivergencePoint[]                                                                                                                        
+   outlierInsights: OutlierInsight[]                                                                                                                          
+                                                                                                                                                              
+   // Question-level data                                                                                                                                     
+   questionPerformance: {                                                                                                                                     
+     questionIndex: number                                                                                                                                    
+     questionText: string                                                                                                                                     
+     avgWordCount: number                                                                                                                                     
+     avgTurnCount: number                                                                                                                                     
+     avgQualityScore: number                                                                                                                                  
+     responseCount: number                                                                                                                                    
+     qualityFlagCounts: Record<QualityFlag, number>                                                                                                           
+     primaryThemes: string[]                                                                                                                                  
+     verbatims: ThemeVerbatim[]                                                                                                                               
+     perspectiveRange: "narrow" | "moderate" | "diverse"                                                                                                      
+     responseRichness: "brief" | "moderate" | "detailed"                                                                                                      
+   }[]                                                                                                                                                        
+                                                                                                                                                              
+   // Journey insights                                                                                                                                        
+   journeyInsights: JourneyInsights                                                                                                                           
+                                                                                                                                                              
+   // Recommendations                                                                                                                                         
+   recommendations: Recommendation[]                                                                                                                          
+                                                                                                                                                              
+   // Overall stats                                                                                                                                           
+   overallStats: {                                                                                                                                            
+     totalCompletedSessions: number                                                                                                                           
+     avgSessionDuration: number                                                                                                                               
+     avgQualityScore: number                                                                                                                                  
+     commonQualityIssues: { flag: QualityFlag; count: number }[]                                                                                              
+     sentimentDistribution: { positive: number; neutral: number; negative: number }                                                                           
+     avgThemesPerSession: number                                                                                                                              
+     themeDepthScore: number                                                                                                                                  
+   }                                                                                                                                                          
+                                                                                                                                                              
+   generatedAt: number                                                                                                                                        
+ }                                                                                                                                                            
+                                                                                                                                                              
+ Phase 2: Backend Analysis                                                                                                                                    
+                                                                                                                                                              
+ File: server/barbara-orchestrator.ts                                                                                                                         
+                                                                                                                                                              
+ Update extractThemesWithAI() and generateCrossInterviewAnalysis() to:                                                                                        
+                                                                                                                                                              
+ 1. Extract verbatims with PII anonymization rules:                                                                                                           
+   - Names → [Name]                                                                                                                                           
+   - Locations → [Location]                                                                                                                                   
+   - Companies → [Company]                                                                                                                                    
+   - Dates → [Date]                                                                                                                                           
+ 2. Analyze themes for:                                                                                                                                       
+   - Sentiment per quote and overall                                                                                                                          
+   - Depth scoring (0-100)                                                                                                                                    
+   - Prevalence calculation                                                                                                                                   
+   - Sub-theme identification                                                                                                                                 
+   - Emergent theme detection (beyond template)                                                                                                               
+ 3. Generate executive summary:                                                                                                                               
+   - Top findings with supporting evidence                                                                                                                    
+   - Consensus and divergence analysis                                                                                                                        
+   - Outlier identification                                                                                                                                   
+ 4. Analyze questions for:                                                                                                                                    
+   - Representative verbatims                                                                                                                                 
+   - Perspective diversity                                                                                                                                    
+   - Response richness                                                                                                                                        
+ 5. Calculate journey insights:                                                                                                                               
+   - Engagement curve (word count, turn count over time)                                                                                                      
+   - Difficulty indicators (low quality scores, incomplete flags)                                                                                             
+   - Topic connection strength                                                                                                                                
+ 6. Generate recommendations:                                                                                                                                 
+   - Flag underperforming questions                                                                                                                           
+   - Identify themes needing more depth                                                                                                                       
+   - Surface coverage gaps                                                                                                                                    
+                                                                                                                                                              
+ File: server/routes.ts                                                                                                                                       
+                                                                                                                                                              
+ Update analytics refresh endpoint to pass full transcript data to analysis.                                                                                  
+                                                                                                                                                              
+ Phase 3: Frontend Components                                                                                                                                 
+                                                                                                                                                              
+ New files in client/src/components/analytics/:                                                                                                               
+ ┌──────────────────────────┬─────────────────────────────────────────────────────┐                                                                           
+ │        Component         │                       Purpose                       │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ ThemeCard.tsx            │ Expandable theme with verbatims, sentiment, depth   │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ SentimentIndicator.tsx   │ Color-coded sentiment dot/bar                       │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ DepthMeter.tsx           │ Visual depth indicator (3-segment bar)              │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ PrevalenceBar.tsx        │ Percentage bar of respondents                       │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ VerbatimQuote.tsx        │ Styled quote block with metadata                    │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ InsightHighlights.tsx    │ Executive summary panel                             │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ ConsensusSection.tsx     │ Areas of agreement                                  │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ DivergenceSection.tsx    │ Points of divergence                                │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ RecommendationsPanel.tsx │ Actionable suggestions                              │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ EngagementCurve.tsx      │ Line chart of engagement over questions             │                                                                           
+ ├──────────────────────────┼─────────────────────────────────────────────────────┤                                                                           
+ │ AnalyticsTabs.tsx        │ Tab navigation (Overview/Themes/Questions/Insights) │                                                                           
+ └──────────────────────────┴─────────────────────────────────────────────────────┘                                                                           
+ Phase 4: Page Integration                                                                                                                                    
+                                                                                                                                                              
+ File: client/src/pages/collection-detail.tsx                                                                                                                 
+                                                                                                                                                              
+ Replace current analytics section with tabbed view:                                                                                                          
+                                                                                                                                                              
+ ┌─────────────────────────────────────────────────────────┐                                                                                                  
+ │ [Overview] [Themes] [Questions] [Insights]              │                                                                                                  
+ ├─────────────────────────────────────────────────────────┤                                                                                                  
+ │                                                         │                                                                                                  
+ │ OVERVIEW TAB:                                           │                                                                                                  
+ │ ┌─────────────────────────────────────────────────────┐ │                                                                                                  
+ │ │ Key Findings (Executive Summary)                    │ │                                                                                                  
+ │ │ • Finding 1 with supporting quote                   │ │                                                                                                  
+ │ │ • Finding 2 with supporting quote                   │ │                                                                                                  
+ │ └─────────────────────────────────────────────────────┘ │                                                                                                  
+ │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │                                                                                                   
+ │ │Sessions  │ │Avg Dur   │ │Quality   │ │Sentiment │    │                                                                                                   
+ │ │    12    │ │  8.5min  │ │   78%    │ │ 😊 65%   │    │                                                                                                   
+ │ └──────────┘ └──────────┘ └──────────┘ └──────────┘    │                                                                                                   
+ │                                                         │                                                                                                  
+ │ THEMES TAB:                                             │                                                                                                  
+ │ ┌─────────────────────────────────────────────────────┐ │                                                                                                  
+ │ │ ▼ Work-Life Balance        ●Positive  ████░░ 67%   │ │                                                                                                   
+ │ │   "I've found that setting boundaries..."           │ │                                                                                                  
+ │ │   "The flexibility has been..."                     │ │                                                                                                  
+ │ │   Related: Q2, Q5 | Depth: Rich exploration        │ │                                                                                                   
+ │ └─────────────────────────────────────────────────────┘ │                                                                                                  
+ │                                                         │                                                                                                  
+ │ QUESTIONS TAB:                                          │                                                                                                  
+ │ ┌─────────────────────────────────────────────────────┐ │                                                                                                  
+ │ │ Q1: How do you approach...                          │ │                                                                                                  
+ │ │ Responses: 12 | Richness: Detailed | Range: Diverse │ │                                                                                                  
+ │ │ Themes: [Planning] [Priorities]                     │ │                                                                                                  
+ │ │ Sample quotes...                                    │ │                                                                                                  
+ │ └─────────────────────────────────────────────────────┘ │                                                                                                  
+ │                                                         │                                                                                                  
+ │ INSIGHTS TAB:                                           │                                                                                                  
+ │ ┌─────────────────────────────────────────────────────┐ │                                                                                                  
+ │ │ Engagement Curve 📈                                 │ │                                                                                                  
+ │ │ Consensus Points ✓                                  │ │                                                                                                  
+ │ │ Points of Divergence ⚡                             │ │                                                                                                  
+ │ │ Recommendations 💡                                  │ │                                                                                                  
+ │ └─────────────────────────────────────────────────────┘ │                                                                                                  
+ └─────────────────────────────────────────────────────────┘                                                                                                  
+                                                                                                                                                              
+ ---                                                                                                                                                          
+ Key Files to Modify                                                                                                                                          
+ ┌────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┐                                             
+ │                  File                  │                               Changes                               │                                             
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤                                             
+ │ shared/schema.ts                       │ Add all new types (EnhancedTheme, KeyFinding, Recommendation, etc.) │                                             
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤                                             
+ │ server/barbara-orchestrator.ts         │ Enhanced AI prompts for verbatims, sentiment, recommendations       │                                             
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤                                             
+ │ server/routes.ts                       │ Pass transcripts to analysis function                               │                                             
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤                                             
+ │ client/src/pages/collection-detail.tsx │ Tabbed analytics view with all new sections                         │                                             
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤                                             
+ │ client/src/components/analytics/*      │ ~10 new components for rich analytics display                       │                                             
+ └────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────┘                                             
+ ---                                                                                                                                                          
+ Backward Compatibility                                                                                                                                       
+                                                                                                                                                              
+ - JSONB field naturally supports new structure                                                                                                               
+ - Old collections keep simple format until re-analyzed                                                                                                       
+ - UI detects format and renders appropriately (type guard check)                                                                                             
+ - Show "Refresh for enhanced insights" prompt for legacy data                                                                                                
+                                                                                                                                                              
+ ---                                                                                                                                                          
+ Verification                                                                                                                                                 
+                                                                                                                                                              
+ 1. Run npm run check for type errors                                                                                                                         
+ 2. Test with existing collection (backward compat)                                                                                                           
+ 3. Create test collection with 3+ completed interviews                                                                                                       
+ 4. Run analytics refresh via UI button                                                                                                                       
+ 5. Verify all tabs render correctly:                                                                                                                         
+   - Overview shows key findings with quotes                                                                                                                  
+   - Themes expand with verbatims and indicators                                                                                                              
+   - Questions show sample quotes and metrics                                                                                                                 
+   - Insights show engagement curve and recommendations                                                                                                       
+ 6. Spot-check that no PII appears in displayed quotes                                                                                                        
+ 7. Test on mobile viewport for responsive behavior   
