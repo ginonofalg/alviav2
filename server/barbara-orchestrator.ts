@@ -566,13 +566,28 @@ Create a structured summary of the respondent's answer.`;
     } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
+    console.log(`[Summary] Q${questionIndex + 1}: OpenAI API call completed, response received`);
+    
     const content = response.choices[0]?.message?.content;
 
     if (!content) {
+      console.log(`[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response structure:`, 
+        JSON.stringify({
+          hasChoices: !!response.choices,
+          choicesLength: response.choices?.length,
+          firstChoice: response.choices?.[0] ? {
+            hasMessage: !!response.choices[0].message,
+            messageContent: response.choices[0].message?.content?.substring(0, 100),
+            finishReason: response.choices[0].finish_reason,
+          } : null,
+        }, null, 2)
+      );
       return createEmptySummary(questionIndex, questionText, metrics);
     }
 
+    console.log(`[Summary] Q${questionIndex + 1}: Parsing OpenAI response (${content.length} chars)`);
     const parsed = JSON.parse(content);
+    console.log(`[Summary] Q${questionIndex + 1}: Parsed summary - respondentSummary: "${parsed.respondentSummary?.substring(0, 50)}...", keyInsights count: ${parsed.keyInsights?.length || 0}`);
 
     const validFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
     const qualityFlags = Array.isArray(parsed.qualityFlags)
@@ -614,10 +629,15 @@ Create a structured summary of the respondent's answer.`;
       verbatims: verbatims.length > 0 ? verbatims : undefined,
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout');
     console.error(
-      `[Barbara] Error generating summary for Q${questionIndex + 1}:`,
-      error,
+      `[Summary] Q${questionIndex + 1}: Error generating summary${isTimeout ? ' (TIMEOUT)' : ''}:`,
+      errorMessage,
     );
+    if (error instanceof Error && error.stack) {
+      console.error(`[Summary] Q${questionIndex + 1}: Stack trace:`, error.stack.split('\n').slice(0, 3).join('\n'));
+    }
     return createEmptySummary(questionIndex, questionText, metrics);
   }
 }
