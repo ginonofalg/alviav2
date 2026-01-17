@@ -962,7 +962,7 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 4000,
+      max_completion_tokens: 16000,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
