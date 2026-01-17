@@ -46,7 +46,7 @@ const barbaraConfig: BarbaraConfig = {
     reasoningEffort: "minimal",
   },
   summarisation: {
-    model: "gpt-4o-mini",
+    model: "gpt-5-mini",
     verbosity: "low",
     reasoningEffort: "low",
   },
@@ -950,10 +950,6 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
 
   try {
     const config = barbaraConfig.summarisation;
-    console.log("[Barbara] Making AI analysis request with model:", config.model);
-    console.log("[Barbara] Session count:", input.sessions.length);
-    console.log("[Barbara] User prompt length:", userPrompt.length);
-    
     const response = await openai.chat.completions.create({
       model: config.model,
       messages: [
@@ -961,25 +957,21 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 4000,
-    });
+      max_completion_tokens: 4000,
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
+    } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
-    console.log("[Barbara] AI response received, content length:", content?.length || 0);
-    
     if (!content) {
       console.error("[Barbara] No content in AI response");
       return createEmptyAnalysis();
     }
 
     const parsed = JSON.parse(content);
-    console.log("[Barbara] Parsed response - themes:", parsed.themes?.length || 0, "findings:", parsed.keyFindings?.length || 0);
     return processAnalysisResponse(parsed, sessionData, input.sessions.length);
-  } catch (error: any) {
-    console.error("[Barbara] Error in enhanced analysis:", error?.message || error);
-    if (error?.response) {
-      console.error("[Barbara] API error details:", error.response?.data || error.response);
-    }
+  } catch (error) {
+    console.error("[Barbara] Error in enhanced analysis:", error);
     return createEmptyAnalysis();
   }
 }
