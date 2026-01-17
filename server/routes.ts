@@ -128,6 +128,7 @@ export async function registerRoutes(
         sessionId: s.id,
         questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
         durationMs: s.totalDurationMs || 0,
+        transcript: s.transcript || undefined,
       }));
 
       const project = await storage.getProject(template.projectId);

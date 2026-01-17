@@ -1,9 +1,11 @@
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowLeft, 
   Copy, 
@@ -16,10 +18,13 @@ import {
   RefreshCw,
   AlertTriangle,
   MessageSquare,
-  TrendingUp
+  TrendingUp,
+  Lightbulb,
+  FileText
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ThemeCard, InsightPanel, RecommendationsPanel, QuestionAnalysis } from "@/components/analytics";
 import type { Collection, InterviewTemplate, Project, SessionWithRespondent, CollectionAnalytics, QualityFlag } from "@shared/schema";
 
 interface CollectionWithDetails extends Collection {
@@ -309,11 +314,11 @@ export default function CollectionDetailPage() {
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 flex-wrap" data-testid="heading-analytics">
                 <BarChart3 className="w-5 h-5 text-primary" />
                 Analytics
               </CardTitle>
-              <CardDescription>
+              <CardDescription data-testid="text-analytics-description">
                 Cross-interview insights and quality analysis
               </CardDescription>
             </div>
@@ -325,7 +330,7 @@ export default function CollectionDetailPage() {
                 </Badge>
               )}
               {analyticsData?.lastAnalyzedAt && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground" data-testid="text-analytics-last-updated">
                   Last updated: {new Date(analyticsData.lastAnalyzedAt).toLocaleDateString()}
                 </span>
               )}
@@ -349,10 +354,10 @@ export default function CollectionDetailPage() {
               <Skeleton className="h-48 w-full" />
             </div>
           ) : !analyticsData?.analytics ? (
-            <div className="text-center py-8">
+            <div className="text-center py-8" data-testid="empty-analytics">
               <BarChart3 className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
-              <h3 className="font-medium mb-2">No analysis yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
+              <h3 className="font-medium mb-2" data-testid="text-no-analysis-heading">No analysis yet</h3>
+              <p className="text-sm text-muted-foreground mb-4" data-testid="text-no-analysis-message">
                 {completedSessions === 0 
                   ? "Complete some interviews to generate analytics."
                   : "Click Refresh to analyze your completed interviews."}
@@ -369,105 +374,104 @@ export default function CollectionDetailPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Users className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Sessions Analyzed</span>
+            <Tabs defaultValue="summary" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="summary" className="gap-2" data-testid="tab-summary">
+                  <Lightbulb className="w-4 h-4" />
+                  Summary
+                </TabsTrigger>
+                <TabsTrigger value="details" className="gap-2" data-testid="tab-details">
+                  <FileText className="w-4 h-4" />
+                  Details
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="summary" className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-4">
+                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-sessions">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <Users className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Sessions</span>
+                    </div>
+                    <p className="text-2xl font-semibold" data-testid="text-sessions-value">{analyticsData.analytics.overallStats.totalCompletedSessions}</p>
                   </div>
-                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.totalCompletedSessions}</p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Clock className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Avg Duration</span>
+                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-duration">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Avg Duration</span>
+                    </div>
+                    <p className="text-2xl font-semibold" data-testid="text-duration-value">{analyticsData.analytics.overallStats.avgSessionDuration} min</p>
                   </div>
-                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.avgSessionDuration} min</p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-2 mb-1">
-                    <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Avg Quality</span>
+                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-quality">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Avg Quality</span>
+                    </div>
+                    <p className="text-2xl font-semibold" data-testid="text-quality-value">{analyticsData.analytics.overallStats.avgQualityScore}%</p>
                   </div>
-                  <p className="text-2xl font-semibold">{analyticsData.analytics.overallStats.avgQualityScore}%</p>
+                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-themes">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Themes</span>
+                    </div>
+                    <p className="text-2xl font-semibold" data-testid="text-themes-value">{analyticsData.analytics.themes.length}</p>
+                  </div>
                 </div>
-              </div>
 
-              {analyticsData.analytics.themes.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-3 flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-primary" />
-                    Key Themes
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {analyticsData.analytics.themes.map((theme, index) => (
-                      <Badge key={index} variant="secondary" className="gap-1">
-                        {theme.theme}
-                        <span className="text-muted-foreground">({theme.count})</span>
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+                <InsightPanel 
+                  keyFindings={analyticsData.analytics.keyFindings || []}
+                  consensusPoints={analyticsData.analytics.consensusPoints || []}
+                  divergencePoints={analyticsData.analytics.divergencePoints || []}
+                />
 
-              {analyticsData.analytics.overallStats.commonQualityIssues.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-3 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                    Quality Issues
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {analyticsData.analytics.overallStats.commonQualityIssues.map((issue, index) => (
-                      <Badge key={index} variant="outline" className={`gap-1 ${QUALITY_FLAG_LABELS[issue.flag]?.color || ""}`}>
-                        {QUALITY_FLAG_LABELS[issue.flag]?.label || issue.flag}
-                        <span className="text-muted-foreground">({issue.count})</span>
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+                {analyticsData.analytics.recommendations && analyticsData.analytics.recommendations.length > 0 && (
+                  <RecommendationsPanel recommendations={analyticsData.analytics.recommendations} />
+                )}
 
-              {analyticsData.analytics.questionPerformance.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-primary" />
-                    Question Performance
-                  </h4>
-                  <div className="space-y-2">
-                    {analyticsData.analytics.questionPerformance.map((q, index) => (
-                      <div key={index} className="p-3 rounded-lg border flex items-center justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">Q{q.questionIndex + 1}: {q.questionText}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {q.responseCount} responses | Avg {q.avgWordCount} words | {q.avgTurnCount} turns
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex gap-0.5">
-                            {[...Array(5)].map((_, i) => (
-                              <div
-                                key={i}
-                                className={`w-1.5 h-3 rounded-sm ${
-                                  i < Math.ceil(q.avgQualityScore / 20) 
-                                    ? q.avgQualityScore >= 80 ? "bg-green-500" : q.avgQualityScore >= 50 ? "bg-yellow-500" : "bg-red-500"
-                                    : "bg-muted"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className={`text-sm font-medium ${
-                            q.avgQualityScore >= 80 ? "text-green-500" : q.avgQualityScore >= 50 ? "text-yellow-500" : "text-red-500"
-                          }`}>
-                            {q.avgQualityScore}%
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                {analyticsData.analytics.overallStats.commonQualityIssues.length > 0 && (
+                  <div data-testid="section-quality-issues">
+                    <h4 className="font-medium mb-3 flex items-center gap-2 flex-wrap" data-testid="heading-quality-issues">
+                      <AlertTriangle className="w-4 h-4 text-yellow-500" />
+                      Quality Issues
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {analyticsData.analytics.overallStats.commonQualityIssues.map((issue, index) => (
+                        <Badge key={index} variant="outline" className={`gap-1 ${QUALITY_FLAG_LABELS[issue.flag]?.color || ""}`} data-testid={`badge-quality-issue-${index}`}>
+                          {QUALITY_FLAG_LABELS[issue.flag]?.label || issue.flag}
+                          <span className="text-muted-foreground">({issue.count})</span>
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="details" className="space-y-6">
+                {analyticsData.analytics.themes.length > 0 && (
+                  <div data-testid="section-themes">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap" data-testid="heading-themes">
+                      <MessageSquare className="w-5 h-5 text-primary" />
+                      Themes
+                    </h3>
+                    <div className="space-y-3">
+                      {analyticsData.analytics.themes.map((theme) => (
+                        <ThemeCard key={theme.id} theme={theme} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {analyticsData.analytics.questionPerformance.length > 0 && (
+                  <div data-testid="section-question-performance">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap" data-testid="heading-question-performance">
+                      <BarChart3 className="w-5 h-5 text-primary" />
+                      Question Performance
+                    </h3>
+                    <QuestionAnalysis questions={analyticsData.analytics.questionPerformance} />
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </CardContent>
       </Card>

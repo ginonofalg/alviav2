@@ -595,42 +595,33 @@ export interface CrossInterviewAnalysisInput {
     sessionId: string;
     questionSummaries: QuestionSummary[];
     durationMs: number;
+    transcript?: string; // Full transcript for verbatim extraction
   }[];
   templateQuestions: { text: string; guidance: string }[];
   templateObjective: string;
 }
 
-export interface ThemeResult {
-  theme: string;
-  count: number;
-  sessions: string[];
-}
+import type { 
+  EnhancedTheme, 
+  ThemeVerbatim, 
+  ThemeSentiment, 
+  KeyFinding, 
+  ConsensusPoint, 
+  DivergencePoint, 
+  Recommendation,
+  EnhancedQuestionPerformance,
+  CollectionAnalytics 
+} from "@shared/schema";
 
-const CROSS_ANALYSIS_TIMEOUT_MS = 60000;
+const CROSS_ANALYSIS_TIMEOUT_MS = 90000;
 
 export async function generateCrossInterviewAnalysis(
   input: CrossInterviewAnalysisInput,
-): Promise<{
-  themes: ThemeResult[];
-  questionPerformance: {
-    questionIndex: number;
-    questionText: string;
-    avgWordCount: number;
-    avgTurnCount: number;
-    avgQualityScore: number;
-    responseCount: number;
-    qualityFlagCounts: Record<QualityFlag, number>;
-  }[];
-  overallStats: {
-    totalCompletedSessions: number;
-    avgSessionDuration: number;
-    avgQualityScore: number;
-    commonQualityIssues: { flag: QualityFlag; count: number }[];
-  };
-}> {
+): Promise<Omit<CollectionAnalytics, 'generatedAt'>> {
   const allFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
   
-  const questionPerformance = input.templateQuestions.map((q, idx) => {
+  // Calculate basic question performance metrics
+  const baseQuestionPerformance = input.templateQuestions.map((q, idx) => {
     const responses = input.sessions
       .map(s => s.questionSummaries.find(qs => qs.questionIndex === idx))
       .filter((qs): qs is QuestionSummary => qs !== undefined);
@@ -654,6 +645,10 @@ export async function generateCrossInterviewAnalysis(
     const avgQualityScore = qualityScores.length > 0
       ? qualityScores.reduce((sum, s) => sum + s, 0) / qualityScores.length : 0;
     
+    // Determine response richness based on average word count
+    const responseRichness: "brief" | "moderate" | "detailed" = 
+      avgWordCount < 30 ? "brief" : avgWordCount < 100 ? "moderate" : "detailed";
+    
     return {
       questionIndex: idx,
       questionText: q.text,
@@ -662,9 +657,12 @@ export async function generateCrossInterviewAnalysis(
       avgQualityScore: Math.round(avgQualityScore),
       responseCount: responses.length,
       qualityFlagCounts: flagCounts,
+      responseRichness,
+      summaries: responses.map(r => r.respondentSummary),
     };
   });
 
+  // Calculate overall stats
   const allQualityScores = input.sessions.flatMap(s => 
     s.questionSummaries.filter(qs => qs.qualityScore !== undefined).map(qs => qs.qualityScore!)
   );
@@ -691,60 +689,264 @@ export async function generateCrossInterviewAnalysis(
   const avgDuration = input.sessions.length > 0
     ? input.sessions.reduce((sum, s) => sum + s.durationMs, 0) / input.sessions.length : 0;
 
-  const themes = await extractThemesWithAI(input);
+  // Run AI-powered analysis in parallel
+  console.log("[Barbara] Starting enhanced cross-interview analysis...");
+  
+  const [enhancedAnalysis] = await Promise.all([
+    extractEnhancedAnalysis(input, baseQuestionPerformance),
+  ]);
+
+  // Generate recommendations based on metrics
+  const recommendations = generateRecommendations(baseQuestionPerformance, enhancedAnalysis.themes, input);
+
+  // Calculate theme stats
+  const themesPerSession = input.sessions.map(s => {
+    const sessionInsights = s.questionSummaries.flatMap(qs => qs.keyInsights);
+    return enhancedAnalysis.themes.filter(t => t.sessions.includes(s.sessionId)).length;
+  });
+  const avgThemesPerSession = themesPerSession.length > 0
+    ? themesPerSession.reduce((sum, t) => sum + t, 0) / themesPerSession.length : 0;
+  
+  const themeDepthScore = enhancedAnalysis.themes.length > 0
+    ? Math.round(enhancedAnalysis.themes.reduce((sum, t) => sum + t.depthScore, 0) / enhancedAnalysis.themes.length)
+    : 0;
+
+  // Build enhanced question performance
+  const questionPerformance: EnhancedQuestionPerformance[] = baseQuestionPerformance.map((q, idx) => ({
+    questionIndex: q.questionIndex,
+    questionText: q.questionText,
+    avgWordCount: q.avgWordCount,
+    avgTurnCount: q.avgTurnCount,
+    avgQualityScore: q.avgQualityScore,
+    responseCount: q.responseCount,
+    qualityFlagCounts: q.qualityFlagCounts,
+    primaryThemes: enhancedAnalysis.themes
+      .filter(t => t.relatedQuestions.includes(idx))
+      .slice(0, 3)
+      .map(t => t.theme),
+    verbatims: enhancedAnalysis.questionVerbatims[idx] || [],
+    perspectiveRange: enhancedAnalysis.questionPerspectives[idx] || "moderate",
+    responseRichness: q.responseRichness,
+  }));
+
+  console.log("[Barbara] Enhanced analysis complete:", {
+    themes: enhancedAnalysis.themes.length,
+    keyFindings: enhancedAnalysis.keyFindings.length,
+    consensusPoints: enhancedAnalysis.consensusPoints.length,
+    divergencePoints: enhancedAnalysis.divergencePoints.length,
+    recommendations: recommendations.length,
+  });
 
   return {
-    themes,
+    themes: enhancedAnalysis.themes,
+    keyFindings: enhancedAnalysis.keyFindings,
+    consensusPoints: enhancedAnalysis.consensusPoints,
+    divergencePoints: enhancedAnalysis.divergencePoints,
     questionPerformance,
+    recommendations,
     overallStats: {
       totalCompletedSessions: input.sessions.length,
       avgSessionDuration: Math.round(avgDuration / 60000),
       avgQualityScore: Math.round(avgQualityScore),
       commonQualityIssues,
+      sentimentDistribution: enhancedAnalysis.sentimentDistribution,
+      avgThemesPerSession: Math.round(avgThemesPerSession * 10) / 10,
+      themeDepthScore,
     },
   };
 }
 
-async function extractThemesWithAI(input: CrossInterviewAnalysisInput): Promise<ThemeResult[]> {
-  if (input.sessions.length === 0) return [];
+function generateRecommendations(
+  questionPerformance: { questionIndex: number; questionText: string; avgQualityScore: number; avgWordCount: number; responseRichness: string }[],
+  themes: EnhancedTheme[],
+  input: CrossInterviewAnalysisInput
+): Recommendation[] {
+  const recommendations: Recommendation[] = [];
 
-  const allInsights: { sessionId: string; insight: string }[] = [];
-  input.sessions.forEach(s => {
-    s.questionSummaries.forEach(qs => {
-      qs.keyInsights.forEach(insight => {
-        allInsights.push({ sessionId: s.sessionId, insight });
+  // Flag underperforming questions
+  questionPerformance.forEach(q => {
+    if (q.avgQualityScore < 50 && q.avgQualityScore > 0) {
+      recommendations.push({
+        type: "question_improvement",
+        title: `Improve Question ${q.questionIndex + 1}`,
+        description: `This question has a low average quality score (${q.avgQualityScore}%). Consider rewording for clarity or providing more context.`,
+        relatedQuestions: [q.questionIndex],
+        priority: q.avgQualityScore < 30 ? "high" : "medium",
       });
+    }
+    if (q.responseRichness === "brief" && q.avgWordCount > 0) {
+      recommendations.push({
+        type: "needs_probing",
+        title: `Add follow-up probes for Question ${q.questionIndex + 1}`,
+        description: `Responses to this question tend to be brief (avg ${q.avgWordCount} words). Consider adding follow-up prompts to encourage deeper exploration.`,
+        relatedQuestions: [q.questionIndex],
+        priority: "medium",
+      });
+    }
+  });
+
+  // Flag shallow themes
+  themes.forEach(t => {
+    if (t.depth === "mentioned" && t.count >= 2) {
+      recommendations.push({
+        type: "explore_deeper",
+        title: `Explore "${t.theme}" in more depth`,
+        description: `This theme appeared across ${t.count} sessions but was only briefly mentioned. Future interviews should probe deeper.`,
+        relatedThemes: [t.id],
+        priority: "medium",
+      });
+    }
+  });
+
+  // Flag emergent themes as coverage gaps
+  themes.filter(t => t.isEmergent).forEach(t => {
+    recommendations.push({
+      type: "coverage_gap",
+      title: `Add questions about "${t.theme}"`,
+      description: `${t.description} This topic emerged organically and may warrant dedicated questions in the template.`,
+      relatedThemes: [t.id],
+      priority: t.count >= 3 ? "high" : "medium",
     });
   });
 
-  if (allInsights.length === 0) return [];
+  return recommendations.slice(0, 10); // Limit to top 10 recommendations
+}
 
-  const systemPrompt = `You are Barbara, an interview analysis assistant. Analyze the key insights from multiple interview sessions and identify common themes.
+interface EnhancedAnalysisResult {
+  themes: EnhancedTheme[];
+  keyFindings: KeyFinding[];
+  consensusPoints: ConsensusPoint[];
+  divergencePoints: DivergencePoint[];
+  questionVerbatims: Record<number, ThemeVerbatim[]>;
+  questionPerspectives: Record<number, "narrow" | "moderate" | "diverse">;
+  sentimentDistribution: { positive: number; neutral: number; negative: number };
+}
 
-Return a JSON object with:
+async function extractEnhancedAnalysis(
+  input: CrossInterviewAnalysisInput,
+  questionPerformance: { questionIndex: number; questionText: string; summaries: string[] }[]
+): Promise<EnhancedAnalysisResult> {
+  if (input.sessions.length === 0) {
+    return {
+      themes: [],
+      keyFindings: [],
+      consensusPoints: [],
+      divergencePoints: [],
+      questionVerbatims: {},
+      questionPerspectives: {},
+      sentimentDistribution: { positive: 0, neutral: 0, negative: 0 },
+    };
+  }
+
+  // Build comprehensive session data for AI analysis
+  const sessionData = input.sessions.map((s, idx) => {
+    const summariesByQuestion = s.questionSummaries.map(qs => ({
+      questionIndex: qs.questionIndex,
+      summary: qs.respondentSummary,
+      insights: qs.keyInsights,
+    }));
+    return {
+      participantLabel: `Participant ${idx + 1}`,
+      sessionId: s.sessionId,
+      summariesByQuestion,
+    };
+  });
+
+  const systemPrompt = `You are Barbara, a qualitative research analyst. Analyze interview data and provide rich insights with supporting verbatims.
+
+IMPORTANT: For all verbatims/quotes, apply PII anonymization:
+- Replace names with [Name]
+- Replace locations/cities with [Location]  
+- Replace company names with [Company]
+- Replace specific dates with [Date]
+- Replace phone/email with [Contact]
+
+Return a JSON object with this exact structure:
 {
   "themes": [
     {
+      "id": "theme_1",
       "theme": "Brief theme name (2-5 words)",
-      "description": "One sentence description",
-      "relatedInsights": ["insight1", "insight2"]
+      "description": "One sentence description of the theme",
+      "sentiment": "positive" | "neutral" | "negative" | "mixed",
+      "sentimentBreakdown": { "positive": 0, "neutral": 0, "negative": 0 },
+      "depth": "mentioned" | "explored" | "deeply_explored",
+      "depthScore": 0-100,
+      "relatedQuestions": [0, 1, 2],
+      "subThemes": ["sub-theme 1", "sub-theme 2"],
+      "isEmergent": false,
+      "verbatims": [
+        {
+          "quote": "Anonymized quote from participant",
+          "questionIndex": 0,
+          "participantIndex": 0,
+          "sentiment": "positive" | "neutral" | "negative" | "mixed"
+        }
+      ]
     }
-  ]
+  ],
+  "keyFindings": [
+    {
+      "finding": "Key insight statement",
+      "significance": "Why this matters",
+      "relatedThemes": ["theme_1"],
+      "supportingVerbatims": [{ "quote": "...", "questionIndex": 0, "participantIndex": 0, "sentiment": "neutral" }]
+    }
+  ],
+  "consensusPoints": [
+    {
+      "topic": "Topic where agreement exists",
+      "position": "The shared view",
+      "agreementLevel": 80,
+      "verbatims": [{ "quote": "...", "questionIndex": 0, "participantIndex": 0, "sentiment": "neutral" }]
+    }
+  ],
+  "divergencePoints": [
+    {
+      "topic": "Topic where views differ",
+      "perspectives": [
+        { "position": "View A", "count": 3, "verbatims": [] },
+        { "position": "View B", "count": 2, "verbatims": [] }
+      ]
+    }
+  ],
+  "questionAnalysis": [
+    {
+      "questionIndex": 0,
+      "perspectiveRange": "narrow" | "moderate" | "diverse",
+      "keyVerbatims": [{ "quote": "...", "participantIndex": 0, "sentiment": "neutral" }]
+    }
+  ],
+  "overallSentiment": { "positive": 40, "neutral": 35, "negative": 25 }
 }
 
-Identify 3-8 significant themes. Focus on recurring topics, sentiments, or patterns across interviews.`;
+Guidelines:
+- Identify 4-10 significant themes with 2-5 supporting verbatims each
+- Mark themes as "isEmergent: true" if they go beyond the template questions
+- depth: "mentioned" = briefly referenced, "explored" = discussed in some detail, "deeply_explored" = rich, detailed discussion
+- depthScore: 0-30 for mentioned, 31-70 for explored, 71-100 for deeply explored
+- Include 3-5 key findings with the most impactful insights
+- Identify 1-3 consensus points and 1-3 divergence points
+- For each question, select 2-4 representative verbatims showing the range of responses`;
 
-  const insightsBySession = input.sessions.map(s => ({
-    sessionId: s.sessionId,
-    insights: s.questionSummaries.flatMap(qs => qs.keyInsights),
-  }));
+  const questionList = input.templateQuestions.map((q, i) => `Q${i + 1}: ${q.text}`).join("\n");
+  
+  const sessionSummaries = sessionData.map(s => {
+    const responses = s.summariesByQuestion.map(q => 
+      `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}`
+    ).join("\n");
+    return `${s.participantLabel}:\n${responses}`;
+  }).join("\n\n");
 
   const userPrompt = `INTERVIEW OBJECTIVE: ${input.templateObjective}
 
-INSIGHTS FROM ${input.sessions.length} INTERVIEW SESSIONS:
-${insightsBySession.map(s => `Session ${s.sessionId}: ${s.insights.join("; ")}`).join("\n")}
+TEMPLATE QUESTIONS:
+${questionList}
 
-Identify common themes across these interviews.`;
+INTERVIEW DATA FROM ${input.sessions.length} PARTICIPANTS:
+${sessionSummaries}
+
+Analyze these interviews and provide comprehensive insights with anonymized verbatims.`;
 
   try {
     const config = barbaraConfig.summarisation;
@@ -755,33 +957,146 @@ Identify common themes across these interviews.`;
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 1000,
+      max_completion_tokens: 4000,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
-    if (!content) return [];
+    if (!content) {
+      console.error("[Barbara] No content in AI response");
+      return createEmptyAnalysis();
+    }
 
     const parsed = JSON.parse(content);
-    if (!Array.isArray(parsed.themes)) return [];
-
-    return parsed.themes.map((t: { theme: string; relatedInsights?: string[] }) => {
-      const relatedInsights = Array.isArray(t.relatedInsights) ? t.relatedInsights : [];
-      const matchingSessions = input.sessions
-        .filter(s => s.questionSummaries.some(qs => 
-          qs.keyInsights.some(ki => relatedInsights.some(ri => ki.toLowerCase().includes(ri.toLowerCase().substring(0, 20)))))
-        )
-        .map(s => s.sessionId);
-      
-      return {
-        theme: t.theme,
-        count: matchingSessions.length || 1,
-        sessions: matchingSessions.length > 0 ? matchingSessions : [input.sessions[0]?.sessionId].filter(Boolean),
-      };
-    });
+    return processAnalysisResponse(parsed, sessionData, input.sessions.length);
   } catch (error) {
-    console.error("[Barbara] Error extracting themes:", error);
-    return [];
+    console.error("[Barbara] Error in enhanced analysis:", error);
+    return createEmptyAnalysis();
   }
+}
+
+function createEmptyAnalysis(): EnhancedAnalysisResult {
+  return {
+    themes: [],
+    keyFindings: [],
+    consensusPoints: [],
+    divergencePoints: [],
+    questionVerbatims: {},
+    questionPerspectives: {},
+    sentimentDistribution: { positive: 0, neutral: 0, negative: 0 },
+  };
+}
+
+function processAnalysisResponse(
+  parsed: any,
+  sessionData: { participantLabel: string; sessionId: string }[],
+  totalSessions: number
+): EnhancedAnalysisResult {
+  const themes: EnhancedTheme[] = (parsed.themes || []).map((t: any) => {
+    const verbatims: ThemeVerbatim[] = (t.verbatims || []).map((v: any) => ({
+      quote: v.quote || "",
+      questionIndex: v.questionIndex || 0,
+      sessionId: sessionData[v.participantIndex]?.sessionId || sessionData[0]?.sessionId || "",
+      sentiment: validateSentiment(v.sentiment),
+    }));
+
+    const sessionsWithTheme = Array.from(new Set(verbatims.map(v => v.sessionId)));
+
+    return {
+      id: t.id || `theme_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      theme: t.theme || "Unnamed Theme",
+      description: t.description || "",
+      count: sessionsWithTheme.length || 1,
+      sessions: sessionsWithTheme,
+      prevalence: Math.round((sessionsWithTheme.length / totalSessions) * 100),
+      verbatims: verbatims.slice(0, 7),
+      sentiment: validateSentiment(t.sentiment),
+      sentimentBreakdown: t.sentimentBreakdown || { positive: 0, neutral: 0, negative: 0 },
+      depth: validateDepth(t.depth),
+      depthScore: Math.min(100, Math.max(0, t.depthScore || 50)),
+      relatedQuestions: Array.isArray(t.relatedQuestions) ? t.relatedQuestions : [],
+      subThemes: Array.isArray(t.subThemes) ? t.subThemes : undefined,
+      isEmergent: t.isEmergent === true,
+    };
+  });
+
+  const keyFindings: KeyFinding[] = (parsed.keyFindings || []).slice(0, 5).map((f: any) => ({
+    finding: f.finding || "",
+    significance: f.significance || "",
+    supportingVerbatims: (f.supportingVerbatims || []).slice(0, 3).map((v: any) => ({
+      quote: v.quote || "",
+      questionIndex: v.questionIndex || 0,
+      sessionId: sessionData[v.participantIndex]?.sessionId || "",
+      sentiment: validateSentiment(v.sentiment),
+    })),
+    relatedThemes: Array.isArray(f.relatedThemes) ? f.relatedThemes : [],
+  }));
+
+  const consensusPoints: ConsensusPoint[] = (parsed.consensusPoints || []).slice(0, 3).map((c: any) => ({
+    topic: c.topic || "",
+    position: c.position || "",
+    agreementLevel: Math.min(100, Math.max(0, c.agreementLevel || 0)),
+    verbatims: (c.verbatims || []).slice(0, 3).map((v: any) => ({
+      quote: v.quote || "",
+      questionIndex: v.questionIndex || 0,
+      sessionId: sessionData[v.participantIndex]?.sessionId || "",
+      sentiment: validateSentiment(v.sentiment),
+    })),
+  }));
+
+  const divergencePoints: DivergencePoint[] = (parsed.divergencePoints || []).slice(0, 3).map((d: any) => ({
+    topic: d.topic || "",
+    perspectives: (d.perspectives || []).map((p: any) => ({
+      position: p.position || "",
+      count: p.count || 0,
+      verbatims: (p.verbatims || []).slice(0, 2).map((v: any) => ({
+        quote: v.quote || "",
+        questionIndex: v.questionIndex || 0,
+        sessionId: sessionData[v.participantIndex]?.sessionId || "",
+        sentiment: validateSentiment(v.sentiment),
+      })),
+    })),
+  }));
+
+  const questionVerbatims: Record<number, ThemeVerbatim[]> = {};
+  const questionPerspectives: Record<number, "narrow" | "moderate" | "diverse"> = {};
+  
+  (parsed.questionAnalysis || []).forEach((qa: any) => {
+    const qIdx = qa.questionIndex;
+    questionVerbatims[qIdx] = (qa.keyVerbatims || []).slice(0, 4).map((v: any) => ({
+      quote: v.quote || "",
+      questionIndex: qIdx,
+      sessionId: sessionData[v.participantIndex]?.sessionId || "",
+      sentiment: validateSentiment(v.sentiment),
+    }));
+    questionPerspectives[qIdx] = validatePerspective(qa.perspectiveRange);
+  });
+
+  const sentimentDistribution = parsed.overallSentiment || { positive: 0, neutral: 0, negative: 0 };
+
+  return {
+    themes,
+    keyFindings,
+    consensusPoints,
+    divergencePoints,
+    questionVerbatims,
+    questionPerspectives,
+    sentimentDistribution,
+  };
+}
+
+function validateSentiment(s: any): ThemeSentiment {
+  if (s === "positive" || s === "negative" || s === "neutral" || s === "mixed") return s;
+  return "neutral";
+}
+
+function validateDepth(d: any): "mentioned" | "explored" | "deeply_explored" {
+  if (d === "mentioned" || d === "explored" || d === "deeply_explored") return d;
+  return "explored";
+}
+
+function validatePerspective(p: any): "narrow" | "moderate" | "diverse" {
+  if (p === "narrow" || p === "moderate" || p === "diverse") return p;
+  return "moderate";
 }

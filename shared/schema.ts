@@ -381,24 +381,103 @@ export type QuestionSummary = {
   qualityNotes?: string;
 };
 
+// Enhanced analytics types for collection-level insights
+
+export type ThemeSentiment = "positive" | "neutral" | "negative" | "mixed";
+
+export type ThemeVerbatim = {
+  quote: string;              // Anonymized quote (PII removed)
+  questionIndex: number;      // Which question elicited this
+  sessionId: string;          // For "Participant X" labeling
+  sentiment: ThemeSentiment;
+};
+
+export type EnhancedTheme = {
+  id: string;
+  theme: string;              // 2-5 word name
+  description: string;        // One sentence summary
+  count: number;
+  sessions: string[];
+  prevalence: number;         // Percentage of respondents (0-100)
+  verbatims: ThemeVerbatim[]; // 3-7 supporting quotes
+  sentiment: ThemeSentiment;
+  sentimentBreakdown: { positive: number; neutral: number; negative: number };
+  depth: "mentioned" | "explored" | "deeply_explored";
+  depthScore: number;         // 0-100
+  relatedQuestions: number[];
+  subThemes?: string[];
+  isEmergent?: boolean;       // Emerged beyond template questions
+};
+
+export type KeyFinding = {
+  finding: string;
+  significance: string;
+  supportingVerbatims: ThemeVerbatim[];
+  relatedThemes: string[];
+};
+
+export type ConsensusPoint = {
+  topic: string;
+  position: string;
+  agreementLevel: number;     // Percentage who agreed
+  verbatims: ThemeVerbatim[];
+};
+
+export type DivergencePoint = {
+  topic: string;
+  perspectives: { position: string; count: number; verbatims: ThemeVerbatim[] }[];
+};
+
+export type Recommendation = {
+  type: "question_improvement" | "explore_deeper" | "coverage_gap" | "needs_probing";
+  title: string;
+  description: string;
+  relatedQuestions?: number[];
+  relatedThemes?: string[];
+  priority: "high" | "medium" | "low";
+};
+
+export type EnhancedQuestionPerformance = {
+  questionIndex: number;
+  questionText: string;
+  avgWordCount: number;
+  avgTurnCount: number;
+  avgQualityScore: number;
+  responseCount: number;
+  qualityFlagCounts: Record<QualityFlag, number>;
+  primaryThemes: string[];
+  verbatims: ThemeVerbatim[];
+  perspectiveRange: "narrow" | "moderate" | "diverse";
+  responseRichness: "brief" | "moderate" | "detailed";
+};
+
 // Collection-level analytics data (stored in collections.analyticsData)
 export type CollectionAnalytics = {
-  themes: { theme: string; count: number; sessions: string[] }[];
-  questionPerformance: {
-    questionIndex: number;
-    questionText: string;
-    avgWordCount: number;
-    avgTurnCount: number;
-    avgQualityScore: number;
-    responseCount: number;
-    qualityFlagCounts: Record<QualityFlag, number>;
-  }[];
+  // Enhanced themes with verbatims
+  themes: EnhancedTheme[];
+  
+  // Executive summary / Insight highlights
+  keyFindings: KeyFinding[];
+  consensusPoints: ConsensusPoint[];
+  divergencePoints: DivergencePoint[];
+  
+  // Question-level data with verbatims
+  questionPerformance: EnhancedQuestionPerformance[];
+  
+  // Recommendations
+  recommendations: Recommendation[];
+  
+  // Overall stats
   overallStats: {
     totalCompletedSessions: number;
     avgSessionDuration: number;
     avgQualityScore: number;
     commonQualityIssues: { flag: QualityFlag; count: number }[];
+    sentimentDistribution: { positive: number; neutral: number; negative: number };
+    avgThemesPerSession: number;
+    themeDepthScore: number;
   };
+  
   generatedAt: number;
 };
 
