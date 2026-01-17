@@ -132,7 +132,6 @@ export async function registerRoutes(
           const endTime = new Date(s.completedAt).getTime();
           durationMs = endTime - startTime;
         }
-        
         return {
           sessionId: s.id,
           questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],

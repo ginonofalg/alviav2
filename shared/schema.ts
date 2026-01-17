@@ -379,8 +379,6 @@ export type QuestionSummary = {
   qualityFlags?: QualityFlag[];
   qualityScore?: number; // 0-100 AI-rated quality
   qualityNotes?: string;
-  // Key verbatim quotes extracted from actual respondent speech (for cross-interview analysis)
-  keyQuotes?: string[];
 };
 
 // Enhanced analytics types for collection-level insights
