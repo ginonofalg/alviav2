@@ -94,12 +94,18 @@ async function flushPersist(sessionId: string): Promise<void> {
     state.pendingPersistTimeout = null;
   }
 
+  // Normalize questionSummaries to avoid sparse array nulls during JSON serialization
+  // Each summary has its questionIndex stored, so we can reconstruct the array on restore
+  const normalizedSummaries = state.questionSummaries.map((s, idx) => 
+    s ? { ...s, questionIndex: idx } : null
+  );
+
   // Use fullTranscriptForPersistence to avoid data loss from in-memory truncation
   const patch: InterviewStatePatch = {
     liveTranscript: state.fullTranscriptForPersistence,
     lastBarbaraGuidance: state.lastBarbaraGuidance,
     questionStates: state.questionStates,
-    questionSummaries: state.questionSummaries,
+    questionSummaries: normalizedSummaries,
     currentQuestionIndex: state.currentQuestionIndex,
   };
 
@@ -141,11 +147,16 @@ async function persistBarbaraGuidance(
   }
 
   try {
+    // Normalize questionSummaries to avoid sparse array nulls
+    const normalizedSummaries = state.questionSummaries.map((s, idx) => 
+      s ? { ...s, questionIndex: idx } : null
+    );
+    
     // Persist with all relevant fields to avoid overwriting concurrent summary persistence
     await storage.persistInterviewState(sessionId, {
       lastBarbaraGuidance: persistedGuidance,
       questionStates: state.questionStates,
-      questionSummaries: state.questionSummaries,
+      questionSummaries: normalizedSummaries,
     });
     console.log(`[Persist] Barbara guidance saved for session: ${sessionId}`);
   } catch (error) {
@@ -207,6 +218,7 @@ async function persistNextQuestion(
 async function generateAndPersistSummary(
   sessionId: string,
   questionIndex: number,
+  transcriptSnapshot: TranscriptEntry[], // Pre-captured snapshot to avoid timing issues
 ): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state) return;
@@ -227,28 +239,45 @@ async function generateAndPersistSummary(
       state.questionMetrics.get(questionIndex) ||
       createEmptyMetrics(questionIndex);
 
+    // Log transcript snapshot stats for debugging
+    const snapshotForQuestion = transcriptSnapshot.filter(
+      (e) => e.questionIndex === questionIndex,
+    );
     console.log(
-      `[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}) in background...`,
+      `[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}), ` +
+        `transcript snapshot: ${transcriptSnapshot.length} total entries, ` +
+        `${snapshotForQuestion.length} for this question`,
     );
 
     const summary = await generateQuestionSummary(
       questionIndex,
       question.questionText,
       question.guidance || "",
-      state.fullTranscriptForPersistence as TranscriptEntry[],
+      transcriptSnapshot, // Use the pre-captured snapshot
       metrics,
       state.template?.objective || "",
     );
 
-    // Use index-based assignment to prevent race conditions
+    // Ensure array is properly sized to avoid sparse array nulls during serialization
+    // Fill all indices up to and including questionIndex with null placeholders
+    while (state.questionSummaries.length <= questionIndex) {
+      state.questionSummaries.push(null as unknown as QuestionSummary);
+    }
+    // Now safely assign to the correct index
     state.questionSummaries[questionIndex] = summary;
+    
     console.log(
       `[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`,
     );
 
+    // Normalize array for persistence: filter out undefined/null entries and create a dense map
+    const normalizedSummaries = state.questionSummaries.map((s, idx) => 
+      s ? { ...s, questionIndex: idx } : null
+    );
+
     // Persist immediately with all relevant fields to avoid overwriting concurrent Barbara guidance
     await storage.persistInterviewState(sessionId, {
-      questionSummaries: state.questionSummaries,
+      questionSummaries: normalizedSummaries,
       lastBarbaraGuidance: state.lastBarbaraGuidance,
       questionStates: state.questionStates,
     });
@@ -437,14 +466,22 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       }
 
       // Restore question summaries (index-based array)
+      // Filter out null/undefined entries that may exist from sparse array serialization
       if (
         session.questionSummaries &&
         Array.isArray(session.questionSummaries)
       ) {
-        state.questionSummaries =
-          session.questionSummaries as QuestionSummary[];
+        const rawSummaries = session.questionSummaries as (QuestionSummary | null)[];
+        // Rebuild as proper index-based array, filtering out nulls
+        state.questionSummaries = [];
+        rawSummaries.forEach((summary) => {
+          if (summary && summary.questionIndex !== undefined) {
+            state.questionSummaries[summary.questionIndex] = summary;
+          }
+        });
+        const validCount = state.questionSummaries.filter(s => s != null).length;
         console.log(
-          `[VoiceInterview] Restored ${state.questionSummaries.length} question summaries`,
+          `[VoiceInterview] Restored ${validCount} question summaries (from ${rawSummaries.length} entries)`,
         );
       }
 
@@ -1267,8 +1304,12 @@ INSTRUCTIONS:
       if (state.currentQuestionIndex < state.questions.length - 1) {
         const previousIndex = state.currentQuestionIndex;
 
-        // Trigger summarization in background (don't await - non-blocking)
-        generateAndPersistSummary(sessionId, previousIndex).catch(() => {
+        // CRITICAL: Capture transcript snapshot BEFORE updating currentQuestionIndex
+        // This ensures the summary generation has the correct transcript state
+        const transcriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+
+        // Trigger summarization in background with the pre-captured snapshot
+        generateAndPersistSummary(sessionId, previousIndex, transcriptSnapshot).catch(() => {
           // Error already logged in generateAndPersistSummary
         });
 
