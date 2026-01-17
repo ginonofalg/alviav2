@@ -71,7 +71,12 @@ export default function CollectionDetailPage() {
 
   const refreshAnalyticsMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/collections/${collectionId}/analytics/refresh`);
+      const response = await apiRequest(
+        "POST", 
+        `/api/collections/${collectionId}/analytics/refresh`,
+        undefined,
+        { timeoutMs: 120000 }
+      );
       return response.json();
     },
     onSuccess: () => {
