@@ -364,6 +364,14 @@ export type PersistedQuestionState = {
 
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
 
+// Verbatim statement captured from respondent's speech
+export type VerbatimStatement = {
+  quote: string;           // The exact statement from the respondent
+  context: string;         // Brief context (what prompted this statement)
+  sentiment?: "positive" | "negative" | "neutral" | "mixed";
+  themeTag?: string;       // e.g., "pricing concerns", "feature request", "user experience"
+};
+
 export type QuestionSummary = {
   questionIndex: number;
   questionText: string;
@@ -379,6 +387,8 @@ export type QuestionSummary = {
   qualityFlags?: QualityFlag[];
   qualityScore?: number; // 0-100 AI-rated quality
   qualityNotes?: string;
+  // Verbatim statements for analytics (themes, sentiment, insights)
+  verbatims?: VerbatimStatement[];
 };
 
 // Enhanced analytics types for collection-level insights

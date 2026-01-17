@@ -480,7 +480,7 @@ export async function generateQuestionSummary(
     .map((e) => `[${e.speaker.toUpperCase()}]: ${e.text}`)
     .join("\n");
 
-  const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question, including quality analysis.
+  const systemPrompt = `You are Barbara, an interview analysis assistant. Your task is to create a structured summary of a respondent's answer to an interview question, including quality analysis and notable verbatim statements.
 
 You must respond with a JSON object containing:
 {
@@ -490,8 +490,30 @@ You must respond with a JSON object containing:
   "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"],
   "qualityFlags": ["Array of applicable flags from: incomplete, ambiguous, contradiction, distress_cue, off_topic, low_engagement"],
   "qualityScore": 0-100,
-  "qualityNotes": "Brief explanation of quality assessment"
+  "qualityNotes": "Brief explanation of quality assessment",
+  "verbatims": [
+    {
+      "quote": "Exact statement from the respondent (clean up filler words but preserve meaning)",
+      "context": "Brief context - what prompted this statement",
+      "sentiment": "positive|negative|neutral|mixed",
+      "themeTag": "A short tag describing the theme (e.g., 'pricing concerns', 'feature request', 'user experience')"
+    }
+  ]
 }
+
+VERBATIM SELECTION CRITERIA:
+- Extract 2-4 notable verbatim statements per question (only if the respondent said something meaningful)
+- Prioritize quotes that are: emotionally charged, reveal key insights, express strong opinions, or capture unique perspectives
+- Clean up filler words (um, uh, like) but preserve the respondent's exact phrasing and voice
+- Each quote should be 1-3 sentences max
+- Include diverse sentiments when present (don't only pick positive or negative)
+
+PII ANONYMIZATION (CRITICAL - apply to all verbatim quotes):
+- Replace names with [Name]
+- Replace locations/cities with [Location]
+- Replace company names with [Company]
+- Replace specific dates with [Date]
+- Replace phone/email with [Contact]
 
 Quality flags definitions:
 - incomplete: Answer doesn't address key aspects of the question
@@ -538,7 +560,7 @@ Create a structured summary of the respondent's answer.`;
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 600,
+      max_completion_tokens: 800, // Increased for verbatims
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
@@ -555,6 +577,21 @@ Create a structured summary of the respondent's answer.`;
     const validFlags: QualityFlag[] = ["incomplete", "ambiguous", "contradiction", "distress_cue", "off_topic", "low_engagement"];
     const qualityFlags = Array.isArray(parsed.qualityFlags)
       ? parsed.qualityFlags.filter((f: string) => validFlags.includes(f as QualityFlag))
+      : [];
+
+    // Parse and validate verbatims
+    const validSentiments = ["positive", "negative", "neutral", "mixed"] as const;
+    type ValidSentiment = typeof validSentiments[number];
+    const verbatims = Array.isArray(parsed.verbatims)
+      ? parsed.verbatims
+          .filter((v: { quote?: string; context?: string }) => v && typeof v.quote === "string" && v.quote.trim().length > 0)
+          .map((v: { quote: string; context?: string; sentiment?: string; themeTag?: string }) => ({
+            quote: v.quote.trim(),
+            context: v.context?.trim() || "Response to question",
+            sentiment: validSentiments.includes(v.sentiment as ValidSentiment) ? v.sentiment as ValidSentiment : undefined,
+            themeTag: v.themeTag?.trim() || undefined,
+          }))
+          .slice(0, 4) // Max 4 verbatims per question
       : [];
 
     return {
@@ -574,6 +611,7 @@ Create a structured summary of the respondent's answer.`;
       qualityFlags,
       qualityScore: typeof parsed.qualityScore === "number" ? Math.min(100, Math.max(0, parsed.qualityScore)) : undefined,
       qualityNotes: parsed.qualityNotes || undefined,
+      verbatims: verbatims.length > 0 ? verbatims : undefined,
     };
   } catch (error) {
     console.error(
@@ -854,12 +892,13 @@ async function extractEnhancedAnalysis(
     };
   }
 
-  // Build comprehensive session data for AI analysis
+  // Build comprehensive session data for AI analysis including pre-extracted verbatims
   const sessionData = input.sessions.map((s, idx) => {
     const summariesByQuestion = s.questionSummaries.map(qs => ({
       questionIndex: qs.questionIndex,
       summary: qs.respondentSummary,
       insights: qs.keyInsights,
+      verbatims: qs.verbatims || [], // Include pre-extracted verbatims
     }));
     return {
       participantLabel: `Participant ${idx + 1}`,
@@ -948,9 +987,12 @@ Guidelines:
   const questionList = input.templateQuestions.map((q, i) => `Q${i + 1}: ${q.text}`).join("\n");
   
   const sessionSummaries = sessionData.map(s => {
-    const responses = s.summariesByQuestion.map(q => 
-      `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}`
-    ).join("\n");
+    const responses = s.summariesByQuestion.map(q => {
+      const verbatimText = q.verbatims.length > 0 
+        ? ` | Verbatims: ${q.verbatims.map(v => `"${v.quote}" [${v.sentiment || 'neutral'}${v.themeTag ? `, ${v.themeTag}` : ''}]`).join("; ")}` 
+        : '';
+      return `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}${verbatimText}`;
+    }).join("\n");
     return `${s.participantLabel}:\n${responses}`;
   }).join("\n\n");
 
