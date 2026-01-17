@@ -560,13 +560,19 @@ Create a structured summary of the respondent's answer.`;
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 800, // Increased for verbatims
+      max_completion_tokens: 1500, // Increased from 800 to handle full JSON structure with verbatims
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
 
     const response = await Promise.race([summaryPromise, timeoutPromise]);
-    console.log(`[Summary] Q${questionIndex + 1}: OpenAI API call completed, response received`);
+    const finishReason = response.choices[0]?.finish_reason;
+    console.log(`[Summary] Q${questionIndex + 1}: OpenAI API call completed, finish_reason: ${finishReason}`);
+    
+    // Warn if we're hitting token limits - indicates we may need to increase max_completion_tokens
+    if (finishReason === 'length') {
+      console.warn(`[Summary] Q${questionIndex + 1}: WARNING - Response truncated due to token limit! Consider increasing max_completion_tokens.`);
+    }
     
     const content = response.choices[0]?.message?.content;
 
