@@ -967,9 +967,12 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as ChatCompletion;
 
+    console.log("[Barbara] Full API response:", JSON.stringify(response, null, 2).substring(0, 1000));
+    
     const content = response.choices[0]?.message?.content;
     if (!content) {
       console.error("[Barbara] No content in AI response");
+      console.error("[Barbara] Response choices:", JSON.stringify(response.choices, null, 2));
       return createEmptyAnalysis();
     }
 
