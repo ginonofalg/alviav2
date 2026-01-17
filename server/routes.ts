@@ -133,32 +133,10 @@ export async function registerRoutes(
           durationMs = endTime - startTime;
         }
         
-        // Extract respondent quotes from liveTranscript for verbatim extraction
-        let transcript = "";
-        if (s.liveTranscript && Array.isArray(s.liveTranscript)) {
-          const transcriptEntries = s.liveTranscript as Array<{ text: string; speaker: string; questionIndex: number }>;
-          // Group respondent quotes by question
-          const questionQuotes: Record<number, string[]> = {};
-          transcriptEntries.forEach(entry => {
-            if (entry.speaker === "respondent" && entry.text) {
-              if (!questionQuotes[entry.questionIndex]) {
-                questionQuotes[entry.questionIndex] = [];
-              }
-              questionQuotes[entry.questionIndex].push(entry.text);
-            }
-          });
-          // Format as readable transcript
-          transcript = Object.entries(questionQuotes)
-            .sort(([a], [b]) => parseInt(a) - parseInt(b))
-            .map(([qIdx, quotes]) => `Q${parseInt(qIdx) + 1} Respondent Quotes:\n${quotes.map(q => `- "${q}"`).join("\n")}`)
-            .join("\n\n");
-        }
-        
         return {
           sessionId: s.id,
           questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
           durationMs,
-          transcript,
         };
       });
 

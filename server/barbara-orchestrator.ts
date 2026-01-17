@@ -474,8 +474,16 @@ You must respond with a JSON object containing:
   "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"],
   "qualityFlags": ["Array of applicable flags from: incomplete, ambiguous, contradiction, distress_cue, off_topic, low_engagement"],
   "qualityScore": 0-100,
-  "qualityNotes": "Brief explanation of quality assessment"
+  "qualityNotes": "Brief explanation of quality assessment",
+  "keyQuotes": ["2-3 verbatim quotes from the respondent that best capture their perspective"]
 }
+
+CRITICAL for keyQuotes:
+- Extract 2-3 EXACT verbatim quotes from the RESPONDENT's speech (not Alvia's questions)
+- Use the respondent's actual words from the transcript - do NOT paraphrase or fabricate
+- Select quotes that are insightful, emotional, or representative of key points
+- Keep quotes concise (1-2 sentences each) - trim if needed but preserve exact wording
+- Apply PII anonymization: replace names with [Name], locations with [Location], companies with [Company], dates with [Date], contact info with [Contact]
 
 Quality flags definitions:
 - incomplete: Answer doesn't address key aspects of the question
@@ -522,7 +530,7 @@ Create a structured summary of the respondent's answer.`;
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 600,
+      max_completion_tokens: 800,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]) as Promise<ChatCompletion>;
@@ -558,6 +566,7 @@ Create a structured summary of the respondent's answer.`;
       qualityFlags,
       qualityScore: typeof parsed.qualityScore === "number" ? Math.min(100, Math.max(0, parsed.qualityScore)) : undefined,
       qualityNotes: parsed.qualityNotes || undefined,
+      keyQuotes: Array.isArray(parsed.keyQuotes) ? parsed.keyQuotes : [],
     };
   } catch (error) {
     console.error(
@@ -595,7 +604,6 @@ export interface CrossInterviewAnalysisInput {
     sessionId: string;
     questionSummaries: QuestionSummary[];
     durationMs: number;
-    transcript?: string; // Full transcript for verbatim extraction
   }[];
   templateQuestions: { text: string; guidance: string }[];
   templateObjective: string;
@@ -844,12 +852,12 @@ async function extractEnhancedAnalysis(
       questionIndex: qs.questionIndex,
       summary: qs.respondentSummary,
       insights: qs.keyInsights,
+      keyQuotes: qs.keyQuotes || [],
     }));
     return {
       participantLabel: `Participant ${idx + 1}`,
       sessionId: s.sessionId,
       summariesByQuestion,
-      transcript: s.transcript || "",
     };
   });
 
@@ -933,12 +941,13 @@ Guidelines:
   const questionList = input.templateQuestions.map((q, i) => `Q${i + 1}: ${q.text}`).join("\n");
   
   const sessionSummaries = sessionData.map(s => {
-    const responses = s.summariesByQuestion.map(q => 
-      `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}`
-    ).join("\n");
-    // Include actual transcript quotes for verbatim extraction
-    const transcriptSection = s.transcript ? `\n  ACTUAL RESPONDENT QUOTES:\n${s.transcript}` : "";
-    return `${s.participantLabel}:\n${responses}${transcriptSection}`;
+    const responses = s.summariesByQuestion.map(q => {
+      const quotesSection = q.keyQuotes.length > 0 
+        ? `\n    KEY QUOTES: ${q.keyQuotes.map(quote => `"${quote}"`).join(" | ")}`
+        : "";
+      return `  Q${q.questionIndex + 1}: ${q.summary} | Insights: ${q.insights.join("; ")}${quotesSection}`;
+    }).join("\n");
+    return `${s.participantLabel}:\n${responses}`;
   }).join("\n\n");
 
   const userPrompt = `INTERVIEW OBJECTIVE: ${input.templateObjective}
@@ -949,9 +958,9 @@ ${questionList}
 INTERVIEW DATA FROM ${input.sessions.length} PARTICIPANTS:
 ${sessionSummaries}
 
-IMPORTANT: When selecting verbatims/quotes, you MUST use the ACTUAL RESPONDENT QUOTES provided above. Do not paraphrase or fabricate quotes. Only include quotes that appear verbatim in the "ACTUAL RESPONDENT QUOTES" sections. Apply PII anonymization to these real quotes.
+IMPORTANT: When selecting verbatims/quotes, you MUST use ONLY the KEY QUOTES provided above. These are pre-extracted verbatim quotes from actual respondent speech. Do not paraphrase or fabricate quotes - use them exactly as provided, they are already PII-anonymized.
 
-Analyze these interviews and provide comprehensive insights with anonymized verbatims from the actual respondent quotes.`;
+Analyze these interviews and provide comprehensive insights using the key quotes as supporting verbatims.`;
 
   try {
     console.log("[Barbara] Building enhanced analysis prompt with", sessionData.length, "sessions");
