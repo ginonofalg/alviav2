@@ -23,7 +23,7 @@ import {
   FileText
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { ThemeCard, InsightPanel, RecommendationsPanel, QuestionAnalysis } from "@/components/analytics";
 import type { Collection, InterviewTemplate, Project, SessionWithRespondent, CollectionAnalytics, QualityFlag } from "@shared/schema";
 
@@ -71,13 +71,12 @@ export default function CollectionDetailPage() {
 
   const refreshAnalyticsMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(
+      return apiRequestJson<AnalyticsResponse>(
         "POST", 
         `/api/collections/${collectionId}/analytics/refresh`,
         undefined,
         { timeoutMs: 120000 }
       );
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/collections", collectionId, "analytics"] });

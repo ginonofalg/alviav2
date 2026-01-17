@@ -32,9 +32,28 @@ export async function apiRequest(
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Request timed out. Please try again.");
     }
+    // Provide more helpful error messages for network errors
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      throw new Error("Network error. Please check your connection and try again.");
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+// Helper function for mutations that need JSON response with better error handling
+export async function apiRequestJson<T>(
+  method: string,
+  url: string,
+  data?: unknown | undefined,
+  options?: { timeoutMs?: number },
+): Promise<T> {
+  const response = await apiRequest(method, url, data, options);
+  try {
+    return await response.json() as T;
+  } catch (error) {
+    throw new Error("Failed to parse server response. Please try again.");
   }
 }
 
