@@ -949,7 +949,12 @@ ${sessionSummaries}
 Analyze these interviews and provide comprehensive insights with anonymized verbatims.`;
 
   try {
+    console.log("[Barbara] Building enhanced analysis prompt with", sessionData.length, "sessions");
+    console.log("[Barbara] Session summaries preview:", sessionSummaries.substring(0, 500));
+    
     const config = barbaraConfig.summarisation;
+    console.log("[Barbara] Using model:", config.model);
+    
     const response = await openai.chat.completions.create({
       model: config.model,
       messages: [
@@ -968,10 +973,17 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       return createEmptyAnalysis();
     }
 
+    console.log("[Barbara] AI response received, length:", content.length);
     const parsed = JSON.parse(content);
+    console.log("[Barbara] Parsed response - themes:", parsed.themes?.length || 0, "findings:", parsed.keyFindings?.length || 0);
+    
     return processAnalysisResponse(parsed, sessionData, input.sessions.length);
   } catch (error) {
     console.error("[Barbara] Error in enhanced analysis:", error);
+    if (error instanceof Error) {
+      console.error("[Barbara] Error message:", error.message);
+      console.error("[Barbara] Error stack:", error.stack);
+    }
     return createEmptyAnalysis();
   }
 }

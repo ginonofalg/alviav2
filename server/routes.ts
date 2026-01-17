@@ -128,8 +128,11 @@ export async function registerRoutes(
         sessionId: s.id,
         questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
         durationMs: s.totalDurationMs || 0,
-        transcript: s.transcript || undefined,
       }));
+
+      console.log("[Analytics] Starting analysis for collection:", req.params.collectionId);
+      console.log("[Analytics] Sessions to analyze:", completedSessions.length);
+      console.log("[Analytics] Total summaries:", sessionsWithSummaries.reduce((sum, s) => sum + s.questionSummaries.length, 0));
 
       const project = await storage.getProject(template.projectId);
       const analysisResult = await generateCrossInterviewAnalysis({
