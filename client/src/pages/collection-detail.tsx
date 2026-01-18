@@ -25,6 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { ThemeCard, InsightPanel, RecommendationsPanel, QuestionAnalysis } from "@/components/analytics";
+import { InfographicGenerator } from "@/components/InfographicGenerator";
 import type { Collection, InterviewTemplate, Project, SessionWithRespondent, CollectionAnalytics, QualityFlag } from "@shared/schema";
 
 interface CollectionWithDetails extends Collection {
@@ -480,6 +481,12 @@ export default function CollectionDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <InfographicGenerator 
+        collectionId={collectionId || ''}
+        collectionName={collection?.name || 'Collection'}
+        hasAnalytics={!!analyticsData?.analytics}
+      />
     </div>
   );
 }

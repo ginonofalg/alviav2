@@ -63,6 +63,7 @@ The core data model follows this hierarchy:
 ### Required Services
 - **PostgreSQL Database**: Primary data store (connection via `DATABASE_URL` environment variable)
 - **OpenAI API**: Powers voice interviews via GPT-4o Real-time API and interview guidance via GPT models (`OPENAI_API_KEY` environment variable)
+- **Gemini API**: Powers infographic generation using the `gemini-2.5-flash-image` model (`GEMINI_API_KEY` environment variable)
 - **Replit Authentication**: OpenID Connect for user authentication (`ISSUER_URL`, `REPL_ID`, `SESSION_SECRET` environment variables)
 
 ### Development Commands

@@ -5,14 +5,20 @@ export class InfographicPromptBuilder {
     collectionName: string,
     analytics: CollectionAnalytics
   ): string {
-    const { overallStats, themes } = analytics;
+    const overallStats = analytics.overallStats || {
+      totalCompletedSessions: 0,
+      avgSessionDuration: 0,
+      avgQualityScore: 0,
+      commonQualityIssues: [],
+    };
+    const themes = analytics.themes ? [...analytics.themes] : [];
 
     const topThemes = themes
       .sort((a, b) => (b.verbatims?.length || 0) - (a.verbatims?.length || 0))
       .slice(0, 5)
-      .map(t => t.theme);
+      .map(t => t.theme || 'Unknown theme');
 
-    const qualityIssues = overallStats.commonQualityIssues
+    const qualityIssues = (overallStats.commonQualityIssues || [])
       .slice(0, 3)
       .map(i => `${i.flag} (${i.count})`);
 
@@ -52,8 +58,9 @@ IMPORTANT:
 
   static buildThemeNetwork(
     collectionName: string,
-    themes: CollectionAnalytics['themes']
+    themesInput: CollectionAnalytics['themes']
   ): string {
+    const themes = themesInput ? [...themesInput] : [];
     const topThemes = themes
       .sort((a, b) => (b.verbatims?.length || 0) - (a.verbatims?.length || 0))
       .slice(0, 8);
@@ -88,9 +95,9 @@ STYLE:
     collectionName: string,
     analytics: CollectionAnalytics
   ): string {
-    const findings = analytics.keyFindings?.slice(0, 5) || [];
-    const consensus = analytics.consensusPoints?.slice(0, 3) || [];
-    const divergence = analytics.divergencePoints?.slice(0, 2) || [];
+    const findings = analytics.keyFindings ? [...analytics.keyFindings].slice(0, 5) : [];
+    const consensus = analytics.consensusPoints ? [...analytics.consensusPoints].slice(0, 3) : [];
+    const divergence = analytics.divergencePoints ? [...analytics.divergencePoints].slice(0, 2) : [];
 
     return `Create a key findings summary infographic.
 

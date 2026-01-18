@@ -8,10 +8,10 @@ const __dirname = path.dirname(__filename);
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const INFOGRAPHICS_DIR = path.join(__dirname, '../generated-infographics');
+const MAX_STORED_INFOGRAPHICS = 100;
 
 interface InfographicConfig {
-  model?: 'gemini-2.5-flash-preview-05-20' | 'gemini-2.5-flash';
-  aspectRatio?: '16:9' | '4:3' | '1:1';
+  model?: 'gemini-2.5-flash-image' | 'gemini-2.0-flash-exp';
 }
 
 interface InfographicResult {
@@ -35,7 +35,7 @@ export class InfographicService {
     prompt: string,
     config: InfographicConfig = {}
   ): Promise<InfographicResult> {
-    const model = config.model || 'gemini-2.5-flash-preview-05-20';
+    const model = config.model || 'gemini-2.5-flash-image';
 
     try {
       console.log('[Infographic] Starting generation with model:', model);
@@ -54,6 +54,10 @@ export class InfographicService {
 
       console.log('[Infographic] Saved to:', filepath);
 
+      this.cleanupOldInfographics().catch(err => 
+        console.error('[Infographic] Cleanup failed:', err)
+      );
+
       return {
         id,
         imageUrl: `/infographics/${filename}`,
@@ -63,6 +67,35 @@ export class InfographicService {
     } catch (error) {
       console.error('[Infographic] Generation failed:', error);
       throw new Error(`Failed to generate infographic: ${(error as Error).message}`);
+    }
+  }
+
+  private async cleanupOldInfographics(): Promise<void> {
+    try {
+      const files = await fs.readdir(INFOGRAPHICS_DIR);
+      const pngFiles = files.filter(f => f.endsWith('.png'));
+      
+      if (pngFiles.length <= MAX_STORED_INFOGRAPHICS) {
+        return;
+      }
+
+      const fileStats = await Promise.all(
+        pngFiles.map(async (file) => {
+          const filepath = path.join(INFOGRAPHICS_DIR, file);
+          const stat = await fs.stat(filepath);
+          return { file, mtime: stat.mtime.getTime() };
+        })
+      );
+
+      fileStats.sort((a, b) => a.mtime - b.mtime);
+
+      const filesToDelete = fileStats.slice(0, fileStats.length - MAX_STORED_INFOGRAPHICS);
+      for (const { file } of filesToDelete) {
+        await fs.unlink(path.join(INFOGRAPHICS_DIR, file));
+        console.log('[Infographic] Cleaned up old file:', file);
+      }
+    } catch (error) {
+      console.error('[Infographic] Cleanup error:', error);
     }
   }
 
@@ -79,11 +112,23 @@ export class InfographicService {
 
         const response = await this.ai.models.generateContent({
           model,
-          contents: prompt,
+          contents: [{ 
+            role: 'user', 
+            parts: [{ text: prompt }] 
+          }],
           config: {
             responseModalities: ['TEXT', 'IMAGE'],
           },
         });
+
+        const hasImage = this.checkForImage(response);
+        if (!hasImage) {
+          console.log(`[Infographic] Attempt ${attempt + 1} returned text only, retrying...`);
+          if (attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+        }
 
         return response;
       } catch (error: any) {
@@ -111,6 +156,15 @@ export class InfographicService {
     throw lastError;
   }
 
+  private checkForImage(response: any): boolean {
+    if (!response?.candidates?.[0]?.content?.parts) {
+      return false;
+    }
+    return response.candidates[0].content.parts.some(
+      (part: any) => part.inlineData?.data
+    );
+  }
+
   private extractImageData(response: any): string {
     if (!response?.candidates?.[0]?.content?.parts) {
       console.error('[Infographic] Invalid response structure:', JSON.stringify(response, null, 2));
@@ -129,10 +183,10 @@ export class InfographicService {
       .map((p: any) => p.text);
     
     if (textParts.length > 0) {
-      console.log('[Infographic] Response contained text but no image:', textParts.join('\n'));
+      console.log('[Infographic] Response contained text but no image:', textParts.join('\n').substring(0, 500));
     }
 
-    throw new Error('No image data found in response. The model may have returned text only.');
+    throw new Error('The AI model could not generate an image. Please try again with different analytics data.');
   }
 }
 

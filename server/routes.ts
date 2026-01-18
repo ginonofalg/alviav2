@@ -2,6 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import crypto from "crypto";
+import path from "path";
+import express from "express";
+import { fileURLToPath } from "url";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { storage } from "./storage";
 import { handleVoiceInterview } from "./voice-interview";
@@ -15,6 +18,8 @@ import {
   ALLOWED_MODELS,
   generateCrossInterviewAnalysis
 } from "./barbara-orchestrator";
+import { getInfographicService } from "./infographic-service";
+import { InfographicPromptBuilder } from "./infographic-prompts";
 import { 
   insertProjectSchema, 
   insertTemplateSchema, 
@@ -29,6 +34,9 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export async function registerRoutes(
   httpServer: Server,
@@ -171,6 +179,120 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating collection analytics:", error);
       res.status(500).json({ message: "Failed to generate collection analytics" });
+    }
+  });
+
+  // Serve static infographics
+  app.use('/infographics', express.static(path.join(__dirname, '../generated-infographics')));
+
+  // Generate collection summary infographic
+  app.post("/api/collections/:collectionId/infographic/summary", isAuthenticated, async (req, res) => {
+    try {
+      const { collectionId } = req.params;
+
+      const collection = await storage.getCollection(collectionId);
+      if (!collection) {
+        return res.status(404).json({ error: "Collection not found" });
+      }
+
+      if (!collection.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh analytics first." });
+      }
+
+      const analytics = collection.analyticsData as CollectionAnalytics;
+      const prompt = InfographicPromptBuilder.buildCollectionSummary(
+        collection.name,
+        analytics
+      );
+
+      console.log("[Infographic] Generating summary for collection:", collectionId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
+    }
+  });
+
+  // Generate theme network infographic
+  app.post("/api/collections/:collectionId/infographic/themes", isAuthenticated, async (req, res) => {
+    try {
+      const { collectionId } = req.params;
+
+      const collection = await storage.getCollection(collectionId);
+      if (!collection) {
+        return res.status(404).json({ error: "Collection not found" });
+      }
+
+      if (!collection.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh analytics first." });
+      }
+
+      const analytics = collection.analyticsData as CollectionAnalytics;
+      const prompt = InfographicPromptBuilder.buildThemeNetwork(
+        collection.name,
+        analytics.themes
+      );
+
+      console.log("[Infographic] Generating theme network for collection:", collectionId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
+    }
+  });
+
+  // Generate key findings infographic
+  app.post("/api/collections/:collectionId/infographic/findings", isAuthenticated, async (req, res) => {
+    try {
+      const { collectionId } = req.params;
+
+      const collection = await storage.getCollection(collectionId);
+      if (!collection) {
+        return res.status(404).json({ error: "Collection not found" });
+      }
+
+      if (!collection.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh analytics first." });
+      }
+
+      const analytics = collection.analyticsData as CollectionAnalytics;
+      const prompt = InfographicPromptBuilder.buildKeyFindings(
+        collection.name,
+        analytics
+      );
+
+      console.log("[Infographic] Generating key findings for collection:", collectionId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
     }
   });
 
