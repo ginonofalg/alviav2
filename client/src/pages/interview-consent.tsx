@@ -212,14 +212,18 @@ export default function InterviewConsentPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">2.</span>
-                <span>Speak naturally - there are no right or wrong answers</span>
+                <span>There are a number of set questions which Alvia will explore with follow-up questions; you decide when to move to the next one</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">3.</span>
-                <span>You can pause or stop at any time</span>
+                <span>Speak naturally - there are no right or wrong answers</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">4.</span>
+                <span>You can pause or stop at any time</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-primary mt-0.5">5.</span>
                 <span>The interview typically takes 10-15 minutes</span>
               </li>
             </ul>

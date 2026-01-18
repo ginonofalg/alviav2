@@ -799,13 +799,17 @@ export default function InterviewPage() {
                 onClick={handleNextQuestion} 
                 disabled={!isConnected} 
                 data-testid="button-next-question"
-                className={highlightNextButton ? "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/50" : ""}
+                className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
               >
                 Next Question
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button onClick={handleEndInterview} data-testid="button-complete-interview">
+              <Button 
+                onClick={handleEndInterview} 
+                data-testid="button-complete-interview"
+                className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
+              >
                 Complete Interview
                 <CheckCircle2 className="w-4 h-4 ml-2" />
               </Button>
