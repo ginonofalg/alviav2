@@ -43,6 +43,7 @@ interface TranscriptEntry {
   speaker: "alvia" | "respondent";
   text: string;
   timestamp: number;
+  isStreaming?: boolean;
 }
 
 function WaveformVisualizer({
@@ -205,7 +206,6 @@ export default function InterviewPage() {
   const [currentQuestionText, setCurrentQuestionText] = useState<string>("");
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [aiTranscriptBuffer, setAiTranscriptBuffer] = useState("");
   const [textInput, setTextInput] = useState("");
   const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
@@ -378,22 +378,42 @@ export default function InterviewPage() {
           break;
 
         case "ai_transcript":
-          setAiTranscriptBuffer((prev) => prev + message.delta);
+          // Stream directly into transcript - add new entry or update existing streaming entry
+          setTranscript((prev) => {
+            const lastEntry = prev[prev.length - 1];
+            if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {
+              // Update the streaming entry
+              return [
+                ...prev.slice(0, -1),
+                { ...lastEntry, text: lastEntry.text + message.delta },
+              ];
+            } else {
+              // Create new streaming entry
+              return [
+                ...prev,
+                {
+                  speaker: "alvia",
+                  text: message.delta,
+                  timestamp: Date.now(),
+                  isStreaming: true,
+                },
+              ];
+            }
+          });
           break;
 
         case "ai_transcript_done":
-          // Add complete AI transcript to entries
-          if (message.transcript) {
-            setTranscript((prev) => [
-              ...prev,
-              {
-                speaker: "alvia",
-                text: message.transcript,
-                timestamp: Date.now(),
-              },
-            ]);
-          }
-          setAiTranscriptBuffer("");
+          // Mark streaming entry as complete
+          setTranscript((prev) => {
+            const lastEntry = prev[prev.length - 1];
+            if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {
+              return [
+                ...prev.slice(0, -1),
+                { ...lastEntry, isStreaming: false },
+              ];
+            }
+            return prev;
+          });
           break;
 
         case "user_transcript":
@@ -874,15 +894,6 @@ export default function InterviewPage() {
                         : "Click the microphone to start the interview"}
             </p>
           </div>
-
-          {/* Show streaming AI transcript */}
-          {aiTranscriptBuffer && (
-            <div className="bg-muted/50 rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground italic">
-                {aiTranscriptBuffer}
-              </p>
-            </div>
-          )}
 
           <TranscriptPanel entries={transcript} />
 
