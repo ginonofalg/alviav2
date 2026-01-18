@@ -697,14 +697,14 @@ INSTRUCTIONS:
 5. Use the guidance to know what depth of answer is expected.
 6. Be encouraging and conversational, matching the ${tone} tone.
 7. Keep responses concise - this is a voice conversation.
-8. If Barbara's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-9. When Barbara talks about the next question or moving on, she means the next template question, not the next follow-up
+8. If the ochestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+9. When the ochestrator talks about the next question or moving on, she means the next template question, not the next follow-up
 10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.`;
 
   if (barbaraGuidance) {
-    instructions += `\n\BARBARA'S GUIDANCE (THE ORCHESTRATOR):
-Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.
-${barbaraGuidance}`;
+    instructions += `\n\ORCHESTRATOR'S GUIDANCE (Barbara):
+${barbaraGuidance}
+ Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.`;
   }
 
   instructions += `
