@@ -1,14 +1,20 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  ArrowLeft, 
-  Copy, 
+import {
+  ArrowLeft,
+  Copy,
   ExternalLink,
   Users,
   Clock,
@@ -20,13 +26,25 @@ import {
   MessageSquare,
   TrendingUp,
   Lightbulb,
-  FileText
+  FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
-import { ThemeCard, InsightPanel, RecommendationsPanel, QuestionAnalysis } from "@/components/analytics";
+import {
+  ThemeCard,
+  InsightPanel,
+  RecommendationsPanel,
+  QuestionAnalysis,
+} from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
-import type { Collection, InterviewTemplate, Project, SessionWithRespondent, CollectionAnalytics, QualityFlag } from "@shared/schema";
+import type {
+  Collection,
+  InterviewTemplate,
+  Project,
+  SessionWithRespondent,
+  CollectionAnalytics,
+  QualityFlag,
+} from "@shared/schema";
 
 interface CollectionWithDetails extends Collection {
   template?: InterviewTemplate;
@@ -41,7 +59,10 @@ interface AnalyticsResponse {
   isStale: boolean;
 }
 
-const QUALITY_FLAG_LABELS: Record<QualityFlag, { label: string; color: string }> = {
+const QUALITY_FLAG_LABELS: Record<
+  QualityFlag,
+  { label: string; color: string }
+> = {
   incomplete: { label: "Incomplete", color: "text-yellow-600" },
   ambiguous: { label: "Ambiguous", color: "text-orange-500" },
   contradiction: { label: "Contradiction", color: "text-red-500" },
@@ -65,22 +86,25 @@ export default function CollectionDetailPage() {
     enabled: !!collectionId,
   });
 
-  const { data: analyticsData, isLoading: isLoadingAnalytics } = useQuery<AnalyticsResponse>({
-    queryKey: ["/api/collections", collectionId, "analytics"],
-    enabled: !!collectionId,
-  });
+  const { data: analyticsData, isLoading: isLoadingAnalytics } =
+    useQuery<AnalyticsResponse>({
+      queryKey: ["/api/collections", collectionId, "analytics"],
+      enabled: !!collectionId,
+    });
 
   const refreshAnalyticsMutation = useMutation({
     mutationFn: async () => {
       return apiRequestJson<AnalyticsResponse>(
-        "POST", 
+        "POST",
         `/api/collections/${collectionId}/analytics/refresh`,
         undefined,
-        { timeoutMs: 120000 }
+        { timeoutMs: 180000 },
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/collections", collectionId, "analytics"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/collections", collectionId, "analytics"],
+      });
       toast({
         title: "Analysis complete",
         description: "Analytics have been refreshed with the latest data.",
@@ -127,7 +151,8 @@ export default function CollectionDetailPage() {
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Collection not found</h3>
             <p className="text-muted-foreground mb-4">
-              The collection you're looking for doesn't exist or has been deleted.
+              The collection you're looking for doesn't exist or has been
+              deleted.
             </p>
             <Link href="/collections">
               <Button>Back to Collections</Button>
@@ -138,11 +163,16 @@ export default function CollectionDetailPage() {
     );
   }
 
-  const completedSessions = sessions?.filter(s => s.status === "completed").length || 0;
-  const inProgressSessions = sessions?.filter(s => s.status === "in_progress").length || 0;
+  const completedSessions =
+    sessions?.filter((s) => s.status === "completed").length || 0;
+  const inProgressSessions =
+    sessions?.filter((s) => s.status === "in_progress").length || 0;
   const totalSessions = sessions?.length || 0;
-  const progress = collection.targetResponses 
-    ? Math.min(100, Math.round((completedSessions / collection.targetResponses) * 100))
+  const progress = collection.targetResponses
+    ? Math.min(
+        100,
+        Math.round((completedSessions / collection.targetResponses) * 100),
+      )
     : 0;
 
   const shareUrl = `${window.location.origin}/join/${collectionId}`;
@@ -158,7 +188,9 @@ export default function CollectionDetailPage() {
           </Link>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">{collection.name}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {collection.name}
+              </h1>
               {collection.isActive ? (
                 <Badge className="gap-1">
                   <CheckCircle2 className="w-3 h-3" />
@@ -177,7 +209,12 @@ export default function CollectionDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={copyShareLink} data-testid="button-copy-link">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={copyShareLink}
+            data-testid="button-copy-link"
+          >
             <Copy className="w-4 h-4 mr-2" />
             Copy Link
           </Button>
@@ -249,7 +286,11 @@ export default function CollectionDetailPage() {
             <div className="flex-1 p-3 bg-muted rounded-lg font-mono text-sm truncate">
               {shareUrl}
             </div>
-            <Button variant="outline" onClick={copyShareLink} data-testid="button-copy-share-link">
+            <Button
+              variant="outline"
+              onClick={copyShareLink}
+              data-testid="button-copy-share-link"
+            >
               <Copy className="w-4 h-4" />
             </Button>
           </div>
@@ -267,7 +308,9 @@ export default function CollectionDetailPage() {
             </div>
             {totalSessions > 0 && (
               <Link href={`/sessions?collectionId=${collectionId}`}>
-                <Button variant="outline" size="sm">View All</Button>
+                <Button variant="outline" size="sm">
+                  View All
+                </Button>
               </Link>
             )}
           </div>
@@ -288,22 +331,41 @@ export default function CollectionDetailPage() {
           ) : (
             <div className="space-y-2">
               {sessions.slice(0, 5).map((session) => {
-                const displayName = session.respondent?.informalName || session.respondent?.fullName || "Anonymous";
+                const displayName =
+                  session.respondent?.informalName ||
+                  session.respondent?.fullName ||
+                  "Anonymous";
                 return (
                   <Link key={session.id} href={`/sessions/${session.id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer" data-testid={`session-row-${session.id}`}>
+                    <div
+                      className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer"
+                      data-testid={`session-row-${session.id}`}
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                           <Users className="w-4 h-4 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm" data-testid={`session-name-${session.id}`}>{displayName}</p>
+                          <p
+                            className="font-medium text-sm"
+                            data-testid={`session-name-${session.id}`}
+                          >
+                            {displayName}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {session.createdAt ? new Date(session.createdAt).toLocaleDateString() : ""}
+                            {session.createdAt
+                              ? new Date(session.createdAt).toLocaleDateString()
+                              : ""}
                           </p>
                         </div>
                       </div>
-                      <Badge variant={session.status === "completed" ? "default" : "secondary"}>
+                      <Badge
+                        variant={
+                          session.status === "completed"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
                         {session.status}
                       </Badge>
                     </div>
@@ -319,7 +381,10 @@ export default function CollectionDetailPage() {
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <CardTitle className="flex items-center gap-2 flex-wrap" data-testid="heading-analytics">
+              <CardTitle
+                className="flex items-center gap-2 flex-wrap"
+                data-testid="heading-analytics"
+              >
                 <BarChart3 className="w-5 h-5 text-primary" />
                 Analytics
               </CardTitle>
@@ -329,25 +394,38 @@ export default function CollectionDetailPage() {
             </div>
             <div className="flex items-center gap-2">
               {analyticsData?.isStale && (
-                <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-600/30">
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-yellow-600 border-yellow-600/30"
+                >
                   <AlertTriangle className="w-3 h-3" />
                   Out of date
                 </Badge>
               )}
               {analyticsData?.lastAnalyzedAt && (
-                <span className="text-xs text-muted-foreground" data-testid="text-analytics-last-updated">
-                  Last updated: {new Date(analyticsData.lastAnalyzedAt).toLocaleDateString()}
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-analytics-last-updated"
+                >
+                  Last updated:{" "}
+                  {new Date(analyticsData.lastAnalyzedAt).toLocaleDateString()}
                 </span>
               )}
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => refreshAnalyticsMutation.mutate()}
-                disabled={refreshAnalyticsMutation.isPending || completedSessions === 0}
+                disabled={
+                  refreshAnalyticsMutation.isPending || completedSessions === 0
+                }
                 data-testid="button-refresh-analytics"
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${refreshAnalyticsMutation.isPending ? "animate-spin" : ""}`} />
-                {refreshAnalyticsMutation.isPending ? "Analyzing..." : "Refresh"}
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${refreshAnalyticsMutation.isPending ? "animate-spin" : ""}`}
+                />
+                {refreshAnalyticsMutation.isPending
+                  ? "Analyzing..."
+                  : "Refresh"}
               </Button>
             </div>
           </div>
@@ -361,14 +439,22 @@ export default function CollectionDetailPage() {
           ) : !analyticsData?.analytics ? (
             <div className="text-center py-8" data-testid="empty-analytics">
               <BarChart3 className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
-              <h3 className="font-medium mb-2" data-testid="text-no-analysis-heading">No analysis yet</h3>
-              <p className="text-sm text-muted-foreground mb-4" data-testid="text-no-analysis-message">
-                {completedSessions === 0 
+              <h3
+                className="font-medium mb-2"
+                data-testid="text-no-analysis-heading"
+              >
+                No analysis yet
+              </h3>
+              <p
+                className="text-sm text-muted-foreground mb-4"
+                data-testid="text-no-analysis-message"
+              >
+                {completedSessions === 0
                   ? "Complete some interviews to generate analytics."
                   : "Click Refresh to analyze your completed interviews."}
               </p>
               {completedSessions > 0 && (
-                <Button 
+                <Button
                   onClick={() => refreshAnalyticsMutation.mutate()}
                   disabled={refreshAnalyticsMutation.isPending}
                   data-testid="button-run-first-analysis"
@@ -381,81 +467,157 @@ export default function CollectionDetailPage() {
           ) : (
             <Tabs defaultValue="summary" className="w-full">
               <TabsList className="mb-4">
-                <TabsTrigger value="summary" className="gap-2" data-testid="tab-summary">
+                <TabsTrigger
+                  value="summary"
+                  className="gap-2"
+                  data-testid="tab-summary"
+                >
                   <Lightbulb className="w-4 h-4" />
                   Summary
                 </TabsTrigger>
-                <TabsTrigger value="details" className="gap-2" data-testid="tab-details">
+                <TabsTrigger
+                  value="details"
+                  className="gap-2"
+                  data-testid="tab-details"
+                >
                   <FileText className="w-4 h-4" />
                   Details
                 </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="summary" className="space-y-6">
                 <div className="grid gap-4 sm:grid-cols-4">
-                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-sessions">
+                  <div
+                    className="p-4 rounded-lg bg-muted/50"
+                    data-testid="metric-sessions"
+                  >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <Users className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Sessions</span>
+                      <span className="text-sm text-muted-foreground">
+                        Sessions
+                      </span>
                     </div>
-                    <p className="text-2xl font-semibold" data-testid="text-sessions-value">{analyticsData.analytics.overallStats.totalCompletedSessions}</p>
+                    <p
+                      className="text-2xl font-semibold"
+                      data-testid="text-sessions-value"
+                    >
+                      {
+                        analyticsData.analytics.overallStats
+                          .totalCompletedSessions
+                      }
+                    </p>
                   </div>
-                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-duration">
+                  <div
+                    className="p-4 rounded-lg bg-muted/50"
+                    data-testid="metric-duration"
+                  >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <Clock className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Avg Duration</span>
+                      <span className="text-sm text-muted-foreground">
+                        Avg Duration
+                      </span>
                     </div>
-                    <p className="text-2xl font-semibold" data-testid="text-duration-value">{analyticsData.analytics.overallStats.avgSessionDuration} min</p>
+                    <p
+                      className="text-2xl font-semibold"
+                      data-testid="text-duration-value"
+                    >
+                      {analyticsData.analytics.overallStats.avgSessionDuration}{" "}
+                      min
+                    </p>
                   </div>
-                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-quality">
+                  <div
+                    className="p-4 rounded-lg bg-muted/50"
+                    data-testid="metric-quality"
+                  >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Avg Quality</span>
+                      <span className="text-sm text-muted-foreground">
+                        Avg Quality
+                      </span>
                     </div>
-                    <p className="text-2xl font-semibold" data-testid="text-quality-value">{analyticsData.analytics.overallStats.avgQualityScore}%</p>
+                    <p
+                      className="text-2xl font-semibold"
+                      data-testid="text-quality-value"
+                    >
+                      {analyticsData.analytics.overallStats.avgQualityScore}%
+                    </p>
                   </div>
-                  <div className="p-4 rounded-lg bg-muted/50" data-testid="metric-themes">
+                  <div
+                    className="p-4 rounded-lg bg-muted/50"
+                    data-testid="metric-themes"
+                  >
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <MessageSquare className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Themes</span>
+                      <span className="text-sm text-muted-foreground">
+                        Themes
+                      </span>
                     </div>
-                    <p className="text-2xl font-semibold" data-testid="text-themes-value">{analyticsData.analytics.themes.length}</p>
+                    <p
+                      className="text-2xl font-semibold"
+                      data-testid="text-themes-value"
+                    >
+                      {analyticsData.analytics.themes.length}
+                    </p>
                   </div>
                 </div>
 
-                <InsightPanel 
+                <InsightPanel
                   keyFindings={analyticsData.analytics.keyFindings || []}
-                  consensusPoints={analyticsData.analytics.consensusPoints || []}
-                  divergencePoints={analyticsData.analytics.divergencePoints || []}
+                  consensusPoints={
+                    analyticsData.analytics.consensusPoints || []
+                  }
+                  divergencePoints={
+                    analyticsData.analytics.divergencePoints || []
+                  }
                   themes={analyticsData.analytics.themes || []}
                 />
 
-                {analyticsData.analytics.recommendations && analyticsData.analytics.recommendations.length > 0 && (
-                  <RecommendationsPanel recommendations={analyticsData.analytics.recommendations} />
-                )}
+                {analyticsData.analytics.recommendations &&
+                  analyticsData.analytics.recommendations.length > 0 && (
+                    <RecommendationsPanel
+                      recommendations={analyticsData.analytics.recommendations}
+                    />
+                  )}
 
-                {analyticsData.analytics.overallStats.commonQualityIssues.length > 0 && (
+                {analyticsData.analytics.overallStats.commonQualityIssues
+                  .length > 0 && (
                   <div data-testid="section-quality-issues">
-                    <h4 className="font-medium mb-3 flex items-center gap-2 flex-wrap" data-testid="heading-quality-issues">
+                    <h4
+                      className="font-medium mb-3 flex items-center gap-2 flex-wrap"
+                      data-testid="heading-quality-issues"
+                    >
                       <AlertTriangle className="w-4 h-4 text-yellow-500" />
                       Quality Issues
                     </h4>
                     <div className="flex flex-wrap gap-2">
-                      {analyticsData.analytics.overallStats.commonQualityIssues.map((issue, index) => (
-                        <Badge key={index} variant="outline" className={`gap-1 ${QUALITY_FLAG_LABELS[issue.flag]?.color || ""}`} data-testid={`badge-quality-issue-${index}`}>
-                          {QUALITY_FLAG_LABELS[issue.flag]?.label || issue.flag}
-                          <span className="text-muted-foreground">({issue.count})</span>
-                        </Badge>
-                      ))}
+                      {analyticsData.analytics.overallStats.commonQualityIssues.map(
+                        (issue, index) => (
+                          <Badge
+                            key={index}
+                            variant="outline"
+                            className={`gap-1 ${QUALITY_FLAG_LABELS[issue.flag]?.color || ""}`}
+                            data-testid={`badge-quality-issue-${index}`}
+                          >
+                            {QUALITY_FLAG_LABELS[issue.flag]?.label ||
+                              issue.flag}
+                            <span className="text-muted-foreground">
+                              ({issue.count})
+                            </span>
+                          </Badge>
+                        ),
+                      )}
                     </div>
                   </div>
                 )}
               </TabsContent>
-              
+
               <TabsContent value="details" className="space-y-6">
                 {analyticsData.analytics.themes.length > 0 && (
                   <div data-testid="section-themes">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap" data-testid="heading-themes">
+                    <h3
+                      className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap"
+                      data-testid="heading-themes"
+                    >
                       <MessageSquare className="w-5 h-5 text-primary" />
                       Themes
                     </h3>
@@ -469,11 +631,16 @@ export default function CollectionDetailPage() {
 
                 {analyticsData.analytics.questionPerformance.length > 0 && (
                   <div data-testid="section-question-performance">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap" data-testid="heading-question-performance">
+                    <h3
+                      className="text-lg font-semibold mb-4 flex items-center gap-2 flex-wrap"
+                      data-testid="heading-question-performance"
+                    >
                       <BarChart3 className="w-5 h-5 text-primary" />
                       Question Performance
                     </h3>
-                    <QuestionAnalysis questions={analyticsData.analytics.questionPerformance} />
+                    <QuestionAnalysis
+                      questions={analyticsData.analytics.questionPerformance}
+                    />
                   </div>
                 )}
               </TabsContent>
@@ -482,9 +649,9 @@ export default function CollectionDetailPage() {
         </CardContent>
       </Card>
 
-      <InfographicGenerator 
-        collectionId={collectionId || ''}
-        collectionName={collection?.name || 'Collection'}
+      <InfographicGenerator
+        collectionId={collectionId || ""}
+        collectionName={collection?.name || "Collection"}
         hasAnalytics={!!analyticsData?.analytics}
       />
     </div>
