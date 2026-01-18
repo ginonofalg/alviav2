@@ -699,7 +699,8 @@ INSTRUCTIONS:
 7. Keep responses concise - this is a voice conversation.
 8. If the ochestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 9. When the ochestrator talks about the next question or moving on, she means the next template question, not the next follow-up
-10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.`;
+10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. The interview can "click the Complete Interview button below" to finish.`;
 
   if (barbaraGuidance) {
     instructions += `\n\ORCHESTRATOR'S GUIDANCE (Barbara):
