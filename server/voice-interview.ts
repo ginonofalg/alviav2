@@ -99,7 +99,7 @@ async function flushPersist(sessionId: string): Promise<void> {
   // Each summary has its questionIndex stored, so we can reconstruct the array on restore
   // Filter out nulls to create a clean array for persistence
   const normalizedSummaries = state.questionSummaries
-    .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+    .map((s, idx) => (s ? { ...s, questionIndex: idx } : null))
     .filter((s): s is QuestionSummary => s !== null);
 
   // Use fullTranscriptForPersistence to avoid data loss from in-memory truncation
@@ -151,9 +151,9 @@ async function persistBarbaraGuidance(
   try {
     // Normalize questionSummaries to avoid sparse array nulls
     const normalizedSummaries = state.questionSummaries
-      .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+      .map((s, idx) => (s ? { ...s, questionIndex: idx } : null))
       .filter((s): s is QuestionSummary => s !== null);
-    
+
     // Persist with all relevant fields to avoid overwriting concurrent summary persistence
     await storage.persistInterviewState(sessionId, {
       lastBarbaraGuidance: persistedGuidance,
@@ -267,14 +267,14 @@ async function generateAndPersistSummary(
     }
     // Now safely assign to the correct index
     state.questionSummaries[questionIndex] = summary;
-    
+
     console.log(
       `[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`,
     );
 
     // Normalize array for persistence: filter out undefined/null entries and create a dense map
     const normalizedSummaries = state.questionSummaries
-      .map((s, idx) => s ? { ...s, questionIndex: idx } : null)
+      .map((s, idx) => (s ? { ...s, questionIndex: idx } : null))
       .filter((s): s is QuestionSummary => s !== null);
 
     // Persist immediately with all relevant fields to avoid overwriting concurrent Barbara guidance
@@ -474,7 +474,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
         session.questionSummaries &&
         Array.isArray(session.questionSummaries)
       ) {
-        const rawSummaries = session.questionSummaries as (QuestionSummary | null)[];
+        const rawSummaries =
+          session.questionSummaries as (QuestionSummary | null)[];
         // Rebuild as proper index-based array, filtering out nulls
         state.questionSummaries = [];
         rawSummaries.forEach((summary) => {
@@ -482,7 +483,9 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             state.questionSummaries[summary.questionIndex] = summary;
           }
         });
-        const validCount = state.questionSummaries.filter(s => s != null).length;
+        const validCount = state.questionSummaries.filter(
+          (s) => s != null,
+        ).length;
         console.log(
           `[VoiceInterview] Restored ${validCount} question summaries (from ${rawSummaries.length} entries)`,
         );
@@ -649,14 +652,14 @@ function buildInterviewInstructions(
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
-  
+
   // Build personalization context - only use name at the very start, not repeatedly
-  const nameContext = respondentName 
+  const nameContext = respondentName
     ? `The respondent's name is "${respondentName}". Only use their name once at the very beginning of the interview as a greeting. After that, do NOT use their name again - just continue the conversation naturally without addressing them by name.`
     : "The respondent has not provided their name. Address them in a friendly but general manner.";
 
   // Build upcoming questions list to avoid duplicating follow-ups
-  const upcomingQuestions = allQuestions 
+  const upcomingQuestions = allQuestions
     ? allQuestions
         .slice(questionIndex + 1)
         .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
@@ -678,22 +681,28 @@ CURRENT QUESTION TO ASK:
 
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
-${upcomingQuestions ? `
+${
+  upcomingQuestions
+    ? `
 UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
 ${upcomingQuestions}
-` : ""}
+`
+    : ""
+}
 INSTRUCTIONS:
 1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
-4. Use the guidance to know what depth of answer is expected.
-5. Be encouraging and conversational, matching the ${tone} tone.
-6. If Barbara's guidance is that the respondent has given a complete answer, say "Thank you for that answer" to signal you're ready for the next question.
+4. IMPORTANT: Before asking any follow-up, check if it overlaps with an upcoming question - if so, skip it and move on.
+5. Use the guidance to know what depth of answer is expected.
+6. Be encouraging and conversational, matching the ${tone} tone.
 7. Keep responses concise - this is a voice conversation.
-8. IMPORTANT: Before asking any follow-up, check if it overlaps with an upcoming question - if so, skip it and move on.`;
+8. If Barbara's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+9. When Barbara talks about the next question or moving on, she means the next template question, not the next follow-up
+10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.`;
 
   if (barbaraGuidance) {
-    instructions += `\n\nORCHESTRATOR GUIDANCE (from Barbara):
+    instructions += `\n\BARBARA'S GUIDANCE (THE ORCHESTRATOR):
 Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.
 ${barbaraGuidance}`;
   }
@@ -754,7 +763,7 @@ function buildResumeInstructions(state: InterviewState): string {
   const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
 
   // Build personalization context - only use name once when welcoming back
-  const nameContext = respondentName 
+  const nameContext = respondentName
     ? `The respondent's name is "${respondentName}". Use their name once in the welcome-back greeting, then do not use it again.`
     : "The respondent has not provided their name.";
 
@@ -894,8 +903,9 @@ async function handleOpenAIEvent(
         if (event.transcript) {
           // CRITICAL: Use questionIndexAtSpeechStart if available to avoid race condition
           // where user clicks "next_question" before transcription completes
-          const correctQuestionIndex = state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
-          
+          const correctQuestionIndex =
+            state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
+
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
@@ -903,7 +913,7 @@ async function handleOpenAIEvent(
             timestamp: Date.now(),
             questionIndex: correctQuestionIndex,
           });
-          
+
           // Clear the speech start tracking
           state.questionIndexAtSpeechStart = null;
 
@@ -957,7 +967,8 @@ async function handleOpenAIEvent(
       if (state.speakingStartTime && !state.isPaused) {
         const elapsed = Date.now() - state.speakingStartTime;
         // Use the question index at speech start to correctly attribute time
-        const correctQuestionIndex = state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
+        const correctQuestionIndex =
+          state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
         const metrics =
           state.questionMetrics.get(correctQuestionIndex) ||
           createEmptyMetrics(correctQuestionIndex);
@@ -1068,7 +1079,9 @@ async function triggerBarbaraAnalysis(
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
-        console.log(`\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`);
+        console.log(
+          `\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`,
+        );
         console.log("=".repeat(80));
         console.log(updatedInstructions);
         console.log("=".repeat(80) + "\n");
@@ -1322,10 +1335,16 @@ INSTRUCTIONS:
 
         // CRITICAL: Capture transcript snapshot BEFORE updating currentQuestionIndex
         // This ensures the summary generation has the correct transcript state
-        const transcriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+        const transcriptSnapshot = [
+          ...state.fullTranscriptForPersistence,
+        ] as TranscriptEntry[];
 
         // Trigger summarization in background with the pre-captured snapshot
-        generateAndPersistSummary(sessionId, previousIndex, transcriptSnapshot).catch(() => {
+        generateAndPersistSummary(
+          sessionId,
+          previousIndex,
+          transcriptSnapshot,
+        ).catch(() => {
           // Error already logged in generateAndPersistSummary
         });
 
@@ -1486,12 +1505,16 @@ INSTRUCTIONS:
     case "end_interview":
       // Trigger summarization for final question in background before cleanup
       // Capture transcript snapshot for the final question
-      const finalTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-      generateAndPersistSummary(sessionId, state.currentQuestionIndex, finalTranscriptSnapshot).catch(
-        () => {
-          // Error already logged in generateAndPersistSummary
-        },
-      );
+      const finalTranscriptSnapshot = [
+        ...state.fullTranscriptForPersistence,
+      ] as TranscriptEntry[];
+      generateAndPersistSummary(
+        sessionId,
+        state.currentQuestionIndex,
+        finalTranscriptSnapshot,
+      ).catch(() => {
+        // Error already logged in generateAndPersistSummary
+      });
       // Update session status to completed
       await storage.persistInterviewState(sessionId, {
         status: "completed",
