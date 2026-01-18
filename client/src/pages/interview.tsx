@@ -191,6 +191,7 @@ export default function InterviewPage() {
   const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
   const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "next" | "complete" }>({ open: false, type: "next" });
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -565,11 +566,28 @@ export default function InterviewPage() {
     }
   };
 
-  const handleNextQuestion = () => {
+  const handleNextQuestion = (skipConfirm = false) => {
+    if (!skipConfirm && !highlightNextButton) {
+      setConfirmDialog({ open: true, type: "next" });
+      return;
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "next_question" }));
-      setHighlightNextButton(false); // Reset highlight when clicking next
+      setHighlightNextButton(false);
     }
+  };
+
+  const handleConfirmProceed = () => {
+    setConfirmDialog({ open: false, type: confirmDialog.type });
+    if (confirmDialog.type === "next") {
+      handleNextQuestion(true);
+    } else {
+      handleEndInterviewConfirmed();
+    }
+  };
+
+  const handleCancelProceed = () => {
+    setConfirmDialog({ open: false, type: confirmDialog.type });
   };
 
   const handleSendText = () => {
@@ -601,7 +619,15 @@ export default function InterviewPage() {
     }
   };
 
-  const handleEndInterview = () => {
+  const handleEndInterview = (skipConfirm = false) => {
+    if (!skipConfirm && !highlightNextButton) {
+      setConfirmDialog({ open: true, type: "complete" });
+      return;
+    }
+    handleEndInterviewConfirmed();
+  };
+
+  const handleEndInterviewConfirmed = () => {
     stopAudioCapture();
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "end_interview" }));
@@ -611,7 +637,6 @@ export default function InterviewPage() {
       title: "Interview completed",
       description: "Thank you for participating!",
     });
-    // Navigate to review page instead of complete page
     navigate(`/review/${sessionId}`);
   };
 
@@ -673,7 +698,7 @@ export default function InterviewPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={handleEndInterview}
+              onClick={() => handleEndInterview()}
               data-testid="button-end-interview"
             >
               <X className="w-4 h-4" />
@@ -796,7 +821,7 @@ export default function InterviewPage() {
           <div className="flex justify-center gap-4">
             {(totalQuestions > 0 || questions) && currentQuestionIndex < (totalQuestions || questions?.length || 0) - 1 ? (
               <Button 
-                onClick={handleNextQuestion} 
+                onClick={() => handleNextQuestion()} 
                 disabled={!isConnected} 
                 data-testid="button-next-question"
                 className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
@@ -806,7 +831,7 @@ export default function InterviewPage() {
               </Button>
             ) : (
               <Button 
-                onClick={handleEndInterview} 
+                onClick={() => handleEndInterview()} 
                 data-testid="button-complete-interview"
                 className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
               >
@@ -817,6 +842,54 @@ export default function InterviewPage() {
           </div>
         </div>
       </main>
+
+      <AnimatePresence>
+        {confirmDialog.open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={handleCancelProceed}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Card className="w-full max-w-md">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                      <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-lg">
+                        {confirmDialog.type === "next" ? "Move to Next Question?" : "Complete Interview?"}
+                      </h3>
+                      <p className="text-muted-foreground text-sm">
+                        {confirmDialog.type === "next" 
+                          ? "Alvia hasn't suggested moving on yet. Are you sure you've fully explored this question?"
+                          : "Alvia hasn't suggested completing the interview yet. Are you sure you're ready to finish?"
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="outline" onClick={handleCancelProceed} data-testid="button-cancel-proceed">
+                      Stay Here
+                    </Button>
+                    <Button onClick={handleConfirmProceed} data-testid="button-confirm-proceed">
+                      {confirmDialog.type === "next" ? "Yes, Next Question" : "Yes, Complete"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
