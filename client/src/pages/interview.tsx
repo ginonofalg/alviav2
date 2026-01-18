@@ -8,11 +8,11 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { 
-  Mic, 
-  MicOff, 
-  Pause, 
-  Play, 
+import {
+  Mic,
+  MicOff,
+  Pause,
+  Play,
   X,
   Volume2,
   CheckCircle2,
@@ -21,11 +21,16 @@ import {
   Send,
   Keyboard,
   MessageSquareText,
-  ArrowRight
+  ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
-import type { InterviewSession, Question, Collection, InterviewTemplate } from "@shared/schema";
+import type {
+  InterviewSession,
+  Question,
+  Collection,
+  InterviewTemplate,
+} from "@shared/schema";
 
 interface InterviewData {
   session: InterviewSession;
@@ -40,7 +45,13 @@ interface TranscriptEntry {
   timestamp: number;
 }
 
-function WaveformVisualizer({ isActive, isAiSpeaking }: { isActive: boolean; isAiSpeaking?: boolean }) {
+function WaveformVisualizer({
+  isActive,
+  isAiSpeaking,
+}: {
+  isActive: boolean;
+  isAiSpeaking?: boolean;
+}) {
   return (
     <div className="flex items-center justify-center gap-1 h-16">
       {[...Array(24)].map((_, i) => (
@@ -49,12 +60,16 @@ function WaveformVisualizer({ isActive, isAiSpeaking }: { isActive: boolean; isA
           className={`w-1 rounded-full ${
             isAiSpeaking ? "bg-green-500" : isActive ? "bg-primary" : "bg-muted"
           }`}
-          animate={isActive || isAiSpeaking ? {
-            height: [8, Math.random() * 48 + 8, 8],
-          } : { height: 8 }}
+          animate={
+            isActive || isAiSpeaking
+              ? {
+                  height: [8, Math.random() * 48 + 8, 8],
+                }
+              : { height: 8 }
+          }
           transition={{
             duration: 0.6,
-            repeat: (isActive || isAiSpeaking) ? Infinity : 0,
+            repeat: isActive || isAiSpeaking ? Infinity : 0,
             delay: i * 0.03,
             ease: "easeInOut",
           }}
@@ -64,14 +79,14 @@ function WaveformVisualizer({ isActive, isAiSpeaking }: { isActive: boolean; isA
   );
 }
 
-function MicButton({ 
-  isListening, 
+function MicButton({
+  isListening,
   isPaused,
   isConnecting,
   isTextOnlyMode,
   isConnected,
-  onToggle 
-}: { 
+  onToggle,
+}: {
   isListening: boolean;
   isPaused: boolean;
   isConnecting: boolean;
@@ -87,12 +102,12 @@ function MicButton({
         isConnecting
           ? "bg-muted text-muted-foreground cursor-wait"
           : isTextOnlyMode && isConnected && !isPaused
-          ? "bg-green-500 text-white"
-          : isListening 
-          ? "bg-primary text-primary-foreground" 
-          : isPaused
-          ? "bg-yellow-500 text-white"
-          : "bg-muted text-muted-foreground"
+            ? "bg-green-500 text-white"
+            : isListening
+              ? "bg-primary text-primary-foreground"
+              : isPaused
+                ? "bg-yellow-500 text-white"
+                : "bg-muted text-muted-foreground"
       }`}
       whileTap={{ scale: 0.95 }}
       data-testid="button-mic-toggle"
@@ -109,7 +124,11 @@ function MicButton({
       ) : isPaused ? (
         <Play className="w-8 h-8" />
       ) : isTextOnlyMode ? (
-        isConnected ? <Keyboard className="w-8 h-8" /> : <Keyboard className="w-8 h-8" />
+        isConnected ? (
+          <Keyboard className="w-8 h-8" />
+        ) : (
+          <Keyboard className="w-8 h-8" />
+        )
       ) : isListening ? (
         <Mic className="w-8 h-8" />
       ) : (
@@ -156,9 +175,9 @@ function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
               >
                 <p className="text-sm leading-relaxed">{entry.text}</p>
                 <span className="text-xs opacity-70 mt-1 block">
-                  {new Date(entry.timestamp).toLocaleTimeString([], { 
-                    hour: "2-digit", 
-                    minute: "2-digit" 
+                  {new Date(entry.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
                   })}
                 </span>
               </div>
@@ -191,7 +210,10 @@ export default function InterviewPage() {
   const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
   const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: "next" | "complete" }>({ open: false, type: "next" });
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: "next" | "complete";
+  }>({ open: false, type: "next" });
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -208,12 +230,16 @@ export default function InterviewPage() {
   const session = interviewData?.session;
   const questions = interviewData?.questions;
   const currentQuestion = questions?.[currentQuestionIndex];
-  const progress = totalQuestions > 0 ? ((currentQuestionIndex + 1) / totalQuestions) * 100 : 0;
+  const progress =
+    totalQuestions > 0
+      ? ((currentQuestionIndex + 1) / totalQuestions) * 100
+      : 0;
 
   // Initialize audio context
   const initAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+      audioContextRef.current = new (window.AudioContext ||
+        (window as any).webkitAudioContext)({
         sampleRate: 24000,
       });
     }
@@ -221,31 +247,34 @@ export default function InterviewPage() {
   }, []);
 
   // Play audio from base64 PCM16 data
-  const playAudio = useCallback((base64Audio: string) => {
-    try {
-      const audioContext = initAudioContext();
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+  const playAudio = useCallback(
+    (base64Audio: string) => {
+      try {
+        const audioContext = initAudioContext();
+        const binaryString = atob(base64Audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Convert PCM16 to Float32
+        const int16Array = new Int16Array(bytes.buffer);
+        const float32Array = new Float32Array(int16Array.length);
+        for (let i = 0; i < int16Array.length; i++) {
+          float32Array[i] = int16Array[i] / 32768.0;
+        }
+
+        audioQueueRef.current.push(float32Array);
+
+        if (!isPlayingRef.current) {
+          playNextChunk(audioContext);
+        }
+      } catch (error) {
+        console.error("Error playing audio:", error);
       }
-      
-      // Convert PCM16 to Float32
-      const int16Array = new Int16Array(bytes.buffer);
-      const float32Array = new Float32Array(int16Array.length);
-      for (let i = 0; i < int16Array.length; i++) {
-        float32Array[i] = int16Array[i] / 32768.0;
-      }
-      
-      audioQueueRef.current.push(float32Array);
-      
-      if (!isPlayingRef.current) {
-        playNextChunk(audioContext);
-      }
-    } catch (error) {
-      console.error("Error playing audio:", error);
-    }
-  }, [initAudioContext]);
+    },
+    [initAudioContext],
+  );
 
   const playNextChunk = useCallback((audioContext: AudioContext) => {
     if (audioQueueRef.current.length === 0) {
@@ -256,11 +285,11 @@ export default function InterviewPage() {
 
     isPlayingRef.current = true;
     setIsAiSpeaking(true);
-    
+
     const chunk = audioQueueRef.current.shift()!;
     const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
     audioBuffer.copyToChannel(chunk, 0);
-    
+
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioContext.destination);
@@ -275,7 +304,7 @@ export default function InterviewPage() {
     setIsConnecting(true);
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws/interview?sessionId=${sessionId}`;
-    
+
     console.log("[Interview] Connecting to WebSocket:", wsUrl);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -311,122 +340,136 @@ export default function InterviewPage() {
     };
   }, [sessionId, toast]);
 
-  const handleWebSocketMessage = useCallback((message: any) => {
-    switch (message.type) {
-      case "connected":
-        console.log("[Interview] Session connected:", message);
-        setIsConnected(true);
-        setIsConnecting(false);
-        setIsListening(true);
-        setCurrentQuestionIndex(message.questionIndex || 0);
-        setTotalQuestions(message.totalQuestions || 0);
-        if (message.currentQuestion) {
-          setCurrentQuestionText(message.currentQuestion);
-        }
-        // Restore persisted transcript on resume
-        if (message.isResumed && message.persistedTranscript && Array.isArray(message.persistedTranscript)) {
-          const restoredEntries: TranscriptEntry[] = message.persistedTranscript.map((entry: any) => ({
-            speaker: entry.speaker,
-            text: entry.text,
-            timestamp: entry.timestamp,
-          }));
-          setTranscript(restoredEntries);
-        }
-        break;
+  const handleWebSocketMessage = useCallback(
+    (message: any) => {
+      switch (message.type) {
+        case "connected":
+          console.log("[Interview] Session connected:", message);
+          setIsConnected(true);
+          setIsConnecting(false);
+          setIsListening(true);
+          setCurrentQuestionIndex(message.questionIndex || 0);
+          setTotalQuestions(message.totalQuestions || 0);
+          if (message.currentQuestion) {
+            setCurrentQuestionText(message.currentQuestion);
+          }
+          // Restore persisted transcript on resume
+          if (
+            message.isResumed &&
+            message.persistedTranscript &&
+            Array.isArray(message.persistedTranscript)
+          ) {
+            const restoredEntries: TranscriptEntry[] =
+              message.persistedTranscript.map((entry: any) => ({
+                speaker: entry.speaker,
+                text: entry.text,
+                timestamp: entry.timestamp,
+              }));
+            setTranscript(restoredEntries);
+          }
+          break;
 
-      case "audio":
-        playAudio(message.delta);
-        break;
+        case "audio":
+          playAudio(message.delta);
+          break;
 
-      case "audio_done":
-        // Audio stream complete for this response
-        break;
+        case "audio_done":
+          // Audio stream complete for this response
+          break;
 
-      case "ai_transcript":
-        setAiTranscriptBuffer(prev => prev + message.delta);
-        break;
+        case "ai_transcript":
+          setAiTranscriptBuffer((prev) => prev + message.delta);
+          break;
 
-      case "ai_transcript_done":
-        // Add complete AI transcript to entries
-        if (message.transcript) {
-          setTranscript(prev => [...prev, {
-            speaker: "alvia",
-            text: message.transcript,
-            timestamp: Date.now(),
-          }]);
-        }
-        setAiTranscriptBuffer("");
-        break;
+        case "ai_transcript_done":
+          // Add complete AI transcript to entries
+          if (message.transcript) {
+            setTranscript((prev) => [
+              ...prev,
+              {
+                speaker: "alvia",
+                text: message.transcript,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          setAiTranscriptBuffer("");
+          break;
 
-      case "user_transcript":
-        // Add user transcript to entries
-        if (message.transcript) {
-          setTranscript(prev => [...prev, {
-            speaker: "respondent",
-            text: message.transcript,
-            timestamp: Date.now(),
-          }]);
-        }
-        break;
+        case "user_transcript":
+          // Add user transcript to entries
+          if (message.transcript) {
+            setTranscript((prev) => [
+              ...prev,
+              {
+                speaker: "respondent",
+                text: message.transcript,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          break;
 
-      case "user_speaking_started":
-        setIsAiSpeaking(false);
-        break;
+        case "user_speaking_started":
+          setIsAiSpeaking(false);
+          break;
 
-      case "user_speaking_stopped":
-        break;
+        case "user_speaking_stopped":
+          break;
 
-      case "question_changed":
-        setCurrentQuestionIndex(message.questionIndex);
-        if (message.currentQuestion) {
-          setCurrentQuestionText(message.currentQuestion);
-        }
-        setHighlightNextButton(false); // Reset highlight when moving to next question
-        break;
+        case "question_changed":
+          setCurrentQuestionIndex(message.questionIndex);
+          if (message.currentQuestion) {
+            setCurrentQuestionText(message.currentQuestion);
+          }
+          setHighlightNextButton(false); // Reset highlight when moving to next question
+          break;
 
-      case "interview_complete":
-        toast({
-          title: "Interview completed",
-          description: "Thank you for participating!",
-        });
-        // Navigate to review page instead of complete page
-        navigate(`/review/${sessionId}`);
-        break;
+        case "interview_complete":
+          toast({
+            title: "Interview completed",
+            description: "Thank you for participating!",
+          });
+          // Navigate to review page instead of complete page
+          navigate(`/review/${sessionId}`);
+          break;
 
-      case "error":
-        toast({
-          title: "Error",
-          description: message.message || "An error occurred",
-          variant: "destructive",
-        });
-        break;
+        case "error":
+          toast({
+            title: "Error",
+            description: message.message || "An error occurred",
+            variant: "destructive",
+          });
+          break;
 
-      case "disconnected":
-        setIsConnected(false);
-        setIsListening(false);
-        break;
+        case "disconnected":
+          setIsConnected(false);
+          setIsListening(false);
+          break;
 
-      case "barbara_guidance":
-        // Barbara is providing guidance to Alvia
-        console.log("[Interview] Barbara guidance:", message);
-        if (message.highlightNextQuestion) {
-          setHighlightNextButton(true);
-        }
-        break;
-    }
-  }, [playAudio, toast, navigate]);
+        case "barbara_guidance":
+          // Barbara is providing guidance to Alvia
+          console.log("[Interview] Barbara guidance:", message);
+          if (message.highlightNextQuestion) {
+            setHighlightNextButton(true);
+          }
+          break;
+      }
+    },
+    [playAudio, toast, navigate],
+  );
 
   // Start audio capture
   const startAudioCapture = useCallback(async () => {
     try {
       const audioContext = initAudioContext();
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 24000,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
-        } 
+        },
       });
       mediaStreamRef.current = stream;
 
@@ -435,18 +478,19 @@ export default function InterviewPage() {
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
+          return;
         if (isAiSpeaking) return; // Don't send audio while AI is speaking
 
         const inputData = e.inputBuffer.getChannelData(0);
-        
+
         // Convert Float32 to Int16
         const int16Array = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
           const s = Math.max(-1, Math.min(1, inputData[i]));
-          int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
         }
-        
+
         // Convert to base64
         const uint8Array = new Uint8Array(int16Array.buffer);
         let binary = "";
@@ -454,17 +498,19 @@ export default function InterviewPage() {
           binary += String.fromCharCode(uint8Array[i]);
         }
         const base64Audio = btoa(binary);
-        
+
         // Send to server
-        wsRef.current.send(JSON.stringify({
-          type: "audio",
-          audio: base64Audio,
-        }));
+        wsRef.current.send(
+          JSON.stringify({
+            type: "audio",
+            audio: base64Audio,
+          }),
+        );
       };
 
       source.connect(processor);
       processor.connect(audioContext.destination);
-      
+
       return true;
     } catch (error) {
       console.error("[Interview] Error starting audio capture:", error);
@@ -479,7 +525,7 @@ export default function InterviewPage() {
       processorRef.current = null;
     }
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
   }, []);
@@ -487,13 +533,14 @@ export default function InterviewPage() {
   const requestMicPermission = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setHasPermission(true);
     } catch (error) {
       setHasPermission(false);
       toast({
         title: "Microphone access denied",
-        description: "Please allow microphone access to participate in the interview.",
+        description:
+          "Please allow microphone access to participate in the interview.",
         variant: "destructive",
       });
     }
@@ -591,23 +638,33 @@ export default function InterviewPage() {
   };
 
   const handleSendText = () => {
-    if (!textInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    
+    if (
+      !textInput.trim() ||
+      !wsRef.current ||
+      wsRef.current.readyState !== WebSocket.OPEN
+    )
+      return;
+
     setIsSendingText(true);
-    
+
     // Add to transcript immediately
-    setTranscript(prev => [...prev, {
-      speaker: "respondent",
-      text: textInput.trim(),
-      timestamp: Date.now(),
-    }]);
-    
+    setTranscript((prev) => [
+      ...prev,
+      {
+        speaker: "respondent",
+        text: textInput.trim(),
+        timestamp: Date.now(),
+      },
+    ]);
+
     // Send to server
-    wsRef.current.send(JSON.stringify({
-      type: "text_input",
-      text: textInput.trim(),
-    }));
-    
+    wsRef.current.send(
+      JSON.stringify({
+        type: "text_input",
+        text: textInput.trim(),
+      }),
+    );
+
     setTextInput("");
     setIsSendingText(false);
   };
@@ -660,12 +717,18 @@ export default function InterviewPage() {
         <Card className="w-full max-w-md text-center">
           <CardContent className="p-8 space-y-6">
             <AlertCircle className="w-16 h-16 mx-auto text-destructive" />
-            <h2 className="text-xl font-semibold">Microphone Access Required</h2>
+            <h2 className="text-xl font-semibold">
+              Microphone Access Required
+            </h2>
             <p className="text-muted-foreground">
-              This interview requires microphone access to capture your responses.
-              Please enable microphone permissions and refresh the page.
+              This interview requires microphone access to capture your
+              responses. Please enable microphone permissions and refresh the
+              page.
             </p>
-            <Button onClick={requestMicPermission} data-testid="button-retry-permission">
+            <Button
+              onClick={requestMicPermission}
+              data-testid="button-retry-permission"
+            >
               Try Again
             </Button>
           </CardContent>
@@ -674,7 +737,10 @@ export default function InterviewPage() {
     );
   }
 
-  const displayQuestion = currentQuestionText || currentQuestion?.questionText || "Loading question...";
+  const displayQuestion =
+    currentQuestionText ||
+    currentQuestion?.questionText ||
+    "Loading question...";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -686,14 +752,18 @@ export default function InterviewPage() {
             </div>
             <span className="font-semibold">Alvia</span>
             {isConnected && (
-              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200">
+              <Badge
+                variant="outline"
+                className="bg-green-500/10 text-green-600 border-green-200"
+              >
                 Connected
               </Badge>
             )}
           </div>
           <div className="flex items-center gap-4">
             <Badge variant="outline" className="gap-1">
-              Question {currentQuestionIndex + 1} of {totalQuestions || questions?.length || 0}
+              Question {currentQuestionIndex + 1} of{" "}
+              {totalQuestions || questions?.length || 0}
             </Badge>
             <Button
               variant="ghost"
@@ -720,23 +790,33 @@ export default function InterviewPage() {
               exit={{ opacity: 0, y: -20 }}
               className="text-center space-y-4"
             >
-              <p className="text-2xl font-serif leading-relaxed" data-testid="text-current-question">
+              <p
+                className="text-2xl font-serif leading-relaxed"
+                data-testid="text-current-question"
+              >
                 {displayQuestion}
               </p>
               {currentQuestion?.questionType !== "open" && currentQuestion && (
                 <Badge variant="secondary">
-                  {currentQuestion.questionType === "yes_no" && "Yes/No question"}
-                  {currentQuestion.questionType === "scale" && `Rate from ${currentQuestion.scaleMin || 1} to ${currentQuestion.scaleMax || 10}`}
-                  {currentQuestion.questionType === "numeric" && "Provide a number"}
-                  {currentQuestion.questionType === "multi_select" && "Select multiple options"}
+                  {currentQuestion.questionType === "yes_no" &&
+                    "Yes/No question"}
+                  {currentQuestion.questionType === "scale" &&
+                    `Rate from ${currentQuestion.scaleMin || 1} to ${currentQuestion.scaleMax || 10}`}
+                  {currentQuestion.questionType === "numeric" &&
+                    "Provide a number"}
+                  {currentQuestion.questionType === "multi_select" &&
+                    "Select multiple options"}
                 </Badge>
               )}
             </motion.div>
           </AnimatePresence>
 
           <div className="flex flex-col items-center gap-6">
-            <WaveformVisualizer isActive={isListening} isAiSpeaking={isAiSpeaking} />
-            
+            <WaveformVisualizer
+              isActive={isListening}
+              isAiSpeaking={isAiSpeaking}
+            />
+
             <div className="flex items-center gap-4">
               <Button
                 variant={isTextOnlyMode ? "default" : "outline"}
@@ -752,10 +832,18 @@ export default function InterviewPage() {
                   setIsTextOnlyMode(!isTextOnlyMode);
                 }}
                 disabled={isConnecting}
-                title={isTextOnlyMode ? "Switch to voice input" : "Switch to text-only input (for noisy environments)"}
+                title={
+                  isTextOnlyMode
+                    ? "Switch to voice input"
+                    : "Switch to text-only input (for noisy environments)"
+                }
                 data-testid="button-text-mode-toggle"
               >
-                {isTextOnlyMode ? <Mic className="w-4 h-4" /> : <MessageSquareText className="w-4 h-4" />}
+                {isTextOnlyMode ? (
+                  <Mic className="w-4 h-4" />
+                ) : (
+                  <MessageSquareText className="w-4 h-4" />
+                )}
               </Button>
 
               <MicButton
@@ -771,24 +859,28 @@ export default function InterviewPage() {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              {isConnecting 
+              {isConnecting
                 ? "Connecting to Alvia..."
                 : isAiSpeaking
-                ? "Alvia is speaking..."
-                : isPaused 
-                ? "Interview paused. Click to resume." 
-                : isTextOnlyMode
-                ? (isConnected ? "Text-only mode - type your responses below" : "Click to start the interview in text-only mode")
-                : isListening 
-                ? "Listening... speak naturally" 
-                : "Click the microphone to start the interview"}
+                  ? "Alvia is speaking..."
+                  : isPaused
+                    ? "Interview paused. Click to resume."
+                    : isTextOnlyMode
+                      ? isConnected
+                        ? "Text-only mode - type your responses below"
+                        : "Click to start the interview in text-only mode"
+                      : isListening
+                        ? "Listening... speak naturally"
+                        : "Click the microphone to start the interview"}
             </p>
           </div>
 
           {/* Show streaming AI transcript */}
           {aiTranscriptBuffer && (
             <div className="bg-muted/50 rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground italic">{aiTranscriptBuffer}</p>
+              <p className="text-sm text-muted-foreground italic">
+                {aiTranscriptBuffer}
+              </p>
             </div>
           )}
 
@@ -802,7 +894,11 @@ export default function InterviewPage() {
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
                 onKeyDown={handleTextKeyDown}
-                placeholder={isConnected ? "Type your response here..." : "Connect to start typing..."}
+                placeholder={
+                  isConnected
+                    ? "Type your response here..."
+                    : "Connect to start typing..."
+                }
                 disabled={!isConnected || isSendingText}
                 className="pl-10 pr-12"
                 data-testid="input-chat-text"
@@ -819,21 +915,31 @@ export default function InterviewPage() {
           </div>
 
           <div className="flex justify-center gap-4">
-            {(totalQuestions > 0 || questions) && currentQuestionIndex < (totalQuestions || questions?.length || 0) - 1 ? (
-              <Button 
-                onClick={() => handleNextQuestion()} 
-                disabled={!isConnected} 
+            {(totalQuestions > 0 || questions) &&
+            currentQuestionIndex <
+              (totalQuestions || questions?.length || 0) - 1 ? (
+              <Button
+                onClick={() => handleNextQuestion()}
+                disabled={!isConnected}
                 data-testid="button-next-question"
-                className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
+                className={
+                  highlightNextButton
+                    ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform"
+                    : ""
+                }
               >
                 Next Question
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button 
-                onClick={() => handleEndInterview()} 
+              <Button
+                onClick={() => handleEndInterview()}
                 data-testid="button-complete-interview"
-                className={highlightNextButton ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform" : ""}
+                className={
+                  highlightNextButton
+                    ? "animate-pulse ring-4 ring-primary ring-offset-4 ring-offset-background shadow-xl shadow-primary/70 scale-105 transition-transform"
+                    : ""
+                }
               >
                 Complete Interview
                 <CheckCircle2 className="w-4 h-4 ml-2" />
@@ -866,22 +972,32 @@ export default function InterviewPage() {
                     </div>
                     <div className="space-y-2">
                       <h3 className="font-semibold text-lg">
-                        {confirmDialog.type === "next" ? "Move to Next Question?" : "Complete Interview?"}
+                        {confirmDialog.type === "next"
+                          ? "Move to Next Question?"
+                          : "Complete Interview?"}
                       </h3>
                       <p className="text-muted-foreground text-sm">
-                        {confirmDialog.type === "next" 
-                          ? "Alvia hasn't suggested moving on yet. Are you sure you've fully explored this question?"
-                          : "Alvia hasn't suggested completing the interview yet. Are you sure you're ready to finish?"
-                        }
+                        {confirmDialog.type === "next"
+                          ? "Are you sure you've fully explored this question?"
+                          : "Are you sure you're ready to finish?"}
                       </p>
                     </div>
                   </div>
                   <div className="flex justify-end gap-3 pt-2">
-                    <Button variant="outline" onClick={handleCancelProceed} data-testid="button-cancel-proceed">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelProceed}
+                      data-testid="button-cancel-proceed"
+                    >
                       Stay Here
                     </Button>
-                    <Button onClick={handleConfirmProceed} data-testid="button-confirm-proceed">
-                      {confirmDialog.type === "next" ? "Yes, Next Question" : "Yes, Complete"}
+                    <Button
+                      onClick={handleConfirmProceed}
+                      data-testid="button-confirm-proceed"
+                    >
+                      {confirmDialog.type === "next"
+                        ? "Yes, Next Question"
+                        : "Yes, Complete"}
                     </Button>
                   </div>
                 </CardContent>
