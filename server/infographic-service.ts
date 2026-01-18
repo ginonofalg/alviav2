@@ -11,7 +11,7 @@ const INFOGRAPHICS_DIR = path.join(__dirname, '../generated-infographics');
 const MAX_STORED_INFOGRAPHICS = 100;
 
 interface InfographicConfig {
-  model?: 'gemini-2.5-flash-image' | 'gemini-2.0-flash-exp';
+  model?: 'gemini-3-pro-image-preview' | 'gemini-2.5-flash-image';
 }
 
 interface InfographicResult {
@@ -35,7 +35,7 @@ export class InfographicService {
     prompt: string,
     config: InfographicConfig = {}
   ): Promise<InfographicResult> {
-    const model = config.model || 'gemini-2.5-flash-image';
+    const model = config.model || 'gemini-3-pro-image-preview';
 
     try {
       console.log('[Infographic] Starting generation with model:', model);
