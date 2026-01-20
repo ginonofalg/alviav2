@@ -93,3 +93,24 @@ Key files:
 - `client/src/components/analytics/ProjectAnalyticsView.tsx`: Project analytics UI with executive summary
 
 Analytics hierarchy: Collection → Template (aggregates collections) → Project (aggregates templates with AI synthesis)
+
+### Template Analytics Detail Preservation (January 2026)
+Enhanced Template analytics to preserve ALL collection-level detail through deterministic aggregation (no AI selection):
+
+**Schema Enhancements**:
+- `AggregatedThemeWithDetail`: Includes verbatims, depth, isEmergent, collectionSources, sentimentBreakdown
+- `KeyFindingWithSource`, `ConsensusPointWithSource`, `DivergencePointWithSource`: Finding types with sourceCollectionId/Name attribution
+- `QuestionConsistency`: Now includes verbatims and primaryThemes arrays
+
+**Backend Changes** (`server/barbara-orchestrator.ts`):
+- `generateTemplateAnalytics()` performs purely deterministic aggregation (no LLM calls)
+- Collects ALL verbatims (limited 5 per collection per theme, 15 total per theme)
+- Aggregates keyFindings, consensusPoints, divergencePoints with source attribution
+
+**UI Enhancements** (`TemplateAnalyticsView.tsx`):
+- New "Insights" tab showing aggregated Key Findings, Consensus Points, Divergence Points
+- Enhanced Theme cards with depth indicators, emergent badges, and expandable verbatim sections
+- Question Consistency cards now show verbatims and primary themes
+- Cards for KeyFinding, Consensus, and Divergence with expandable supporting quotes
+
+Design intent: Template analytics remains "fast" (deterministic aggregation) while Project analytics uses AI for cross-template synthesis
