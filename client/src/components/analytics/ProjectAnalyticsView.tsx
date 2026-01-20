@@ -245,10 +245,17 @@ const CONTEXT_TYPE_LABELS: Record<string, { label: string; icon: typeof Sparkles
 
 function ContextualRecommendationsCard({ 
   contextualRecommendations,
+  crossTemplateThemes,
 }: { 
   contextualRecommendations: NonNullable<ProjectAnalytics["contextualRecommendations"]>;
+  crossTemplateThemes: CrossTemplateTheme[];
 }) {
   const contextInfo = CONTEXT_TYPE_LABELS[contextualRecommendations.contextType] || CONTEXT_TYPE_LABELS.other;
+  
+  const getThemeName = (themeId: string): string => {
+    const theme = crossTemplateThemes.find(t => t.id === themeId);
+    return theme?.theme || themeId;
+  };
   
   return (
     <div className="space-y-6" data-testid="container-contextual-recommendations">
@@ -316,9 +323,9 @@ function ContextualRecommendationsCard({
                     </p>
                     {item.relatedThemes.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {item.relatedThemes.map((theme, i) => (
+                        {item.relatedThemes.map((themeId, i) => (
                           <Badge key={i} variant="outline" className="text-xs">
-                            {theme}
+                            {getThemeName(themeId)}
                           </Badge>
                         ))}
                       </div>
@@ -535,7 +542,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
 
           {analytics.contextualRecommendations && (
             <TabsContent value="contextual" className="mt-6" data-testid="content-contextual">
-              <ContextualRecommendationsCard contextualRecommendations={analytics.contextualRecommendations} />
+              <ContextualRecommendationsCard contextualRecommendations={analytics.contextualRecommendations} crossTemplateThemes={analytics.crossTemplateThemes} />
             </TabsContent>
           )}
 
