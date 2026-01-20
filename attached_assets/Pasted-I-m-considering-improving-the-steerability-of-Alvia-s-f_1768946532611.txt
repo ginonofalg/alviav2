@@ -1,0 +1,164 @@
+I'm considering improving the steerability of Alvia's follow-up questions, by introducing a recommended max-follow-up guidance for each template          
+  question. This wouldn't be a hard limit on the number of follow up questions to ask, but would involve Alvia and Barbara keeping a count of the           
+  number of follow up questions Alvia's asked regarding the current template question vs the recommended amount. Critique the approach and propose a        
+  plan for implementing it.                                                                                                                                 
+                                                                                                                                                            
+● I'll explore the codebase to understand the current follow-up question handling before critiquing your approach.                                          
+                                                                                                                                                            
+● Explore(Explore follow-up question handling)                                                                                                              
+  ⎿  Done (7 tool uses · 58.6k tokens · 44s)                                                                                                                
+                                                                                                                                                            
+● Based on this thorough exploration, I can now provide a critique and implementation plan.                                                                 
+                                                                                                                                                            
+  Critique of the Approach                                                                                                                                  
+                                                                                                                                                            
+  Strengths                                                                                                                                                 
+                                                                                                                                                            
+  1. Aligns with existing architecture - Barbara already has probe_followup as a guidance action, and the system already tracks metrics per question. This  
+  feature extends rather than restructures.                                                                                                                 
+  2. Soft guidance is appropriate - Making it a recommendation rather than hard limit preserves Alvia's conversational naturalness and lets Barbara apply   
+  judgment (e.g., if a respondent is being genuinely insightful, continuing makes sense).                                                                   
+  3. Per-question granularity - Different questions warrant different probing depths. An opening rapport question might need 0-1 follow-ups, while a core   
+  research question might need 3-4.                                                                                                                         
+  4. Researcher control without rigidity - Gives researchers a steering mechanism without creating robotic "you've hit your limit" moments.                 
+                                                                                                                                                            
+  Concerns and Gaps                                                                                                                                         
+                                                                                                                                                            
+  1. Definition ambiguity: What counts as a "follow-up"?                                                                                                    
+    - Current turnCount tracks all respondent utterances, not Alvia's probing turns specifically                                                            
+    - Is an acknowledgment ("I see, that's interesting") a follow-up? Is a clarification question?                                                          
+    - Recommend: Count only turns where Barbara's guidance was probe_followup OR Alvia explicitly asked a new probing question (not acknowledgments)        
+  2. Lag-by-one-turn architecture creates timing complexity                                                                                                 
+    - Barbara's guidance is injected into Alvia's next response, not current                                                                                
+    - If follow-up count reaches max mid-conversation, the guidance to stop probing won't take effect immediately                                           
+    - Mitigation: Barbara should start suggesting move-on at maxFollowUps - 1 to account for lag                                                            
+  3. Risk of over-cautious behavior                                                                                                                         
+    - If Alvia is told "recommended max is 2 follow-ups" it might become hesitant to probe even when the answer is genuinely thin                           
+    - Mitigation: Frame guidance as "recommended depth target" not "follow-up limit"                                                                        
+  4. Counting complexity with overlap detection                                                                                                             
+    - When acknowledge_prior action fires, should that exchange count toward follow-up limit? Probably not, since it's about prior context, not deepening   
+  current question                                                                                                                                          
+  5. No current way to distinguish follow-up quality                                                                                                        
+    - A great single follow-up might extract more insight than three weak ones                                                                              
+    - Consider: Should Barbara factor in answer quality/depth alongside count?                                                                              
+                                                                                                                                                            
+  ---                                                                                                                                                       
+  Proposed Implementation Plan                                                                                                                              
+                                                                                                                                                            
+  Phase 1: Schema & Data Model                                                                                                                              
+                                                                                                                                                            
+  1.1 Add field to questions table (shared/schema.ts)                                                                                                       
+  maxFollowUps: integer("max_follow_ups"), // nullable, null = no guidance                                                                                  
+                                                                                                                                                            
+  1.2 Extend PersistedQuestionState (server/voice-interview.ts)                                                                                             
+  export type PersistedQuestionState = {                                                                                                                    
+    // ... existing fields                                                                                                                                  
+    followUpCount: number;  // NEW: counts probing follow-ups specifically                                                                                  
+  };                                                                                                                                                        
+                                                                                                                                                            
+  1.3 Add to QuestionMetrics (server/barbara-orchestrator.ts)                                                                                               
+  export interface QuestionMetrics {                                                                                                                        
+    // ... existing fields                                                                                                                                  
+    followUpCount: number;                                                                                                                                  
+    maxFollowUps: number | null;  // From template                                                                                                          
+  };                                                                                                                                                        
+                                                                                                                                                            
+  Phase 2: Counting Logic                                                                                                                                   
+                                                                                                                                                            
+  2.1 Define what increments followUpCount                                                                                                                  
+                                                                                                                                                            
+  Increment when Barbara's action was probe_followup AND Alvia subsequently asked a probing question. This can be detected by:                              
+  - Tracking when probe_followup guidance was injected                                                                                                      
+  - Incrementing count after the next Alvia response completes                                                                                              
+                                                                                                                                                            
+  2.2 Implementation location: In voice-interview.ts, after Alvia's response completes following a probe_followup injection:                                
+  // After response.done with probe_followup active                                                                                                         
+  if (state.lastBarbaraGuidance?.action === 'probe_followup') {                                                                                             
+    state.questionStates[questionIndex].followUpCount++;                                                                                                    
+  }                                                                                                                                                         
+                                                                                                                                                            
+  2.3 Persistence: Already handled by existing persistInterviewState() which saves questionStates to DB.                                                    
+                                                                                                                                                            
+  Phase 3: Barbara Integration                                                                                                                              
+                                                                                                                                                            
+  3.1 Update Barbara's user prompt (barbara-orchestrator.ts, around line 299)                                                                               
+                                                                                                                                                            
+  Add to context:                                                                                                                                           
+  FOLLOW-UP GUIDANCE:                                                                                                                                       
+  - Follow-ups asked so far: ${metrics.followUpCount}                                                                                                       
+  - Recommended max follow-ups: ${metrics.maxFollowUps ?? 'No limit set'}                                                                                   
+  - If approaching or at recommended max, prefer "suggest_next_question" over "probe_followup"                                                              
+                                                                                                                                                            
+  3.2 Update Barbara's system prompt (around line 227)                                                                                                      
+                                                                                                                                                            
+  Add to decision criteria:                                                                                                                                 
+  5. FOLLOW-UP DEPTH: Consider the recommended max follow-ups for this question.                                                                            
+     - If followUpCount >= maxFollowUps and answer has reasonable depth, suggest moving on                                                                  
+     - If followUpCount is 1 below max, only probe if answer is clearly incomplete                                                                          
+     - If no max is set, use your judgment based on answer completeness                                                                                     
+     - This is guidance, not a hard rule - exceptionally thin answers warrant additional probing                                                            
+                                                                                                                                                            
+  Phase 4: Alvia Integration                                                                                                                                
+                                                                                                                                                            
+  4.1 Update Alvia's instructions (buildInterviewInstructions in voice-interview.ts)                                                                        
+                                                                                                                                                            
+  Add context when maxFollowUps is set:                                                                                                                     
+  FOLLOW-UP DEPTH GUIDANCE:                                                                                                                                 
+  For this question, the researcher recommends approximately ${maxFollowUps} follow-up probes.                                                              
+  You've asked ${followUpCount} so far. This is guidance, not a strict limit - prioritize                                                                   
+  getting a substantive answer, but be mindful of moving on once sufficient depth is reached.                                                               
+                                                                                                                                                            
+  Phase 5: UI Changes                                                                                                                                       
+                                                                                                                                                            
+  5.1 Template question editor (client/src/pages/templates.tsx or question editor component)                                                                
+                                                                                                                                                            
+  Add optional field:                                                                                                                                       
+  - Label: "Recommended follow-up depth" or "Max follow-ups (optional)"                                                                                     
+  - Input: Number input, nullable                                                                                                                           
+  - Help text: "How many probing follow-ups should Alvia aim for? Leave blank for AI judgment."                                                             
+                                                                                                                                                            
+  5.2 Consider per-template default                                                                                                                         
+                                                                                                                                                            
+  Add defaultMaxFollowUps to interviewTemplates table as a fallback when individual questions don't specify.                                                
+                                                                                                                                                            
+  Phase 6: Analytics Enhancement (Optional)                                                                                                                 
+                                                                                                                                                            
+  6.1 Track follow-up effectiveness                                                                                                                         
+                                                                                                                                                            
+  In QuestionSummary, add:                                                                                                                                  
+  followUpCount: number;                                                                                                                                    
+  maxFollowUps: number | null;                                                                                                                              
+                                                                                                                                                            
+  6.2 Analytics insight                                                                                                                                     
+                                                                                                                                                            
+  Surface in collection analytics: "Questions where follow-up limit was reached" and "Average follow-ups vs. answer quality score" to help researchers tune 
+  their guidance.                                                                                                                                           
+                                                                                                                                                            
+  ---                                                                                                                                                       
+  Key Files to Modify                                                                                                                                       
+  ┌─────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────┐                      
+  │                        File                         │                                  Changes                                   │                      
+  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤                      
+  │ shared/schema.ts                                    │ Add maxFollowUps to questions, optionally defaultMaxFollowUps to templates │                      
+  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤                      
+  │ server/voice-interview.ts                           │ Add followUpCount to state, increment logic, pass to Barbara/Alvia prompts │                      
+  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤                      
+  │ server/barbara-orchestrator.ts                      │ Update QuestionMetrics, modify prompts to consider follow-up count         │                      
+  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤                      
+  │ client/src/pages/templates.tsx (or question editor) │ UI for setting max follow-ups                                              │                      
+  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤                      
+  │ server/routes.ts                                    │ Ensure API handles new field                                               │                      
+  └─────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘                      
+  ---                                                                                                                                                       
+  Risks & Mitigations                                                                                                                                       
+  ┌──────────────────────────────────┬──────────────────────────────────────────────────────┐                                                               
+  │               Risk               │                      Mitigation                      │                                                               
+  ├──────────────────────────────────┼──────────────────────────────────────────────────────┤                                                               
+  │ Counting lag due to architecture │ Barbara starts suggesting move-on at max - 1         │                                                               
+  ├──────────────────────────────────┼──────────────────────────────────────────────────────┤                                                               
+  │ Over-rigid behavior              │ Frame as "guidance" not "limit" in all prompts       │                                                               
+  ├──────────────────────────────────┼──────────────────────────────────────────────────────┤                                                               
+  │ Unclear what counts as follow-up │ Tie strictly to probe_followup action, not all turns │                                                               
+  ├──────────────────────────────────┼──────────────────────────────────────────────────────┤                                                               
+  │ Breaking existing interviews     │ Field is nullable; null = current behavior unchanged │                                                               
+  └──────────────────────────────────┴──────────────────────────────────────────────────────┘       
