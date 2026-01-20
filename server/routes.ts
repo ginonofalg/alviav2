@@ -332,10 +332,11 @@ export async function registerRoutes(
 
       const templates = await storage.getTemplatesByProject(project.id);
 
-      // Get collection counts and session totals for each template
+      // Get collection counts, session totals, and questions for each template
       const templatesData = await Promise.all(
         templates.map(async (template) => {
           const collections = await storage.getCollectionsByTemplate(template.id);
+          const questions = await storage.getQuestionsByTemplate(template.id);
           let totalSessions = 0;
           for (const collection of collections) {
             const sessions = await storage.getSessionsByCollection(collection.id);
@@ -343,6 +344,7 @@ export async function registerRoutes(
           }
           return {
             template,
+            questions,
             analytics: template.analyticsData as TemplateAnalytics | null,
             collectionCount: collections.length,
             totalSessions,

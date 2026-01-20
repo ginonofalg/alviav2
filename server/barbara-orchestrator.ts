@@ -1864,11 +1864,13 @@ import type {
   TemplatePerformanceSummary,
   CrossTemplateTheme,
   InterviewTemplate,
+  Question,
 } from "@shared/schema";
 
 export interface ProjectAnalyticsInput {
   templates: {
     template: InterviewTemplate;
+    questions: Question[];
     analytics: TemplateAnalytics | null;
     collectionCount: number;
     totalSessions: number;
@@ -2053,26 +2055,119 @@ async function extractCrossTemplateThemesWithAI(
     };
   }
 
-  // Build template data summary for AI
-  const templateSummaries = templatesWithAnalytics.map((t) => ({
-    templateId: t.template.id,
-    templateName: t.template.name,
-    objective: t.template.objective || "",
-    themes: t.analytics!.aggregatedThemes.map((th) => ({
+  // Build enriched template data summary for AI with full detail
+  const templateSummaries = templatesWithAnalytics.map((t) => {
+    const analytics = t.analytics!;
+    
+    // Include template questions (limit to prevent token overflow)
+    const questionsData = (t.questions || [])
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .slice(0, 15)
+      .map((q) => ({
+        index: q.orderIndex,
+        question: q.questionText,
+        type: q.questionType,
+        guidance: q.guidance || undefined,
+      }));
+
+    // Include full theme data with descriptions, verbatims, and depth
+    const themesData = analytics.aggregatedThemes.slice(0, 10).map((th) => ({
       theme: th.theme,
+      description: th.description,
       mentions: th.totalMentions,
+      collectionsAppeared: th.collectionsAppeared,
+      prevalence: th.avgPrevalence,
       sentiment: th.sentiment,
-    })),
-    topCollectionThemes: t
-      .analytics!.collectionPerformance.flatMap((cp) => cp.topThemes)
-      .slice(0, 10),
-    qualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
-    sessionCount: t.totalSessions,
-  }));
+      sentimentBreakdown: th.sentimentBreakdown,
+      depth: th.depth,
+      isEmergent: th.isEmergent,
+      verbatims: th.verbatims.slice(0, 3).map((v) => ({
+        quote: v.quote,
+        sentiment: v.sentiment,
+      })),
+    }));
 
-  const systemPrompt = `You are Barbara, a strategic research analyst. Your task is to analyze interview data across multiple interview templates within a project and identify cross-cutting themes and strategic insights.
+    // Include key findings with their verbatims
+    const keyFindingsData = analytics.keyFindings.slice(0, 8).map((f) => ({
+      finding: f.finding,
+      significance: f.significance,
+      relatedThemes: f.relatedThemes,
+      sourceCollection: f.sourceCollectionName,
+      verbatims: (f.supportingVerbatims || []).slice(0, 2).map((v) => ({
+        quote: v.quote,
+        sentiment: v.sentiment,
+      })),
+    }));
 
-IMPORTANT: For all verbatims/quotes, apply PII anonymization:
+    // Include consensus points showing agreement
+    const consensusData = analytics.consensusPoints.slice(0, 6).map((cp) => ({
+      topic: cp.topic,
+      position: cp.position,
+      agreementLevel: cp.agreementLevel,
+      sourceCollection: cp.sourceCollectionName,
+      verbatims: (cp.verbatims || []).slice(0, 2).map((v) => ({
+        quote: v.quote,
+        sentiment: v.sentiment,
+      })),
+    }));
+
+    // Include divergence points showing disagreement
+    const divergenceData = analytics.divergencePoints.slice(0, 6).map((dp) => ({
+      topic: dp.topic,
+      perspectives: dp.perspectives.slice(0, 3).map((p) => ({
+        position: p.position,
+        count: p.count,
+        verbatims: (p.verbatims || []).slice(0, 2).map((v) => ({
+          quote: v.quote,
+          sentiment: v.sentiment,
+        })),
+      })),
+      sourceCollection: dp.sourceCollectionName,
+    }));
+
+    // Include question consistency data with representative verbatims
+    const questionConsistencyData = analytics.questionConsistency.slice(0, 10).map((qc) => ({
+      questionIndex: qc.questionIndex,
+      questionText: qc.questionText,
+      avgQuality: qc.avgQualityAcrossCollections,
+      consistencyRating: qc.consistencyRating,
+      primaryThemes: qc.primaryThemes,
+      verbatims: (qc.verbatims || []).slice(0, 2).map((v) => ({
+        quote: v.quote,
+        sentiment: v.sentiment,
+      })),
+    }));
+
+    return {
+      templateId: t.template.id,
+      templateName: t.template.name,
+      objective: t.template.objective || "",
+      questions: questionsData,
+      themes: themesData,
+      keyFindings: keyFindingsData,
+      consensusPoints: consensusData,
+      divergencePoints: divergenceData,
+      questionConsistency: questionConsistencyData,
+      effectiveness: {
+        qualityScore: analytics.templateEffectiveness.avgQualityScore,
+        totalSessions: analytics.templateEffectiveness.totalSessions,
+        totalCollections: analytics.templateEffectiveness.totalCollections,
+        sentimentDistribution: analytics.templateEffectiveness.sentimentDistribution,
+      },
+    };
+  });
+
+  const systemPrompt = `You are Barbara, a strategic research analyst. Your task is to analyze comprehensive interview data across multiple interview templates within a project and identify cross-cutting themes, strategic insights, and actionable recommendations.
+
+You are provided with rich data for each template including:
+- The interview questions used
+- Aggregated themes with verbatims and sentiment analysis
+- Key findings identified at the collection level
+- Consensus points (where participants agreed)
+- Divergence points (where participants disagreed)
+- Question consistency metrics across collections
+
+IMPORTANT: For all verbatims/quotes in your output, apply PII anonymization:
 - Replace names with [Name]
 - Replace locations/cities with [Location]
 - Replace company names with [Company]
@@ -2084,7 +2179,7 @@ Return a JSON object with this exact structure:
     {
       "id": "theme_1",
       "theme": "Brief theme name (2-5 words)",
-      "description": "One sentence description",
+      "description": "One sentence description synthesizing how this theme manifests across templates",
       "templatesAppeared": ["template_id_1", "template_id_2"],
       "totalMentions": number,
       "avgPrevalence": number (0-100),
@@ -2092,7 +2187,7 @@ Return a JSON object with this exact structure:
       "isStrategic": boolean (true if high-impact across multiple interview types),
       "verbatims": [
         {
-          "quote": "Representative quote with PII removed",
+          "quote": "Select the most representative quote from the provided verbatims, with PII removed",
           "questionIndex": 0,
           "sessionId": "",
           "sentiment": "positive" | "negative" | "neutral" | "mixed"
@@ -2102,24 +2197,34 @@ Return a JSON object with this exact structure:
   ],
   "strategicInsights": [
     {
-      "insight": "Key strategic finding",
-      "significance": "Why this matters for the business",
+      "insight": "Key strategic finding derived from cross-template analysis",
+      "significance": "Why this matters for the business/research objectives",
       "supportingTemplates": ["template_id_1"],
-      "verbatims": []
+      "verbatims": [
+        {
+          "quote": "Supporting quote with PII removed",
+          "questionIndex": 0,
+          "sessionId": "",
+          "sentiment": "positive" | "negative" | "neutral" | "mixed"
+        }
+      ]
     }
   ],
   "executiveSummary": {
     "headline": "One compelling sentence summarizing the project findings",
-    "keyTakeaways": ["3-5 key points for stakeholders"],
-    "recommendedActions": ["2-3 actionable recommendations"]
+    "keyTakeaways": ["3-5 key points for stakeholders, grounded in the data"],
+    "recommendedActions": ["2-3 actionable recommendations based on the findings"]
   }
 }
 
-Focus on:
-1. Themes that appear across MULTIPLE templates (cross-cutting insights)
-2. Strategic implications for the business
-3. Patterns that wouldn't be visible from looking at templates individually
-4. Executive-level summary suitable for stakeholder presentation`;
+ANALYSIS GUIDANCE:
+1. Look for themes that appear across MULTIPLE templates - these are the most valuable cross-cutting insights
+2. Synthesize consensus and divergence points across templates to identify patterns
+3. Use the provided verbatims to ground your insights - include representative quotes in your output
+4. Connect findings back to the project objective when identifying strategic implications
+5. Consider question consistency data to identify which interview approaches yielded the richest insights
+6. Generate actionable recommendations that address the key themes and findings
+7. Ensure your executive summary would be suitable for stakeholder presentation`;
 
   const userPrompt = `PROJECT: ${input.projectName}
 OBJECTIVE: ${input.projectObjective || "Not specified"}
@@ -2127,10 +2232,33 @@ OBJECTIVE: ${input.projectObjective || "Not specified"}
 TEMPLATE DATA:
 ${JSON.stringify(templateSummaries, null, 2)}
 
-Analyze the themes across these templates to identify cross-cutting patterns and strategic insights. Focus on themes that appear in multiple templates and their business implications.`;
+Analyze this comprehensive template data to identify:
+1. Cross-cutting themes that appear across multiple templates
+2. Strategic insights derived from the aggregated findings, consensus, and divergence points
+3. An executive summary with key takeaways and recommended actions
+
+Pay special attention to the verbatims provided - use them to support your insights and include representative quotes in your output.`;
 
   try {
     const config = barbaraConfig.projectAnalytics;
+    
+    // Log data richness for debugging
+    const dataStats = templateSummaries.map((t) => ({
+      template: t.templateName,
+      questions: t.questions.length,
+      themes: t.themes.length,
+      keyFindings: t.keyFindings.length,
+      consensusPoints: t.consensusPoints.length,
+      divergencePoints: t.divergencePoints.length,
+      questionConsistency: t.questionConsistency.length,
+    }));
+    console.log("[Project Analytics] Enriched template data stats:", JSON.stringify(dataStats, null, 2));
+    
+    // Estimate token count (rough: ~4 chars per token)
+    const templateDataStr = JSON.stringify(templateSummaries);
+    const estimatedTokens = Math.ceil(templateDataStr.length / 4);
+    console.log(`[Project Analytics] Estimated input tokens for template data: ~${estimatedTokens}`);
+    
     console.log(
       `[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`,
     );
