@@ -15,6 +15,7 @@ import DashboardPage from "@/pages/dashboard";
 import ProjectsPage from "@/pages/projects";
 import NewProjectPage from "@/pages/project-new";
 import ProjectDetailPage from "@/pages/project-detail";
+import ProjectEditPage from "@/pages/project-edit";
 import TemplateBuilderPage from "@/pages/template-builder";
 import TemplateDetailPage from "@/pages/template-detail";
 import CollectionsPage from "@/pages/collections";
@@ -65,6 +66,7 @@ function AuthenticatedRoutes() {
         <Route path="/projects" component={ProjectsPage} />
         <Route path="/projects/new" component={NewProjectPage} />
         <Route path="/projects/:id" component={ProjectDetailPage} />
+        <Route path="/projects/:id/edit" component={ProjectEditPage} />
         <Route path="/projects/:projectId/templates/new" component={TemplateBuilderPage} />
         <Route path="/templates/:id" component={TemplateDetailPage} />
         <Route path="/templates/:id/edit" component={TemplateBuilderPage} />

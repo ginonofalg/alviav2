@@ -31,6 +31,15 @@ export const userRoleEnum = pgEnum("user_role", [
   "respondent"
 ]);
 
+// Context types for strategic context
+export const contextTypeEnum = pgEnum("context_type", [
+  "content",
+  "product", 
+  "marketing",
+  "cx",
+  "other"
+]);
+
 // Workspaces
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -65,6 +74,9 @@ export const projects = pgTable("projects", {
   crossInterviewContext: boolean("cross_interview_context").default(false),
   crossInterviewThreshold: integer("cross_interview_threshold").default(5),
   avoidRules: text("avoid_rules").array(),
+  // Strategic context for tailored analytics
+  strategicContext: text("strategic_context"),
+  contextType: contextTypeEnum("context_type"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   // Analytics metadata
@@ -649,6 +661,25 @@ export type ProjectAnalytics = {
   
   // Recommendations
   recommendations: Recommendation[];
+  
+  // Contextual recommendations (based on strategic context)
+  contextualRecommendations?: {
+    contextType: string;
+    strategicContext: string;
+    actionItems: {
+      title: string;
+      description: string;
+      priority: "high" | "medium" | "low";
+      relatedThemes: string[];
+      suggestedContent?: string; // For content-type context
+    }[];
+    curatedVerbatims: {
+      quote: string;
+      usageNote: string; // How this quote could be used
+      theme: string;
+    }[];
+    strategicSummary: string;
+  };
   
   generatedAt: number;
 };

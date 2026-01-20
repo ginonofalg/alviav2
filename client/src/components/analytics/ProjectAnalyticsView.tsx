@@ -19,6 +19,9 @@ import {
   Quote,
   TrendingUp,
   Layers,
+  Sparkles,
+  CheckCircle,
+  MessageSquareQuote,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
@@ -231,6 +234,143 @@ function ExecutiveSummaryCard({ summary }: {
   );
 }
 
+// Context Type Labels for display
+const CONTEXT_TYPE_LABELS: Record<string, { label: string; icon: typeof Sparkles }> = {
+  content: { label: "Content Strategy", icon: FileText },
+  product: { label: "Product Development", icon: Target },
+  marketing: { label: "Marketing", icon: TrendingUp },
+  cx: { label: "Customer Experience", icon: Users },
+  other: { label: "General", icon: Lightbulb },
+};
+
+function ContextualRecommendationsCard({ 
+  contextualRecommendations,
+}: { 
+  contextualRecommendations: NonNullable<ProjectAnalytics["contextualRecommendations"]>;
+}) {
+  const contextInfo = CONTEXT_TYPE_LABELS[contextualRecommendations.contextType] || CONTEXT_TYPE_LABELS.other;
+  
+  return (
+    <div className="space-y-6" data-testid="container-contextual-recommendations">
+      <Card className="border-2 border-muted-foreground/20" data-testid="card-context-overview">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-yellow-500" />
+            Tailored Recommendations
+          </CardTitle>
+          <CardDescription className="flex items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              <contextInfo.icon className="w-3 h-3" />
+              {contextInfo.label}
+            </Badge>
+            <span className="text-muted-foreground">Based on your strategic context</span>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="p-3 bg-muted/50 rounded-md">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Your Context</p>
+            <p className="text-sm" data-testid="text-strategic-context">
+              {contextualRecommendations.strategicContext}
+            </p>
+          </div>
+          
+          <div>
+            <p className="font-medium mb-2" data-testid="text-strategic-summary">
+              {contextualRecommendations.strategicSummary}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {contextualRecommendations.actionItems.length > 0 && (
+        <Card data-testid="card-action-items">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              Recommended Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {contextualRecommendations.actionItems.map((item, idx) => (
+              <div 
+                key={idx} 
+                className="p-3 border rounded-md space-y-2"
+                data-testid={`card-action-item-${idx}`}
+              >
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-medium" data-testid={`text-action-title-${idx}`}>
+                        {item.title}
+                      </h4>
+                      <Badge 
+                        variant={item.priority === "high" ? "destructive" : item.priority === "medium" ? "default" : "secondary"}
+                        className="text-xs"
+                        data-testid={`badge-priority-${idx}`}
+                      >
+                        {item.priority}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1" data-testid={`text-action-desc-${idx}`}>
+                      {item.description}
+                    </p>
+                    {item.relatedThemes.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {item.relatedThemes.map((theme, i) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {theme}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {item.suggestedContent && (
+                      <div className="mt-2 p-2 bg-muted/30 rounded text-sm">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Suggested Content</p>
+                        <p data-testid={`text-suggested-content-${idx}`}>{item.suggestedContent}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {contextualRecommendations.curatedVerbatims.length > 0 && (
+        <Card data-testid="card-curated-verbatims">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquareQuote className="w-5 h-5 text-blue-500" />
+              Curated Quotes for Your Use
+            </CardTitle>
+            <CardDescription>
+              Selected verbatims ready to use in your {contextInfo.label.toLowerCase()} materials
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {contextualRecommendations.curatedVerbatims.map((verbatim, idx) => (
+              <div 
+                key={idx} 
+                className="p-3 border rounded-md bg-muted/30"
+                data-testid={`card-verbatim-${idx}`}
+              >
+                <p className="text-sm italic" data-testid={`text-verbatim-quote-${idx}`}>
+                  "{verbatim.quote}"
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
+                  <Badge variant="outline" className="text-xs">{verbatim.theme}</Badge>
+                  <span data-testid={`text-usage-note-${idx}`}>{verbatim.usageNote}</span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalyticsViewProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
@@ -325,8 +465,14 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
         </Card>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList data-testid="tabs-list">
+          <TabsList data-testid="tabs-list" className="flex-wrap h-auto gap-1">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+            {analytics.contextualRecommendations && (
+              <TabsTrigger value="contextual" data-testid="tab-contextual" className="gap-1">
+                <Sparkles className="w-3 h-3" />
+                Tailored
+              </TabsTrigger>
+            )}
             <TabsTrigger value="templates" data-testid="tab-templates">Templates ({analytics.templatePerformance.length})</TabsTrigger>
             <TabsTrigger value="themes" data-testid="tab-themes">Cross-Template Themes ({analytics.crossTemplateThemes.length})</TabsTrigger>
             <TabsTrigger value="insights" data-testid="tab-insights">Strategic Insights</TabsTrigger>
@@ -386,6 +532,12 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
               <RecommendationsPanel recommendations={analytics.recommendations} />
             )}
           </TabsContent>
+
+          {analytics.contextualRecommendations && (
+            <TabsContent value="contextual" className="mt-6" data-testid="content-contextual">
+              <ContextualRecommendationsCard contextualRecommendations={analytics.contextualRecommendations} />
+            </TabsContent>
+          )}
 
           <TabsContent value="templates" className="space-y-4 mt-6" data-testid="content-templates">
             <CardDescription>Compare performance across different interview templates in this project.</CardDescription>

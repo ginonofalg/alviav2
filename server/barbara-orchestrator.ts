@@ -1877,6 +1877,8 @@ export interface ProjectAnalyticsInput {
   }[];
   projectName: string;
   projectObjective: string;
+  strategicContext?: string;
+  contextType?: string;
 }
 
 const PROJECT_ANALYTICS_TIMEOUT_MS = 120000;
@@ -2021,6 +2023,7 @@ export async function generateProjectAnalytics(
       sentimentDistribution,
     },
     recommendations: recommendations.slice(0, 10),
+    contextualRecommendations: aiAnalysis.contextualRecommendations,
   };
 }
 
@@ -2036,6 +2039,23 @@ interface AIProjectAnalysisResult {
     headline: string;
     keyTakeaways: string[];
     recommendedActions: string[];
+  };
+  contextualRecommendations?: {
+    contextType: string;
+    strategicContext: string;
+    actionItems: {
+      title: string;
+      description: string;
+      priority: "high" | "medium" | "low";
+      relatedThemes: string[];
+      suggestedContent?: string;
+    }[];
+    curatedVerbatims: {
+      quote: string;
+      usageNote: string;
+      theme: string;
+    }[];
+    strategicSummary: string;
   };
 }
 
@@ -2157,6 +2177,47 @@ async function extractCrossTemplateThemesWithAI(
     };
   });
 
+  // Build strategic context section if provided
+  const hasStrategicContext = input.strategicContext && input.strategicContext.trim().length > 0;
+  const contextTypeLabel = input.contextType ? {
+    content: "Content Strategy (newsletters, blogs, social media)",
+    product: "Product Development (features, roadmap)",
+    marketing: "Marketing Campaign (campaigns, targeting)",
+    cx: "Customer Experience (support, onboarding)",
+    other: "Custom Business Context"
+  }[input.contextType] || input.contextType : null;
+  
+  const strategicContextSection = hasStrategicContext ? `
+
+STRATEGIC BUSINESS CONTEXT:
+Context Type: ${contextTypeLabel || "Not specified"}
+Business Context: ${input.strategicContext}
+
+When strategic context is provided, you MUST also generate a "contextualRecommendations" section that tailors insights specifically to this business context. Frame recommendations as actionable items for this specific use case.` : "";
+
+  const contextualRecommendationsSchema = hasStrategicContext ? `,
+  "contextualRecommendations": {
+    "contextType": "${input.contextType || "other"}",
+    "strategicContext": "Brief summary of the strategic context",
+    "actionItems": [
+      {
+        "title": "Specific action item title",
+        "description": "Detailed description of what to do and why",
+        "priority": "high" | "medium" | "low",
+        "relatedThemes": ["theme_id_1"],
+        "suggestedContent": "For content contexts: specific content idea/topic derived from the data"
+      }
+    ],
+    "curatedVerbatims": [
+      {
+        "quote": "A quote particularly useful for the business context (newsletter-ready, marketing copy, etc.)",
+        "usageNote": "How this quote could be used (e.g., 'Great for newsletter intro', 'Social media testimonial')",
+        "theme": "Related theme name"
+      }
+    ],
+    "strategicSummary": "A paragraph summarizing how the research findings apply to the specific business goal"
+  }` : "";
+
   const systemPrompt = `You are Barbara, a strategic research analyst. Your task is to analyze comprehensive interview data across multiple interview templates within a project and identify cross-cutting themes, strategic insights, and actionable recommendations.
 
 You are provided with rich data for each template including:
@@ -2165,7 +2226,7 @@ You are provided with rich data for each template including:
 - Key findings identified at the collection level
 - Consensus points (where participants agreed)
 - Divergence points (where participants disagreed)
-- Question consistency metrics across collections
+- Question consistency metrics across collections${strategicContextSection}
 
 IMPORTANT: For all verbatims/quotes in your output, apply PII anonymization:
 - Replace names with [Name]
@@ -2214,7 +2275,7 @@ Return a JSON object with this exact structure:
     "headline": "One compelling sentence summarizing the project findings",
     "keyTakeaways": ["3-5 key points for stakeholders, grounded in the data"],
     "recommendedActions": ["2-3 actionable recommendations based on the findings"]
-  }
+  }${contextualRecommendationsSchema}
 }
 
 ANALYSIS GUIDANCE:
@@ -2224,10 +2285,15 @@ ANALYSIS GUIDANCE:
 4. Connect findings back to the project objective when identifying strategic implications
 5. Consider question consistency data to identify which interview approaches yielded the richest insights
 6. Generate actionable recommendations that address the key themes and findings
-7. Ensure your executive summary would be suitable for stakeholder presentation`;
+7. Ensure your executive summary would be suitable for stakeholder presentation${hasStrategicContext ? `
+8. When strategic context is provided, generate contextualRecommendations that are specifically tailored to the business context
+9. For content strategy contexts, include content ideas, newsletter topics, or social media angles derived from the research
+10. Curate verbatims that would be particularly useful for the stated business purpose (e.g., testimonial-ready quotes for marketing)` : ""}`;
 
   const userPrompt = `PROJECT: ${input.projectName}
-OBJECTIVE: ${input.projectObjective || "Not specified"}
+OBJECTIVE: ${input.projectObjective || "Not specified"}${hasStrategicContext ? `
+STRATEGIC CONTEXT TYPE: ${contextTypeLabel || "Not specified"}
+STRATEGIC CONTEXT: ${input.strategicContext}` : ""}
 
 TEMPLATE DATA:
 ${JSON.stringify(templateSummaries, null, 2)}
@@ -2235,9 +2301,10 @@ ${JSON.stringify(templateSummaries, null, 2)}
 Analyze this comprehensive template data to identify:
 1. Cross-cutting themes that appear across multiple templates
 2. Strategic insights derived from the aggregated findings, consensus, and divergence points
-3. An executive summary with key takeaways and recommended actions
+3. An executive summary with key takeaways and recommended actions${hasStrategicContext ? `
+4. Contextual recommendations tailored specifically to the strategic business context provided` : ""}
 
-Pay special attention to the verbatims provided - use them to support your insights and include representative quotes in your output.`;
+Pay special attention to the verbatims provided - use them to support your insights and include representative quotes in your output.${hasStrategicContext ? ` Ensure contextual recommendations are actionable and directly tied to the business goal of "${input.strategicContext?.substring(0, 100)}..."` : ""}`;
 
   try {
     const config = barbaraConfig.projectAnalytics;
@@ -2344,7 +2411,30 @@ Pay special attention to the verbatims provided - use them to support your insig
         : [],
     };
 
-    return { crossTemplateThemes, strategicInsights, executiveSummary };
+    // Parse contextual recommendations if present
+    let contextualRecommendations: AIProjectAnalysisResult["contextualRecommendations"] = undefined;
+    if (parsed.contextualRecommendations) {
+      const cr = parsed.contextualRecommendations;
+      contextualRecommendations = {
+        contextType: cr.contextType || "other",
+        strategicContext: cr.strategicContext || "",
+        actionItems: (cr.actionItems || []).slice(0, 10).map((item: any) => ({
+          title: item.title || "",
+          description: item.description || "",
+          priority: ["high", "medium", "low"].includes(item.priority) ? item.priority : "medium",
+          relatedThemes: Array.isArray(item.relatedThemes) ? item.relatedThemes : [],
+          suggestedContent: item.suggestedContent || undefined,
+        })),
+        curatedVerbatims: (cr.curatedVerbatims || []).slice(0, 10).map((v: any) => ({
+          quote: v.quote || "",
+          usageNote: v.usageNote || "",
+          theme: v.theme || "",
+        })),
+        strategicSummary: cr.strategicSummary || "",
+      };
+    }
+
+    return { crossTemplateThemes, strategicInsights, executiveSummary, contextualRecommendations };
   } catch (error) {
     console.error("[Project Analytics] AI analysis failed:", error);
     return createDefaultAIResult(input.projectName);

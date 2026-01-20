@@ -368,6 +368,8 @@ export async function registerRoutes(
         templates: templatesData,
         projectName: project.name,
         projectObjective: project.objective || "",
+        strategicContext: project.strategicContext || undefined,
+        contextType: project.contextType || undefined,
       });
 
       const analyticsData: ProjectAnalytics = {
@@ -540,6 +542,8 @@ export async function registerRoutes(
     description: z.string().max(500).optional(),
     objective: z.string().max(1000).optional(),
     avoidRules: z.array(z.string()).optional(),
+    strategicContext: z.string().max(2000).optional(),
+    contextType: z.enum(["content", "product", "marketing", "cx", "other"]).optional(),
   });
 
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {

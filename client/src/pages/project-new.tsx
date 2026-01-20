@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Shield, Settings2, Mic } from "lucide-react";
+import { ArrowLeft, Shield, Settings2, Mic, Target, Sparkles, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -42,9 +42,19 @@ const projectFormSchema = z.object({
   piiRedactionEnabled: z.boolean().default(true),
   crossInterviewContext: z.boolean().default(false),
   crossInterviewThreshold: z.number().min(1).max(100).default(5),
+  strategicContext: z.string().max(2000).optional(),
+  contextType: z.enum(["content", "product", "marketing", "cx", "other"]).optional(),
 });
 
 type ProjectFormData = z.infer<typeof projectFormSchema>;
+
+const CONTEXT_TYPES = [
+  { value: "content", label: "Content Strategy", description: "Newsletters, blogs, social media" },
+  { value: "product", label: "Product Development", description: "Features, roadmap decisions" },
+  { value: "marketing", label: "Marketing Campaign", description: "Campaigns, targeting, messaging" },
+  { value: "cx", label: "Customer Experience", description: "Support, onboarding, retention" },
+  { value: "other", label: "Other", description: "Custom business context" },
+];
 
 const DEFAULT_AVOID_RULES = [
   "Do not request unnecessary personal data (address, full DOB, payment details)",
@@ -72,6 +82,8 @@ export default function NewProjectPage() {
       piiRedactionEnabled: true,
       crossInterviewContext: false,
       crossInterviewThreshold: 5,
+      strategicContext: "",
+      contextType: undefined,
     },
   });
 
@@ -127,8 +139,8 @@ export default function NewProjectPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Mic className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                    <Mic className="w-5 h-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Project Details</CardTitle>
@@ -257,8 +269,8 @@ export default function NewProjectPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-primary" />
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                      <Shield className="w-5 h-5 text-muted-foreground" />
                     </div>
                     <div>
                       <CardTitle>Privacy & Consent</CardTitle>
@@ -271,7 +283,7 @@ export default function NewProjectPage() {
                     control={form.control}
                     name="consentAudioRecording"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <FormItem className="flex items-center justify-between gap-4 rounded-lg border p-4">
                         <div className="space-y-0.5">
                           <FormLabel className="text-base">Audio Recording</FormLabel>
                           <FormDescription>
@@ -293,7 +305,7 @@ export default function NewProjectPage() {
                     control={form.control}
                     name="piiRedactionEnabled"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <FormItem className="flex items-center justify-between gap-4 rounded-lg border p-4">
                         <div className="space-y-0.5">
                           <FormLabel className="text-base">PII Redaction</FormLabel>
                           <FormDescription>
@@ -316,8 +328,8 @@ export default function NewProjectPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Settings2 className="w-5 h-5 text-primary" />
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                      <Settings2 className="w-5 h-5 text-muted-foreground" />
                     </div>
                     <div>
                       <CardTitle>Advanced Settings</CardTitle>
@@ -330,7 +342,7 @@ export default function NewProjectPage() {
                     control={form.control}
                     name="crossInterviewContext"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <FormItem className="flex items-center justify-between gap-4 rounded-lg border p-4">
                         <div className="space-y-0.5">
                           <FormLabel className="text-base">Cross-Interview Context</FormLabel>
                           <FormDescription>
@@ -387,7 +399,7 @@ export default function NewProjectPage() {
                   <ul className="space-y-2 text-sm text-muted-foreground">
                     {DEFAULT_AVOID_RULES.map((rule, index) => (
                       <li key={index} className="flex items-start gap-2">
-                        <span className="text-primary mt-1">•</span>
+                        <span className="text-muted-foreground mt-1">•</span>
                         <span>{rule}</span>
                       </li>
                     ))}
@@ -395,17 +407,129 @@ export default function NewProjectPage() {
                 </CardContent>
               </Card>
 
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <Button type="button" variant="outline" onClick={() => setStep(1)} data-testid="button-back-step">
                   Back
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={createProject.isPending}
-                  data-testid="button-create-project"
-                >
-                  {createProject.isPending ? "Creating..." : "Create Project"}
+                <Button type="button" onClick={() => setStep(3)} data-testid="button-next-step-3">
+                  Continue
+                  <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
+              </div>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                      <Target className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        Strategic Context
+                        <Sparkles className="w-4 h-4 text-yellow-500" />
+                      </CardTitle>
+                      <CardDescription>
+                        Help us tailor analytics and recommendations to your business goals (optional)
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="contextType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>What will you use these insights for?</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-context-type">
+                              <SelectValue placeholder="Select context type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {CONTEXT_TYPES.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                <div className="flex flex-col">
+                                  <span>{type.label}</span>
+                                  <span className="text-xs text-muted-foreground">{type.description}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          This helps us frame recommendations for your specific use case.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="strategicContext"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tell us about your business context</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="e.g., I run a specialist online photography store with 5k email subscribers. I'm planning a monthly newsletter to drive repeat purchases and differentiate through expertise rather than competing on price with large retailers."
+                            className="resize-none"
+                            rows={5}
+                            {...field} 
+                            data-testid="input-strategic-context"
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Include your business goals, constraints, and what decisions these insights will inform.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="rounded-lg border bg-muted/50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Sparkles className="w-5 h-5 text-yellow-500 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">How this helps</p>
+                        <p className="text-sm text-muted-foreground">
+                          When you add strategic context, your project analytics will include tailored 
+                          recommendations, curated quotes for your content needs, and action items 
+                          specific to your business goals.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-between gap-4">
+                <Button type="button" variant="outline" onClick={() => setStep(2)} data-testid="button-back-step-2">
+                  Back
+                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    type="submit" 
+                    variant="outline"
+                    disabled={createProject.isPending}
+                    data-testid="button-skip-create-project"
+                  >
+                    Skip & Create
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={createProject.isPending}
+                    data-testid="button-create-project"
+                  >
+                    {createProject.isPending ? "Creating..." : "Create Project"}
+                  </Button>
+                </div>
               </div>
             </>
           )}
