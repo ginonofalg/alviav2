@@ -114,3 +114,29 @@ Enhanced Template analytics to preserve ALL collection-level detail through dete
 - Cards for KeyFinding, Consensus, and Divergence with expandable supporting quotes
 
 Design intent: Template analytics remains "fast" (deterministic aggregation) while Project analytics uses AI for cross-template synthesis
+
+### Project Analytics Data Enrichment (January 2026)
+Fixed a critical gap where Project-level analytics was receiving sparse data for LLM analysis:
+
+**Problem**: The `extractCrossTemplateThemesWithAI` function was only passing basic theme info (name, mentions, sentiment) to the LLM, missing:
+- Template questions
+- Theme descriptions and verbatims
+- Key findings, consensus/divergence points
+- Question consistency data
+
+**Solution** (`server/barbara-orchestrator.ts`):
+- Extended `ProjectAnalyticsInput` to include `questions: Question[]` for each template
+- Enriched `templateSummaries` with full detail:
+  - Questions (15 max per template, with text, type, guidance)
+  - Themes (10 max) with descriptions, verbatims (3 each), depth, sentiment breakdowns
+  - Key findings (8 max) with supporting verbatims (2 each)
+  - Consensus points (6 max) with verbatims
+  - Divergence points (6 max) with perspectives and verbatims
+  - Question consistency (10 max) with representative verbatims
+- Updated system prompt to guide LLM on leveraging the richer data
+- Added logging for data stats and token estimation
+
+**Routes Change** (`server/routes.ts`):
+- Project analytics refresh now fetches template questions via `storage.getQuestionsByTemplate()`
+
+This enables the LLM to produce grounded, verbatim-supported strategic insights at the Project level
