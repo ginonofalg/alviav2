@@ -140,3 +140,32 @@ Fixed a critical gap where Project-level analytics was receiving sparse data for
 - Project analytics refresh now fetches template questions via `storage.getQuestionsByTemplate()`
 
 This enables the LLM to produce grounded, verbatim-supported strategic insights at the Project level
+
+### Strategic Context Feature (January 2026)
+Added ability for users to provide business context to receive tailored analytics recommendations:
+
+**Schema Changes** (`shared/schema.ts`):
+- `contextTypeEnum`: pgEnum with values [content, product, marketing, cx, other]
+- `projects.strategicContext`: Text field for business context description
+- `projects.contextType`: References contextTypeEnum for type-safe context categorization
+- `ContextualRecommendations`: New type with actionItems, curatedVerbatims, strategicSummary
+
+**New Routes**:
+- `GET /projects/:id/edit` - Project edit page with tabbed UI
+- `PATCH /api/projects/:id` - Update project endpoint
+
+**Frontend Changes**:
+- `client/src/pages/project-new.tsx`: 3-step project creation with optional strategic context step
+- `client/src/pages/project-edit.tsx`: Tabbed edit page with Details, Settings, and Strategic Context tabs
+- `client/src/components/analytics/ProjectAnalyticsView.tsx`: New "Tailored" tab displaying contextual recommendations
+
+**Backend Changes** (`server/barbara-orchestrator.ts`):
+- `generateProjectAnalytics()` now includes strategic context in LLM prompt when available
+- Returns `contextualRecommendations` with actionItems (high/medium/low priority), curatedVerbatims, and strategicSummary
+
+**Context Types**:
+- `content`: Content Strategy (newsletters, blogs, social media)
+- `product`: Product Development (features, roadmap)
+- `marketing`: Marketing & Positioning (messaging, campaigns)
+- `cx`: Customer Experience (support, satisfaction)
+- `other`: Other use cases
