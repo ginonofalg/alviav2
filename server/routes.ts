@@ -621,6 +621,7 @@ export async function registerRoutes(
 
   const createTemplateWithQuestionsSchema = insertTemplateSchema.omit({ projectId: true }).extend({
     name: z.string().min(1).max(100),
+    defaultRecommendedFollowUps: z.number().min(0).max(10).optional(),
     questions: z.array(z.object({
       questionText: z.string().min(1),
       questionType: z.enum(["open", "yes_no", "scale", "numeric", "multi_select"]),
@@ -629,6 +630,7 @@ export async function registerRoutes(
       scaleMax: z.number().optional(),
       multiSelectOptions: z.array(z.string()).optional(),
       timeHintSeconds: z.number().optional(),
+      recommendedFollowUps: z.number().min(0).max(10).optional(),
       isRequired: z.boolean().default(true),
     })).optional(),
   });
@@ -684,6 +686,7 @@ export async function registerRoutes(
     objective: z.string().max(1000).optional(),
     tone: z.string().optional(),
     constraints: z.string().optional(),
+    defaultRecommendedFollowUps: z.number().min(0).max(10).optional().nullable(),
     questions: z.array(z.object({
       questionText: z.string().min(1),
       questionType: z.enum(["open", "yes_no", "scale", "numeric", "multi_select"]),
@@ -692,6 +695,7 @@ export async function registerRoutes(
       scaleMax: z.number().optional(),
       multiSelectOptions: z.array(z.string()).optional(),
       timeHintSeconds: z.number().optional(),
+      recommendedFollowUps: z.number().min(0).max(10).optional().nullable(),
       isRequired: z.boolean().default(true),
     })).optional(),
   });

@@ -40,7 +40,7 @@ import {
   Save
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import type { Project, InterviewTemplate, Question } from "@shared/schema";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
@@ -67,6 +67,7 @@ const questionSchema = z.object({
   scaleMax: z.number().optional(),
   multiSelectOptions: z.array(z.string()).optional(),
   timeHintSeconds: z.number().optional(),
+  recommendedFollowUps: z.number().min(0).max(10).optional(),
   isRequired: z.boolean().default(true),
 });
 
@@ -75,6 +76,7 @@ const templateFormSchema = z.object({
   objective: z.string().max(1000).optional(),
   tone: z.string().optional(),
   constraints: z.string().optional(),
+  defaultRecommendedFollowUps: z.number().min(0).max(10).optional(),
   questions: z.array(questionSchema).min(1, "At least one question is required"),
 });
 
@@ -260,6 +262,32 @@ function QuestionCard({
 
         <FormField
           control={form.control}
+          name={`questions.${index}.recommendedFollowUps`}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs">Recommended Follow-ups</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={0}
+                  max={10}
+                  placeholder="Use template default"
+                  {...field}
+                  value={field.value ?? ""}
+                  onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="w-40"
+                  data-testid={`input-recommended-followups-${index}`}
+                />
+              </FormControl>
+              <FormDescription className="text-xs">
+                Suggested number of probing questions. Leave blank to use template default.
+              </FormDescription>
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
           name={`questions.${index}.isRequired`}
           render={({ field }) => (
             <FormItem className="flex items-center justify-between">
@@ -336,6 +364,7 @@ export default function TemplateBuilderPage() {
         objective: existingTemplate.objective || "",
         tone: existingTemplate.tone || "professional",
         constraints: existingTemplate.constraints || "",
+        defaultRecommendedFollowUps: existingTemplate.defaultRecommendedFollowUps ?? undefined,
         questions: [],
       });
 
@@ -348,7 +377,8 @@ export default function TemplateBuilderPage() {
             scaleMax: q.scaleMax ?? undefined,
             multiSelectOptions: q.multiSelectOptions || undefined,
             timeHintSeconds: q.timeHintSeconds ?? undefined,
-            isRequired: q.isRequired,
+            recommendedFollowUps: q.recommendedFollowUps ?? undefined,
+            isRequired: q.isRequired ?? true,
           }))
         : [{
             questionText: "",
@@ -363,8 +393,7 @@ export default function TemplateBuilderPage() {
 
   const createTemplate = useMutation({
     mutationFn: async (data: TemplateFormData) => {
-      const response = await apiRequest("POST", `/api/projects/${projectId}/templates`, data);
-      return response;
+      return apiRequestJson<InterviewTemplate>("POST", `/api/projects/${projectId}/templates`, data);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "templates"] });
@@ -385,8 +414,7 @@ export default function TemplateBuilderPage() {
 
   const updateTemplate = useMutation({
     mutationFn: async (data: TemplateFormData) => {
-      const response = await apiRequest("PATCH", `/api/templates/${templateId}`, data);
-      return response;
+      return apiRequestJson<InterviewTemplate>("PATCH", `/api/templates/${templateId}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/templates", templateId] });
@@ -528,6 +556,31 @@ export default function TemplateBuilderPage() {
                           <SelectItem value="empathetic">Empathetic</SelectItem>
                         </SelectContent>
                       </Select>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="defaultRecommendedFollowUps"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default Follow-up Depth</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={10}
+                          placeholder="No limit"
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                          data-testid="input-default-followups"
+                        />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        Suggested probing questions per question unless overridden.
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
