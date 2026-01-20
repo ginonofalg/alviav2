@@ -1881,7 +1881,7 @@ export interface ProjectAnalyticsInput {
   contextType?: string;
 }
 
-const PROJECT_ANALYTICS_TIMEOUT_MS = 120000;
+const PROJECT_ANALYTICS_TIMEOUT_MS = 180000; // 3 minutes for complex AI analysis
 
 export async function generateProjectAnalytics(
   input: ProjectAnalyticsInput,
