@@ -1430,6 +1430,10 @@ import type {
   CollectionPerformanceSummary,
   QuestionConsistency,
   Collection,
+  AggregatedThemeWithDetail,
+  KeyFindingWithSource,
+  ConsensusPointWithSource,
+  DivergencePointWithSource,
 } from "@shared/schema";
 
 export interface TemplateAnalyticsInput {
@@ -1468,9 +1472,11 @@ export async function generateTemplateAnalytics(
     createdAt: c.collection.createdAt?.toISOString() || new Date().toISOString(),
   }));
 
-  // Calculate question consistency across collections
+  // Calculate question consistency across collections (now with verbatims)
   const questionConsistency: QuestionConsistency[] = input.templateQuestions.map((q, idx) => {
     const questionScores: { collectionId: string; avgQuality: number; avgWordCount: number }[] = [];
+    const allVerbatims: ThemeVerbatim[] = [];
+    const allThemes: string[] = [];
 
     for (const c of collectionsWithAnalytics) {
       const qp = c.analytics!.questionPerformance.find(qp => qp.questionIndex === idx);
@@ -1480,6 +1486,14 @@ export async function generateTemplateAnalytics(
           avgQuality: qp.avgQualityScore,
           avgWordCount: qp.avgWordCount,
         });
+        // Collect verbatims (limit 3 per collection to keep manageable)
+        if (qp.verbatims && qp.verbatims.length > 0) {
+          allVerbatims.push(...qp.verbatims.slice(0, 3));
+        }
+        // Collect primary themes
+        if (qp.primaryThemes && qp.primaryThemes.length > 0) {
+          allThemes.push(...qp.primaryThemes);
+        }
       }
     }
 
@@ -1493,6 +1507,8 @@ export async function generateTemplateAnalytics(
         bestPerformingCollectionId: "",
         worstPerformingCollectionId: "",
         consistencyRating: "consistent" as const,
+        verbatims: [],
+        primaryThemes: [],
       };
     }
 
@@ -1512,6 +1528,9 @@ export async function generateTemplateAnalytics(
     const consistencyRating: "consistent" | "variable" | "inconsistent" =
       variance < 100 ? "consistent" : variance < 400 ? "variable" : "inconsistent";
 
+    // Deduplicate themes
+    const uniqueThemes = Array.from(new Set(allThemes)).slice(0, 10);
+
     return {
       questionIndex: idx,
       questionText: q.text,
@@ -1521,43 +1540,135 @@ export async function generateTemplateAnalytics(
       bestPerformingCollectionId: best,
       worstPerformingCollectionId: worst,
       consistencyRating,
+      verbatims: allVerbatims.slice(0, 10), // Limit to 10 total verbatims per question
+      primaryThemes: uniqueThemes,
     };
   });
 
-  // Aggregate themes across collections
-  const themeMap = new Map<string, {
+  // Aggregate themes across collections with full detail preservation
+  interface ThemeAggregation {
     totalMentions: number;
-    collections: Set<string>;
+    collectionSources: { collectionId: string; collectionName: string }[];
     sentiments: ThemeSentiment[];
     prevalences: number[];
-  }>();
+    depths: Array<"mentioned" | "explored" | "deeply_explored">;
+    descriptions: string[];
+    verbatims: ThemeVerbatim[];
+    sentimentBreakdowns: Array<{ positive: number; neutral: number; negative: number }>;
+    isEmergent: boolean;
+  }
+
+  const themeMap = new Map<string, ThemeAggregation>();
 
   for (const c of collectionsWithAnalytics) {
     for (const theme of c.analytics!.themes) {
       const existing = themeMap.get(theme.theme) || {
         totalMentions: 0,
-        collections: new Set<string>(),
+        collectionSources: [],
         sentiments: [],
         prevalences: [],
+        depths: [],
+        descriptions: [],
+        verbatims: [],
+        sentimentBreakdowns: [],
+        isEmergent: false,
       };
+
       existing.totalMentions += theme.count;
-      existing.collections.add(c.collection.id);
+      existing.collectionSources.push({
+        collectionId: c.collection.id,
+        collectionName: c.collection.name,
+      });
       existing.sentiments.push(theme.sentiment);
       existing.prevalences.push(theme.prevalence);
+      existing.depths.push(theme.depth);
+      existing.descriptions.push(theme.description);
+      existing.isEmergent = existing.isEmergent || !!theme.isEmergent;
+
+      // Preserve ALL verbatims from each collection (limit 5 per collection)
+      if (theme.verbatims && theme.verbatims.length > 0) {
+        existing.verbatims.push(...theme.verbatims.slice(0, 5));
+      }
+
+      // Collect sentiment breakdowns
+      if (theme.sentimentBreakdown) {
+        existing.sentimentBreakdowns.push(theme.sentimentBreakdown);
+      }
+
       themeMap.set(theme.theme, existing);
     }
   }
 
-  const aggregatedThemes = Array.from(themeMap.entries())
+  // Helper function to determine the maximum depth
+  function getMaxDepth(depths: Array<"mentioned" | "explored" | "deeply_explored">): "mentioned" | "explored" | "deeply_explored" {
+    if (depths.includes("deeply_explored")) return "deeply_explored";
+    if (depths.includes("explored")) return "explored";
+    return "mentioned";
+  }
+
+  // Helper function to aggregate sentiment breakdowns
+  function aggregateSentimentBreakdowns(breakdowns: Array<{ positive: number; neutral: number; negative: number }>): { positive: number; neutral: number; negative: number } {
+    if (breakdowns.length === 0) return { positive: 0, neutral: 0, negative: 0 };
+    const total = breakdowns.reduce(
+      (acc, b) => ({
+        positive: acc.positive + b.positive,
+        neutral: acc.neutral + b.neutral,
+        negative: acc.negative + b.negative,
+      }),
+      { positive: 0, neutral: 0, negative: 0 }
+    );
+    const sum = total.positive + total.neutral + total.negative;
+    if (sum === 0) return { positive: 0, neutral: 0, negative: 0 };
+    return {
+      positive: Math.round((total.positive / sum) * 100),
+      neutral: Math.round((total.neutral / sum) * 100),
+      negative: Math.round((total.negative / sum) * 100),
+    };
+  }
+
+  const aggregatedThemes: AggregatedThemeWithDetail[] = Array.from(themeMap.entries())
     .map(([theme, data]) => ({
       theme,
+      description: data.descriptions[0] || "", // Use first description or synthesize later
       totalMentions: data.totalMentions,
-      collectionsAppeared: data.collections.size,
+      collectionsAppeared: data.collectionSources.length,
       avgPrevalence: Math.round(data.prevalences.reduce((a, b) => a + b, 0) / data.prevalences.length),
       sentiment: getMajoritySentiment(data.sentiments),
+      sentimentBreakdown: aggregateSentimentBreakdowns(data.sentimentBreakdowns),
+      verbatims: data.verbatims.slice(0, 15), // Limit to 15 verbatims per theme
+      depth: getMaxDepth(data.depths),
+      isEmergent: data.isEmergent,
+      collectionSources: data.collectionSources,
     }))
     .sort((a, b) => b.totalMentions - a.totalMentions)
-    .slice(0, 15);
+    .slice(0, 20); // Allow more themes now that we're preserving detail
+
+  // Aggregate key findings with source collection attribution
+  const keyFindings: KeyFindingWithSource[] = collectionsWithAnalytics.flatMap(c =>
+    (c.analytics!.keyFindings || []).map(f => ({
+      ...f,
+      sourceCollectionId: c.collection.id,
+      sourceCollectionName: c.collection.name,
+    }))
+  ).slice(0, 30); // Limit total key findings
+
+  // Aggregate consensus points with source collection attribution
+  const consensusPoints: ConsensusPointWithSource[] = collectionsWithAnalytics.flatMap(c =>
+    (c.analytics!.consensusPoints || []).map(cp => ({
+      ...cp,
+      sourceCollectionId: c.collection.id,
+      sourceCollectionName: c.collection.name,
+    }))
+  ).slice(0, 20); // Limit total consensus points
+
+  // Aggregate divergence points with source collection attribution
+  const divergencePoints: DivergencePointWithSource[] = collectionsWithAnalytics.flatMap(c =>
+    (c.analytics!.divergencePoints || []).map(dp => ({
+      ...dp,
+      sourceCollectionId: c.collection.id,
+      sourceCollectionName: c.collection.name,
+    }))
+  ).slice(0, 20); // Limit total divergence points
 
   // Calculate template effectiveness metrics
   const totalSessions = collectionsWithAnalytics.reduce((sum, c) => sum + c.sessionCount, 0);
@@ -1614,6 +1725,9 @@ export async function generateTemplateAnalytics(
   console.log("[Barbara] Template analytics complete:", {
     collections: collectionPerformance.length,
     themes: aggregatedThemes.length,
+    keyFindings: keyFindings.length,
+    consensusPoints: consensusPoints.length,
+    divergencePoints: divergencePoints.length,
     recommendations: recommendations.length,
   });
 
@@ -1621,6 +1735,9 @@ export async function generateTemplateAnalytics(
     collectionPerformance,
     questionConsistency,
     aggregatedThemes,
+    keyFindings,
+    consensusPoints,
+    divergencePoints,
     templateEffectiveness: {
       totalSessions,
       totalCollections: collectionsWithAnalytics.length,
@@ -1638,6 +1755,9 @@ function createEmptyTemplateAnalytics(): Omit<TemplateAnalytics, "generatedAt"> 
     collectionPerformance: [],
     questionConsistency: [],
     aggregatedThemes: [],
+    keyFindings: [],
+    consensusPoints: [],
+    divergencePoints: [],
     templateEffectiveness: {
       totalSessions: 0,
       totalCollections: 0,

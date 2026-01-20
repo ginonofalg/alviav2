@@ -521,6 +521,41 @@ export type QuestionConsistency = {
   bestPerformingCollectionId: string;
   worstPerformingCollectionId: string;
   consistencyRating: "consistent" | "variable" | "inconsistent";
+  verbatims: ThemeVerbatim[]; // Representative responses across collections
+  primaryThemes: string[]; // Common themes for this question
+};
+
+// Aggregated theme with full collection-level detail preserved
+export type AggregatedThemeWithDetail = {
+  theme: string;
+  description: string; // Synthesized from collection descriptions
+  totalMentions: number;
+  collectionsAppeared: number;
+  avgPrevalence: number;
+  sentiment: ThemeSentiment;
+  sentimentBreakdown: { positive: number; neutral: number; negative: number };
+  verbatims: ThemeVerbatim[]; // All verbatims from collections
+  depth: "mentioned" | "explored" | "deeply_explored";
+  isEmergent: boolean;
+  collectionSources: { collectionId: string; collectionName: string }[];
+};
+
+// Key finding with source collection attribution
+export type KeyFindingWithSource = KeyFinding & {
+  sourceCollectionId: string;
+  sourceCollectionName: string;
+};
+
+// Consensus point with source collection attribution
+export type ConsensusPointWithSource = ConsensusPoint & {
+  sourceCollectionId: string;
+  sourceCollectionName: string;
+};
+
+// Divergence point with source collection attribution
+export type DivergencePointWithSource = DivergencePoint & {
+  sourceCollectionId: string;
+  sourceCollectionName: string;
 };
 
 // Template-level analytics data (stored in interviewTemplates.analyticsData)
@@ -528,17 +563,16 @@ export type TemplateAnalytics = {
   // Collection comparison
   collectionPerformance: CollectionPerformanceSummary[];
   
-  // Question consistency across collections
+  // Question consistency across collections (now with verbatims)
   questionConsistency: QuestionConsistency[];
   
-  // Aggregated themes across all collections
-  aggregatedThemes: {
-    theme: string;
-    totalMentions: number;
-    collectionsAppeared: number;
-    avgPrevalence: number;
-    sentiment: ThemeSentiment;
-  }[];
+  // Aggregated themes with full collection-level detail preserved
+  aggregatedThemes: AggregatedThemeWithDetail[];
+  
+  // Preserved collection-level insights with source attribution
+  keyFindings: KeyFindingWithSource[];
+  consensusPoints: ConsensusPointWithSource[];
+  divergencePoints: DivergencePointWithSource[];
   
   // Template effectiveness metrics
   templateEffectiveness: {

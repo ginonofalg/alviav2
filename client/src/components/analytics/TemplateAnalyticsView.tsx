@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   RefreshCw,
   AlertTriangle,
@@ -19,12 +20,28 @@ import {
   CheckCircle2,
   XCircle,
   Lightbulb,
+  ChevronDown,
+  ChevronRight,
+  Quote,
+  Sparkles,
+  MessageSquare,
+  Target,
+  Split,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { RecommendationsPanel } from "./RecommendationsPanel";
-import { SentimentIndicator } from "./ThemeCard";
-import type { TemplateAnalytics, CollectionPerformanceSummary, QuestionConsistency, ThemeSentiment } from "@shared/schema";
+import { SentimentIndicator, VerbatimQuote } from "./ThemeCard";
+import type { 
+  TemplateAnalytics, 
+  CollectionPerformanceSummary, 
+  QuestionConsistency, 
+  ThemeSentiment,
+  AggregatedThemeWithDetail,
+  KeyFindingWithSource,
+  ConsensusPointWithSource,
+  DivergencePointWithSource,
+} from "@shared/schema";
 
 interface TemplateAnalyticsResponse {
   analytics: TemplateAnalytics | null;
@@ -110,66 +127,320 @@ function SentimentBreakdown({ sentiment }: { sentiment: { positive: number; neut
 
 function QuestionConsistencyCard({ question, index }: { question: QuestionConsistency; index: number }) {
   const consistencyStyle = CONSISTENCY_COLORS[question.consistencyRating];
+  const [isOpen, setIsOpen] = useState(false);
+  const hasVerbatims = question.verbatims && question.verbatims.length > 0;
+  const hasThemes = question.primaryThemes && question.primaryThemes.length > 0;
   
   return (
     <Card data-testid={`card-question-${index}`}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-medium text-muted-foreground" data-testid={`text-question-number-${index}`}>Q{question.questionIndex + 1}</span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${consistencyStyle.bg} ${consistencyStyle.text}`} data-testid={`badge-consistency-${index}`}>
-                {consistencyStyle.label}
-              </span>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-muted-foreground" data-testid={`text-question-number-${index}`}>Q{question.questionIndex + 1}</span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${consistencyStyle.bg} ${consistencyStyle.text}`} data-testid={`badge-consistency-${index}`}>
+                  {consistencyStyle.label}
+                </span>
+              </div>
+              <p className="text-sm mt-1 line-clamp-2" data-testid={`text-question-text-${index}`}>{question.questionText}</p>
+              <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-muted-foreground">
+                <span data-testid={`text-quality-avg-${index}`}>Avg Quality: {question.avgQualityAcrossCollections}%</span>
+                <span data-testid={`text-words-avg-${index}`}>Avg Words: {question.avgWordCountAcrossCollections}</span>
+                {question.qualityVariance > 0 && (
+                  <span data-testid={`text-variance-${index}`}>Variance: {Math.round(Math.sqrt(question.qualityVariance))}</span>
+                )}
+              </div>
+              {hasThemes && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {question.primaryThemes.slice(0, 5).map((theme, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">
+                      {theme}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-sm mt-1 line-clamp-2" data-testid={`text-question-text-${index}`}>{question.questionText}</p>
-            <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-muted-foreground">
-              <span data-testid={`text-quality-avg-${index}`}>Avg Quality: {question.avgQualityAcrossCollections}%</span>
-              <span data-testid={`text-words-avg-${index}`}>Avg Words: {question.avgWordCountAcrossCollections}</span>
-              {question.qualityVariance > 0 && (
-                <span data-testid={`text-variance-${index}`}>Variance: {Math.round(Math.sqrt(question.qualityVariance))}</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {hasVerbatims && (
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" data-testid={`button-expand-question-${index}`}>
+                    {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <Quote className="w-4 h-4 ml-1" />
+                    <span className="ml-1 text-xs">{question.verbatims.length}</span>
+                  </Button>
+                </CollapsibleTrigger>
+              )}
+              {question.consistencyRating === "consistent" ? (
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+              ) : question.consistencyRating === "inconsistent" ? (
+                <XCircle className="w-5 h-5 text-red-500" />
+              ) : (
+                <Minus className="w-5 h-5 text-yellow-500" />
               )}
             </div>
           </div>
-          <div className="flex-shrink-0">
-            {question.consistencyRating === "consistent" ? (
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
-            ) : question.consistencyRating === "inconsistent" ? (
-              <XCircle className="w-5 h-5 text-red-500" />
-            ) : (
-              <Minus className="w-5 h-5 text-yellow-500" />
+          
+          <CollapsibleContent>
+            {hasVerbatims && (
+              <div className="mt-4 pt-4 border-t space-y-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Quote className="w-4 h-4" />
+                  Representative Responses ({question.verbatims.length})
+                </h4>
+                <div className="space-y-2">
+                  {question.verbatims.slice(0, 5).map((v, i) => (
+                    <VerbatimQuote key={i} verbatim={v} index={i} />
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
-        </div>
-      </CardContent>
+          </CollapsibleContent>
+        </CardContent>
+      </Collapsible>
     </Card>
   );
 }
 
+const DEPTH_LABELS = {
+  mentioned: { label: "Mentioned", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  explored: { label: "Explored", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" },
+  deeply_explored: { label: "Deep", color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" },
+};
+
 function AggregatedThemeCard({ theme, index }: { 
-  theme: { theme: string; totalMentions: number; collectionsAppeared: number; avgPrevalence: number; sentiment: ThemeSentiment };
+  theme: AggregatedThemeWithDetail;
   index: number;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const hasVerbatims = theme.verbatims && theme.verbatims.length > 0;
+  const depthStyle = DEPTH_LABELS[theme.depth] || DEPTH_LABELS.mentioned;
+  
   return (
     <Card data-testid={`card-agg-theme-${index}`}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-medium" data-testid={`text-agg-theme-name-${index}`}>{theme.theme}</h4>
-              <SentimentIndicator sentiment={theme.sentiment} />
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-medium" data-testid={`text-agg-theme-name-${index}`}>{theme.theme}</h4>
+                <SentimentIndicator sentiment={theme.sentiment} />
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${depthStyle.color}`}>
+                  {depthStyle.label}
+                </span>
+                {theme.isEmergent && (
+                  <Badge variant="outline" className="text-xs gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    Emergent
+                  </Badge>
+                )}
+              </div>
+              {theme.description && (
+                <p className="text-sm text-muted-foreground mt-1">{theme.description}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
+                <span data-testid={`text-mentions-${index}`}>{theme.totalMentions} mentions</span>
+                <span data-testid={`text-collections-appeared-${index}`}>{theme.collectionsAppeared} collections</span>
+              </div>
+              {theme.collectionSources && theme.collectionSources.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {theme.collectionSources.slice(0, 4).map((src, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">
+                      {src.collectionName}
+                    </Badge>
+                  ))}
+                  {theme.collectionSources.length > 4 && (
+                    <Badge variant="secondary" className="text-xs">
+                      +{theme.collectionSources.length - 4} more
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-              <span data-testid={`text-mentions-${index}`}>{theme.totalMentions} total mentions</span>
-              <span data-testid={`text-collections-appeared-${index}`}>{theme.collectionsAppeared} collections</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {hasVerbatims && (
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" data-testid={`button-expand-theme-${index}`}>
+                    {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <Quote className="w-4 h-4 ml-1" />
+                    <span className="ml-1 text-xs">{theme.verbatims.length}</span>
+                  </Button>
+                </CollapsibleTrigger>
+              )}
+              <div className="flex items-center gap-2" data-testid={`bar-prevalence-${index}`}>
+                <Progress value={theme.avgPrevalence} className="w-16" />
+                <span className="text-xs text-muted-foreground">{theme.avgPrevalence}%</span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2" data-testid={`bar-prevalence-${index}`}>
-            <Progress value={theme.avgPrevalence} className="w-20" />
-            <span className="text-xs text-muted-foreground">{theme.avgPrevalence}%</span>
+          
+          <CollapsibleContent>
+            {hasVerbatims && (
+              <div className="mt-4 pt-4 border-t space-y-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Quote className="w-4 h-4" />
+                  Supporting Quotes ({theme.verbatims.length})
+                </h4>
+                <div className="space-y-2">
+                  {theme.verbatims.slice(0, 7).map((v, i) => (
+                    <VerbatimQuote key={i} verbatim={v} index={i} />
+                  ))}
+                  {theme.verbatims.length > 7 && (
+                    <p className="text-xs text-muted-foreground">
+                      +{theme.verbatims.length - 7} more quotes
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </CollapsibleContent>
+        </CardContent>
+      </Collapsible>
+    </Card>
+  );
+}
+
+function KeyFindingCard({ finding, index }: { finding: KeyFindingWithSource; index: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const hasVerbatims = finding.supportingVerbatims && finding.supportingVerbatims.length > 0;
+  
+  return (
+    <Card data-testid={`card-finding-${index}`}>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Lightbulb className="w-4 h-4 text-yellow-500" />
+                <Badge variant="outline" className="text-xs">{finding.sourceCollectionName}</Badge>
+              </div>
+              <p className="font-medium">{finding.finding}</p>
+              <p className="text-sm text-muted-foreground mt-1">{finding.significance}</p>
+              {finding.relatedThemes && finding.relatedThemes.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {finding.relatedThemes.map((theme, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{theme}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+            {hasVerbatims && (
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <Quote className="w-4 h-4 ml-1" />
+                </Button>
+              </CollapsibleTrigger>
+            )}
           </div>
-        </div>
-      </CardContent>
+          
+          <CollapsibleContent>
+            {hasVerbatims && (
+              <div className="mt-4 pt-4 border-t space-y-2">
+                {finding.supportingVerbatims.slice(0, 3).map((v, i) => (
+                  <VerbatimQuote key={i} verbatim={v} index={i} />
+                ))}
+              </div>
+            )}
+          </CollapsibleContent>
+        </CardContent>
+      </Collapsible>
+    </Card>
+  );
+}
+
+function ConsensusCard({ consensus, index }: { consensus: ConsensusPointWithSource; index: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const hasVerbatims = consensus.verbatims && consensus.verbatims.length > 0;
+  
+  return (
+    <Card data-testid={`card-consensus-${index}`}>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className="w-4 h-4 text-green-500" />
+                <Badge variant="outline" className="text-xs">{consensus.sourceCollectionName}</Badge>
+                <Badge variant="secondary" className="text-xs">{consensus.agreementLevel}% agreement</Badge>
+              </div>
+              <p className="font-medium">{consensus.topic}</p>
+              <p className="text-sm text-muted-foreground mt-1">{consensus.position}</p>
+            </div>
+            {hasVerbatims && (
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <Quote className="w-4 h-4 ml-1" />
+                </Button>
+              </CollapsibleTrigger>
+            )}
+          </div>
+          
+          <CollapsibleContent>
+            {hasVerbatims && (
+              <div className="mt-4 pt-4 border-t space-y-2">
+                {consensus.verbatims.slice(0, 3).map((v, i) => (
+                  <VerbatimQuote key={i} verbatim={v} index={i} />
+                ))}
+              </div>
+            )}
+          </CollapsibleContent>
+        </CardContent>
+      </Collapsible>
+    </Card>
+  );
+}
+
+function DivergenceCard({ divergence, index }: { divergence: DivergencePointWithSource; index: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  return (
+    <Card data-testid={`card-divergence-${index}`}>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Split className="w-4 h-4 text-orange-500" />
+                <Badge variant="outline" className="text-xs">{divergence.sourceCollectionName}</Badge>
+              </div>
+              <p className="font-medium">{divergence.topic}</p>
+              <div className="mt-2 space-y-1">
+                {divergence.perspectives.slice(0, 3).map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">{p.count}x:</span>
+                    <span>{p.position}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {divergence.perspectives.some(p => p.verbatims && p.verbatims.length > 0) && (
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <Quote className="w-4 h-4 ml-1" />
+                </Button>
+              </CollapsibleTrigger>
+            )}
+          </div>
+          
+          <CollapsibleContent>
+            <div className="mt-4 pt-4 border-t space-y-3">
+              {divergence.perspectives.map((p, pIdx) => (
+                p.verbatims && p.verbatims.length > 0 && (
+                  <div key={pIdx}>
+                    <p className="text-sm font-medium mb-2">{p.position}:</p>
+                    {p.verbatims.slice(0, 2).map((v, i) => (
+                      <VerbatimQuote key={i} verbatim={v} index={i} />
+                    ))}
+                  </div>
+                )
+              ))}
+            </div>
+          </CollapsibleContent>
+        </CardContent>
+      </Collapsible>
     </Card>
   );
 }
@@ -254,7 +525,7 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
         </div>
       </div>
 
-      {!hasData ? (
+      {!hasData || !analytics ? (
         <Card data-testid="card-no-analytics">
           <CardContent className="py-12 text-center">
             <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -268,11 +539,14 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
         </Card>
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList data-testid="tabs-list">
+          <TabsList data-testid="tabs-list" className="flex-wrap">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="collections" data-testid="tab-collections">Collections ({analytics.collectionPerformance.length})</TabsTrigger>
-            <TabsTrigger value="questions" data-testid="tab-questions">Question Consistency</TabsTrigger>
+            <TabsTrigger value="questions" data-testid="tab-questions">Questions</TabsTrigger>
             <TabsTrigger value="themes" data-testid="tab-themes">Themes ({analytics.aggregatedThemes.length})</TabsTrigger>
+            <TabsTrigger value="insights" data-testid="tab-insights">
+              Insights ({(analytics.keyFindings?.length || 0) + (analytics.consensusPoints?.length || 0) + (analytics.divergencePoints?.length || 0)})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 mt-6" data-testid="content-overview">
@@ -365,6 +639,56 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
               <Card>
                 <CardContent className="py-8 text-center text-muted-foreground">
                   No aggregated theme data available.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="insights" className="space-y-6 mt-6" data-testid="content-insights">
+            <CardDescription>Key findings, consensus points, and divergence points from all collections.</CardDescription>
+            
+            {analytics.keyFindings && analytics.keyFindings.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium flex items-center gap-2">
+                  <Lightbulb className="w-5 h-5 text-yellow-500" />
+                  Key Findings ({analytics.keyFindings.length})
+                </h3>
+                {analytics.keyFindings.map((finding, idx) => (
+                  <KeyFindingCard key={idx} finding={finding} index={idx} />
+                ))}
+              </div>
+            )}
+
+            {analytics.consensusPoints && analytics.consensusPoints.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium flex items-center gap-2">
+                  <Target className="w-5 h-5 text-green-500" />
+                  Consensus Points ({analytics.consensusPoints.length})
+                </h3>
+                {analytics.consensusPoints.map((consensus, idx) => (
+                  <ConsensusCard key={idx} consensus={consensus} index={idx} />
+                ))}
+              </div>
+            )}
+
+            {analytics.divergencePoints && analytics.divergencePoints.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium flex items-center gap-2">
+                  <Split className="w-5 h-5 text-orange-500" />
+                  Divergence Points ({analytics.divergencePoints.length})
+                </h3>
+                {analytics.divergencePoints.map((divergence, idx) => (
+                  <DivergenceCard key={idx} divergence={divergence} index={idx} />
+                ))}
+              </div>
+            )}
+
+            {(!analytics.keyFindings || analytics.keyFindings.length === 0) &&
+             (!analytics.consensusPoints || analytics.consensusPoints.length === 0) &&
+             (!analytics.divergencePoints || analytics.divergencePoints.length === 0) && (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No insights data available. Refresh template analytics to populate from collections.
                 </CardContent>
               </Card>
             )}
