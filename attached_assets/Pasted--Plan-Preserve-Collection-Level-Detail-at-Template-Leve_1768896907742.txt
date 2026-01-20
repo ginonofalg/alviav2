@@ -1,0 +1,319 @@
+ Plan: Preserve Collection-Level Detail at Template Level                                                                                                   
+                                                                                                                                                            
+ Problem Summary                                                                                                                                            
+                                                                                                                                                            
+ When analytics aggregate from Collection → Template level, significant detail is lost:                                                                     
+ - Theme verbatims: 7 per theme at Collection → 0 at Template                                                                                               
+ - Key findings: Complete with supporting verbatims → Not preserved                                                                                         
+ - Consensus points: With verbatims → Not preserved                                                                                                         
+ - Divergence points: With perspective verbatims → Not preserved                                                                                            
+ - Question verbatims: 4 per question → Not preserved                                                                                                       
+ - Theme metadata: depth, subThemes, isEmergent → Not preserved                                                                                             
+                                                                                                                                                            
+ The generateTemplateAnalytics() function (lines 1447-1634) only aggregates numeric metrics and theme names, discarding all verbatim evidence.              
+                                                                                                                                                            
+ Solution Approach                                                                                                                                          
+                                                                                                                                                            
+ Follow the pattern established by generateCrossInterviewAnalysis() which successfully preserves verbatims:                                                 
+ 1. Collect verbatims during aggregation                                                                                                                    
+ 2. Pass them to AI for cross-collection selection                                                                                                          
+ 3. Store in enriched output types                                                                                                                          
+                                                                                                                                                            
+ ---                                                                                                                                                        
+ Implementation Steps                                                                                                                                       
+                                                                                                                                                            
+ Step 1: Update Schema Types                                                                                                                                
+                                                                                                                                                            
+ File: shared/schema.ts                                                                                                                                     
+                                                                                                                                                            
+ Add new type for aggregated themes with verbatims:                                                                                                         
+                                                                                                                                                            
+ export type AggregatedThemeWithVerbatims = {                                                                                                               
+   theme: string;                                                                                                                                           
+   description: string;                    // NEW: AI-synthesized description                                                                               
+   totalMentions: number;                                                                                                                                   
+   collectionsAppeared: number;                                                                                                                             
+   avgPrevalence: number;                                                                                                                                   
+   sentiment: ThemeSentiment;                                                                                                                               
+   sentimentBreakdown: { positive: number; neutral: number; negative: number }; // NEW                                                                      
+   verbatims: ThemeVerbatim[];            // NEW: 3-5 best cross-collection verbatims                                                                       
+   depth: "mentioned" | "explored" | "deeply_explored";  // NEW: aggregated depth                                                                           
+   isEmergent?: boolean;                  // NEW: true if emergent in any collection                                                                        
+   collectionSources: string[];           // NEW: collection IDs where appeared                                                                             
+ };                                                                                                                                                         
+                                                                                                                                                            
+ Update TemplateAnalytics type to include new fields:                                                                                                       
+                                                                                                                                                            
+ export type TemplateAnalytics = {                                                                                                                          
+   collectionPerformance: CollectionPerformanceSummary[];                                                                                                   
+   questionConsistency: QuestionConsistencyWithVerbatims[];  // UPDATED                                                                                     
+   aggregatedThemes: AggregatedThemeWithVerbatims[];         // UPDATED                                                                                     
+   templateEffectiveness: { ... };                                                                                                                          
+                                                                                                                                                            
+   // NEW FIELDS - mirroring Collection level:                                                                                                              
+   keyFindings: KeyFinding[];              // AI-aggregated from collections                                                                                
+   consensusPoints: ConsensusPoint[];      // Topics consistent across collections                                                                          
+   divergencePoints: DivergencePoint[];    // Topics varying across collections                                                                             
+                                                                                                                                                            
+   recommendations: Recommendation[];                                                                                                                       
+   generatedAt: number;                                                                                                                                     
+ };                                                                                                                                                         
+                                                                                                                                                            
+ Add verbatims to question consistency:                                                                                                                     
+                                                                                                                                                            
+ export type QuestionConsistencyWithVerbatims = QuestionConsistency & {                                                                                     
+   verbatims: ThemeVerbatim[];             // 2-4 representative responses                                                                                  
+   primaryThemes: string[];                // Common themes for this question                                                                               
+ };                                                                                                                                                         
+                                                                                                                                                            
+ Step 2: Update Aggregation Logic                                                                                                                           
+                                                                                                                                                            
+ File: server/barbara-orchestrator.ts - generateTemplateAnalytics() (lines 1447-1634)                                                                       
+                                                                                                                                                            
+ 2a. Modify theme aggregation to collect verbatims (around line 1527)                                                                                       
+                                                                                                                                                            
+ Replace current themeMap structure:                                                                                                                        
+                                                                                                                                                            
+ // BEFORE: Only tracks metrics                                                                                                                             
+ const themeMap = new Map<string, {                                                                                                                         
+   totalMentions: number;                                                                                                                                   
+   collections: Set<string>;                                                                                                                                
+   sentiments: ThemeSentiment[];                                                                                                                            
+   prevalences: number[];                                                                                                                                   
+ }>();                                                                                                                                                      
+                                                                                                                                                            
+ // AFTER: Include verbatims and metadata                                                                                                                   
+ interface ThemeAggregation {                                                                                                                               
+   totalMentions: number;                                                                                                                                   
+   collections: Set<string>;                                                                                                                                
+   sentiments: ThemeSentiment[];                                                                                                                            
+   prevalences: number[];                                                                                                                                   
+   depths: Array<"mentioned" | "explored" | "deeply_explored">;                                                                                             
+   descriptions: string[];                                                                                                                                  
+   verbatimsByCollection: Array<{                                                                                                                           
+     collectionId: string;                                                                                                                                  
+     collectionName: string;                                                                                                                                
+     verbatims: ThemeVerbatim[];                                                                                                                            
+   }>;                                                                                                                                                      
+   isEmergent: boolean;                                                                                                                                     
+   sentimentBreakdowns: Array<{ positive: number; neutral: number; negative: number }>;                                                                     
+ }                                                                                                                                                          
+                                                                                                                                                            
+ const themeMap = new Map<string, ThemeAggregation>();                                                                                                      
+                                                                                                                                                            
+ Update the aggregation loop to capture all metadata:                                                                                                       
+                                                                                                                                                            
+ for (const c of collectionsWithAnalytics) {                                                                                                                
+   for (const theme of c.analytics!.themes) {                                                                                                               
+     const existing = themeMap.get(theme.theme) || {                                                                                                        
+       totalMentions: 0,                                                                                                                                    
+       collections: new Set<string>(),                                                                                                                      
+       sentiments: [],                                                                                                                                      
+       prevalences: [],                                                                                                                                     
+       depths: [],                                                                                                                                          
+       descriptions: [],                                                                                                                                    
+       verbatimsByCollection: [],                                                                                                                           
+       isEmergent: false,                                                                                                                                   
+       sentimentBreakdowns: [],                                                                                                                             
+     };                                                                                                                                                     
+                                                                                                                                                            
+     existing.totalMentions += theme.count;                                                                                                                 
+     existing.collections.add(c.collection.id);                                                                                                             
+     existing.sentiments.push(theme.sentiment);                                                                                                             
+     existing.prevalences.push(theme.prevalence);                                                                                                           
+     existing.depths.push(theme.depth);                                                                                                                     
+     existing.descriptions.push(theme.description);                                                                                                         
+     existing.isEmergent = existing.isEmergent || !!theme.isEmergent;                                                                                       
+     existing.sentimentBreakdowns.push(theme.sentimentBreakdown);                                                                                           
+                                                                                                                                                            
+     // Preserve verbatims with collection context                                                                                                          
+     if (theme.verbatims?.length > 0) {                                                                                                                     
+       existing.verbatimsByCollection.push({                                                                                                                
+         collectionId: c.collection.id,                                                                                                                     
+         collectionName: c.collection.name,                                                                                                                 
+         verbatims: theme.verbatims.slice(0, 3), // Top 3 from each collection                                                                              
+       });                                                                                                                                                  
+     }                                                                                                                                                      
+                                                                                                                                                            
+     themeMap.set(theme.theme, existing);                                                                                                                   
+   }                                                                                                                                                        
+ }                                                                                                                                                          
+                                                                                                                                                            
+ 2b. Aggregate key findings, consensus, divergence (new code after theme loop)                                                                              
+                                                                                                                                                            
+ // Aggregate key findings from all collections                                                                                                             
+ const allKeyFindings = collectionsWithAnalytics.flatMap(c =>                                                                                               
+   (c.analytics!.keyFindings || []).map(f => ({                                                                                                             
+     ...f,                                                                                                                                                  
+     sourceCollection: c.collection.name,                                                                                                                   
+   }))                                                                                                                                                      
+ );                                                                                                                                                         
+                                                                                                                                                            
+ // Aggregate consensus points                                                                                                                              
+ const allConsensusPoints = collectionsWithAnalytics.flatMap(c =>                                                                                           
+   (c.analytics!.consensusPoints || []).map(cp => ({                                                                                                        
+     ...cp,                                                                                                                                                 
+     sourceCollection: c.collection.name,                                                                                                                   
+   }))                                                                                                                                                      
+ );                                                                                                                                                         
+                                                                                                                                                            
+ // Aggregate divergence points                                                                                                                             
+ const allDivergencePoints = collectionsWithAnalytics.flatMap(c =>                                                                                          
+   (c.analytics!.divergencePoints || []).map(dp => ({                                                                                                       
+     ...dp,                                                                                                                                                 
+     sourceCollection: c.collection.name,                                                                                                                   
+   }))                                                                                                                                                      
+ );                                                                                                                                                         
+                                                                                                                                                            
+ 2c. Add AI analysis step to select best cross-collection verbatims                                                                                         
+                                                                                                                                                            
+ Create new function extractTemplateEnhancedAnalysis() following the pattern of extractEnhancedAnalysis():                                                  
+                                                                                                                                                            
+ async function extractTemplateEnhancedAnalysis(                                                                                                            
+   themeData: Array<{                                                                                                                                       
+     theme: string;                                                                                                                                         
+     totalMentions: number;                                                                                                                                 
+     descriptions: string[];                                                                                                                                
+     verbatimsByCollection: Array<{collectionId: string; collectionName: string; verbatims: ThemeVerbatim[]}>;                                              
+     sentiments: ThemeSentiment[];                                                                                                                          
+     depths: Array<"mentioned" | "explored" | "deeply_explored">;                                                                                           
+     isEmergent: boolean;                                                                                                                                   
+   }>,                                                                                                                                                      
+   keyFindings: Array<KeyFinding & { sourceCollection: string }>,                                                                                           
+   consensusPoints: Array<ConsensusPoint & { sourceCollection: string }>,                                                                                   
+   divergencePoints: Array<DivergencePoint & { sourceCollection: string }>,                                                                                 
+   templateName: string,                                                                                                                                    
+   templateObjective: string                                                                                                                                
+ ): Promise<{                                                                                                                                               
+   themes: AggregatedThemeWithVerbatims[];                                                                                                                  
+   keyFindings: KeyFinding[];                                                                                                                               
+   consensusPoints: ConsensusPoint[];                                                                                                                       
+   divergencePoints: DivergencePoint[];                                                                                                                     
+ }>                                                                                                                                                         
+                                                                                                                                                            
+ AI prompt should:                                                                                                                                          
+ - Select 3-5 most representative verbatims per theme from across collections                                                                               
+ - Synthesize a unified description for each theme                                                                                                          
+ - Determine aggregate depth                                                                                                                                
+ - Consolidate key findings (merge similar, keep unique)                                                                                                    
+ - Identify cross-collection consensus/divergence patterns                                                                                                  
+                                                                                                                                                            
+ 2d. Update question consistency to include verbatims                                                                                                       
+                                                                                                                                                            
+ In the question consistency loop (lines 1472-1525):                                                                                                        
+                                                                                                                                                            
+ // Collect verbatims for each question across collections                                                                                                  
+ const questionVerbatims: ThemeVerbatim[] = [];                                                                                                             
+ const questionThemes: string[] = [];                                                                                                                       
+                                                                                                                                                            
+ for (const c of collectionsWithAnalytics) {                                                                                                                
+   const qp = c.analytics!.questionPerformance.find(qp => qp.questionIndex === idx);                                                                        
+   if (qp) {                                                                                                                                                
+     // Existing score collection...                                                                                                                        
+                                                                                                                                                            
+     // NEW: Collect verbatims (limit to 2 per collection)                                                                                                  
+     if (qp.verbatims?.length > 0) {                                                                                                                        
+       questionVerbatims.push(...qp.verbatims.slice(0, 2));                                                                                                 
+     }                                                                                                                                                      
+     if (qp.primaryThemes?.length > 0) {                                                                                                                    
+       questionThemes.push(...qp.primaryThemes);                                                                                                            
+     }                                                                                                                                                      
+   }                                                                                                                                                        
+ }                                                                                                                                                          
+                                                                                                                                                            
+ // In return object:                                                                                                                                       
+ return {                                                                                                                                                   
+   ...existingFields,                                                                                                                                       
+   verbatims: questionVerbatims.slice(0, 4),  // Best 4 across collections                                                                                  
+   primaryThemes: [...new Set(questionThemes)].slice(0, 5),                                                                                                 
+ };                                                                                                                                                         
+                                                                                                                                                            
+ Step 3: Update API Route                                                                                                                                   
+                                                                                                                                                            
+ File: server/routes.ts - template analytics endpoint                                                                                                       
+                                                                                                                                                            
+ No structural changes needed - the route already returns TemplateAnalytics. The enriched type will flow through automatically.                             
+                                                                                                                                                            
+ Step 4: Update Frontend Components                                                                                                                         
+                                                                                                                                                            
+ File: client/src/components/analytics/TemplateAnalyticsView.tsx                                                                                            
+                                                                                                                                                            
+ 4a. Update Themes tab to use ThemeCard pattern                                                                                                             
+                                                                                                                                                            
+ Replace AggregatedThemeCard with the richer ThemeCard component (or create AggregatedThemeCard with expandable verbatims):                                 
+                                                                                                                                                            
+ // In Themes tab content:                                                                                                                                  
+ {analytics.aggregatedThemes.map((theme, idx) => (                                                                                                          
+   <ThemeCard                                                                                                                                               
+     key={idx}                                                                                                                                              
+     theme={{                                                                                                                                               
+       ...theme,                                                                                                                                            
+       id: `template-theme-${idx}`,                                                                                                                         
+       count: theme.totalMentions,                                                                                                                          
+       sessions: theme.collectionSources,                                                                                                                   
+       relatedQuestions: [],                                                                                                                                
+     }}                                                                                                                                                     
+     participantLabel={(sessionId) => {                                                                                                                     
+       // Map to collection name if possible                                                                                                                
+       return `Collection`;                                                                                                                                 
+     }}                                                                                                                                                     
+   />                                                                                                                                                       
+ ))}                                                                                                                                                        
+                                                                                                                                                            
+ 4b. Add Insights tab (new)                                                                                                                                 
+                                                                                                                                                            
+ Add new tab for key findings, consensus, divergence using InsightPanel:                                                                                    
+                                                                                                                                                            
+ <TabsContent value="insights">                                                                                                                             
+   <InsightPanel                                                                                                                                            
+     keyFindings={analytics.keyFindings}                                                                                                                    
+     consensusPoints={analytics.consensusPoints}                                                                                                            
+     divergencePoints={analytics.divergencePoints}                                                                                                          
+     participantLabel={() => "Collection"}                                                                                                                  
+   />                                                                                                                                                       
+ </TabsContent>                                                                                                                                             
+                                                                                                                                                            
+ 4c. Update Question Consistency cards                                                                                                                      
+                                                                                                                                                            
+ Extend QuestionConsistencyCard to show verbatims in an expandable section:                                                                                 
+                                                                                                                                                            
+ // Add collapsible section with verbatims                                                                                                                  
+ {expanded && consistency.verbatims?.length > 0 && (                                                                                                        
+   <div className="mt-4 space-y-2">                                                                                                                         
+     <h4 className="text-sm font-medium">Representative Responses</h4>                                                                                      
+     {consistency.verbatims.map((v, i) => (                                                                                                                 
+       <VerbatimQuote key={i} verbatim={v} />                                                                                                               
+     ))}                                                                                                                                                    
+   </div>                                                                                                                                                   
+ )}                                                                                                                                                         
+                                                                                                                                                            
+ ---                                                                                                                                                        
+ Files to Modify                                                                                                                                            
+ File: shared/schema.ts                                                                                                                                     
+ Changes: Add AggregatedThemeWithVerbatims, QuestionConsistencyWithVerbatims; update TemplateAnalytics                                                      
+ ────────────────────────────────────────                                                                                                                   
+ File: server/barbara-orchestrator.ts                                                                                                                       
+ Changes: Update generateTemplateAnalytics(), add extractTemplateEnhancedAnalysis()                                                                         
+ ────────────────────────────────────────                                                                                                                   
+ File: client/src/components/analytics/TemplateAnalyticsView.tsx                                                                                            
+ Changes: Add Insights tab, update Themes tab, extend Question cards                                                                                        
+ ---                                                                                                                                                        
+ Verification                                                                                                                                               
+                                                                                                                                                            
+ 1. Type checking: Run npm run check to verify schema changes compile                                                                                       
+ 2. Manual testing:                                                                                                                                         
+   - Navigate to a template with multiple collections that have analytics                                                                                   
+   - Trigger template analytics refresh                                                                                                                     
+   - Verify Themes tab shows verbatims (expandable)                                                                                                         
+   - Verify new Insights tab shows key findings, consensus, divergence                                                                                      
+   - Verify Question Consistency cards can expand to show verbatims                                                                                         
+ 3. Data verification:                                                                                                                                      
+   - Check analyticsData JSONB in database contains enriched structure                                                                                      
+   - Verify verbatims are present and correctly attributed to collections                                                                                   
+                                                                                                                                                            
+ ---                                                                                                                                                        
+ Estimated Scope                                                                                                                                            
+                                                                                                                                                            
+ - Schema: ~50 lines added/modified                                                                                                                         
+ - Barbara orchestrator: ~200-250 lines added/modified (aggregation + AI function)                                                                          
+ - Frontend: ~100-150 lines added/modified across components    
