@@ -1,0 +1,79 @@
+Now that we have a good quality Project level analytics, I want to plan an additional feature that takes some user input about the strategic context      
+  or proprietary data setting into which the interviews are being introduced, and analyses the results and makes recommendations in view of that            
+  context e.g. I want to find out about what people love about photography because I'm planning a monthly newsletter for my specialist online               
+  photography store. What additional functionality should we add or data should we capture as part of the Project setup to achieve this goal?               
+                                                                                                                                                            
+● This is a great feature idea - contextualizing analytics based on strategic business goals. Let me explore the current Project setup and analytics flow to
+   understand what we have and what we'd need to add.                                                                                                       
+                                                                                                                                                            
+● Explore(Explore project and analytics)                                                                                                                    
+  ⎿  Done (20 tool uses · 64.2k tokens · 1m 2s)                                                                                                             
+                                                                                                                                                            
+● This exploration reveals a clear opportunity. Currently, the Project only captures research context (objective, audience), but not strategic business     
+  context - the "why" behind the research that would shape actionable recommendations.                                                                      
+                                                                                                                                                            
+  Recommended Feature: Strategic Context                                                                                                                    
+                                                                                                                                                            
+  What to Capture                                                                                                                                           
+                                                                                                                                                            
+  I'd recommend adding a Strategic Context section to Project setup with these fields:                                                                      
+  Field: strategicGoal                                                                                                                                      
+  Purpose: The business outcome driving this research                                                                                                       
+  Example: "Launch a monthly newsletter that drives repeat purchases"                                                                                       
+  ────────────────────────────────────────                                                                                                                  
+  Field: businessContext                                                                                                                                    
+  Purpose: Domain/industry context and constraints                                                                                                          
+  Example: "Specialist online photography store, 5k email subscribers, competing with large retailers on expertise not price"                               
+  ────────────────────────────────────────                                                                                                                  
+  Field: decisionToMake                                                                                                                                     
+  Purpose: What decision will these insights inform?                                                                                                        
+  Example: "What topics to cover in first 3 newsletter editions"                                                                                            
+  ────────────────────────────────────────                                                                                                                  
+  Field: successMetrics                                                                                                                                     
+  Purpose: How will you measure success?                                                                                                                    
+  Example: "30% open rate, 5% click-through to product pages"                                                                                               
+  How It Would Flow                                                                                                                                         
+                                                                                                                                                            
+  Project Setup (new fields)                                                                                                                                
+    └─ strategicGoal, businessContext, decisionToMake, successMetrics                                                                                       
+        │                                                                                                                                                   
+        ▼                                                                                                                                                   
+  Project Analytics AI Prompt (enhanced)                                                                                                                    
+    └─ "Given the strategic goal of [launching a newsletter],                                                                                               
+        and business context of [specialist photography store],                                                                                             
+        which themes are most actionable for [deciding newsletter topics]?"                                                                                 
+        │                                                                                                                                                   
+        ▼                                                                                                                                                   
+  Tailored Output                                                                                                                                           
+    └─ Recommendations framed as newsletter topic suggestions                                                                                               
+    └─ Themes ranked by relevance to repeat purchases                                                                                                       
+    └─ Verbatims selected for newsletter-ready quotes                                                                                                       
+                                                                                                                                                            
+  Schema Changes                                                                                                                                            
+                                                                                                                                                            
+  // Add to projects table in shared/schema.ts                                                                                                              
+  strategicGoal: text("strategic_goal"),           // Business outcome                                                                                      
+  businessContext: text("business_context"),       // Domain/constraints                                                                                    
+  decisionToMake: text("decision_to_make"),        // What will be decided                                                                                  
+  successMetrics: text("success_metrics"),         // How success is measured                                                                               
+                                                                                                                                                            
+  UI Changes                                                                                                                                                
+                                                                                                                                                            
+  Add a new step or section in project creation:                                                                                                            
+                                                                                                                                                            
+  "Strategic Context" (Optional but Recommended)                                                                                                            
+  - "What business goal is this research supporting?" (strategicGoal)                                                                                       
+  - "Tell us about your business context" (businessContext)                                                                                                 
+  - "What decision will these insights help you make?" (decisionToMake)                                                                                     
+  - "How will you measure success?" (successMetrics)                                                                                                        
+                                                                                                                                                            
+  Analytics Enhancement                                                                                                                                     
+                                                                                                                                                            
+  The AI prompt in generateProjectAnalytics would be enhanced to:                                                                                           
+                                                                                                                                                            
+  1. Frame themes strategically - "Given your goal of [launching a newsletter], these themes suggest..."                                                    
+  2. Prioritize actionable insights - Weight findings by relevance to stated decision                                                                       
+  3. Tailor recommendations - "For your newsletter, consider covering [theme] because [verbatim evidence]"                                                  
+  4. Surface implementation ideas - Generate specific tactical suggestions based on the business context                                                    
+                                                                                                                                                            
+  ---   
