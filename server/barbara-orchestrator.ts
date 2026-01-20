@@ -2187,7 +2187,7 @@ Return a JSON object with this exact structure:
       "isStrategic": boolean (true if high-impact across multiple interview types),
       "verbatims": [
         {
-          "quote": "Select the most representative quote from the provided verbatims, with PII removed",
+          "quote": "Include 3-5 representative quotes from the provided verbatims (with PII removed) that best illustrate this theme",
           "questionIndex": 0,
           "sessionId": "",
           "sentiment": "positive" | "negative" | "neutral" | "mixed"
@@ -2202,7 +2202,7 @@ Return a JSON object with this exact structure:
       "supportingTemplates": ["template_id_1"],
       "verbatims": [
         {
-          "quote": "Supporting quote with PII removed",
+          "quote": "Include 2-3 supporting quotes from the provided verbatims (with PII removed) that evidence this insight",
           "questionIndex": 0,
           "sessionId": "",
           "sentiment": "positive" | "negative" | "neutral" | "mixed"
@@ -2307,7 +2307,7 @@ Pay special attention to the verbatims provided - use them to support your insig
         avgPrevalence: Math.min(100, Math.max(0, t.avgPrevalence || 0)),
         sentiment: validateSentiment(t.sentiment),
         isStrategic: Boolean(t.isStrategic),
-        verbatims: (t.verbatims || []).slice(0, 3).map((v: any) => ({
+        verbatims: (t.verbatims || []).slice(0, 5).map((v: any) => ({
           quote: v.quote || "",
           questionIndex: v.questionIndex || 0,
           sessionId: v.sessionId || "",
@@ -2323,7 +2323,7 @@ Pay special attention to the verbatims provided - use them to support your insig
         supportingTemplates: Array.isArray(s.supportingTemplates)
           ? s.supportingTemplates
           : [],
-        verbatims: (s.verbatims || []).slice(0, 2).map((v: any) => ({
+        verbatims: (s.verbatims || []).slice(0, 3).map((v: any) => ({
           quote: v.quote || "",
           questionIndex: v.questionIndex || 0,
           sessionId: v.sessionId || "",
