@@ -1,0 +1,66 @@
+/
+
+Chat Completion
+Input
+856t
+system
+You are Barbara, a strategic research analyst. Your task is to analyze interview data across multiple interview templates within a project and identify cross-cutting themes and strategic insights. IMPORTANT: For all verbatims/quotes, apply PII anonymization: - Replace names with [Name] - Replace locations/cities with [Location] - Replace company names with [Company] - Replace specific dates with [Date] Return a JSON object with this exact structure: { "crossTemplateThemes": [ { "id": "theme_1", "theme": "Brief theme name (2-5 words)", "description": "One sentence description", "templatesAppeared": ["template_id_1", "template_id_2"], "totalMentions": number, "avgPrevalence": number (0-100), "sentiment": "positive" | "negative" | "neutral" | "mixed", "isStrategic": boolean (true if high-impact across multiple interview types), "verbatims": [ { "quote": "Representative quote with PII removed", "questionIndex": 0, "sessionId": "", "sentiment": "positive" | "negative" | "neutral" | "mixed" } ] } ], "strategicInsights": [ { "insight": "Key strategic finding", "significance": "Why this matters for the business", "supportingTemplates": ["template_id_1"], "verbatims": [] } ], "executiveSummary": { "headline": "One compelling sentence summarizing the project findings", "keyTakeaways": ["3-5 key points for stakeholders"], "recommendedActions": ["2-3 actionable recommendations"] } } Focus on: 1. Themes that appear across MULTIPLE templates (cross-cutting insights) 2. Strategic implications for the business 3. Patterns that wouldn't be visible from looking at templates individually 4. Executive-level summary suitable for stakeholder presentation
+user
+PROJECT: Love of Photography OBJECTIVE: The goal of this interview is to get a clear understanding of what the interviewee loves about taking photographs. It will explore Motivations; Influences; Techniques; Impact and Personal connections to photography. TEMPLATE DATA: [ { "templateId": "fd10f6a9-0b6c-41c6-97de-dc9d0ed5f591", "templateName": "Love of Photography Exploration", "objective": "The goal of this interview is to get a clear understanding of what the interviewee loves about taking photographs. It will explore Motivations; Influences; Techniques; Impact and Personal connections to photography.", "themes": [ { "theme": "AI attitudes", "mentions": 6, "sentiment": "mixed" }, { "theme": "Emotional motivation", "mentions": 5, "sentiment": "positive" }, { "theme": "Subject specialization", "mentions": 5, "sentiment": "positive" }, { "theme": "Strengths — personal vs technical", "mentions": 5, "sentiment": "positive" }, { "theme": "Technical approaches", "mentions": 3, "sentiment": "positive" }, { "theme": "Authenticity & nostalgia", "mentions": 3, "sentiment": "negative" }, { "theme": "Community & validation", "mentions": 3, "sentiment": "positive" } ], "topCollectionThemes": [ "Emotional motivation", "Subject specialization", "Technical approaches" ], "qualityScore": 58, "sessionCount": 10 } ] Analyze the themes across these templates to identify cross-cutting patterns and strategic insights. Focus on themes that appear in multiple templates and their business implications.
+Output
+2,723t
+assistant
+{
+  "crossTemplateThemes": [],
+  "strategicInsights": [
+    {
+      "insight": "Emotional motivation and subject specialization are the strongest engagement levers",
+      "significance": "Programming product experiences, content, and marketing around users’ favored subjects and the emotional payoff of capturing meaningful moments will drive usage and loyalty.",
+      "supportingTemplates": [
+        "fd10f6a9-0b6c-41c6-97de-dc9d0ed5f591"
+      ],
+      "verbatims": []
+    },
+    {
+      "insight": "AI attitudes are mixed, with authenticity concerns surfacing",
+      "significance": "Positioning AI as an assistive, transparent tool—paired with authenticity safeguards—can unlock utility while mitigating trust and nostalgia-related pushback.",
+      "supportingTemplates": [
+        "fd10f6a9-0b6c-41c6-97de-dc9d0ed5f591"
+      ],
+      "verbatims": []
+    },
+    {
+      "insight": "Personal vision is valued over technical mastery",
+      "significance": "Simplifying technical barriers and showcasing storytelling/composition guidance can broaden appeal and reduce drop-off among less technical users.",
+      "supportingTemplates": [
+        "fd10f6a9-0b6c-41c6-97de-dc9d0ed5f591"
+      ],
+      "verbatims": []
+    },
+    {
+      "insight": "Community validation positively influences motivation",
+      "significance": "Features that enable feedback, recognition, and belonging (e.g., challenges, badges, thoughtful critique) can increase retention and content creation.",
+      "supportingTemplates": [
+        "fd10f6a9-0b6c-41c6-97de-dc9d0ed5f591"
+      ],
+      "verbatims": []
+    }
+  ],
+  "executiveSummary": {
+    "headline": "Photographers are driven by emotional payoff and subject passion, are wary yet curious about AI, and respond to supportive communities that make authentic storytelling easier.",
+    "keyTakeaways": [
+      "Emotional motivation and subject specialization are the most salient positive drivers.",
+      "AI elicits mixed reactions; users want control, transparency, and authenticity.",
+      "Many prioritize personal eye and story over technical perfection—simplicity wins.",
+      "Community validation correlates with positive sentiment and engagement.",
+      "Authenticity/nostalgia concerns suggest careful positioning of editing and AI features."
+    ],
+    "recommendedActions": [
+      "Design subject-specific journeys (guides, presets, challenges) emphasizing emotional storytelling.",
+      "Launch authenticity features (provenance/metadata, “authentic mode,” transparent AI toggles) and educational content on ethical AI use.",
+      "Invest in community mechanics (curated challenges, constructive feedback tools, recognition systems) and lightweight, guided technical education."
+    ]
+  }
+}
+
+Assistant

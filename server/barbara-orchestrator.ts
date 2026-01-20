@@ -1453,97 +1453,124 @@ export async function generateTemplateAnalytics(
 ): Promise<Omit<TemplateAnalytics, "generatedAt">> {
   console.log("[Barbara] Starting template analytics generation...");
 
-  const collectionsWithAnalytics = input.collections.filter(c => c.analytics !== null);
+  const collectionsWithAnalytics = input.collections.filter(
+    (c) => c.analytics !== null,
+  );
 
   if (collectionsWithAnalytics.length === 0) {
-    console.log("[Barbara] No collections with analytics found, returning empty template analytics");
+    console.log(
+      "[Barbara] No collections with analytics found, returning empty template analytics",
+    );
     return createEmptyTemplateAnalytics();
   }
 
   // Build collection performance summaries
-  const collectionPerformance: CollectionPerformanceSummary[] = collectionsWithAnalytics.map(c => ({
-    collectionId: c.collection.id,
-    collectionName: c.collection.name,
-    sessionCount: c.sessionCount,
-    avgQualityScore: c.analytics!.overallStats.avgQualityScore,
-    avgSessionDuration: c.analytics!.overallStats.avgSessionDuration,
-    topThemes: c.analytics!.themes.slice(0, 3).map(t => t.theme),
-    sentimentDistribution: c.analytics!.overallStats.sentimentDistribution,
-    createdAt: c.collection.createdAt?.toISOString() || new Date().toISOString(),
-  }));
+  const collectionPerformance: CollectionPerformanceSummary[] =
+    collectionsWithAnalytics.map((c) => ({
+      collectionId: c.collection.id,
+      collectionName: c.collection.name,
+      sessionCount: c.sessionCount,
+      avgQualityScore: c.analytics!.overallStats.avgQualityScore,
+      avgSessionDuration: c.analytics!.overallStats.avgSessionDuration,
+      topThemes: c.analytics!.themes.slice(0, 3).map((t) => t.theme),
+      sentimentDistribution: c.analytics!.overallStats.sentimentDistribution,
+      createdAt:
+        c.collection.createdAt?.toISOString() || new Date().toISOString(),
+    }));
 
   // Calculate question consistency across collections (now with verbatims)
-  const questionConsistency: QuestionConsistency[] = input.templateQuestions.map((q, idx) => {
-    const questionScores: { collectionId: string; avgQuality: number; avgWordCount: number }[] = [];
-    const allVerbatims: ThemeVerbatim[] = [];
-    const allThemes: string[] = [];
+  const questionConsistency: QuestionConsistency[] =
+    input.templateQuestions.map((q, idx) => {
+      const questionScores: {
+        collectionId: string;
+        avgQuality: number;
+        avgWordCount: number;
+      }[] = [];
+      const allVerbatims: ThemeVerbatim[] = [];
+      const allThemes: string[] = [];
 
-    for (const c of collectionsWithAnalytics) {
-      const qp = c.analytics!.questionPerformance.find(qp => qp.questionIndex === idx);
-      if (qp && qp.responseCount > 0) {
-        questionScores.push({
-          collectionId: c.collection.id,
-          avgQuality: qp.avgQualityScore,
-          avgWordCount: qp.avgWordCount,
-        });
-        // Collect verbatims (limit 3 per collection to keep manageable)
-        if (qp.verbatims && qp.verbatims.length > 0) {
-          allVerbatims.push(...qp.verbatims.slice(0, 3));
-        }
-        // Collect primary themes
-        if (qp.primaryThemes && qp.primaryThemes.length > 0) {
-          allThemes.push(...qp.primaryThemes);
+      for (const c of collectionsWithAnalytics) {
+        const qp = c.analytics!.questionPerformance.find(
+          (qp) => qp.questionIndex === idx,
+        );
+        if (qp && qp.responseCount > 0) {
+          questionScores.push({
+            collectionId: c.collection.id,
+            avgQuality: qp.avgQualityScore,
+            avgWordCount: qp.avgWordCount,
+          });
+          // Collect verbatims (limit 3 per collection to keep manageable)
+          if (qp.verbatims && qp.verbatims.length > 0) {
+            allVerbatims.push(...qp.verbatims.slice(0, 3));
+          }
+          // Collect primary themes
+          if (qp.primaryThemes && qp.primaryThemes.length > 0) {
+            allThemes.push(...qp.primaryThemes);
+          }
         }
       }
-    }
 
-    if (questionScores.length === 0) {
+      if (questionScores.length === 0) {
+        return {
+          questionIndex: idx,
+          questionText: q.text,
+          avgQualityAcrossCollections: 0,
+          qualityVariance: 0,
+          avgWordCountAcrossCollections: 0,
+          bestPerformingCollectionId: "",
+          worstPerformingCollectionId: "",
+          consistencyRating: "consistent" as const,
+          verbatims: [],
+          primaryThemes: [],
+        };
+      }
+
+      const avgQuality =
+        questionScores.reduce((sum, s) => sum + s.avgQuality, 0) /
+        questionScores.length;
+      const avgWordCount =
+        questionScores.reduce((sum, s) => sum + s.avgWordCount, 0) /
+        questionScores.length;
+
+      // Calculate variance
+      const variance =
+        questionScores.length > 1
+          ? questionScores.reduce(
+              (sum, s) => sum + Math.pow(s.avgQuality - avgQuality, 2),
+              0,
+            ) / questionScores.length
+          : 0;
+
+      const sorted = [...questionScores].sort(
+        (a, b) => b.avgQuality - a.avgQuality,
+      );
+      const best = sorted[0]?.collectionId || "";
+      const worst = sorted[sorted.length - 1]?.collectionId || "";
+
+      // Determine consistency rating based on variance
+      const consistencyRating: "consistent" | "variable" | "inconsistent" =
+        variance < 100
+          ? "consistent"
+          : variance < 400
+            ? "variable"
+            : "inconsistent";
+
+      // Deduplicate themes
+      const uniqueThemes = [...new Set(allThemes)].slice(0, 10);
+
       return {
         questionIndex: idx,
         questionText: q.text,
-        avgQualityAcrossCollections: 0,
-        qualityVariance: 0,
-        avgWordCountAcrossCollections: 0,
-        bestPerformingCollectionId: "",
-        worstPerformingCollectionId: "",
-        consistencyRating: "consistent" as const,
-        verbatims: [],
-        primaryThemes: [],
+        avgQualityAcrossCollections: Math.round(avgQuality),
+        qualityVariance: Math.round(variance),
+        avgWordCountAcrossCollections: Math.round(avgWordCount),
+        bestPerformingCollectionId: best,
+        worstPerformingCollectionId: worst,
+        consistencyRating,
+        verbatims: allVerbatims.slice(0, 10), // Limit to 10 total verbatims per question
+        primaryThemes: uniqueThemes,
       };
-    }
-
-    const avgQuality = questionScores.reduce((sum, s) => sum + s.avgQuality, 0) / questionScores.length;
-    const avgWordCount = questionScores.reduce((sum, s) => sum + s.avgWordCount, 0) / questionScores.length;
-
-    // Calculate variance
-    const variance = questionScores.length > 1
-      ? questionScores.reduce((sum, s) => sum + Math.pow(s.avgQuality - avgQuality, 2), 0) / questionScores.length
-      : 0;
-
-    const sorted = [...questionScores].sort((a, b) => b.avgQuality - a.avgQuality);
-    const best = sorted[0]?.collectionId || "";
-    const worst = sorted[sorted.length - 1]?.collectionId || "";
-
-    // Determine consistency rating based on variance
-    const consistencyRating: "consistent" | "variable" | "inconsistent" =
-      variance < 100 ? "consistent" : variance < 400 ? "variable" : "inconsistent";
-
-    // Deduplicate themes
-    const uniqueThemes = Array.from(new Set(allThemes)).slice(0, 10);
-
-    return {
-      questionIndex: idx,
-      questionText: q.text,
-      avgQualityAcrossCollections: Math.round(avgQuality),
-      qualityVariance: Math.round(variance),
-      avgWordCountAcrossCollections: Math.round(avgWordCount),
-      bestPerformingCollectionId: best,
-      worstPerformingCollectionId: worst,
-      consistencyRating,
-      verbatims: allVerbatims.slice(0, 10), // Limit to 10 total verbatims per question
-      primaryThemes: uniqueThemes,
-    };
-  });
+    });
 
   // Aggregate themes across collections with full detail preservation
   interface ThemeAggregation {
@@ -1554,7 +1581,11 @@ export async function generateTemplateAnalytics(
     depths: Array<"mentioned" | "explored" | "deeply_explored">;
     descriptions: string[];
     verbatims: ThemeVerbatim[];
-    sentimentBreakdowns: Array<{ positive: number; neutral: number; negative: number }>;
+    sentimentBreakdowns: Array<{
+      positive: number;
+      neutral: number;
+      negative: number;
+    }>;
     isEmergent: boolean;
   }
 
@@ -1600,22 +1631,27 @@ export async function generateTemplateAnalytics(
   }
 
   // Helper function to determine the maximum depth
-  function getMaxDepth(depths: Array<"mentioned" | "explored" | "deeply_explored">): "mentioned" | "explored" | "deeply_explored" {
+  function getMaxDepth(
+    depths: Array<"mentioned" | "explored" | "deeply_explored">,
+  ): "mentioned" | "explored" | "deeply_explored" {
     if (depths.includes("deeply_explored")) return "deeply_explored";
     if (depths.includes("explored")) return "explored";
     return "mentioned";
   }
 
   // Helper function to aggregate sentiment breakdowns
-  function aggregateSentimentBreakdowns(breakdowns: Array<{ positive: number; neutral: number; negative: number }>): { positive: number; neutral: number; negative: number } {
-    if (breakdowns.length === 0) return { positive: 0, neutral: 0, negative: 0 };
+  function aggregateSentimentBreakdowns(
+    breakdowns: Array<{ positive: number; neutral: number; negative: number }>,
+  ): { positive: number; neutral: number; negative: number } {
+    if (breakdowns.length === 0)
+      return { positive: 0, neutral: 0, negative: 0 };
     const total = breakdowns.reduce(
       (acc, b) => ({
         positive: acc.positive + b.positive,
         neutral: acc.neutral + b.neutral,
         negative: acc.negative + b.negative,
       }),
-      { positive: 0, neutral: 0, negative: 0 }
+      { positive: 0, neutral: 0, negative: 0 },
     );
     const sum = total.positive + total.neutral + total.negative;
     if (sum === 0) return { positive: 0, neutral: 0, negative: 0 };
@@ -1626,15 +1662,21 @@ export async function generateTemplateAnalytics(
     };
   }
 
-  const aggregatedThemes: AggregatedThemeWithDetail[] = Array.from(themeMap.entries())
+  const aggregatedThemes: AggregatedThemeWithDetail[] = Array.from(
+    themeMap.entries(),
+  )
     .map(([theme, data]) => ({
       theme,
       description: data.descriptions[0] || "", // Use first description or synthesize later
       totalMentions: data.totalMentions,
       collectionsAppeared: data.collectionSources.length,
-      avgPrevalence: Math.round(data.prevalences.reduce((a, b) => a + b, 0) / data.prevalences.length),
+      avgPrevalence: Math.round(
+        data.prevalences.reduce((a, b) => a + b, 0) / data.prevalences.length,
+      ),
       sentiment: getMajoritySentiment(data.sentiments),
-      sentimentBreakdown: aggregateSentimentBreakdowns(data.sentimentBreakdowns),
+      sentimentBreakdown: aggregateSentimentBreakdowns(
+        data.sentimentBreakdowns,
+      ),
       verbatims: data.verbatims.slice(0, 15), // Limit to 15 verbatims per theme
       depth: getMaxDepth(data.depths),
       isEmergent: data.isEmergent,
@@ -1644,55 +1686,81 @@ export async function generateTemplateAnalytics(
     .slice(0, 20); // Allow more themes now that we're preserving detail
 
   // Aggregate key findings with source collection attribution
-  const keyFindings: KeyFindingWithSource[] = collectionsWithAnalytics.flatMap(c =>
-    (c.analytics!.keyFindings || []).map(f => ({
-      ...f,
-      sourceCollectionId: c.collection.id,
-      sourceCollectionName: c.collection.name,
-    }))
-  ).slice(0, 30); // Limit total key findings
+  const keyFindings: KeyFindingWithSource[] = collectionsWithAnalytics
+    .flatMap((c) =>
+      (c.analytics!.keyFindings || []).map((f) => ({
+        ...f,
+        sourceCollectionId: c.collection.id,
+        sourceCollectionName: c.collection.name,
+      })),
+    )
+    .slice(0, 30); // Limit total key findings
 
   // Aggregate consensus points with source collection attribution
-  const consensusPoints: ConsensusPointWithSource[] = collectionsWithAnalytics.flatMap(c =>
-    (c.analytics!.consensusPoints || []).map(cp => ({
-      ...cp,
-      sourceCollectionId: c.collection.id,
-      sourceCollectionName: c.collection.name,
-    }))
-  ).slice(0, 20); // Limit total consensus points
+  const consensusPoints: ConsensusPointWithSource[] = collectionsWithAnalytics
+    .flatMap((c) =>
+      (c.analytics!.consensusPoints || []).map((cp) => ({
+        ...cp,
+        sourceCollectionId: c.collection.id,
+        sourceCollectionName: c.collection.name,
+      })),
+    )
+    .slice(0, 20); // Limit total consensus points
 
   // Aggregate divergence points with source collection attribution
-  const divergencePoints: DivergencePointWithSource[] = collectionsWithAnalytics.flatMap(c =>
-    (c.analytics!.divergencePoints || []).map(dp => ({
-      ...dp,
-      sourceCollectionId: c.collection.id,
-      sourceCollectionName: c.collection.name,
-    }))
-  ).slice(0, 20); // Limit total divergence points
+  const divergencePoints: DivergencePointWithSource[] = collectionsWithAnalytics
+    .flatMap((c) =>
+      (c.analytics!.divergencePoints || []).map((dp) => ({
+        ...dp,
+        sourceCollectionId: c.collection.id,
+        sourceCollectionName: c.collection.name,
+      })),
+    )
+    .slice(0, 20); // Limit total divergence points
 
   // Calculate template effectiveness metrics
-  const totalSessions = collectionsWithAnalytics.reduce((sum, c) => sum + c.sessionCount, 0);
-  const avgQualityScore = collectionsWithAnalytics.length > 0
-    ? Math.round(collectionsWithAnalytics.reduce((sum, c) => sum + c.analytics!.overallStats.avgQualityScore, 0) / collectionsWithAnalytics.length)
-    : 0;
-  const avgSessionDuration = collectionsWithAnalytics.length > 0
-    ? Math.round(collectionsWithAnalytics.reduce((sum, c) => sum + c.analytics!.overallStats.avgSessionDuration, 0) / collectionsWithAnalytics.length)
-    : 0;
+  const totalSessions = collectionsWithAnalytics.reduce(
+    (sum, c) => sum + c.sessionCount,
+    0,
+  );
+  const avgQualityScore =
+    collectionsWithAnalytics.length > 0
+      ? Math.round(
+          collectionsWithAnalytics.reduce(
+            (sum, c) => sum + c.analytics!.overallStats.avgQualityScore,
+            0,
+          ) / collectionsWithAnalytics.length,
+        )
+      : 0;
+  const avgSessionDuration =
+    collectionsWithAnalytics.length > 0
+      ? Math.round(
+          collectionsWithAnalytics.reduce(
+            (sum, c) => sum + c.analytics!.overallStats.avgSessionDuration,
+            0,
+          ) / collectionsWithAnalytics.length,
+        )
+      : 0;
 
   const sentimentAgg = { positive: 0, neutral: 0, negative: 0 };
   for (const c of collectionsWithAnalytics) {
-    sentimentAgg.positive += c.analytics!.overallStats.sentimentDistribution.positive;
-    sentimentAgg.neutral += c.analytics!.overallStats.sentimentDistribution.neutral;
-    sentimentAgg.negative += c.analytics!.overallStats.sentimentDistribution.negative;
+    sentimentAgg.positive +=
+      c.analytics!.overallStats.sentimentDistribution.positive;
+    sentimentAgg.neutral +=
+      c.analytics!.overallStats.sentimentDistribution.neutral;
+    sentimentAgg.negative +=
+      c.analytics!.overallStats.sentimentDistribution.negative;
   }
-  const total = sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
-  const sentimentDistribution = total > 0
-    ? {
-        positive: Math.round((sentimentAgg.positive / total) * 100),
-        neutral: Math.round((sentimentAgg.neutral / total) * 100),
-        negative: Math.round((sentimentAgg.negative / total) * 100),
-      }
-    : { positive: 0, neutral: 0, negative: 0 };
+  const total =
+    sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
+  const sentimentDistribution =
+    total > 0
+      ? {
+          positive: Math.round((sentimentAgg.positive / total) * 100),
+          neutral: Math.round((sentimentAgg.neutral / total) * 100),
+          negative: Math.round((sentimentAgg.negative / total) * 100),
+        }
+      : { positive: 0, neutral: 0, negative: 0 };
 
   // Generate recommendations using AI if there's enough data
   let recommendations: Recommendation[] = [];
@@ -1708,7 +1776,10 @@ export async function generateTemplateAnalytics(
         priority: "high",
       });
     }
-    if (qc.avgQualityAcrossCollections < 50 && qc.avgQualityAcrossCollections > 0) {
+    if (
+      qc.avgQualityAcrossCollections < 50 &&
+      qc.avgQualityAcrossCollections > 0
+    ) {
       recommendations.push({
         type: "question_improvement",
         title: `Improve Question ${qc.questionIndex + 1}`,
@@ -1750,7 +1821,10 @@ export async function generateTemplateAnalytics(
   };
 }
 
-function createEmptyTemplateAnalytics(): Omit<TemplateAnalytics, "generatedAt"> {
+function createEmptyTemplateAnalytics(): Omit<
+  TemplateAnalytics,
+  "generatedAt"
+> {
   return {
     collectionPerformance: [],
     questionConsistency: [],
@@ -1771,7 +1845,12 @@ function createEmptyTemplateAnalytics(): Omit<TemplateAnalytics, "generatedAt"> 
 }
 
 function getMajoritySentiment(sentiments: ThemeSentiment[]): ThemeSentiment {
-  const counts: Record<ThemeSentiment, number> = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
+  const counts: Record<ThemeSentiment, number> = {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+    mixed: 0,
+  };
   for (const s of sentiments) {
     counts[s]++;
   }
@@ -1805,52 +1884,88 @@ export async function generateProjectAnalytics(
 ): Promise<Omit<ProjectAnalytics, "generatedAt">> {
   console.log("[Barbara] Starting project analytics generation...");
 
-  const templatesWithAnalytics = input.templates.filter(t => t.analytics !== null);
+  const templatesWithAnalytics = input.templates.filter(
+    (t) => t.analytics !== null,
+  );
 
   if (templatesWithAnalytics.length === 0) {
-    console.log("[Barbara] No templates with analytics found, returning empty project analytics");
+    console.log(
+      "[Barbara] No templates with analytics found, returning empty project analytics",
+    );
     return createEmptyProjectAnalytics();
   }
 
   // Build template performance summaries
-  const templatePerformance: TemplatePerformanceSummary[] = templatesWithAnalytics.map(t => ({
-    templateId: t.template.id,
-    templateName: t.template.name,
-    collectionCount: t.collectionCount,
-    totalSessions: t.totalSessions,
-    avgQualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
-    topThemes: t.analytics!.aggregatedThemes.slice(0, 3).map(th => th.theme),
-    sentimentDistribution: t.analytics!.templateEffectiveness.sentimentDistribution,
-  }));
+  const templatePerformance: TemplatePerformanceSummary[] =
+    templatesWithAnalytics.map((t) => ({
+      templateId: t.template.id,
+      templateName: t.template.name,
+      collectionCount: t.collectionCount,
+      totalSessions: t.totalSessions,
+      avgQualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
+      topThemes: t
+        .analytics!.aggregatedThemes.slice(0, 3)
+        .map((th) => th.theme),
+      sentimentDistribution:
+        t.analytics!.templateEffectiveness.sentimentDistribution,
+    }));
 
   // Calculate project-wide metrics
   const totalTemplates = templatesWithAnalytics.length;
-  const totalCollections = templatesWithAnalytics.reduce((sum, t) => sum + t.collectionCount, 0);
-  const totalSessions = templatesWithAnalytics.reduce((sum, t) => sum + t.totalSessions, 0);
-  const avgQualityScore = totalTemplates > 0
-    ? Math.round(templatesWithAnalytics.reduce((sum, t) => sum + t.analytics!.templateEffectiveness.avgQualityScore, 0) / totalTemplates)
-    : 0;
-  const avgSessionDuration = totalTemplates > 0
-    ? Math.round(templatesWithAnalytics.reduce((sum, t) => sum + t.analytics!.templateEffectiveness.avgSessionDuration, 0) / totalTemplates)
-    : 0;
+  const totalCollections = templatesWithAnalytics.reduce(
+    (sum, t) => sum + t.collectionCount,
+    0,
+  );
+  const totalSessions = templatesWithAnalytics.reduce(
+    (sum, t) => sum + t.totalSessions,
+    0,
+  );
+  const avgQualityScore =
+    totalTemplates > 0
+      ? Math.round(
+          templatesWithAnalytics.reduce(
+            (sum, t) =>
+              sum + t.analytics!.templateEffectiveness.avgQualityScore,
+            0,
+          ) / totalTemplates,
+        )
+      : 0;
+  const avgSessionDuration =
+    totalTemplates > 0
+      ? Math.round(
+          templatesWithAnalytics.reduce(
+            (sum, t) =>
+              sum + t.analytics!.templateEffectiveness.avgSessionDuration,
+            0,
+          ) / totalTemplates,
+        )
+      : 0;
 
   const sentimentAgg = { positive: 0, neutral: 0, negative: 0 };
   for (const t of templatesWithAnalytics) {
-    sentimentAgg.positive += t.analytics!.templateEffectiveness.sentimentDistribution.positive;
-    sentimentAgg.neutral += t.analytics!.templateEffectiveness.sentimentDistribution.neutral;
-    sentimentAgg.negative += t.analytics!.templateEffectiveness.sentimentDistribution.negative;
+    sentimentAgg.positive +=
+      t.analytics!.templateEffectiveness.sentimentDistribution.positive;
+    sentimentAgg.neutral +=
+      t.analytics!.templateEffectiveness.sentimentDistribution.neutral;
+    sentimentAgg.negative +=
+      t.analytics!.templateEffectiveness.sentimentDistribution.negative;
   }
-  const total = sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
-  const sentimentDistribution = total > 0
-    ? {
-        positive: Math.round((sentimentAgg.positive / total) * 100),
-        neutral: Math.round((sentimentAgg.neutral / total) * 100),
-        negative: Math.round((sentimentAgg.negative / total) * 100),
-      }
-    : { positive: 0, neutral: 0, negative: 0 };
+  const total =
+    sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
+  const sentimentDistribution =
+    total > 0
+      ? {
+          positive: Math.round((sentimentAgg.positive / total) * 100),
+          neutral: Math.round((sentimentAgg.neutral / total) * 100),
+          negative: Math.round((sentimentAgg.negative / total) * 100),
+        }
+      : { positive: 0, neutral: 0, negative: 0 };
 
   // Extract cross-template themes using AI
-  const aiAnalysis = await extractCrossTemplateThemesWithAI(input, templatesWithAnalytics);
+  const aiAnalysis = await extractCrossTemplateThemesWithAI(
+    input,
+    templatesWithAnalytics,
+  );
 
   // Generate recommendations
   const recommendations: Recommendation[] = [];
@@ -1868,8 +1983,10 @@ export async function generateProjectAnalytics(
   }
 
   // Add recommendations from AI insights
-  if (aiAnalysis.crossTemplateThemes.some(t => t.isStrategic)) {
-    const strategicThemes = aiAnalysis.crossTemplateThemes.filter(t => t.isStrategic);
+  if (aiAnalysis.crossTemplateThemes.some((t) => t.isStrategic)) {
+    const strategicThemes = aiAnalysis.crossTemplateThemes.filter(
+      (t) => t.isStrategic,
+    );
     for (const theme of strategicThemes.slice(0, 2)) {
       recommendations.push({
         type: "explore_deeper",
@@ -1937,16 +2054,18 @@ async function extractCrossTemplateThemesWithAI(
   }
 
   // Build template data summary for AI
-  const templateSummaries = templatesWithAnalytics.map(t => ({
+  const templateSummaries = templatesWithAnalytics.map((t) => ({
     templateId: t.template.id,
     templateName: t.template.name,
     objective: t.template.objective || "",
-    themes: t.analytics!.aggregatedThemes.map(th => ({
+    themes: t.analytics!.aggregatedThemes.map((th) => ({
       theme: th.theme,
       mentions: th.totalMentions,
       sentiment: th.sentiment,
     })),
-    topCollectionThemes: t.analytics!.collectionPerformance.flatMap(cp => cp.topThemes).slice(0, 10),
+    topCollectionThemes: t
+      .analytics!.collectionPerformance.flatMap((cp) => cp.topThemes)
+      .slice(0, 10),
     qualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
     sessionCount: t.totalSessions,
   }));
@@ -2012,9 +2131,11 @@ Analyze the themes across these templates to identify cross-cutting patterns and
 
   try {
     const config = barbaraConfig.projectAnalytics;
-    console.log(`[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`);
+    console.log(
+      `[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`,
+    );
 
-    const response = await Promise.race([
+    const response = (await Promise.race([
       openai.chat.completions.create({
         model: config.model,
         messages: [
@@ -2022,14 +2143,17 @@ Analyze the themes across these templates to identify cross-cutting patterns and
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        max_completion_tokens: 3000,
+        max_completion_tokens: 10000,
         reasoning_effort: config.reasoningEffort,
         verbosity: config.verbosity,
       } as Parameters<typeof openai.chat.completions.create>[0]),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Project analytics AI timeout")), PROJECT_ANALYTICS_TIMEOUT_MS)
+        setTimeout(
+          () => reject(new Error("Project analytics AI timeout")),
+          PROJECT_ANALYTICS_TIMEOUT_MS,
+        ),
       ),
-    ]) as ChatCompletion;
+    ])) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -2040,13 +2164,17 @@ Analyze the themes across these templates to identify cross-cutting patterns and
     const parsed = JSON.parse(content);
 
     // Validate and transform the response
-    const crossTemplateThemes: CrossTemplateTheme[] = (parsed.crossTemplateThemes || [])
+    const crossTemplateThemes: CrossTemplateTheme[] = (
+      parsed.crossTemplateThemes || []
+    )
       .slice(0, 10)
       .map((t: any, idx: number) => ({
         id: t.id || `cross_theme_${idx + 1}`,
         theme: t.theme || "",
         description: t.description || "",
-        templatesAppeared: Array.isArray(t.templatesAppeared) ? t.templatesAppeared : [],
+        templatesAppeared: Array.isArray(t.templatesAppeared)
+          ? t.templatesAppeared
+          : [],
         totalMentions: t.totalMentions || 0,
         avgPrevalence: Math.min(100, Math.max(0, t.avgPrevalence || 0)),
         sentiment: validateSentiment(t.sentiment),
@@ -2064,7 +2192,9 @@ Analyze the themes across these templates to identify cross-cutting patterns and
       .map((s: any) => ({
         insight: s.insight || "",
         significance: s.significance || "",
-        supportingTemplates: Array.isArray(s.supportingTemplates) ? s.supportingTemplates : [],
+        supportingTemplates: Array.isArray(s.supportingTemplates)
+          ? s.supportingTemplates
+          : [],
         verbatims: (s.verbatims || []).slice(0, 2).map((v: any) => ({
           quote: v.quote || "",
           questionIndex: v.questionIndex || 0,
@@ -2074,11 +2204,14 @@ Analyze the themes across these templates to identify cross-cutting patterns and
       }));
 
     const executiveSummary = {
-      headline: parsed.executiveSummary?.headline || `Analysis of ${input.projectName}`,
+      headline:
+        parsed.executiveSummary?.headline || `Analysis of ${input.projectName}`,
       keyTakeaways: Array.isArray(parsed.executiveSummary?.keyTakeaways)
         ? parsed.executiveSummary.keyTakeaways.slice(0, 5)
         : [],
-      recommendedActions: Array.isArray(parsed.executiveSummary?.recommendedActions)
+      recommendedActions: Array.isArray(
+        parsed.executiveSummary?.recommendedActions,
+      )
         ? parsed.executiveSummary.recommendedActions.slice(0, 3)
         : [],
     };
@@ -2097,7 +2230,9 @@ function createDefaultAIResult(projectName: string): AIProjectAnalysisResult {
     executiveSummary: {
       headline: `Analysis of ${projectName}`,
       keyTakeaways: ["Insufficient data for cross-template analysis"],
-      recommendedActions: ["Run more interviews across templates to enable cross-template insights"],
+      recommendedActions: [
+        "Run more interviews across templates to enable cross-template insights",
+      ],
     },
   };
 }
