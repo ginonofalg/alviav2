@@ -95,6 +95,7 @@ export const interviewTemplates = pgTable("interview_templates", {
   tone: text("tone"),
   constraints: text("constraints"),
   isActive: boolean("is_active").default(true),
+  defaultRecommendedFollowUps: integer("default_recommended_follow_ups"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   // Analytics metadata
@@ -116,6 +117,7 @@ export const questions = pgTable("questions", {
   multiSelectOptions: text("multi_select_options").array(),
   conditionalLogic: jsonb("conditional_logic"),
   timeHintSeconds: integer("time_hint_seconds"),
+  recommendedFollowUps: integer("recommended_follow_ups"),
   isRequired: boolean("is_required").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -380,6 +382,7 @@ export type PersistedQuestionState = {
   wordCount: number;
   activeTimeMs: number;
   turnCount: number;
+  followUpCount: number;
 };
 
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";

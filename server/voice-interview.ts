@@ -189,6 +189,7 @@ function updateQuestionState(
       wordCount: metrics.wordCount,
       activeTimeMs: metrics.activeTimeMs,
       turnCount: metrics.turnCount,
+      followUpCount: metrics.followUpCount ?? 0,
     };
     state.questionStates.push(questionState);
   }
@@ -464,6 +465,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             activeTimeMs: qs.activeTimeMs,
             turnCount: qs.turnCount,
             startedAt: null,
+            followUpCount: qs.followUpCount ?? 0,
+            recommendedFollowUps: null,
           });
         }
       }
@@ -558,6 +561,8 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         `[VoiceInterview] Using resume instructions for restored session: ${sessionId}`,
       );
     } else {
+      const metrics = state.questionMetrics.get(state.currentQuestionIndex);
+      const recommendedFollowUps = currentQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
       instructions = buildInterviewInstructions(
         state.template,
         currentQuestion,
@@ -566,6 +571,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         undefined,
         state.respondentInformalName,
         state.questions,
+        { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
       );
     }
 
@@ -648,6 +654,7 @@ function buildInterviewInstructions(
   barbaraGuidance?: string,
   respondentName?: string | null,
   allQuestions?: Array<{ questionText: string }>,
+  followUpContext?: { followUpCount: number; recommendedFollowUps: number | null },
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -682,6 +689,14 @@ CURRENT QUESTION TO ASK:
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
+  followUpContext?.recommendedFollowUps !== null && followUpContext?.recommendedFollowUps !== undefined
+    ? `
+FOLLOW-UP DEPTH GUIDANCE:
+The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? '' : 's'} for this question.
+You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
+`
+    : ""
+}${
   upcomingQuestions
     ? `
 UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
@@ -1069,6 +1084,7 @@ async function triggerBarbaraAnalysis(
 
       // Inject guidance by updating session instructions (system context)
       if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+        const recommendedFollowUps = currentQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
         const updatedInstructions = buildInterviewInstructions(
           state.template,
           currentQuestion,
@@ -1077,6 +1093,7 @@ async function triggerBarbaraAnalysis(
           guidanceMessage,
           state.respondentInformalName,
           state.questions,
+          { followUpCount: metrics.followUpCount, recommendedFollowUps },
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
@@ -1095,6 +1112,15 @@ async function triggerBarbaraAnalysis(
             },
           }),
         );
+      }
+
+      // Increment follow-up count when probe_followup action is taken
+      if (guidance.action === "probe_followup") {
+        metrics.followUpCount++;
+        // Update persisted question state with new follow-up count
+        updateQuestionState(state, state.currentQuestionIndex, { followUpCount: metrics.followUpCount });
+        console.log(`[Barbara] Follow-up count for Q${state.currentQuestionIndex + 1}: ${metrics.followUpCount}` + 
+          (metrics.recommendedFollowUps !== null ? ` (recommended: ${metrics.recommendedFollowUps})` : ''));
       }
 
       // Notify client about Barbara's guidance (for debugging/transparency)
@@ -1370,6 +1396,8 @@ INSTRUCTIONS:
         );
 
         // Update session instructions for new question
+        const newMetrics = state.questionMetrics.get(state.currentQuestionIndex);
+        const recommendedFollowUps = nextQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
         const instructions = buildInterviewInstructions(
           state.template,
           nextQuestion,
@@ -1378,6 +1406,7 @@ INSTRUCTIONS:
           undefined,
           state.respondentInformalName,
           state.questions,
+          { followUpCount: newMetrics?.followUpCount ?? 0, recommendedFollowUps },
         );
 
         if (state.openaiWs.readyState === WebSocket.OPEN) {

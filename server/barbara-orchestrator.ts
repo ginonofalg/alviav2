@@ -138,6 +138,8 @@ export interface QuestionMetrics {
   activeTimeMs: number;
   turnCount: number;
   startedAt: number | null;
+  followUpCount: number;
+  recommendedFollowUps: number | null;
 }
 
 export interface BarbaraGuidance {
@@ -229,6 +231,11 @@ Your responsibilities:
 2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question.
 3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question.
 4. QUESTION DEDUPLICATION: Review the UPCOMING QUESTIONS list. Don't encourage Alvia to ask a follow-up that overlaps with a future template question. This prevents repetitive questioning and maintains interview flow.
+5. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
+   - If follow-ups are at or above the recommended depth AND the answer has reasonable substance, prefer "suggest_next_question" over "probe_followup"
+   - If follow-ups are 1 below the recommended depth, only suggest probing if the answer is clearly incomplete
+   - If no recommendation is set, rely on your judgment of answer completeness
+   - This is soft guidance, not a hard limit - exceptionally thin answers still warrant additional probing
 
 You must respond with a JSON object containing:
 {
@@ -310,6 +317,8 @@ METRICS FOR CURRENT QUESTION:
 - Word count: ${wordCount}
 - Active speaking time: ${activeTimeSeconds} seconds
 - Number of turns: ${input.questionMetrics.turnCount}
+- Follow-ups asked so far: ${input.questionMetrics.followUpCount}
+- Recommended follow-up depth: ${input.questionMetrics.recommendedFollowUps !== null ? input.questionMetrics.recommendedFollowUps : "No limit set (use judgment)"}
 
 ${summariesText ? `PREVIOUS QUESTIONS SUMMARY:\n${summariesText}\n\n` : ""}${previousQuestions ? `PREVIOUS QUESTIONS:\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `UPCOMING QUESTIONS (avoid asking follow-ups that overlap with these):\n${upcomingQuestions}\n` : ""}
 
@@ -322,13 +331,15 @@ ${currentQuestionResponses || "(No response yet)"} //check this gets pushed
 Based on this context, should Alvia receive any guidance? Respond with  your analysis in JSON format.`;
 }
 
-export function createEmptyMetrics(questionIndex: number): QuestionMetrics {
+export function createEmptyMetrics(questionIndex: number, recommendedFollowUps?: number | null): QuestionMetrics {
   return {
     questionIndex,
     wordCount: 0,
     activeTimeMs: 0,
     turnCount: 0,
     startedAt: null,
+    followUpCount: 0,
+    recommendedFollowUps: recommendedFollowUps ?? null,
   };
 }
 
