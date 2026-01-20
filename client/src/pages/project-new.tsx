@@ -30,7 +30,7 @@ import {
 import { ArrowLeft, Shield, Settings2, Mic, Target, Sparkles, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequestJson, queryClient } from "@/lib/queryClient";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(100),
@@ -89,7 +89,7 @@ export default function NewProjectPage() {
 
   const createProject = useMutation({
     mutationFn: async (data: ProjectFormData) => {
-      const response = await apiRequest("POST", "/api/projects", {
+      const response = await apiRequestJson<{ id: string }>("POST", "/api/projects", {
         ...data,
         avoidRules: DEFAULT_AVOID_RULES,
       });
