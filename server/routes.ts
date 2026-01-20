@@ -15,8 +15,12 @@ import {
   updateAnalysisConfig, 
   updateTopicOverlapConfig, 
   updateSummarisationConfig,
+  updateTemplateAnalyticsConfig,
+  updateProjectAnalyticsConfig,
   ALLOWED_MODELS,
-  generateCrossInterviewAnalysis
+  generateCrossInterviewAnalysis,
+  generateTemplateAnalytics,
+  generateProjectAnalytics,
 } from "./barbara-orchestrator";
 import { getInfographicService } from "./infographic-service";
 import { InfographicPromptBuilder } from "./infographic-prompts";
@@ -30,7 +34,9 @@ import {
   insertSegmentSchema,
   type ReviewRatings,
   type QuestionSummary,
-  type CollectionAnalytics
+  type CollectionAnalytics,
+  type TemplateAnalytics,
+  type ProjectAnalytics,
 } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -179,6 +185,212 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating collection analytics:", error);
       res.status(500).json({ message: "Failed to generate collection analytics" });
+    }
+  });
+
+  // Template Analytics
+  app.get("/api/templates/:templateId/analytics", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const collections = await storage.getCollectionsByTemplate(template.id);
+      const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+
+      // Check staleness: any collection refreshed after template's lastAnalyzedAt
+      const isStale = template.lastAnalyzedAt 
+        ? collections.some(c => {
+            const collectionAnalyzedAt = c.lastAnalyzedAt;
+            return collectionAnalyzedAt && collectionAnalyzedAt > template.lastAnalyzedAt!;
+          })
+        : collectionsWithAnalytics.length > 0;
+
+      res.json({
+        analytics: template.analyticsData as TemplateAnalytics | null,
+        lastAnalyzedAt: template.lastAnalyzedAt,
+        analyzedCollectionCount: template.analyzedCollectionCount || 0,
+        currentCollectionCount: collectionsWithAnalytics.length,
+        totalCollectionCount: collections.length,
+        isStale,
+        missingAnalytics: collections.filter(c => c.analyticsData === null).length,
+      });
+    } catch (error) {
+      console.error("Error fetching template analytics:", error);
+      res.status(500).json({ message: "Failed to fetch template analytics" });
+    }
+  });
+
+  app.post("/api/templates/:templateId/analytics/refresh", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const questions = await storage.getQuestionsByTemplate(template.id);
+      const collections = await storage.getCollectionsByTemplate(template.id);
+
+      // Get session counts and analytics for each collection
+      const collectionsData = await Promise.all(
+        collections.map(async (collection) => {
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          const completedSessions = sessions.filter(s => s.status === "completed");
+          return {
+            collection,
+            analytics: collection.analyticsData as CollectionAnalytics | null,
+            sessionCount: completedSessions.length,
+          };
+        })
+      );
+
+      const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null);
+
+      if (collectionsWithAnalytics.length === 0) {
+        return res.status(400).json({ 
+          message: "No collections with analytics available. Please refresh analytics for at least one collection first.",
+          missingAnalytics: collections.length,
+        });
+      }
+
+      console.log("[Template Analytics] Generating for template:", template.name);
+      console.log("[Template Analytics] Collections with analytics:", collectionsWithAnalytics.length);
+
+      const analysisResult = await generateTemplateAnalytics({
+        collections: collectionsData,
+        templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
+        templateName: template.name,
+      });
+
+      const analyticsData: TemplateAnalytics = {
+        ...analysisResult,
+        generatedAt: Date.now(),
+      };
+
+      await storage.updateTemplate(template.id, {
+        lastAnalyzedAt: new Date(),
+        analyzedCollectionCount: collectionsWithAnalytics.length,
+        analyticsData,
+      } as any);
+
+      res.json({
+        analytics: analyticsData,
+        lastAnalyzedAt: new Date(),
+        analyzedCollectionCount: collectionsWithAnalytics.length,
+        currentCollectionCount: collectionsWithAnalytics.length,
+        totalCollectionCount: collections.length,
+        isStale: false,
+        missingAnalytics: collections.length - collectionsWithAnalytics.length,
+      });
+    } catch (error) {
+      console.error("Error generating template analytics:", error);
+      res.status(500).json({ message: "Failed to generate template analytics" });
+    }
+  });
+
+  // Project Analytics
+  app.get("/api/projects/:projectId/analytics", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const templates = await storage.getTemplatesByProject(project.id);
+      const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null);
+
+      // Check staleness: any template refreshed after project's lastAnalyzedAt
+      const isStale = project.lastAnalyzedAt 
+        ? templates.some(t => {
+            const templateAnalyzedAt = t.lastAnalyzedAt;
+            return templateAnalyzedAt && templateAnalyzedAt > project.lastAnalyzedAt!;
+          })
+        : templatesWithAnalytics.length > 0;
+
+      res.json({
+        analytics: project.analyticsData as ProjectAnalytics | null,
+        lastAnalyzedAt: project.lastAnalyzedAt,
+        analyzedTemplateCount: project.analyzedTemplateCount || 0,
+        currentTemplateCount: templatesWithAnalytics.length,
+        totalTemplateCount: templates.length,
+        isStale,
+        missingAnalytics: templates.filter(t => t.analyticsData === null).length,
+      });
+    } catch (error) {
+      console.error("Error fetching project analytics:", error);
+      res.status(500).json({ message: "Failed to fetch project analytics" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/analytics/refresh", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const templates = await storage.getTemplatesByProject(project.id);
+
+      // Get collection counts and session totals for each template
+      const templatesData = await Promise.all(
+        templates.map(async (template) => {
+          const collections = await storage.getCollectionsByTemplate(template.id);
+          let totalSessions = 0;
+          for (const collection of collections) {
+            const sessions = await storage.getSessionsByCollection(collection.id);
+            totalSessions += sessions.filter(s => s.status === "completed").length;
+          }
+          return {
+            template,
+            analytics: template.analyticsData as TemplateAnalytics | null,
+            collectionCount: collections.length,
+            totalSessions,
+          };
+        })
+      );
+
+      const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null);
+
+      if (templatesWithAnalytics.length === 0) {
+        return res.status(400).json({ 
+          message: "No templates with analytics available. Please refresh analytics for at least one template first.",
+          missingAnalytics: templates.length,
+        });
+      }
+
+      console.log("[Project Analytics] Generating for project:", project.name);
+      console.log("[Project Analytics] Templates with analytics:", templatesWithAnalytics.length);
+
+      const analysisResult = await generateProjectAnalytics({
+        templates: templatesData,
+        projectName: project.name,
+        projectObjective: project.objective || "",
+      });
+
+      const analyticsData: ProjectAnalytics = {
+        ...analysisResult,
+        generatedAt: Date.now(),
+      };
+
+      await storage.updateProject(project.id, {
+        lastAnalyzedAt: new Date(),
+        analyzedTemplateCount: templatesWithAnalytics.length,
+        analyticsData,
+      } as any);
+
+      res.json({
+        analytics: analyticsData,
+        lastAnalyzedAt: new Date(),
+        analyzedTemplateCount: templatesWithAnalytics.length,
+        currentTemplateCount: templatesWithAnalytics.length,
+        totalTemplateCount: templates.length,
+        isStale: false,
+        missingAnalytics: templates.length - templatesWithAnalytics.length,
+      });
+    } catch (error) {
+      console.error("Error generating project analytics:", error);
+      res.status(500).json({ message: "Failed to generate project analytics" });
     }
   });
 

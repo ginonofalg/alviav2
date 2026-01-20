@@ -23,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ProjectAnalyticsView } from "@/components/analytics";
 import type { Project, InterviewTemplate, Collection } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
@@ -322,15 +323,7 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="analytics">
-          <Card className="py-12">
-            <CardContent className="text-center">
-              <BarChart3 className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
-              <h3 className="font-medium mb-2">Analytics coming soon</h3>
-              <p className="text-sm text-muted-foreground">
-                Once you have interview data, you'll see aggregated insights here.
-              </p>
-            </CardContent>
-          </Card>
+          <ProjectAnalyticsView projectId={projectId!} projectName={project.name} />
         </TabsContent>
       </Tabs>
     </div>

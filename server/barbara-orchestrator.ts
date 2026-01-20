@@ -31,6 +31,8 @@ export interface BarbaraConfig {
   analysis: BarbaraUseCaseConfig;
   topicOverlap: BarbaraUseCaseConfig;
   summarisation: BarbaraUseCaseConfig;
+  templateAnalytics: BarbaraUseCaseConfig;
+  projectAnalytics: BarbaraUseCaseConfig;
 }
 
 // Default configuration - can be updated at runtime
@@ -50,6 +52,16 @@ const barbaraConfig: BarbaraConfig = {
     verbosity: "low",
     reasoningEffort: "low",
   },
+  templateAnalytics: {
+    model: "gpt-5-mini",
+    verbosity: "medium",
+    reasoningEffort: "low",
+  },
+  projectAnalytics: {
+    model: "gpt-5",
+    verbosity: "medium",
+    reasoningEffort: "medium",
+  },
 };
 
 // Getters and setters for Barbara configuration
@@ -68,6 +80,12 @@ export function updateBarbaraConfig(
   }
   if (updates.summarisation) {
     Object.assign(barbaraConfig.summarisation, updates.summarisation);
+  }
+  if (updates.templateAnalytics) {
+    Object.assign(barbaraConfig.templateAnalytics, updates.templateAnalytics);
+  }
+  if (updates.projectAnalytics) {
+    Object.assign(barbaraConfig.projectAnalytics, updates.projectAnalytics);
   }
   return getBarbaraConfig();
 }
@@ -91,6 +109,20 @@ export function updateSummarisationConfig(
 ): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.summarisation, config);
   return { ...barbaraConfig.summarisation };
+}
+
+export function updateTemplateAnalyticsConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.templateAnalytics, config);
+  return { ...barbaraConfig.templateAnalytics };
+}
+
+export function updateProjectAnalyticsConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.projectAnalytics, config);
+  return { ...barbaraConfig.projectAnalytics };
 }
 
 export interface TranscriptEntry {
@@ -1390,4 +1422,584 @@ function validateDepth(d: any): "mentioned" | "explored" | "deeply_explored" {
 function validatePerspective(p: any): "narrow" | "moderate" | "diverse" {
   if (p === "narrow" || p === "moderate" || p === "diverse") return p;
   return "moderate";
+}
+
+// Template Analytics Generation
+import type {
+  TemplateAnalytics,
+  CollectionPerformanceSummary,
+  QuestionConsistency,
+  Collection,
+} from "@shared/schema";
+
+export interface TemplateAnalyticsInput {
+  collections: {
+    collection: Collection;
+    analytics: CollectionAnalytics | null;
+    sessionCount: number;
+  }[];
+  templateQuestions: { text: string; index: number }[];
+  templateName: string;
+}
+
+const TEMPLATE_ANALYTICS_TIMEOUT_MS = 60000;
+
+export async function generateTemplateAnalytics(
+  input: TemplateAnalyticsInput,
+): Promise<Omit<TemplateAnalytics, "generatedAt">> {
+  console.log("[Barbara] Starting template analytics generation...");
+
+  const collectionsWithAnalytics = input.collections.filter(c => c.analytics !== null);
+
+  if (collectionsWithAnalytics.length === 0) {
+    console.log("[Barbara] No collections with analytics found, returning empty template analytics");
+    return createEmptyTemplateAnalytics();
+  }
+
+  // Build collection performance summaries
+  const collectionPerformance: CollectionPerformanceSummary[] = collectionsWithAnalytics.map(c => ({
+    collectionId: c.collection.id,
+    collectionName: c.collection.name,
+    sessionCount: c.sessionCount,
+    avgQualityScore: c.analytics!.overallStats.avgQualityScore,
+    avgSessionDuration: c.analytics!.overallStats.avgSessionDuration,
+    topThemes: c.analytics!.themes.slice(0, 3).map(t => t.theme),
+    sentimentDistribution: c.analytics!.overallStats.sentimentDistribution,
+    createdAt: c.collection.createdAt?.toISOString() || new Date().toISOString(),
+  }));
+
+  // Calculate question consistency across collections
+  const questionConsistency: QuestionConsistency[] = input.templateQuestions.map((q, idx) => {
+    const questionScores: { collectionId: string; avgQuality: number; avgWordCount: number }[] = [];
+
+    for (const c of collectionsWithAnalytics) {
+      const qp = c.analytics!.questionPerformance.find(qp => qp.questionIndex === idx);
+      if (qp && qp.responseCount > 0) {
+        questionScores.push({
+          collectionId: c.collection.id,
+          avgQuality: qp.avgQualityScore,
+          avgWordCount: qp.avgWordCount,
+        });
+      }
+    }
+
+    if (questionScores.length === 0) {
+      return {
+        questionIndex: idx,
+        questionText: q.text,
+        avgQualityAcrossCollections: 0,
+        qualityVariance: 0,
+        avgWordCountAcrossCollections: 0,
+        bestPerformingCollectionId: "",
+        worstPerformingCollectionId: "",
+        consistencyRating: "consistent" as const,
+      };
+    }
+
+    const avgQuality = questionScores.reduce((sum, s) => sum + s.avgQuality, 0) / questionScores.length;
+    const avgWordCount = questionScores.reduce((sum, s) => sum + s.avgWordCount, 0) / questionScores.length;
+
+    // Calculate variance
+    const variance = questionScores.length > 1
+      ? questionScores.reduce((sum, s) => sum + Math.pow(s.avgQuality - avgQuality, 2), 0) / questionScores.length
+      : 0;
+
+    const sorted = [...questionScores].sort((a, b) => b.avgQuality - a.avgQuality);
+    const best = sorted[0]?.collectionId || "";
+    const worst = sorted[sorted.length - 1]?.collectionId || "";
+
+    // Determine consistency rating based on variance
+    const consistencyRating: "consistent" | "variable" | "inconsistent" =
+      variance < 100 ? "consistent" : variance < 400 ? "variable" : "inconsistent";
+
+    return {
+      questionIndex: idx,
+      questionText: q.text,
+      avgQualityAcrossCollections: Math.round(avgQuality),
+      qualityVariance: Math.round(variance),
+      avgWordCountAcrossCollections: Math.round(avgWordCount),
+      bestPerformingCollectionId: best,
+      worstPerformingCollectionId: worst,
+      consistencyRating,
+    };
+  });
+
+  // Aggregate themes across collections
+  const themeMap = new Map<string, {
+    totalMentions: number;
+    collections: Set<string>;
+    sentiments: ThemeSentiment[];
+    prevalences: number[];
+  }>();
+
+  for (const c of collectionsWithAnalytics) {
+    for (const theme of c.analytics!.themes) {
+      const existing = themeMap.get(theme.theme) || {
+        totalMentions: 0,
+        collections: new Set<string>(),
+        sentiments: [],
+        prevalences: [],
+      };
+      existing.totalMentions += theme.count;
+      existing.collections.add(c.collection.id);
+      existing.sentiments.push(theme.sentiment);
+      existing.prevalences.push(theme.prevalence);
+      themeMap.set(theme.theme, existing);
+    }
+  }
+
+  const aggregatedThemes = Array.from(themeMap.entries())
+    .map(([theme, data]) => ({
+      theme,
+      totalMentions: data.totalMentions,
+      collectionsAppeared: data.collections.size,
+      avgPrevalence: Math.round(data.prevalences.reduce((a, b) => a + b, 0) / data.prevalences.length),
+      sentiment: getMajoritySentiment(data.sentiments),
+    }))
+    .sort((a, b) => b.totalMentions - a.totalMentions)
+    .slice(0, 15);
+
+  // Calculate template effectiveness metrics
+  const totalSessions = collectionsWithAnalytics.reduce((sum, c) => sum + c.sessionCount, 0);
+  const avgQualityScore = collectionsWithAnalytics.length > 0
+    ? Math.round(collectionsWithAnalytics.reduce((sum, c) => sum + c.analytics!.overallStats.avgQualityScore, 0) / collectionsWithAnalytics.length)
+    : 0;
+  const avgSessionDuration = collectionsWithAnalytics.length > 0
+    ? Math.round(collectionsWithAnalytics.reduce((sum, c) => sum + c.analytics!.overallStats.avgSessionDuration, 0) / collectionsWithAnalytics.length)
+    : 0;
+
+  const sentimentAgg = { positive: 0, neutral: 0, negative: 0 };
+  for (const c of collectionsWithAnalytics) {
+    sentimentAgg.positive += c.analytics!.overallStats.sentimentDistribution.positive;
+    sentimentAgg.neutral += c.analytics!.overallStats.sentimentDistribution.neutral;
+    sentimentAgg.negative += c.analytics!.overallStats.sentimentDistribution.negative;
+  }
+  const total = sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
+  const sentimentDistribution = total > 0
+    ? {
+        positive: Math.round((sentimentAgg.positive / total) * 100),
+        neutral: Math.round((sentimentAgg.neutral / total) * 100),
+        negative: Math.round((sentimentAgg.negative / total) * 100),
+      }
+    : { positive: 0, neutral: 0, negative: 0 };
+
+  // Generate recommendations using AI if there's enough data
+  let recommendations: Recommendation[] = [];
+
+  // Add recommendations based on question consistency
+  for (const qc of questionConsistency) {
+    if (qc.consistencyRating === "inconsistent") {
+      recommendations.push({
+        type: "question_improvement",
+        title: `Review Question ${qc.questionIndex + 1} for Consistency`,
+        description: `This question shows high performance variance across collections (variance: ${qc.qualityVariance}). Consider rewording for more consistent results.`,
+        relatedQuestions: [qc.questionIndex],
+        priority: "high",
+      });
+    }
+    if (qc.avgQualityAcrossCollections < 50 && qc.avgQualityAcrossCollections > 0) {
+      recommendations.push({
+        type: "question_improvement",
+        title: `Improve Question ${qc.questionIndex + 1}`,
+        description: `This question has a consistently low quality score (${qc.avgQualityAcrossCollections}%) across collections.`,
+        relatedQuestions: [qc.questionIndex],
+        priority: "medium",
+      });
+    }
+  }
+
+  // Limit recommendations
+  recommendations = recommendations.slice(0, 10);
+
+  console.log("[Barbara] Template analytics complete:", {
+    collections: collectionPerformance.length,
+    themes: aggregatedThemes.length,
+    recommendations: recommendations.length,
+  });
+
+  return {
+    collectionPerformance,
+    questionConsistency,
+    aggregatedThemes,
+    templateEffectiveness: {
+      totalSessions,
+      totalCollections: collectionsWithAnalytics.length,
+      avgQualityScore,
+      avgSessionDuration,
+      avgCompletionRate: 100, // TODO: Calculate from actual data
+      sentimentDistribution,
+    },
+    recommendations,
+  };
+}
+
+function createEmptyTemplateAnalytics(): Omit<TemplateAnalytics, "generatedAt"> {
+  return {
+    collectionPerformance: [],
+    questionConsistency: [],
+    aggregatedThemes: [],
+    templateEffectiveness: {
+      totalSessions: 0,
+      totalCollections: 0,
+      avgQualityScore: 0,
+      avgSessionDuration: 0,
+      avgCompletionRate: 0,
+      sentimentDistribution: { positive: 0, neutral: 0, negative: 0 },
+    },
+    recommendations: [],
+  };
+}
+
+function getMajoritySentiment(sentiments: ThemeSentiment[]): ThemeSentiment {
+  const counts: Record<ThemeSentiment, number> = { positive: 0, neutral: 0, negative: 0, mixed: 0 };
+  for (const s of sentiments) {
+    counts[s]++;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return sorted[0][0] as ThemeSentiment;
+}
+
+// Project Analytics Generation
+import type {
+  ProjectAnalytics,
+  TemplatePerformanceSummary,
+  CrossTemplateTheme,
+  InterviewTemplate,
+} from "@shared/schema";
+
+export interface ProjectAnalyticsInput {
+  templates: {
+    template: InterviewTemplate;
+    analytics: TemplateAnalytics | null;
+    collectionCount: number;
+    totalSessions: number;
+  }[];
+  projectName: string;
+  projectObjective: string;
+}
+
+const PROJECT_ANALYTICS_TIMEOUT_MS = 120000;
+
+export async function generateProjectAnalytics(
+  input: ProjectAnalyticsInput,
+): Promise<Omit<ProjectAnalytics, "generatedAt">> {
+  console.log("[Barbara] Starting project analytics generation...");
+
+  const templatesWithAnalytics = input.templates.filter(t => t.analytics !== null);
+
+  if (templatesWithAnalytics.length === 0) {
+    console.log("[Barbara] No templates with analytics found, returning empty project analytics");
+    return createEmptyProjectAnalytics();
+  }
+
+  // Build template performance summaries
+  const templatePerformance: TemplatePerformanceSummary[] = templatesWithAnalytics.map(t => ({
+    templateId: t.template.id,
+    templateName: t.template.name,
+    collectionCount: t.collectionCount,
+    totalSessions: t.totalSessions,
+    avgQualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
+    topThemes: t.analytics!.aggregatedThemes.slice(0, 3).map(th => th.theme),
+    sentimentDistribution: t.analytics!.templateEffectiveness.sentimentDistribution,
+  }));
+
+  // Calculate project-wide metrics
+  const totalTemplates = templatesWithAnalytics.length;
+  const totalCollections = templatesWithAnalytics.reduce((sum, t) => sum + t.collectionCount, 0);
+  const totalSessions = templatesWithAnalytics.reduce((sum, t) => sum + t.totalSessions, 0);
+  const avgQualityScore = totalTemplates > 0
+    ? Math.round(templatesWithAnalytics.reduce((sum, t) => sum + t.analytics!.templateEffectiveness.avgQualityScore, 0) / totalTemplates)
+    : 0;
+  const avgSessionDuration = totalTemplates > 0
+    ? Math.round(templatesWithAnalytics.reduce((sum, t) => sum + t.analytics!.templateEffectiveness.avgSessionDuration, 0) / totalTemplates)
+    : 0;
+
+  const sentimentAgg = { positive: 0, neutral: 0, negative: 0 };
+  for (const t of templatesWithAnalytics) {
+    sentimentAgg.positive += t.analytics!.templateEffectiveness.sentimentDistribution.positive;
+    sentimentAgg.neutral += t.analytics!.templateEffectiveness.sentimentDistribution.neutral;
+    sentimentAgg.negative += t.analytics!.templateEffectiveness.sentimentDistribution.negative;
+  }
+  const total = sentimentAgg.positive + sentimentAgg.neutral + sentimentAgg.negative;
+  const sentimentDistribution = total > 0
+    ? {
+        positive: Math.round((sentimentAgg.positive / total) * 100),
+        neutral: Math.round((sentimentAgg.neutral / total) * 100),
+        negative: Math.round((sentimentAgg.negative / total) * 100),
+      }
+    : { positive: 0, neutral: 0, negative: 0 };
+
+  // Extract cross-template themes using AI
+  const aiAnalysis = await extractCrossTemplateThemesWithAI(input, templatesWithAnalytics);
+
+  // Generate recommendations
+  const recommendations: Recommendation[] = [];
+
+  // Add recommendations based on template performance
+  for (const tp of templatePerformance) {
+    if (tp.avgQualityScore < 50 && tp.avgQualityScore > 0) {
+      recommendations.push({
+        type: "question_improvement",
+        title: `Review Template "${tp.templateName}"`,
+        description: `This template has a lower quality score (${tp.avgQualityScore}%) compared to others. Consider revising questions.`,
+        priority: "medium",
+      });
+    }
+  }
+
+  // Add recommendations from AI insights
+  if (aiAnalysis.crossTemplateThemes.some(t => t.isStrategic)) {
+    const strategicThemes = aiAnalysis.crossTemplateThemes.filter(t => t.isStrategic);
+    for (const theme of strategicThemes.slice(0, 2)) {
+      recommendations.push({
+        type: "explore_deeper",
+        title: `Strategic Theme: "${theme.theme}"`,
+        description: theme.description,
+        relatedThemes: [theme.id],
+        priority: "high",
+      });
+    }
+  }
+
+  console.log("[Barbara] Project analytics complete:", {
+    templates: templatePerformance.length,
+    crossTemplateThemes: aiAnalysis.crossTemplateThemes.length,
+    strategicInsights: aiAnalysis.strategicInsights.length,
+    recommendations: recommendations.length,
+  });
+
+  return {
+    templatePerformance,
+    crossTemplateThemes: aiAnalysis.crossTemplateThemes,
+    strategicInsights: aiAnalysis.strategicInsights,
+    executiveSummary: aiAnalysis.executiveSummary,
+    projectMetrics: {
+      totalTemplates,
+      totalCollections,
+      totalSessions,
+      avgQualityScore,
+      avgSessionDuration,
+      sentimentDistribution,
+    },
+    recommendations: recommendations.slice(0, 10),
+  };
+}
+
+interface AIProjectAnalysisResult {
+  crossTemplateThemes: CrossTemplateTheme[];
+  strategicInsights: {
+    insight: string;
+    significance: string;
+    supportingTemplates: string[];
+    verbatims: ThemeVerbatim[];
+  }[];
+  executiveSummary: {
+    headline: string;
+    keyTakeaways: string[];
+    recommendedActions: string[];
+  };
+}
+
+async function extractCrossTemplateThemesWithAI(
+  input: ProjectAnalyticsInput,
+  templatesWithAnalytics: ProjectAnalyticsInput["templates"],
+): Promise<AIProjectAnalysisResult> {
+  if (templatesWithAnalytics.length === 0) {
+    return {
+      crossTemplateThemes: [],
+      strategicInsights: [],
+      executiveSummary: {
+        headline: "No data available",
+        keyTakeaways: [],
+        recommendedActions: [],
+      },
+    };
+  }
+
+  // Build template data summary for AI
+  const templateSummaries = templatesWithAnalytics.map(t => ({
+    templateId: t.template.id,
+    templateName: t.template.name,
+    objective: t.template.objective || "",
+    themes: t.analytics!.aggregatedThemes.map(th => ({
+      theme: th.theme,
+      mentions: th.totalMentions,
+      sentiment: th.sentiment,
+    })),
+    topCollectionThemes: t.analytics!.collectionPerformance.flatMap(cp => cp.topThemes).slice(0, 10),
+    qualityScore: t.analytics!.templateEffectiveness.avgQualityScore,
+    sessionCount: t.totalSessions,
+  }));
+
+  const systemPrompt = `You are Barbara, a strategic research analyst. Your task is to analyze interview data across multiple interview templates within a project and identify cross-cutting themes and strategic insights.
+
+IMPORTANT: For all verbatims/quotes, apply PII anonymization:
+- Replace names with [Name]
+- Replace locations/cities with [Location]
+- Replace company names with [Company]
+- Replace specific dates with [Date]
+
+Return a JSON object with this exact structure:
+{
+  "crossTemplateThemes": [
+    {
+      "id": "theme_1",
+      "theme": "Brief theme name (2-5 words)",
+      "description": "One sentence description",
+      "templatesAppeared": ["template_id_1", "template_id_2"],
+      "totalMentions": number,
+      "avgPrevalence": number (0-100),
+      "sentiment": "positive" | "negative" | "neutral" | "mixed",
+      "isStrategic": boolean (true if high-impact across multiple interview types),
+      "verbatims": [
+        {
+          "quote": "Representative quote with PII removed",
+          "questionIndex": 0,
+          "sessionId": "",
+          "sentiment": "positive" | "negative" | "neutral" | "mixed"
+        }
+      ]
+    }
+  ],
+  "strategicInsights": [
+    {
+      "insight": "Key strategic finding",
+      "significance": "Why this matters for the business",
+      "supportingTemplates": ["template_id_1"],
+      "verbatims": []
+    }
+  ],
+  "executiveSummary": {
+    "headline": "One compelling sentence summarizing the project findings",
+    "keyTakeaways": ["3-5 key points for stakeholders"],
+    "recommendedActions": ["2-3 actionable recommendations"]
+  }
+}
+
+Focus on:
+1. Themes that appear across MULTIPLE templates (cross-cutting insights)
+2. Strategic implications for the business
+3. Patterns that wouldn't be visible from looking at templates individually
+4. Executive-level summary suitable for stakeholder presentation`;
+
+  const userPrompt = `PROJECT: ${input.projectName}
+OBJECTIVE: ${input.projectObjective || "Not specified"}
+
+TEMPLATE DATA:
+${JSON.stringify(templateSummaries, null, 2)}
+
+Analyze the themes across these templates to identify cross-cutting patterns and strategic insights. Focus on themes that appear in multiple templates and their business implications.`;
+
+  try {
+    const config = barbaraConfig.projectAnalytics;
+    console.log(`[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`);
+
+    const response = await Promise.race([
+      openai.chat.completions.create({
+        model: config.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 3000,
+        reasoning_effort: config.reasoningEffort,
+        verbosity: config.verbosity,
+      } as Parameters<typeof openai.chat.completions.create>[0]),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Project analytics AI timeout")), PROJECT_ANALYTICS_TIMEOUT_MS)
+      ),
+    ]) as ChatCompletion;
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.log("[Project Analytics] Empty AI response, returning defaults");
+      return createDefaultAIResult(input.projectName);
+    }
+
+    const parsed = JSON.parse(content);
+
+    // Validate and transform the response
+    const crossTemplateThemes: CrossTemplateTheme[] = (parsed.crossTemplateThemes || [])
+      .slice(0, 10)
+      .map((t: any, idx: number) => ({
+        id: t.id || `cross_theme_${idx + 1}`,
+        theme: t.theme || "",
+        description: t.description || "",
+        templatesAppeared: Array.isArray(t.templatesAppeared) ? t.templatesAppeared : [],
+        totalMentions: t.totalMentions || 0,
+        avgPrevalence: Math.min(100, Math.max(0, t.avgPrevalence || 0)),
+        sentiment: validateSentiment(t.sentiment),
+        isStrategic: Boolean(t.isStrategic),
+        verbatims: (t.verbatims || []).slice(0, 3).map((v: any) => ({
+          quote: v.quote || "",
+          questionIndex: v.questionIndex || 0,
+          sessionId: v.sessionId || "",
+          sentiment: validateSentiment(v.sentiment),
+        })),
+      }));
+
+    const strategicInsights = (parsed.strategicInsights || [])
+      .slice(0, 5)
+      .map((s: any) => ({
+        insight: s.insight || "",
+        significance: s.significance || "",
+        supportingTemplates: Array.isArray(s.supportingTemplates) ? s.supportingTemplates : [],
+        verbatims: (s.verbatims || []).slice(0, 2).map((v: any) => ({
+          quote: v.quote || "",
+          questionIndex: v.questionIndex || 0,
+          sessionId: v.sessionId || "",
+          sentiment: validateSentiment(v.sentiment),
+        })),
+      }));
+
+    const executiveSummary = {
+      headline: parsed.executiveSummary?.headline || `Analysis of ${input.projectName}`,
+      keyTakeaways: Array.isArray(parsed.executiveSummary?.keyTakeaways)
+        ? parsed.executiveSummary.keyTakeaways.slice(0, 5)
+        : [],
+      recommendedActions: Array.isArray(parsed.executiveSummary?.recommendedActions)
+        ? parsed.executiveSummary.recommendedActions.slice(0, 3)
+        : [],
+    };
+
+    return { crossTemplateThemes, strategicInsights, executiveSummary };
+  } catch (error) {
+    console.error("[Project Analytics] AI analysis failed:", error);
+    return createDefaultAIResult(input.projectName);
+  }
+}
+
+function createDefaultAIResult(projectName: string): AIProjectAnalysisResult {
+  return {
+    crossTemplateThemes: [],
+    strategicInsights: [],
+    executiveSummary: {
+      headline: `Analysis of ${projectName}`,
+      keyTakeaways: ["Insufficient data for cross-template analysis"],
+      recommendedActions: ["Run more interviews across templates to enable cross-template insights"],
+    },
+  };
+}
+
+function createEmptyProjectAnalytics(): Omit<ProjectAnalytics, "generatedAt"> {
+  return {
+    templatePerformance: [],
+    crossTemplateThemes: [],
+    strategicInsights: [],
+    executiveSummary: {
+      headline: "No data available",
+      keyTakeaways: [],
+      recommendedActions: [],
+    },
+    projectMetrics: {
+      totalTemplates: 0,
+      totalCollections: 0,
+      totalSessions: 0,
+      avgQualityScore: 0,
+      avgSessionDuration: 0,
+      sentimentDistribution: { positive: 0, neutral: 0, negative: 0 },
+    },
+    recommendations: [],
+  };
 }

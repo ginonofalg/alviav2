@@ -76,3 +76,20 @@ The core data model follows this hierarchy:
 | Push DB schema | `npm run db:push` |
 
 The development server runs on port 5000 with Vite HMR for frontend hot reloading.
+
+## Recent Changes
+
+### Multi-Level Analytics System (January 2026)
+Expanded analytics capability from Collection level to Template and Project levels:
+
+- **Collection Analytics**: Individual collection insights (themes, questions, quality scores)
+- **Template Analytics**: Aggregates collection data with comparison and question consistency analysis (uses gpt-5-mini for fast processing)
+- **Project Analytics**: AI-powered cross-template theme extraction and strategic insights (uses gpt-5 with medium reasoning for deep analysis)
+
+Key files:
+- `shared/schema.ts`: TemplateAnalytics, ProjectAnalytics types
+- `server/barbara-orchestrator.ts`: generateTemplateAnalytics(), generateProjectAnalytics(), LLM config
+- `client/src/components/analytics/TemplateAnalyticsView.tsx`: Template analytics UI
+- `client/src/components/analytics/ProjectAnalyticsView.tsx`: Project analytics UI with executive summary
+
+Analytics hierarchy: Collection → Template (aggregates collections) → Project (aggregates templates with AI synthesis)

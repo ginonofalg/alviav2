@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowLeft, 
   Plus, 
@@ -15,8 +17,10 @@ import {
   Hash,
   List,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  BarChart3
 } from "lucide-react";
+import { TemplateAnalyticsView } from "@/components/analytics";
 import type { InterviewTemplate, Question, Project } from "@shared/schema";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
@@ -208,46 +212,59 @@ export default function TemplateDetailPage() {
         </Card>
       </div>
 
-      {template.tone && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium">Tone:</span>
-              <Badge variant="outline">{template.tone}</Badge>
+      <Tabs defaultValue="questions" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="questions" data-testid="tab-questions">
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Questions ({questions.length})
+          </TabsTrigger>
+          <TabsTrigger value="analytics" data-testid="tab-analytics">
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="questions" className="space-y-4">
+          {template.tone && (
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">Tone:</span>
+                  <Badge variant="outline">{template.tone}</Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {questions.length > 0 ? (
+            <div className="space-y-3">
+              {questions.map((question, index) => (
+                <QuestionCard key={question.id} question={question} index={index} />
+              ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <MessageSquare className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
+                <h3 className="font-medium mb-2">No questions yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  This template doesn't have any questions.
+                </p>
+                <Link href={`/templates/${templateId}/edit`}>
+                  <Button data-testid="button-add-questions">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Questions
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Questions ({questions.length})</h2>
-        </div>
-
-        {questions.length > 0 ? (
-          <div className="space-y-3">
-            {questions.map((question, index) => (
-              <QuestionCard key={question.id} question={question} index={index} />
-            ))}
-          </div>
-        ) : (
-          <Card className="py-12">
-            <CardContent className="text-center">
-              <MessageSquare className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
-              <h3 className="font-medium mb-2">No questions yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                This template doesn't have any questions.
-              </p>
-              <Link href={`/templates/${templateId}/edit`}>
-                <Button data-testid="button-add-questions">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Questions
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+        <TabsContent value="analytics">
+          <TemplateAnalyticsView templateId={templateId!} templateName={template.name} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

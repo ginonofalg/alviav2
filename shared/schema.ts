@@ -67,6 +67,10 @@ export const projects = pgTable("projects", {
   avoidRules: text("avoid_rules").array(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Analytics metadata
+  lastAnalyzedAt: timestamp("last_analyzed_at"),
+  analyzedTemplateCount: integer("analyzed_template_count").default(0),
+  analyticsData: jsonb("analytics_data"),
 });
 
 // Interview Templates (versioned)
@@ -81,6 +85,10 @@ export const interviewTemplates = pgTable("interview_templates", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Analytics metadata
+  lastAnalyzedAt: timestamp("last_analyzed_at"),
+  analyzedCollectionCount: integer("analyzed_collection_count").default(0),
+  analyticsData: jsonb("analytics_data"),
 });
 
 // Questions
@@ -487,6 +495,126 @@ export type CollectionAnalytics = {
     avgThemesPerSession: number;
     themeDepthScore: number;
   };
+  
+  generatedAt: number;
+};
+
+// Collection performance summary for template-level aggregation
+export type CollectionPerformanceSummary = {
+  collectionId: string;
+  collectionName: string;
+  sessionCount: number;
+  avgQualityScore: number;
+  avgSessionDuration: number;
+  topThemes: string[];
+  sentimentDistribution: { positive: number; neutral: number; negative: number };
+  createdAt: string;
+};
+
+// Question consistency across collections
+export type QuestionConsistency = {
+  questionIndex: number;
+  questionText: string;
+  avgQualityAcrossCollections: number;
+  qualityVariance: number; // High variance = inconsistent performance
+  avgWordCountAcrossCollections: number;
+  bestPerformingCollectionId: string;
+  worstPerformingCollectionId: string;
+  consistencyRating: "consistent" | "variable" | "inconsistent";
+};
+
+// Template-level analytics data (stored in interviewTemplates.analyticsData)
+export type TemplateAnalytics = {
+  // Collection comparison
+  collectionPerformance: CollectionPerformanceSummary[];
+  
+  // Question consistency across collections
+  questionConsistency: QuestionConsistency[];
+  
+  // Aggregated themes across all collections
+  aggregatedThemes: {
+    theme: string;
+    totalMentions: number;
+    collectionsAppeared: number;
+    avgPrevalence: number;
+    sentiment: ThemeSentiment;
+  }[];
+  
+  // Template effectiveness metrics
+  templateEffectiveness: {
+    totalSessions: number;
+    totalCollections: number;
+    avgQualityScore: number;
+    avgSessionDuration: number;
+    avgCompletionRate: number;
+    sentimentDistribution: { positive: number; neutral: number; negative: number };
+  };
+  
+  // Recommendations for template improvement
+  recommendations: Recommendation[];
+  
+  generatedAt: number;
+};
+
+// Template performance summary for project-level aggregation
+export type TemplatePerformanceSummary = {
+  templateId: string;
+  templateName: string;
+  collectionCount: number;
+  totalSessions: number;
+  avgQualityScore: number;
+  topThemes: string[];
+  sentimentDistribution: { positive: number; neutral: number; negative: number };
+};
+
+// Cross-template theme (themes that appear across multiple templates)
+export type CrossTemplateTheme = {
+  id: string;
+  theme: string;
+  description: string;
+  templatesAppeared: string[]; // template IDs
+  totalMentions: number;
+  avgPrevalence: number;
+  sentiment: ThemeSentiment;
+  isStrategic: boolean; // High-impact theme across multiple interview types
+  verbatims: ThemeVerbatim[];
+};
+
+// Project-level analytics data (stored in projects.analyticsData)
+export type ProjectAnalytics = {
+  // Template comparison
+  templatePerformance: TemplatePerformanceSummary[];
+  
+  // Cross-template theme discovery (AI-powered)
+  crossTemplateThemes: CrossTemplateTheme[];
+  
+  // Strategic insights across all templates
+  strategicInsights: {
+    insight: string;
+    significance: string;
+    supportingTemplates: string[];
+    verbatims: ThemeVerbatim[];
+  }[];
+  
+  // Executive summary
+  executiveSummary: {
+    headline: string;
+    keyTakeaways: string[];
+    recommendedActions: string[];
+  };
+  
+  // Project-wide metrics
+  projectMetrics: {
+    totalTemplates: number;
+    totalCollections: number;
+    totalSessions: number;
+    avgQualityScore: number;
+    avgSessionDuration: number;
+    sentimentDistribution: { positive: number; neutral: number; negative: number };
+  };
+  
+  // Recommendations
+  recommendations: Recommendation[];
   
   generatedAt: number;
 };
