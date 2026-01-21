@@ -331,7 +331,10 @@ ${currentQuestionResponses || "(No response yet)"} //check this gets pushed
 Based on this context, should Alvia receive any guidance? Respond with  your analysis in JSON format.`;
 }
 
-export function createEmptyMetrics(questionIndex: number, recommendedFollowUps?: number | null): QuestionMetrics {
+export function createEmptyMetrics(
+  questionIndex: number,
+  recommendedFollowUps?: number | null,
+): QuestionMetrics {
   return {
     questionIndex,
     wordCount: 0,
@@ -2089,7 +2092,7 @@ async function extractCrossTemplateThemesWithAI(
   // Build enriched template data summary for AI with full detail
   const templateSummaries = templatesWithAnalytics.map((t) => {
     const analytics = t.analytics!;
-    
+
     // Include template questions (limit to prevent token overflow)
     const questionsData = (t.questions || [])
       .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -2157,17 +2160,19 @@ async function extractCrossTemplateThemesWithAI(
     }));
 
     // Include question consistency data with representative verbatims
-    const questionConsistencyData = analytics.questionConsistency.slice(0, 10).map((qc) => ({
-      questionIndex: qc.questionIndex,
-      questionText: qc.questionText,
-      avgQuality: qc.avgQualityAcrossCollections,
-      consistencyRating: qc.consistencyRating,
-      primaryThemes: qc.primaryThemes,
-      verbatims: (qc.verbatims || []).slice(0, 2).map((v) => ({
-        quote: v.quote,
-        sentiment: v.sentiment,
-      })),
-    }));
+    const questionConsistencyData = analytics.questionConsistency
+      .slice(0, 10)
+      .map((qc) => ({
+        questionIndex: qc.questionIndex,
+        questionText: qc.questionText,
+        avgQuality: qc.avgQualityAcrossCollections,
+        consistencyRating: qc.consistencyRating,
+        primaryThemes: qc.primaryThemes,
+        verbatims: (qc.verbatims || []).slice(0, 2).map((v) => ({
+          quote: v.quote,
+          sentiment: v.sentiment,
+        })),
+      }));
 
     return {
       templateId: t.template.id,
@@ -2183,30 +2188,37 @@ async function extractCrossTemplateThemesWithAI(
         qualityScore: analytics.templateEffectiveness.avgQualityScore,
         totalSessions: analytics.templateEffectiveness.totalSessions,
         totalCollections: analytics.templateEffectiveness.totalCollections,
-        sentimentDistribution: analytics.templateEffectiveness.sentimentDistribution,
+        sentimentDistribution:
+          analytics.templateEffectiveness.sentimentDistribution,
       },
     };
   });
 
   // Build strategic context section if provided
-  const hasStrategicContext = input.strategicContext && input.strategicContext.trim().length > 0;
-  const contextTypeLabel = input.contextType ? {
-    content: "Content Strategy (newsletters, blogs, social media)",
-    product: "Product Development (features, roadmap)",
-    marketing: "Marketing Campaign (campaigns, targeting)",
-    cx: "Customer Experience (support, onboarding)",
-    other: "Custom Business Context"
-  }[input.contextType] || input.contextType : null;
-  
-  const strategicContextSection = hasStrategicContext ? `
+  const hasStrategicContext =
+    input.strategicContext && input.strategicContext.trim().length > 0;
+  const contextTypeLabel = input.contextType
+    ? {
+        content: "Content Strategy (newsletters, blogs, social media)",
+        product: "Product Development (features, roadmap)",
+        marketing: "Marketing Campaign (campaigns, targeting)",
+        cx: "Customer Experience (support, onboarding)",
+        other: "Custom Business Context",
+      }[input.contextType] || input.contextType
+    : null;
+
+  const strategicContextSection = hasStrategicContext
+    ? `
 
 STRATEGIC BUSINESS CONTEXT:
 Context Type: ${contextTypeLabel || "Not specified"}
 Business Context: ${input.strategicContext}
 
-When strategic context is provided, you MUST also generate a "contextualRecommendations" section that tailors insights specifically to this business context. Frame recommendations as actionable items for this specific use case.` : "";
+When strategic context is provided, you MUST also generate a "contextualRecommendations" section that tailors insights specifically to this business context. Frame recommendations as actionable items for this specific use case.`
+    : "";
 
-  const contextualRecommendationsSchema = hasStrategicContext ? `,
+  const contextualRecommendationsSchema = hasStrategicContext
+    ? `,
   "contextualRecommendations": {
     "contextType": "${input.contextType || "other"}",
     "strategicContext": "Brief summary of the strategic context",
@@ -2227,7 +2239,8 @@ When strategic context is provided, you MUST also generate a "contextualRecommen
       }
     ],
     "strategicSummary": "A paragraph summarizing how the research findings apply to the specific business goal"
-  }` : "";
+  }`
+    : "";
 
   const systemPrompt = `You are Barbara, a strategic research analyst. Your task is to analyze comprehensive interview data across multiple interview templates within a project and identify cross-cutting themes, strategic insights, and actionable recommendations.
 
@@ -2296,15 +2309,23 @@ ANALYSIS GUIDANCE:
 4. Connect findings back to the project objective when identifying strategic implications
 5. Consider question consistency data to identify which interview approaches yielded the richest insights
 6. Generate actionable recommendations that address the key themes and findings
-7. Ensure your executive summary would be suitable for stakeholder presentation${hasStrategicContext ? `
+7. Ensure your executive summary would be suitable for stakeholder presentation${
+    hasStrategicContext
+      ? `
 8. When strategic context is provided, generate contextualRecommendations that are specifically tailored to the business context
 9. For content strategy contexts, include content ideas, newsletter topics, or social media angles derived from the research
-10. Curate verbatims that would be particularly useful for the stated business purpose (e.g., testimonial-ready quotes for marketing)` : ""}`;
+10. Curate verbatims that would be particularly useful for the stated business purpose (e.g., testimonial-ready quotes for marketing)`
+      : ""
+  }`;
 
   const userPrompt = `PROJECT: ${input.projectName}
-OBJECTIVE: ${input.projectObjective || "Not specified"}${hasStrategicContext ? `
+OBJECTIVE: ${input.projectObjective || "Not specified"}${
+    hasStrategicContext
+      ? `
 STRATEGIC CONTEXT TYPE: ${contextTypeLabel || "Not specified"}
-STRATEGIC CONTEXT: ${input.strategicContext}` : ""}
+STRATEGIC CONTEXT: ${input.strategicContext}`
+      : ""
+  }
 
 TEMPLATE DATA:
 ${JSON.stringify(templateSummaries, null, 2)}
@@ -2312,14 +2333,18 @@ ${JSON.stringify(templateSummaries, null, 2)}
 Analyze this comprehensive template data to identify:
 1. Cross-cutting themes that appear across multiple templates
 2. Strategic insights derived from the aggregated findings, consensus, and divergence points
-3. An executive summary with key takeaways and recommended actions${hasStrategicContext ? `
-4. Contextual recommendations tailored specifically to the strategic business context provided` : ""}
+3. An executive summary with key takeaways and recommended actions${
+    hasStrategicContext
+      ? `
+4. Contextual recommendations tailored specifically to the strategic business context provided`
+      : ""
+  }
 
 Pay special attention to the verbatims provided - use them to support your insights and include representative quotes in your output.${hasStrategicContext ? ` Ensure contextual recommendations are actionable and directly tied to the business goal of "${input.strategicContext?.substring(0, 100)}..."` : ""}`;
 
   try {
     const config = barbaraConfig.projectAnalytics;
-    
+
     // Log data richness for debugging
     const dataStats = templateSummaries.map((t) => ({
       template: t.templateName,
@@ -2330,13 +2355,18 @@ Pay special attention to the verbatims provided - use them to support your insig
       divergencePoints: t.divergencePoints.length,
       questionConsistency: t.questionConsistency.length,
     }));
-    console.log("[Project Analytics] Enriched template data stats:", JSON.stringify(dataStats, null, 2));
-    
+    console.log(
+      "[Project Analytics] Enriched template data stats:",
+      JSON.stringify(dataStats, null, 2),
+    );
+
     // Estimate token count (rough: ~4 chars per token)
     const templateDataStr = JSON.stringify(templateSummaries);
     const estimatedTokens = Math.ceil(templateDataStr.length / 4);
-    console.log(`[Project Analytics] Estimated input tokens for template data: ~${estimatedTokens}`);
-    
+    console.log(
+      `[Project Analytics] Estimated input tokens for template data: ~${estimatedTokens}`,
+    );
+
     console.log(
       `[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`,
     );
@@ -2349,7 +2379,7 @@ Pay special attention to the verbatims provided - use them to support your insig
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        max_completion_tokens: 10000,
+        max_completion_tokens: 20000,
         reasoning_effort: config.reasoningEffort,
         verbosity: config.verbosity,
       } as Parameters<typeof openai.chat.completions.create>[0]),
@@ -2423,7 +2453,8 @@ Pay special attention to the verbatims provided - use them to support your insig
     };
 
     // Parse contextual recommendations if present
-    let contextualRecommendations: AIProjectAnalysisResult["contextualRecommendations"] = undefined;
+    let contextualRecommendations: AIProjectAnalysisResult["contextualRecommendations"] =
+      undefined;
     if (parsed.contextualRecommendations) {
       const cr = parsed.contextualRecommendations;
       contextualRecommendations = {
@@ -2432,20 +2463,31 @@ Pay special attention to the verbatims provided - use them to support your insig
         actionItems: (cr.actionItems || []).slice(0, 10).map((item: any) => ({
           title: item.title || "",
           description: item.description || "",
-          priority: ["high", "medium", "low"].includes(item.priority) ? item.priority : "medium",
-          relatedThemes: Array.isArray(item.relatedThemes) ? item.relatedThemes : [],
+          priority: ["high", "medium", "low"].includes(item.priority)
+            ? item.priority
+            : "medium",
+          relatedThemes: Array.isArray(item.relatedThemes)
+            ? item.relatedThemes
+            : [],
           suggestedContent: item.suggestedContent || undefined,
         })),
-        curatedVerbatims: (cr.curatedVerbatims || []).slice(0, 10).map((v: any) => ({
-          quote: v.quote || "",
-          usageNote: v.usageNote || "",
-          theme: v.theme || "",
-        })),
+        curatedVerbatims: (cr.curatedVerbatims || [])
+          .slice(0, 10)
+          .map((v: any) => ({
+            quote: v.quote || "",
+            usageNote: v.usageNote || "",
+            theme: v.theme || "",
+          })),
         strategicSummary: cr.strategicSummary || "",
       };
     }
 
-    return { crossTemplateThemes, strategicInsights, executiveSummary, contextualRecommendations };
+    return {
+      crossTemplateThemes,
+      strategicInsights,
+      executiveSummary,
+      contextualRecommendations,
+    };
   } catch (error) {
     console.error("[Project Analytics] AI analysis failed:", error);
     return createDefaultAIResult(input.projectName);
