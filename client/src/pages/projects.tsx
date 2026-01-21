@@ -22,9 +22,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import type { Project } from "@shared/schema";
+
+interface ProjectWithCounts extends Project {
+  templateCount: number;
+  sessionCount: number;
+}
 import { formatDistanceToNow } from "date-fns";
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project }: { project: ProjectWithCounts }) {
   const updatedAt = project.updatedAt 
     ? formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })
     : "Recently";
@@ -70,11 +75,11 @@ function ProjectCard({ project }: { project: Project }) {
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <FileText className="w-3.5 h-3.5" />
-            <span>0 templates</span>
+            <span>{project.templateCount} {project.templateCount === 1 ? 'template' : 'templates'}</span>
           </div>
           <div className="flex items-center gap-1">
             <Users className="w-3.5 h-3.5" />
-            <span>0 sessions</span>
+            <span>{project.sessionCount} {project.sessionCount === 1 ? 'session' : 'sessions'}</span>
           </div>
         </div>
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
@@ -115,7 +120,7 @@ function ProjectCardSkeleton() {
 export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: projects, isLoading } = useQuery<Project[]>({
+  const { data: projects, isLoading } = useQuery<ProjectWithCounts[]>({
     queryKey: ["/api/projects"],
   });
 

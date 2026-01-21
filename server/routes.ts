@@ -517,7 +517,30 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const projects = await storage.getProjectsByUser(userId);
-      res.json(projects);
+      
+      // Enrich projects with template and session counts
+      const projectsWithCounts = await Promise.all(
+        projects.map(async (project) => {
+          const templates = await storage.getTemplatesByProject(project.id);
+          let totalSessions = 0;
+          
+          for (const template of templates) {
+            const collections = await storage.getCollectionsByTemplate(template.id);
+            for (const collection of collections) {
+              const sessions = await storage.getSessionsByCollection(collection.id);
+              totalSessions += sessions.length;
+            }
+          }
+          
+          return {
+            ...project,
+            templateCount: templates.length,
+            sessionCount: totalSessions
+          };
+        })
+      );
+      
+      res.json(projectsWithCounts);
     } catch (error) {
       console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
