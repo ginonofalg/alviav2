@@ -553,7 +553,23 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
-      res.json(project);
+      
+      // Calculate template and session counts
+      const templates = await storage.getTemplatesByProject(project.id);
+      let sessionCount = 0;
+      for (const template of templates) {
+        const collections = await storage.getCollectionsByTemplate(template.id);
+        for (const collection of collections) {
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          sessionCount += sessions.filter(s => s.status === "completed").length;
+        }
+      }
+      
+      res.json({
+        ...project,
+        templateCount: templates.length,
+        sessionCount,
+      });
     } catch (error) {
       console.error("Error fetching project:", error);
       res.status(500).json({ message: "Failed to fetch project" });

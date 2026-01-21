@@ -25,6 +25,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ProjectAnalyticsView } from "@/components/analytics";
 import type { Project, InterviewTemplate, Collection } from "@shared/schema";
+
+interface ProjectWithCounts extends Project {
+  templateCount: number;
+  sessionCount: number;
+}
 import { formatDistanceToNow } from "date-fns";
 
 function TemplateCard({ template }: { template: InterviewTemplate }) {
@@ -124,7 +129,7 @@ export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
 
-  const { data: project, isLoading: projectLoading } = useQuery<Project>({
+  const { data: project, isLoading: projectLoading } = useQuery<ProjectWithCounts>({
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId,
   });
@@ -231,7 +236,7 @@ export default function ProjectDetailPage() {
               <Users className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-semibold">0</p>
+              <p className="text-2xl font-semibold">{project?.sessionCount ?? 0}</p>
               <p className="text-sm text-muted-foreground">Sessions</p>
             </div>
           </CardContent>
