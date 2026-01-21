@@ -441,7 +441,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
               Out of date
             </Badge>
           )}
-          {data?.missingAnalytics && data.missingAnalytics > 0 && (
+          {data?.missingAnalytics !== undefined && data.missingAnalytics > 0 && (
             <Badge variant="outline" className="gap-1" data-testid="badge-missing-analytics">
               <AlertTriangle className="w-3 h-3" />
               {data.missingAnalytics} template{data.missingAnalytics === 1 ? '' : 's'} need analytics
