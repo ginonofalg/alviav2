@@ -19,6 +19,13 @@ export interface InterviewStatePatch {
   pausedAt?: Date | null;
   completedAt?: Date | null;
 }
+
+export interface EnrichedSession extends InterviewSession {
+  collectionName: string;
+  templateName: string;
+  projectName: string;
+  respondentName: string | null;
+}
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 
@@ -73,6 +80,7 @@ export interface IStorage {
   getSessionsByCollection(collectionId: string): Promise<InterviewSession[]>;
   getSessionsByRespondent(respondentId: string): Promise<InterviewSession[]>;
   getAllSessions(limit?: number): Promise<InterviewSession[]>;
+  getAllSessionsEnriched(limit?: number): Promise<EnrichedSession[]>;
   createSession(session: InsertSession): Promise<InterviewSession>;
   updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined>;
   persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined>;
@@ -365,6 +373,34 @@ export class DatabaseStorage implements IStorage {
       return await query.limit(limit);
     }
     return await query;
+  }
+
+  async getAllSessionsEnriched(limit?: number): Promise<EnrichedSession[]> {
+    const baseQuery = db
+      .select({
+        session: interviewSessions,
+        collectionName: collections.name,
+        templateName: interviewTemplates.name,
+        projectName: projects.name,
+        respondentInformalName: respondents.informalName,
+        respondentFullName: respondents.fullName,
+      })
+      .from(interviewSessions)
+      .innerJoin(collections, eq(interviewSessions.collectionId, collections.id))
+      .innerJoin(interviewTemplates, eq(collections.templateId, interviewTemplates.id))
+      .innerJoin(projects, eq(interviewTemplates.projectId, projects.id))
+      .leftJoin(respondents, eq(interviewSessions.respondentId, respondents.id))
+      .orderBy(desc(interviewSessions.createdAt));
+
+    const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
+
+    return rows.map((row) => ({
+      ...row.session,
+      collectionName: row.collectionName,
+      templateName: row.templateName,
+      projectName: row.projectName,
+      respondentName: row.respondentInformalName || row.respondentFullName || null,
+    }));
   }
 
   async createSession(session: InsertSession): Promise<InterviewSession> {

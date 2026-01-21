@@ -859,7 +859,7 @@ export async function registerRoutes(
   app.get("/api/sessions", isAuthenticated, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const sessions = await storage.getAllSessions(limit);
+      const sessions = await storage.getAllSessionsEnriched(limit);
       res.json(sessions);
     } catch (error) {
       console.error("Error fetching sessions:", error);
