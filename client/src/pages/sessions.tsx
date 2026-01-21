@@ -58,73 +58,56 @@ function SessionCard({ session }: { session: EnrichedSession }) {
     ? formatDistanceToNow(new Date(session.startedAt), { addSuffix: true })
     : null;
 
+  const respondentDisplay = session.respondentName || "Anonymous";
+
   return (
     <Link href={`/sessions/${session.id}`}>
       <Card 
-        className="hover-elevate cursor-pointer transition-all duration-200 group"
+        className="hover-elevate cursor-pointer transition-all duration-200 group h-[140px]"
         data-testid={`card-session-${session.id}`}
       >
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className={`w-1.5 h-full min-h-[80px] rounded-full ${
-                session.status === "completed" ? "bg-green-500" :
-                session.status === "in_progress" ? "bg-blue-500" :
-                session.status === "paused" ? "bg-yellow-500" :
-                "bg-muted"
-              }`} />
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+        <CardContent className="p-4 h-full">
+          <div className="flex h-full gap-3">
+            <div className={`w-1.5 rounded-full shrink-0 ${
+              session.status === "completed" ? "bg-green-500" :
+              session.status === "in_progress" ? "bg-blue-500" :
+              session.status === "paused" ? "bg-yellow-500" :
+              "bg-muted"
+            }`} />
+            <div className="flex-1 min-w-0 flex flex-col justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
                   <h4 className="font-medium truncate" data-testid="text-session-collection">
                     {session.collectionName}
                   </h4>
-                  <Badge variant="outline" className={`gap-1 ${status.color}`}>
+                  <Badge variant="outline" className={`gap-1 shrink-0 ${status.color}`}>
                     <StatusIcon className="w-3 h-3" />
                     {status.label}
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-session-breadcrumb">
-                  <FolderOpen className="w-3 h-3" />
+                <p className="text-xs text-muted-foreground truncate" data-testid="text-session-breadcrumb">
+                  <FolderOpen className="w-3 h-3 inline mr-1" />
                   {session.projectName} &rarr; {session.templateName}
                 </p>
-                {session.respondentName && (
-                  <p className="text-sm flex items-center gap-1" data-testid="text-session-respondent">
-                    <User className="w-3.5 h-3.5 text-muted-foreground" />
-                    {session.respondentName}
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground pt-1">
-                  {duration !== null && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" />
-                      {duration} min
-                    </span>
-                  )}
-                  {startedAt && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      Started {startedAt}
-                    </span>
-                  )}
+                <p className="text-sm truncate" data-testid="text-session-respondent">
+                  <User className="w-3.5 h-3.5 text-muted-foreground inline mr-1" />
+                  {respondentDisplay}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {duration !== null ? `${duration} min` : "—"}
+                  </span>
+                  <span className="flex items-center gap-1 truncate">
+                    <Calendar className="w-3.5 h-3.5 shrink-0" />
+                    {startedAt ? `Started ${startedAt}` : "Not started"}
+                  </span>
                 </div>
-                {session.satisfactionRating && (
-                  <div className="flex items-center gap-1 pt-1">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-2 h-2 rounded-full ${
-                          i < session.satisfactionRating! ? "bg-primary" : "bg-muted"
-                        }`}
-                      />
-                    ))}
-                    <span className="text-xs text-muted-foreground ml-1">
-                      Satisfaction
-                    </span>
-                  </div>
-                )}
+                <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
               </div>
             </div>
-            <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </div>
         </CardContent>
       </Card>
@@ -134,18 +117,23 @@ function SessionCard({ session }: { session: EnrichedSession }) {
 
 function SessionCardSkeleton() {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <Skeleton className="w-1.5 h-20" />
-          <div className="space-y-2 flex-1">
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-5 w-20" />
+    <Card className="h-[140px]">
+      <CardContent className="p-4 h-full">
+        <div className="flex h-full gap-3">
+          <Skeleton className="w-1.5 h-full rounded-full" />
+          <div className="flex-1 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-5 w-20" />
+              </div>
+              <Skeleton className="h-3 w-56" />
+              <Skeleton className="h-4 w-32" />
             </div>
-            <Skeleton className="h-3 w-56" />
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-4 w-48" />
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-32" />
+            </div>
           </div>
         </div>
       </CardContent>
