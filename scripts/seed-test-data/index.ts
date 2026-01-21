@@ -243,7 +243,11 @@ async function main() {
   
   console.log(`Running ${scenariosToRun.length} scenario(s) with ${respondentCount} respondents each`);
   console.log(`Owner ID: ${ownerId}`);
-  if (dryRun) console.log('DRY RUN MODE - No data will be written\n');
+  if (ownerId === DEFAULT_TEST_USER_ID) {
+    console.log('   NOTE: Using default test user. For UI access, use --user=<your-user-id>');
+    console.log('   Find your user ID in the database users table or from session info');
+  }
+  if (dryRun) console.log('\nDRY RUN MODE - No data will be written\n');
   
   for (const scenario of scenariosToRun) {
     await seedScenario(storage, openai, scenario, respondentCount, dryRun, ownerId);

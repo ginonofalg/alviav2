@@ -169,3 +169,32 @@ Added ability for users to provide business context to receive tailored analytic
 - `marketing`: Marketing & Positioning (messaging, campaigns)
 - `cx`: Customer Experience (support, satisfaction)
 - `other`: Other use cases
+
+### Test Harness for Analytics Testing (January 2026)
+Added comprehensive test harness for populating database with realistic interview data:
+
+**Directory**: `scripts/seed-test-data/`
+- `index.ts`: CLI orchestrator with flags
+- `config.ts`: LLM settings (gpt-5-mini), quality distributions
+- `scenarios.ts`: Two research scenarios (Product Discovery, Customer Experience)
+- `generators/structure.ts`: Creates workspace → project → template → questions → collection
+- `generators/personas.ts`: LLM-generated respondent personas with quality tendencies
+- `generators/conversations.ts`: Multi-turn interview simulation with follow-up depth tracking
+- `generators/summaries.ts`: Question summaries, verbatims, quality scores
+- `utils/timestamps.ts`: Session timing utilities
+
+**CLI Usage**:
+```bash
+npx tsx scripts/seed-test-data/index.ts [options]
+  --dry-run         Preview without writing to database
+  --scenario=NAME   Filter scenarios by name (Product, Customer)
+  --count=N         Number of respondents per scenario
+  --user=ID         Owner user ID for workspaces (for UI access)
+  --clean           Clean previous test data first
+```
+
+**Key Features**:
+- Quality distribution: 45% high, 30% moderate, 15% brief, 10% off-topic
+- Follow-up depth tracking aligned with template settings
+- Generates transcripts, segments, and session data suitable for analytics refresh testing
+- Supports all three analytics levels: Collection, Template, Project
