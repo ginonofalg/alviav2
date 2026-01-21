@@ -24,20 +24,23 @@ async function cleanTestData(storage: DatabaseStorage): Promise<void> {
   console.log('   Note: Manual cleanup may be needed for test-harness workspaces');
 }
 
+// Default test user ID - can be overridden with --user CLI flag
+const DEFAULT_TEST_USER_ID = 'test-harness-user';
+
 async function seedScenario(
   storage: DatabaseStorage,
   openai: OpenAI,
   scenario: typeof SCENARIOS[0],
   respondentCount: number,
-  dryRun: boolean
+  dryRun: boolean,
+  userId: string
 ): Promise<void> {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`Scenario: ${scenario.name}`);
   console.log(`${'='.repeat(60)}\n`);
   
-  const testUserId = 'test-harness-user';
-  
   console.log('Creating project structure...');
+  console.log(`   Owner: ${userId}`);
   let structure: GeneratedStructure;
   
   if (dryRun) {
@@ -50,7 +53,7 @@ async function seedScenario(
       questionIds: scenario.questions.map((_, i) => `dry-run-question-${i}`)
     };
   } else {
-    structure = await generateStructure(storage, scenario, testUserId);
+    structure = await generateStructure(storage, scenario, userId);
     console.log(`   Workspace: ${structure.workspaceId}`);
     console.log(`   Project: ${structure.projectId}`);
     console.log(`   Template: ${structure.templateId}`);
@@ -217,8 +220,10 @@ async function main() {
   const cleanFirst = args.includes('--clean');
   const scenarioFilter = args.find(a => a.startsWith('--scenario='))?.split('=')[1];
   const countOverride = parseInt(args.find(a => a.startsWith('--count='))?.split('=')[1] || '0');
+  const userOverride = args.find(a => a.startsWith('--user='))?.split('=')[1];
   
   const respondentCount = countOverride || SEED_CONFIG.respondentsPerCollection;
+  const ownerId = userOverride || DEFAULT_TEST_USER_ID;
   
   if (!process.env.OPENAI_API_KEY) {
     console.error('Error: OPENAI_API_KEY environment variable is required');
@@ -237,10 +242,11 @@ async function main() {
     : SCENARIOS;
   
   console.log(`Running ${scenariosToRun.length} scenario(s) with ${respondentCount} respondents each`);
+  console.log(`Owner ID: ${ownerId}`);
   if (dryRun) console.log('DRY RUN MODE - No data will be written\n');
   
   for (const scenario of scenariosToRun) {
-    await seedScenario(storage, openai, scenario, respondentCount, dryRun);
+    await seedScenario(storage, openai, scenario, respondentCount, dryRun, ownerId);
   }
   
   console.log('\n' + '='.repeat(60));
