@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { 
   Search, 
   Users,
@@ -24,7 +24,7 @@ import {
   ArrowUpDown,
   FolderOpen
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { InterviewSession } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
@@ -142,9 +142,21 @@ function SessionCardSkeleton() {
 }
 
 export default function SessionsPage() {
+  const searchString = useSearch();
+  const urlParams = new URLSearchParams(searchString);
+  const initialStatus = urlParams.get("status") || "all";
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [sortOption, setSortOption] = useState<SortOption>("newest_started");
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const status = params.get("status");
+    if (status) {
+      setStatusFilter(status);
+    }
+  }, [searchString]);
 
   const { data: sessions, isLoading } = useQuery<EnrichedSession[]>({
     queryKey: ["/api/sessions"],

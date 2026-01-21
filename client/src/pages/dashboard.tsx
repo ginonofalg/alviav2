@@ -30,16 +30,18 @@ function StatCard({
   value, 
   icon: Icon, 
   trend,
-  isLoading 
+  isLoading,
+  href
 }: { 
   title: string; 
   value: number | string; 
   icon: React.ElementType;
   trend?: string;
   isLoading?: boolean;
+  href?: string;
 }) {
-  return (
-    <Card className="hover-elevate transition-all duration-200">
+  const cardContent = (
+    <Card className={`hover-elevate transition-all duration-200 ${href ? "cursor-pointer" : ""}`} data-testid={`stat-card-${title.toLowerCase().replace(/\s+/g, '-')}`}>
       <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
@@ -65,6 +67,11 @@ function StatCard({
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return <Link href={href}>{cardContent}</Link>;
+  }
+  return cardContent;
 }
 
 function RecentProjectCard({ project }: { project: Project }) {
@@ -184,24 +191,28 @@ export default function DashboardPage() {
           value={stats?.projectCount ?? 0}
           icon={FolderKanban}
           isLoading={statsLoading}
+          href="/projects"
         />
         <StatCard
           title="Collections"
           value={stats?.collectionCount ?? 0}
           icon={FileText}
           isLoading={statsLoading}
+          href="/collections"
         />
         <StatCard
           title="Total Sessions"
           value={stats?.sessionCount ?? 0}
           icon={Users}
           isLoading={statsLoading}
+          href="/sessions"
         />
         <StatCard
           title="Completed"
           value={stats?.completedSessions ?? 0}
           icon={CheckCircle2}
           isLoading={statsLoading}
+          href="/sessions?status=completed"
         />
       </div>
 
