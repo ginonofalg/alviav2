@@ -298,11 +298,11 @@ export const SCENARIOS: Scenario[] = [
     name: "Quote to Close Sales Journey",
     projectName: "Heating Install Conversion and Objections Study",
     projectDescription:
-      "Exploring buying journeys, objections, trust signals, and sales experience across wins and losses to improve quote-to-sale conversion and reduce cost per sale",
+      "Exploring buying journeys for Home Heating Installs, including objections, trust signals, and sales experience across wins and losses to improve quote-to-sale conversion and reduce cost per sale",
     templateName: "Sales Journey Interview v1",
     collectionName: "Q1 2026 Lost Deals and Wins",
     objective:
-      "Understand why prospects buy or drop off, identify the moments that create confidence or doubt, and improve sales messaging, follow-up, and offer design to lift conversion",
+      "Understand why Home Heatin Installation prospects buy or drop off, identify the moments that create confidence or doubt, and improve sales messaging, follow-up, and offer design to lift conversion",
     audienceContext:
       "Homeowners who requested a boiler or heat pump quote in the last 60 days, split between those who purchased and those who did not, across phone and digital journeys",
     strategicContext:
