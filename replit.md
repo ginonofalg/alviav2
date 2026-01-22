@@ -198,3 +198,35 @@ npx tsx scripts/seed-test-data/index.ts [options]
 - Follow-up depth tracking aligned with template settings
 - Generates transcripts, segments, and session data suitable for analytics refresh testing
 - Supports all three analytics levels: Collection, Template, Project
+
+### Analytics Command Center Enhancement (January 2026)
+Enhanced the top-level Analytics page (/analytics) with comprehensive cross-project aggregation:
+
+**API Endpoint** (`GET /api/analytics/aggregated`):
+Returns aggregated analytics from all projects with:
+- `strategicInsights`: Cross-project strategic insights with source attribution
+- `keyFindings`: Aggregated key findings from all template analytics
+- `consensusPoints`: Points of agreement with source project/template/collection attribution
+- `divergencePoints`: Points of divergence with multiple perspectives
+- `strategicThemes`: Cross-template themes with verbatims and sentiment
+- `templateStaleness`: Templates needing analytics refresh (stale/none status)
+- `collectionStaleness`: Collections needing analytics refresh with session counts
+- `contextualRecommendations`: Tailored recommendations from projects with strategic context
+- `overallMetrics`: Totals for projects, templates, collections, sessions, quality scores
+- `healthIndicators`: Counts for stale/missing analytics at each level
+
+**Types Added** (`shared/schema.ts`):
+- `AggregatedConsensusPoint`: Consensus point with sourceType, sourceProjectId/Name, sourceTemplateId/Name, sourceCollectionId/Name
+- `AggregatedDivergencePoint`: Divergence point with perspectives array and source attribution
+- `TemplateStaleness`: Template ID, name, project name, staleness status, generatedAt timestamp
+- `CollectionStaleness`: Collection ID, name, template/project names, session count, staleness status
+
+**Storage Method** (`server/storage.ts`):
+- `getAggregatedAnalytics(userId)`: Gathers analytics from all projects, templates, collections
+- Calculates staleness status (fresh <24h, aging 1-7d, stale >7d, none)
+- Aggregates consensus/divergence points with source attribution
+
+**UI Enhancements** (`client/src/pages/analytics.tsx`):
+- Insights Feed now shows 4 insight types: Strategic (purple), Finding (gray), Consensus (green), Divergence (amber)
+- Research Health tab displays template/collection staleness lists with quick navigation
+- Analytics Health stat card shows breakdown: Projects/Templates/Collections needing refresh

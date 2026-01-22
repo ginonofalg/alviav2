@@ -6,7 +6,13 @@ import {
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
   type InterviewSession, type InsertSession, type Segment, type InsertSegment,
   type WorkspaceMember, type PersistedTranscriptEntry, type PersistedBarbaraGuidance,
-  type PersistedQuestionState, type QuestionSummary, type ReviewRatings
+  type PersistedQuestionState, type QuestionSummary, type ReviewRatings,
+  type AggregatedAnalytics, type ProjectSummaryWithAnalytics, type StalenessStatus,
+  type ProjectAnalytics, type TemplateAnalytics, type CollectionAnalytics,
+  type AggregatedStrategicInsight, type AggregatedKeyFinding, 
+  type AggregatedCrossTemplateTheme, type AggregatedContextualRecommendation,
+  type AggregatedConsensusPoint, type AggregatedDivergencePoint,
+  type TemplateStaleness, type CollectionStaleness
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -119,6 +125,8 @@ export interface IStorage {
     topThemes: { theme: string; count: number }[];
     questionStats: { questionText: string; avgConfidence: number; responseCount: number }[];
   }>;
+  
+  getAggregatedAnalytics(userId: string): Promise<AggregatedAnalytics>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -651,6 +659,383 @@ export class DatabaseStorage implements IStorage {
       completionRate,
       topThemes,
       questionStats,
+    };
+  }
+
+  async getAggregatedAnalytics(userId: string): Promise<AggregatedAnalytics> {
+    const projectList = await this.getProjectsByUser(userId);
+    
+    const projectSummaries: ProjectSummaryWithAnalytics[] = [];
+    const strategicInsights: AggregatedStrategicInsight[] = [];
+    const keyFindings: AggregatedKeyFinding[] = [];
+    const consensusPoints: AggregatedConsensusPoint[] = [];
+    const divergencePoints: AggregatedDivergencePoint[] = [];
+    const strategicThemes: AggregatedCrossTemplateTheme[] = [];
+    const templateStalenessData: TemplateStaleness[] = [];
+    const collectionStalenessData: CollectionStaleness[] = [];
+    const contextualRecommendations: AggregatedContextualRecommendation[] = [];
+    
+    let totalTemplates = 0;
+    let totalCollections = 0;
+    let totalSessions = 0;
+    let completedSessions = 0;
+    let projectsWithStaleAnalytics = 0;
+    let projectsWithNoAnalytics = 0;
+    let templatesNeedingRefresh = 0;
+    let collectionsNeedingRefresh = 0;
+    
+    const qualityScores: number[] = [];
+    const durations: number[] = [];
+    let overallPositive = 0;
+    let overallNeutral = 0;
+    let overallNegative = 0;
+    let sentimentCount = 0;
+    
+    const now = Date.now();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    const SEVEN_DAYS = 7 * ONE_DAY;
+    
+    const calculateStaleness = (generatedAt: number | null): { status: StalenessStatus; label: string } => {
+      if (!generatedAt) return { status: "none", label: "Never" };
+      const age = now - generatedAt;
+      if (age < ONE_DAY) return { status: "fresh", label: "Today" };
+      const days = Math.floor(age / ONE_DAY);
+      if (age < SEVEN_DAYS) return { status: "aging", label: `${days} day${days > 1 ? "s" : ""} ago` };
+      return { status: "stale", label: `${days} days ago` };
+    };
+    
+    for (const project of projectList) {
+      const templates = await this.getTemplatesByProject(project.id);
+      const projectCollections = await this.getCollectionsByProject(project.id);
+      
+      totalTemplates += templates.length;
+      totalCollections += projectCollections.length;
+      
+      let projectSessions = 0;
+      let projectCompletedSessions = 0;
+      let sessionsAfterRefresh = 0;
+      
+      const analytics = project.analyticsData as ProjectAnalytics | null;
+      const generatedAt = analytics?.generatedAt ?? null;
+      
+      for (const collection of projectCollections) {
+        const sessions = await this.getSessionsByCollection(collection.id);
+        projectSessions += sessions.length;
+        projectCompletedSessions += sessions.filter(s => s.status === "completed").length;
+        
+        if (generatedAt) {
+          sessionsAfterRefresh += sessions.filter(s => 
+            s.startedAt && new Date(s.startedAt).getTime() > generatedAt
+          ).length;
+        } else {
+          sessionsAfterRefresh += sessions.length;
+        }
+        
+        const collectionAnalytics = collection.analyticsData as CollectionAnalytics | null;
+        if (!collectionAnalytics?.generatedAt) {
+          collectionsNeedingRefresh++;
+        } else if (now - collectionAnalytics.generatedAt > SEVEN_DAYS) {
+          collectionsNeedingRefresh++;
+        }
+      }
+      
+      totalSessions += projectSessions;
+      completedSessions += projectCompletedSessions;
+      
+      let stalenessStatus: StalenessStatus = "none";
+      let lastRefreshLabel = "Never";
+      
+      if (generatedAt) {
+        const age = now - generatedAt;
+        if (age < ONE_DAY) {
+          stalenessStatus = "fresh";
+          lastRefreshLabel = "Today";
+        } else if (age < SEVEN_DAYS) {
+          stalenessStatus = "aging";
+          const days = Math.floor(age / ONE_DAY);
+          lastRefreshLabel = `${days} day${days > 1 ? "s" : ""} ago`;
+          projectsWithStaleAnalytics++;
+        } else {
+          stalenessStatus = "stale";
+          const days = Math.floor(age / ONE_DAY);
+          lastRefreshLabel = `${days} days ago`;
+          projectsWithStaleAnalytics++;
+        }
+      } else {
+        projectsWithNoAnalytics++;
+      }
+      
+      const projectSummary: ProjectSummaryWithAnalytics = {
+        id: project.id,
+        name: project.name,
+        stalenessStatus,
+        analyticsGeneratedAt: generatedAt,
+        newSessionsSinceRefresh: sessionsAfterRefresh,
+        lastRefreshLabel,
+        templateCount: templates.length,
+        collectionCount: projectCollections.length,
+        totalSessions: projectSessions,
+        completedSessions: projectCompletedSessions,
+        avgQualityScore: analytics?.projectMetrics?.avgQualityScore ?? null,
+        sentimentDistribution: analytics?.projectMetrics?.sentimentDistribution ?? null,
+        executiveSummary: analytics?.executiveSummary ? {
+          headline: analytics.executiveSummary.headline,
+          keyTakeaways: analytics.executiveSummary.keyTakeaways,
+        } : null,
+        hasContextualRecommendations: !!analytics?.contextualRecommendations,
+        contextType: project.contextType ?? null,
+      };
+      
+      projectSummaries.push(projectSummary);
+      
+      if (analytics) {
+        if (analytics.projectMetrics?.avgQualityScore) {
+          qualityScores.push(analytics.projectMetrics.avgQualityScore);
+        }
+        if (analytics.projectMetrics?.avgSessionDuration) {
+          durations.push(analytics.projectMetrics.avgSessionDuration);
+        }
+        if (analytics.projectMetrics?.sentimentDistribution) {
+          const sd = analytics.projectMetrics.sentimentDistribution;
+          overallPositive += sd.positive;
+          overallNeutral += sd.neutral;
+          overallNegative += sd.negative;
+          sentimentCount++;
+        }
+        
+        if (analytics.strategicInsights) {
+          for (const insight of analytics.strategicInsights.slice(0, 5)) {
+            strategicInsights.push({
+              insight: insight.insight,
+              significance: insight.significance,
+              sourceProjectId: project.id,
+              sourceProjectName: project.name,
+              verbatims: insight.verbatims || [],
+            });
+          }
+        }
+        
+        if (analytics.crossTemplateThemes) {
+          for (const theme of analytics.crossTemplateThemes.filter(t => t.isStrategic).slice(0, 5)) {
+            strategicThemes.push({
+              ...theme,
+              sourceProjectId: project.id,
+              sourceProjectName: project.name,
+            });
+          }
+        }
+        
+        if (analytics.contextualRecommendations && project.contextType) {
+          contextualRecommendations.push({
+            projectId: project.id,
+            projectName: project.name,
+            contextType: project.contextType,
+            actionItems: analytics.contextualRecommendations.actionItems || [],
+            curatedVerbatims: analytics.contextualRecommendations.curatedVerbatims || [],
+            strategicSummary: analytics.contextualRecommendations.strategicSummary || "",
+          });
+        }
+      }
+      
+      for (const template of templates) {
+        const templateAnalytics = template.analyticsData as TemplateAnalytics | null;
+        const templateGeneratedAt = templateAnalytics?.generatedAt ?? null;
+        const templateStaleness = calculateStaleness(templateGeneratedAt);
+        
+        const templateCollections = projectCollections.filter(c => c.templateId === template.id);
+        let templateCollectionsNeedingRefresh = 0;
+        let templateSessionCount = 0;
+        let templateSessionsAfterRefresh = 0;
+        
+        for (const collection of templateCollections) {
+          const collSessions = await this.getSessionsByCollection(collection.id);
+          templateSessionCount += collSessions.length;
+          
+          const collAnalytics = collection.analyticsData as CollectionAnalytics | null;
+          const collGeneratedAt = collAnalytics?.generatedAt ?? null;
+          const collStaleness = calculateStaleness(collGeneratedAt);
+          
+          if (collStaleness.status === "stale" || collStaleness.status === "none") {
+            templateCollectionsNeedingRefresh++;
+          }
+          
+          if (templateGeneratedAt) {
+            templateSessionsAfterRefresh += collSessions.filter(s => 
+              s.startedAt && new Date(s.startedAt).getTime() > templateGeneratedAt
+            ).length;
+          }
+          
+          collectionStalenessData.push({
+            id: collection.id,
+            name: collection.name,
+            stalenessStatus: collStaleness.status,
+            analyticsGeneratedAt: collGeneratedAt,
+            newSessionsSinceRefresh: collGeneratedAt 
+              ? collSessions.filter(s => s.startedAt && new Date(s.startedAt).getTime() > collGeneratedAt).length 
+              : collSessions.length,
+            lastRefreshLabel: collStaleness.label,
+            sessionCount: collSessions.length,
+            sourceProjectId: project.id,
+            sourceProjectName: project.name,
+            sourceTemplateId: template.id,
+            sourceTemplateName: template.name,
+          });
+          
+          if (collAnalytics?.consensusPoints) {
+            for (const cp of collAnalytics.consensusPoints.slice(0, 2)) {
+              consensusPoints.push({
+                topic: cp.topic,
+                position: cp.position,
+                agreementLevel: cp.agreementLevel,
+                verbatims: cp.verbatims || [],
+                sourceType: "collection",
+                sourceProjectId: project.id,
+                sourceProjectName: project.name,
+                sourceTemplateId: template.id,
+                sourceTemplateName: template.name,
+                sourceCollectionId: collection.id,
+                sourceCollectionName: collection.name,
+              });
+            }
+          }
+          
+          if (collAnalytics?.divergencePoints) {
+            for (const dp of collAnalytics.divergencePoints.slice(0, 2)) {
+              divergencePoints.push({
+                topic: dp.topic,
+                perspectives: dp.perspectives || [],
+                sourceType: "collection",
+                sourceProjectId: project.id,
+                sourceProjectName: project.name,
+                sourceTemplateId: template.id,
+                sourceTemplateName: template.name,
+                sourceCollectionId: collection.id,
+                sourceCollectionName: collection.name,
+              });
+            }
+          }
+        }
+        
+        if (templateStaleness.status === "stale" || templateStaleness.status === "none") {
+          templatesNeedingRefresh++;
+        }
+        
+        templateStalenessData.push({
+          id: template.id,
+          name: template.name,
+          stalenessStatus: templateStaleness.status,
+          analyticsGeneratedAt: templateGeneratedAt,
+          newSessionsSinceRefresh: templateSessionsAfterRefresh,
+          lastRefreshLabel: templateStaleness.label,
+          collectionCount: templateCollections.length,
+          collectionsNeedingRefresh: templateCollectionsNeedingRefresh,
+          totalSessions: templateSessionCount,
+          sourceProjectId: project.id,
+          sourceProjectName: project.name,
+        });
+        
+        if (templateAnalytics?.keyFindings) {
+          for (const finding of templateAnalytics.keyFindings.slice(0, 3)) {
+            keyFindings.push({
+              finding: finding.finding,
+              significance: finding.significance,
+              supportingVerbatims: finding.supportingVerbatims || [],
+              relatedThemes: finding.relatedThemes || [],
+              sourceType: "template",
+              sourceProjectId: project.id,
+              sourceProjectName: project.name,
+              sourceTemplateId: template.id,
+              sourceTemplateName: template.name,
+              sourceCollectionId: finding.sourceCollectionId,
+              sourceCollectionName: finding.sourceCollectionName,
+            });
+          }
+        }
+        
+        if (templateAnalytics?.consensusPoints) {
+          for (const cp of templateAnalytics.consensusPoints.slice(0, 2)) {
+            consensusPoints.push({
+              topic: cp.topic,
+              position: cp.position,
+              agreementLevel: cp.agreementLevel,
+              verbatims: cp.verbatims || [],
+              sourceType: "template",
+              sourceProjectId: project.id,
+              sourceProjectName: project.name,
+              sourceTemplateId: template.id,
+              sourceTemplateName: template.name,
+              sourceCollectionId: cp.sourceCollectionId,
+              sourceCollectionName: cp.sourceCollectionName,
+            });
+          }
+        }
+        
+        if (templateAnalytics?.divergencePoints) {
+          for (const dp of templateAnalytics.divergencePoints.slice(0, 2)) {
+            divergencePoints.push({
+              topic: dp.topic,
+              perspectives: dp.perspectives || [],
+              sourceType: "template",
+              sourceProjectId: project.id,
+              sourceProjectName: project.name,
+              sourceTemplateId: template.id,
+              sourceTemplateName: template.name,
+              sourceCollectionId: dp.sourceCollectionId,
+              sourceCollectionName: dp.sourceCollectionName,
+            });
+          }
+        }
+      }
+    }
+    
+    const avgQualityScore = qualityScores.length > 0 
+      ? qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length 
+      : null;
+    const avgSessionDuration = durations.length > 0
+      ? durations.reduce((a, b) => a + b, 0) / durations.length
+      : null;
+    const overallSentiment = sentimentCount > 0 ? {
+      positive: Math.round(overallPositive / sentimentCount),
+      neutral: Math.round(overallNeutral / sentimentCount),
+      negative: Math.round(overallNegative / sentimentCount),
+    } : null;
+    
+    const staleCollections = collectionStalenessData
+      .filter(c => c.stalenessStatus === "stale" || c.stalenessStatus === "none")
+      .sort((a, b) => (a.analyticsGeneratedAt || 0) - (b.analyticsGeneratedAt || 0))
+      .slice(0, 10);
+    
+    const staleTemplates = templateStalenessData
+      .filter(t => t.stalenessStatus === "stale" || t.stalenessStatus === "none")
+      .sort((a, b) => (a.analyticsGeneratedAt || 0) - (b.analyticsGeneratedAt || 0))
+      .slice(0, 10);
+    
+    return {
+      projects: projectSummaries,
+      strategicInsights: strategicInsights.slice(0, 10),
+      keyFindings: keyFindings.slice(0, 15),
+      consensusPoints: consensusPoints.slice(0, 10),
+      divergencePoints: divergencePoints.slice(0, 10),
+      strategicThemes: strategicThemes.slice(0, 10),
+      templateStaleness: staleTemplates,
+      collectionStaleness: staleCollections,
+      contextualRecommendations,
+      overallMetrics: {
+        totalProjects: projectList.length,
+        totalTemplates,
+        totalCollections,
+        totalSessions,
+        completedSessions,
+        avgQualityScore,
+        avgSessionDuration,
+        overallSentiment,
+      },
+      healthIndicators: {
+        projectsWithStaleAnalytics,
+        projectsWithNoAnalytics,
+        templatesNeedingRefresh,
+        collectionsNeedingRefresh,
+      },
     };
   }
 }

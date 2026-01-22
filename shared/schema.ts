@@ -707,3 +707,179 @@ export const RATING_DIMENSIONS = [
 ] as const;
 
 export type RatingDimensionKey = typeof RATING_DIMENSIONS[number]["key"];
+
+// Staleness status for analytics
+export type StalenessStatus = "fresh" | "aging" | "stale" | "none";
+
+// Entity with staleness metadata
+export type EntityWithStaleness = {
+  id: string;
+  name: string;
+  stalenessStatus: StalenessStatus;
+  analyticsGeneratedAt: number | null;
+  newSessionsSinceRefresh: number;
+  lastRefreshLabel: string; // e.g., "3 days ago", "Never"
+};
+
+// Project summary for command center
+export type ProjectSummaryWithAnalytics = EntityWithStaleness & {
+  templateCount: number;
+  collectionCount: number;
+  totalSessions: number;
+  completedSessions: number;
+  avgQualityScore: number | null;
+  sentimentDistribution: { positive: number; neutral: number; negative: number } | null;
+  executiveSummary: {
+    headline: string;
+    keyTakeaways: string[];
+  } | null;
+  hasContextualRecommendations: boolean;
+  contextType: string | null;
+};
+
+// Strategic insight aggregated from projects
+export type AggregatedStrategicInsight = {
+  insight: string;
+  significance: string;
+  sourceProjectId: string;
+  sourceProjectName: string;
+  verbatims: ThemeVerbatim[];
+};
+
+// Key finding aggregated from any level with full attribution
+export type AggregatedKeyFinding = {
+  finding: string;
+  significance: string;
+  supportingVerbatims: ThemeVerbatim[];
+  relatedThemes: string[];
+  sourceType: "project" | "template" | "collection";
+  sourceProjectId: string;
+  sourceProjectName: string;
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
+  sourceCollectionId?: string;
+  sourceCollectionName?: string;
+};
+
+// Cross-template theme aggregated across projects
+export type AggregatedCrossTemplateTheme = CrossTemplateTheme & {
+  sourceProjectId: string;
+  sourceProjectName: string;
+  depth?: "mentioned" | "explored" | "deeply_explored";
+  sentimentBreakdown?: { positive: number; neutral: number; negative: number };
+};
+
+// Aggregated consensus point with source attribution
+export type AggregatedConsensusPoint = {
+  topic: string;
+  position: string;
+  agreementLevel: number;
+  verbatims: ThemeVerbatim[];
+  sourceType: "project" | "template" | "collection";
+  sourceProjectId: string;
+  sourceProjectName: string;
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
+  sourceCollectionId?: string;
+  sourceCollectionName?: string;
+};
+
+// Aggregated divergence point with source attribution
+export type AggregatedDivergencePoint = {
+  topic: string;
+  perspectives: { position: string; count: number; verbatims: ThemeVerbatim[] }[];
+  sourceType: "project" | "template" | "collection";
+  sourceProjectId: string;
+  sourceProjectName: string;
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
+  sourceCollectionId?: string;
+  sourceCollectionName?: string;
+};
+
+// Template staleness summary
+export type TemplateStaleness = EntityWithStaleness & {
+  collectionCount: number;
+  collectionsNeedingRefresh: number;
+  totalSessions: number;
+  sourceProjectId: string;
+  sourceProjectName: string;
+};
+
+// Collection staleness summary  
+export type CollectionStaleness = EntityWithStaleness & {
+  sessionCount: number;
+  sourceProjectId: string;
+  sourceProjectName: string;
+  sourceTemplateId: string;
+  sourceTemplateName: string;
+};
+
+// Contextual recommendation from projects with strategic context
+export type AggregatedContextualRecommendation = {
+  projectId: string;
+  projectName: string;
+  contextType: string;
+  actionItems: {
+    title: string;
+    description: string;
+    priority: "high" | "medium" | "low";
+    relatedThemes: string[];
+  }[];
+  curatedVerbatims: {
+    quote: string;
+    usageNote: string;
+    theme: string;
+  }[];
+  strategicSummary: string;
+};
+
+// Top-level aggregated analytics for command center
+export type AggregatedAnalytics = {
+  // Project summaries with staleness
+  projects: ProjectSummaryWithAnalytics[];
+  
+  // Aggregated strategic insights from all projects
+  strategicInsights: AggregatedStrategicInsight[];
+  
+  // Aggregated key findings from all levels
+  keyFindings: AggregatedKeyFinding[];
+  
+  // Aggregated consensus points from all levels
+  consensusPoints: AggregatedConsensusPoint[];
+  
+  // Aggregated divergence points from all levels
+  divergencePoints: AggregatedDivergencePoint[];
+  
+  // Cross-template themes across all projects
+  strategicThemes: AggregatedCrossTemplateTheme[];
+  
+  // Template-level staleness data
+  templateStaleness: TemplateStaleness[];
+  
+  // Collection-level staleness data (limited to most stale)
+  collectionStaleness: CollectionStaleness[];
+  
+  // Contextual recommendations from projects with strategic context
+  contextualRecommendations: AggregatedContextualRecommendation[];
+  
+  // Overall metrics
+  overallMetrics: {
+    totalProjects: number;
+    totalTemplates: number;
+    totalCollections: number;
+    totalSessions: number;
+    completedSessions: number;
+    avgQualityScore: number | null;
+    avgSessionDuration: number | null;
+    overallSentiment: { positive: number; neutral: number; negative: number } | null;
+  };
+  
+  // Health indicators
+  healthIndicators: {
+    projectsWithStaleAnalytics: number;
+    projectsWithNoAnalytics: number;
+    templatesNeedingRefresh: number;
+    collectionsNeedingRefresh: number;
+  };
+};

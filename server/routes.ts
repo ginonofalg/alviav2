@@ -76,7 +76,7 @@ export async function registerRoutes(
     }
   });
 
-  // Analytics
+  // Analytics - legacy basic stats endpoint
   app.get("/api/analytics", isAuthenticated, async (req, res) => {
     try {
       const projectId = req.query.projectId as string | undefined;
@@ -87,6 +87,18 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching analytics:", error);
       res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
+  // Aggregated Analytics - command center with insights across all projects
+  app.get("/api/analytics/aggregated", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const aggregated = await storage.getAggregatedAnalytics(userId);
+      res.json(aggregated);
+    } catch (error) {
+      console.error("Error fetching aggregated analytics:", error);
+      res.status(500).json({ message: "Failed to fetch aggregated analytics" });
     }
   });
 
