@@ -20,13 +20,18 @@ interface InfographicResponse {
   model: string;
 }
 
+type EntityLevel = 'collection' | 'project';
+
 interface InfographicGeneratorProps {
-  collectionId: string;
-  collectionName: string;
+  entityId: string;
+  entityName: string;
+  entityLevel: EntityLevel;
   hasAnalytics: boolean;
 }
 
-type InfographicType = 'summary' | 'themes' | 'findings';
+// For collection: summary, themes, findings
+// For project: summary, themes, insights
+type InfographicType = 'summary' | 'themes' | 'findings' | 'insights';
 
 interface TabState {
   imageUrl: string | null;
@@ -34,15 +39,45 @@ interface TabState {
   error: string | null;
 }
 
-export function InfographicGenerator({ collectionId, collectionName, hasAnalytics }: InfographicGeneratorProps) {
+export function InfographicGenerator({ entityId, entityName, entityLevel, hasAnalytics }: InfographicGeneratorProps) {
   const [activeTab, setActiveTab] = useState<InfographicType>('summary');
   const [tabStates, setTabStates] = useState<Record<InfographicType, TabState>>({
     summary: { imageUrl: null, isLoading: false, error: null },
     themes: { imageUrl: null, isLoading: false, error: null },
     findings: { imageUrl: null, isLoading: false, error: null },
+    insights: { imageUrl: null, isLoading: false, error: null },
   });
 
+  // Validate that the type is valid for the current entity level
+  const isValidType = (type: InfographicType): boolean => {
+    if (entityLevel === 'collection') {
+      return type === 'summary' || type === 'themes' || type === 'findings';
+    } else {
+      return type === 'summary' || type === 'themes' || type === 'insights';
+    }
+  };
+
+  const getApiPath = (type: InfographicType): string | null => {
+    if (!isValidType(type)) {
+      return null;
+    }
+    if (entityLevel === 'collection') {
+      return `/api/collections/${entityId}/infographic/${type}`;
+    } else {
+      return `/api/projects/${entityId}/infographic/${type}`;
+    }
+  };
+
   const handleGenerate = async (type: InfographicType) => {
+    const apiPath = getApiPath(type);
+    if (!apiPath) {
+      setTabStates(prev => ({
+        ...prev,
+        [type]: { ...prev[type], isLoading: false, error: `Invalid infographic type "${type}" for ${entityLevel} level` },
+      }));
+      return;
+    }
+
     setTabStates(prev => ({
       ...prev,
       [type]: { ...prev[type], isLoading: true, error: null },
@@ -51,7 +86,7 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
     try {
       const result = await apiRequestJson<InfographicResponse>(
         'POST',
-        `/api/collections/${collectionId}/infographic/${type}`,
+        apiPath,
         undefined,
         { timeoutMs: 120000 }
       );
@@ -74,7 +109,7 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
 
     const link = document.createElement('a');
     link.href = imageUrl;
-    link.download = `${collectionName.replace(/\s+/g, '-').toLowerCase()}-${type}.png`;
+    link.download = `${entityName.replace(/\s+/g, '-').toLowerCase()}-${type}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -190,6 +225,8 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
     );
   };
 
+  const levelLabel = entityLevel === 'collection' ? 'collection' : 'project';
+
   return (
     <Card>
       <CardHeader>
@@ -198,7 +235,7 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
           Infographics
         </CardTitle>
         <CardDescription>
-          Generate visual summaries of your research data
+          Generate visual summaries of your {levelLabel} data
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -212,17 +249,25 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
               <Network className="w-4 h-4" />
               Themes
             </TabsTrigger>
-            <TabsTrigger value="findings" className="gap-2" data-testid="tab-findings-infographic">
-              <Lightbulb className="w-4 h-4" />
-              Findings
-            </TabsTrigger>
+            {entityLevel === 'collection' && (
+              <TabsTrigger value="findings" className="gap-2" data-testid="tab-findings-infographic">
+                <Lightbulb className="w-4 h-4" />
+                Findings
+              </TabsTrigger>
+            )}
+            {entityLevel === 'project' && (
+              <TabsTrigger value="insights" className="gap-2" data-testid="tab-insights-infographic">
+                <Lightbulb className="w-4 h-4" />
+                Insights
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="summary">
             {renderTabContent(
               'summary',
               'Summary Infographic',
-              'Create a visual overview with key metrics and themes'
+              `Create a visual overview with key ${levelLabel} metrics and themes`
             )}
           </TabsContent>
 
@@ -230,17 +275,31 @@ export function InfographicGenerator({ collectionId, collectionName, hasAnalytic
             {renderTabContent(
               'themes',
               'Theme Network',
-              'Visualize relationships between research themes'
+              entityLevel === 'collection' 
+                ? 'Visualize relationships between research themes'
+                : 'Visualize cross-template theme connections'
             )}
           </TabsContent>
 
-          <TabsContent value="findings">
-            {renderTabContent(
-              'findings',
-              'Key Findings',
-              'Generate a summary of key insights and consensus points'
-            )}
-          </TabsContent>
+          {entityLevel === 'collection' && (
+            <TabsContent value="findings">
+              {renderTabContent(
+                'findings',
+                'Key Findings',
+                'Generate a summary of key insights and consensus points'
+              )}
+            </TabsContent>
+          )}
+
+          {entityLevel === 'project' && (
+            <TabsContent value="insights">
+              {renderTabContent(
+                'insights',
+                'Strategic Insights',
+                'Generate strategic insights and recommendations across templates'
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </CardContent>
     </Card>

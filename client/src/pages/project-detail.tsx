@@ -24,6 +24,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProjectAnalyticsView } from "@/components/analytics";
+import { InfographicGenerator } from "@/components/InfographicGenerator";
+import { Image as ImageIcon } from "lucide-react";
 import type { Project, InterviewTemplate, Collection } from "@shared/schema";
 
 interface ProjectWithCounts extends Project {
@@ -144,6 +146,11 @@ export default function ProjectDetailPage() {
     enabled: !!projectId,
   });
 
+  const { data: analyticsData } = useQuery<{ analytics: unknown | null }>({
+    queryKey: ["/api/projects", projectId, "analytics"],
+    enabled: !!projectId,
+  });
+
   if (projectLoading) {
     return (
       <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -255,6 +262,10 @@ export default function ProjectDetailPage() {
             <BarChart3 className="w-4 h-4 mr-2" />
             Analytics
           </TabsTrigger>
+          <TabsTrigger value="infographics" data-testid="tab-infographics">
+            <ImageIcon className="w-4 h-4 mr-2" />
+            Infographics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates" className="space-y-4">
@@ -327,6 +338,15 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="analytics">
           <ProjectAnalyticsView projectId={projectId!} projectName={project.name} />
+        </TabsContent>
+
+        <TabsContent value="infographics">
+          <InfographicGenerator
+            entityId={projectId!}
+            entityName={project.name}
+            entityLevel="project"
+            hasAnalytics={!!analyticsData?.analytics}
+          />
         </TabsContent>
       </Tabs>
     </div>

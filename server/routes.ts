@@ -536,6 +536,115 @@ export async function registerRoutes(
     }
   });
 
+  // Project-level infographic endpoints
+  app.post("/api/projects/:projectId/infographic/summary", isAuthenticated, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!project.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh project analytics first." });
+      }
+
+      const analytics = project.analyticsData as ProjectAnalytics;
+      const prompt = InfographicPromptBuilder.buildProjectSummary(
+        project.name,
+        analytics
+      );
+
+      console.log("[Infographic] Generating project summary for:", projectId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Project summary generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/infographic/themes", isAuthenticated, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!project.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh project analytics first." });
+      }
+
+      const analytics = project.analyticsData as ProjectAnalytics;
+      const prompt = InfographicPromptBuilder.buildProjectThemeNetwork(
+        project.name,
+        analytics
+      );
+
+      console.log("[Infographic] Generating project theme network for:", projectId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Project themes generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/infographic/insights", isAuthenticated, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!project.analyticsData) {
+        return res.status(400).json({ error: "Analytics not available. Please refresh project analytics first." });
+      }
+
+      const analytics = project.analyticsData as ProjectAnalytics;
+      const prompt = InfographicPromptBuilder.buildProjectStrategicInsights(
+        project.name,
+        analytics
+      );
+
+      console.log("[Infographic] Generating project strategic insights for:", projectId);
+
+      const infographicService = getInfographicService();
+      const result = await infographicService.generateInfographic(prompt);
+
+      res.json({
+        success: true,
+        id: result.id,
+        imageUrl: result.imageUrl,
+        model: result.model,
+      });
+    } catch (error: any) {
+      console.error("[Infographic] Project insights generation error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate infographic" });
+    }
+  });
+
   // Projects
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {

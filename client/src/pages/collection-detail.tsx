@@ -742,8 +742,9 @@ export default function CollectionDetailPage() {
       </Card>
 
       <InfographicGenerator
-        collectionId={collectionId || ""}
-        collectionName={collection?.name || "Collection"}
+        entityId={collectionId || ""}
+        entityName={collection?.name || "Collection"}
+        entityLevel="collection"
         hasAnalytics={!!analyticsData?.analytics}
       />
 
