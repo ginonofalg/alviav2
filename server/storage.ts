@@ -117,6 +117,53 @@ export interface IStorage {
     sessionCount: number;
     completedSessions: number;
   }>;
+  getEnhancedDashboardStats(userId: string): Promise<{
+    projectCount: number;
+    collectionCount: number;
+    sessionCount: number;
+    completedSessions: number;
+    sessionsByStatus: Record<string, number>;
+    avgSessionDurationMs: number;
+    completionRate: number;
+    activeCollections: Array<{
+      id: string;
+      name: string;
+      projectName: string;
+      targetResponses: number | null;
+      actualResponses: number;
+      completedResponses: number;
+      isActive: boolean;
+      createdAt: Date | null;
+    }>;
+    actionItems: {
+      pausedSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        pausedAt: Date | null;
+        pausedDurationHours: number;
+      }>;
+      abandonedSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        createdAt: Date | null;
+      }>;
+      inProgressSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        startedAt: Date | null;
+      }>;
+      staleCollections: Array<{
+        id: string;
+        name: string;
+        projectName: string;
+        lastSessionAt: Date | null;
+        daysSinceActivity: number;
+      }>;
+    };
+  }>;
   getAnalytics(): Promise<{
     totalSessions: number;
     completedSessions: number;
@@ -563,6 +610,229 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { projectCount, collectionCount, sessionCount, completedSessions };
+  }
+
+  async getEnhancedDashboardStats(userId: string): Promise<{
+    projectCount: number;
+    collectionCount: number;
+    sessionCount: number;
+    completedSessions: number;
+    sessionsByStatus: Record<string, number>;
+    avgSessionDurationMs: number;
+    completionRate: number;
+    activeCollections: Array<{
+      id: string;
+      name: string;
+      projectName: string;
+      targetResponses: number | null;
+      actualResponses: number;
+      completedResponses: number;
+      isActive: boolean;
+      createdAt: Date | null;
+    }>;
+    actionItems: {
+      pausedSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        pausedAt: Date | null;
+        pausedDurationHours: number;
+      }>;
+      abandonedSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        createdAt: Date | null;
+      }>;
+      inProgressSessions: Array<{
+        id: string;
+        respondentName: string | null;
+        collectionName: string;
+        startedAt: Date | null;
+      }>;
+      staleCollections: Array<{
+        id: string;
+        name: string;
+        projectName: string;
+        lastSessionAt: Date | null;
+        daysSinceActivity: number;
+      }>;
+    };
+  }> {
+    const projectList = await this.getProjectsByUser(userId);
+    const projectCount = projectList.length;
+
+    let collectionCount = 0;
+    let sessionCount = 0;
+    let completedSessions = 0;
+    const sessionsByStatus: Record<string, number> = {
+      pending: 0,
+      consent_given: 0,
+      in_progress: 0,
+      paused: 0,
+      completed: 0,
+      abandoned: 0,
+    };
+    const durations: number[] = [];
+    const activeCollections: Array<{
+      id: string;
+      name: string;
+      projectName: string;
+      targetResponses: number | null;
+      actualResponses: number;
+      completedResponses: number;
+      isActive: boolean;
+      createdAt: Date | null;
+    }> = [];
+    const pausedSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      pausedAt: Date | null;
+      pausedDurationHours: number;
+    }> = [];
+    const abandonedSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      createdAt: Date | null;
+    }> = [];
+    const inProgressSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      startedAt: Date | null;
+    }> = [];
+    const staleCollections: Array<{
+      id: string;
+      name: string;
+      projectName: string;
+      lastSessionAt: Date | null;
+      daysSinceActivity: number;
+    }> = [];
+
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+    for (const project of projectList) {
+      const collectionList = await this.getCollectionsByProject(project.id);
+      collectionCount += collectionList.length;
+      
+      for (const collection of collectionList) {
+        const sessionList = await this.getSessionsByCollection(collection.id);
+        sessionCount += sessionList.length;
+        
+        let lastSessionAt: Date | null = null;
+        let collectionCompletedCount = 0;
+        
+        for (const session of sessionList) {
+          sessionsByStatus[session.status] = (sessionsByStatus[session.status] || 0) + 1;
+          
+          if (session.status === "completed") {
+            completedSessions++;
+            collectionCompletedCount++;
+            if (session.totalDurationMs && session.totalDurationMs > 0) {
+              durations.push(session.totalDurationMs);
+            } else if (session.startedAt && session.completedAt) {
+              const duration = new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime();
+              if (duration > 0) durations.push(duration);
+            }
+          }
+          
+          if (session.createdAt && (!lastSessionAt || new Date(session.createdAt) > lastSessionAt)) {
+            lastSessionAt = session.createdAt;
+          }
+          
+          const respondent = await this.getRespondent(session.respondentId);
+          const respondentName = respondent?.informalName || respondent?.fullName || null;
+          
+          if (session.status === "paused" && session.pausedAt) {
+            const pausedDurationHours = Math.round((now - new Date(session.pausedAt).getTime()) / (1000 * 60 * 60));
+            pausedSessions.push({
+              id: session.id,
+              respondentName,
+              collectionName: collection.name,
+              pausedAt: session.pausedAt,
+              pausedDurationHours,
+            });
+          }
+          
+          if (session.status === "abandoned") {
+            abandonedSessions.push({
+              id: session.id,
+              respondentName,
+              collectionName: collection.name,
+              createdAt: session.createdAt,
+            });
+          }
+          
+          if (session.status === "in_progress") {
+            inProgressSessions.push({
+              id: session.id,
+              respondentName,
+              collectionName: collection.name,
+              startedAt: session.startedAt,
+            });
+          }
+        }
+        
+        if (collection.isActive) {
+          activeCollections.push({
+            id: collection.id,
+            name: collection.name,
+            projectName: project.name,
+            targetResponses: collection.targetResponses,
+            actualResponses: sessionList.length,
+            completedResponses: collectionCompletedCount,
+            isActive: collection.isActive ?? true,
+            createdAt: collection.createdAt,
+          });
+        }
+        
+        if (sessionList.length > 0 && lastSessionAt) {
+          const daysSinceActivity = Math.floor((now - new Date(lastSessionAt).getTime()) / ONE_DAY_MS);
+          if (daysSinceActivity >= 7 && collection.isActive) {
+            staleCollections.push({
+              id: collection.id,
+              name: collection.name,
+              projectName: project.name,
+              lastSessionAt,
+              daysSinceActivity,
+            });
+          }
+        }
+      }
+    }
+
+    const avgSessionDurationMs = durations.length > 0 
+      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) 
+      : 0;
+    const completionRate = sessionCount > 0 ? Math.round((completedSessions / sessionCount) * 100) : 0;
+
+    pausedSessions.sort((a, b) => b.pausedDurationHours - a.pausedDurationHours);
+    staleCollections.sort((a, b) => b.daysSinceActivity - a.daysSinceActivity);
+    activeCollections.sort((a, b) => {
+      const aProgress = a.targetResponses ? a.completedResponses / a.targetResponses : 0;
+      const bProgress = b.targetResponses ? b.completedResponses / b.targetResponses : 0;
+      return bProgress - aProgress;
+    });
+
+    return {
+      projectCount,
+      collectionCount,
+      sessionCount,
+      completedSessions,
+      sessionsByStatus,
+      avgSessionDurationMs,
+      completionRate,
+      activeCollections: activeCollections.slice(0, 5),
+      actionItems: {
+        pausedSessions: pausedSessions.slice(0, 5),
+        abandonedSessions: abandonedSessions.slice(0, 5),
+        inProgressSessions: inProgressSessions.slice(0, 5),
+        staleCollections: staleCollections.slice(0, 5),
+      },
+    };
   }
 
   async getAnalytics(filters?: { projectId?: string; collectionId?: string }): Promise<{

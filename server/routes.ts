@@ -76,6 +76,18 @@ export async function registerRoutes(
     }
   });
 
+  // Enhanced dashboard stats with more insights
+  app.get("/api/dashboard/enhanced-stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stats = await storage.getEnhancedDashboardStats(userId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching enhanced dashboard stats:", error);
+      res.status(500).json({ message: "Failed to fetch enhanced stats" });
+    }
+  });
+
   // Analytics - legacy basic stats endpoint
   app.get("/api/analytics", isAuthenticated, async (req, res) => {
     try {

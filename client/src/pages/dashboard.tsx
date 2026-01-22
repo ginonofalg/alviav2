@@ -1,42 +1,107 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { 
   FolderKanban, 
   FileText, 
   Users, 
-  TrendingUp, 
   Plus, 
   ArrowRight,
   Clock,
   CheckCircle2,
-  Pause
+  Pause,
+  AlertTriangle,
+  Play,
+  TrendingUp,
+  Target,
+  Timer,
+  XCircle,
+  Activity,
+  BarChart3
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import type { Project, Collection, InterviewSession } from "@shared/schema";
 
-interface DashboardStats {
+interface EnrichedSession {
+  id: string;
+  collectionId: string;
+  respondentId: string;
+  status: string;
+  currentQuestionIndex: number | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  pausedAt: Date | null;
+  totalDurationMs: number | null;
+  createdAt: Date | null;
+  collectionName: string;
+  templateName: string;
+  projectName: string;
+  respondentName: string | null;
+}
+
+interface EnhancedDashboardStats {
   projectCount: number;
   collectionCount: number;
   sessionCount: number;
   completedSessions: number;
+  sessionsByStatus: Record<string, number>;
+  avgSessionDurationMs: number;
+  completionRate: number;
+  activeCollections: Array<{
+    id: string;
+    name: string;
+    projectName: string;
+    targetResponses: number | null;
+    actualResponses: number;
+    completedResponses: number;
+    isActive: boolean;
+    createdAt: string | null;
+  }>;
+  actionItems: {
+    pausedSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      pausedAt: string | null;
+      pausedDurationHours: number;
+    }>;
+    abandonedSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      createdAt: string | null;
+    }>;
+    inProgressSessions: Array<{
+      id: string;
+      respondentName: string | null;
+      collectionName: string;
+      startedAt: string | null;
+    }>;
+    staleCollections: Array<{
+      id: string;
+      name: string;
+      projectName: string;
+      lastSessionAt: string | null;
+      daysSinceActivity: number;
+    }>;
+  };
 }
 
 function StatCard({ 
   title, 
   value, 
   icon: Icon, 
-  trend,
+  description,
   isLoading,
   href
 }: { 
   title: string; 
   value: number | string; 
   icon: React.ElementType;
-  trend?: string;
+  description?: string;
   isLoading?: boolean;
   href?: string;
 }) {
@@ -54,13 +119,10 @@ function StatCard({
         {isLoading ? (
           <Skeleton className="h-8 w-20" />
         ) : (
-          <div className="flex items-baseline gap-2">
+          <div>
             <span className="text-2xl font-semibold">{value}</span>
-            {trend && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <TrendingUp className="w-3 h-3 text-green-500" />
-                {trend}
-              </span>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-1">{description}</p>
             )}
           </div>
         )}
@@ -74,49 +136,304 @@ function StatCard({
   return cardContent;
 }
 
-function RecentProjectCard({ project }: { project: Project }) {
-  return (
-    <Link href={`/projects/${project.id}`}>
-      <Card className="hover-elevate cursor-pointer transition-all duration-200" data-testid={`card-project-${project.id}`}>
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <h4 className="font-medium truncate">{project.name}</h4>
-              <p className="text-sm text-muted-foreground line-clamp-2">
-                {project.description || "No description"}
-              </p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-function SessionStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { variant: "default" | "secondary" | "outline"; icon: React.ElementType }> = {
-    completed: { variant: "default", icon: CheckCircle2 },
-    in_progress: { variant: "secondary", icon: Clock },
-    paused: { variant: "outline", icon: Pause },
-    pending: { variant: "outline", icon: Clock },
-    abandoned: { variant: "outline", icon: Clock },
-    consent_given: { variant: "outline", icon: Clock },
-  };
-  const { variant, icon: Icon } = config[status] || config.pending;
+function CompletionRateRing({ rate, isLoading }: { rate: number; isLoading: boolean }) {
+  const circumference = 2 * Math.PI * 40;
+  const strokeDashoffset = circumference - (rate / 100) * circumference;
   
   return (
-    <Badge variant={variant} className="gap-1">
-      <Icon className="w-3 h-3" />
-      {status.replace("_", " ")}
-    </Badge>
+    <Card data-testid="completion-rate-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Target className="w-5 h-5 text-primary" />
+          Completion Rate
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-center">
+        {isLoading ? (
+          <Skeleton className="h-32 w-32 rounded-full" />
+        ) : (
+          <div className="relative w-32 h-32">
+            <svg className="w-full h-full transform -rotate-90">
+              <circle
+                cx="64"
+                cy="64"
+                r="40"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                className="text-muted"
+              />
+              <circle
+                cx="64"
+                cy="64"
+                r="40"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                className="text-primary transition-all duration-500"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-2xl font-bold">{rate}%</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function RecentSessionRow({ session }: { session: InterviewSession }) {
+function SessionStatusBreakdown({ 
+  sessionsByStatus, 
+  totalSessions,
+  isLoading 
+}: { 
+  sessionsByStatus: Record<string, number>;
+  totalSessions: number;
+  isLoading: boolean;
+}) {
+  const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+    completed: { label: "Completed", color: "bg-green-500", icon: CheckCircle2 },
+    in_progress: { label: "In Progress", color: "bg-blue-500", icon: Play },
+    paused: { label: "Paused", color: "bg-yellow-500", icon: Pause },
+    pending: { label: "Pending", color: "bg-gray-400", icon: Clock },
+    consent_given: { label: "Consent Given", color: "bg-purple-500", icon: CheckCircle2 },
+    abandoned: { label: "Abandoned", color: "bg-red-500", icon: XCircle },
+  };
+
+  return (
+    <Card data-testid="session-status-breakdown">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-primary" />
+          Sessions by Status
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <>
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+          </>
+        ) : (
+          Object.entries(sessionsByStatus)
+            .filter(([_, count]) => count > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([status, count]) => {
+              const config = statusConfig[status] || { label: status, color: "bg-gray-400", icon: Clock };
+              const percentage = totalSessions > 0 ? Math.round((count / totalSessions) * 100) : 0;
+              return (
+                <div key={status} className="flex items-center gap-3" data-testid={`status-row-${status}`}>
+                  <div className={`w-3 h-3 rounded-full ${config.color}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-sm font-medium truncate">{config.label}</span>
+                      <span className="text-sm text-muted-foreground">{count} ({percentage}%)</span>
+                    </div>
+                    <Progress value={percentage} className="h-1.5" />
+                  </div>
+                </div>
+              );
+            })
+        )}
+        {!isLoading && totalSessions === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">No sessions yet</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CollectionProgressCard({ 
+  collections, 
+  isLoading 
+}: { 
+  collections: EnhancedDashboardStats["activeCollections"];
+  isLoading: boolean;
+}) {
+  return (
+    <Card data-testid="collection-progress">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="text-lg">Collection Progress</CardTitle>
+          <CardDescription>Active collections and their response targets</CardDescription>
+        </div>
+        <Link href="/collections">
+          <Button variant="ghost" size="sm" data-testid="link-view-all-collections">
+            View all
+            <ArrowRight className="w-4 h-4 ml-1" />
+          </Button>
+        </Link>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </>
+        ) : collections.length > 0 ? (
+          collections.map((collection) => {
+            const progress = collection.targetResponses 
+              ? Math.min(100, Math.round((collection.completedResponses / collection.targetResponses) * 100))
+              : null;
+            return (
+              <Link href={`/collections/${collection.id}`} key={collection.id}>
+                <div 
+                  className="p-3 rounded-lg hover-elevate cursor-pointer border"
+                  data-testid={`collection-progress-${collection.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0">
+                      <h4 className="font-medium text-sm truncate">{collection.name}</h4>
+                      <p className="text-xs text-muted-foreground truncate">{collection.projectName}</p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0">
+                      {collection.completedResponses} / {collection.targetResponses || "—"}
+                    </Badge>
+                  </div>
+                  {progress !== null && (
+                    <div className="space-y-1">
+                      <Progress value={progress} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-right">{progress}% complete</p>
+                    </div>
+                  )}
+                </div>
+              </Link>
+            );
+          })
+        ) : (
+          <div className="text-center py-6 text-muted-foreground">
+            <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No active collections</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionItemsCard({ 
+  actionItems, 
+  isLoading 
+}: { 
+  actionItems: EnhancedDashboardStats["actionItems"];
+  isLoading: boolean;
+}) {
+  const hasItems = actionItems.pausedSessions.length > 0 || 
+    actionItems.inProgressSessions.length > 0 || 
+    actionItems.staleCollections.length > 0;
+
+  return (
+    <Card data-testid="action-items">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-amber-500" />
+          Needs Attention
+        </CardTitle>
+        <CardDescription>Items that may require your action</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <>
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </>
+        ) : hasItems ? (
+          <>
+            {actionItems.pausedSessions.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Pause className="w-4 h-4 text-yellow-500" />
+                  Paused Sessions ({actionItems.pausedSessions.length})
+                </h4>
+                {actionItems.pausedSessions.slice(0, 3).map((session) => (
+                  <Link href={`/sessions/${session.id}`} key={session.id}>
+                    <div 
+                      className="flex items-center justify-between gap-2 p-2 rounded hover-elevate cursor-pointer text-sm"
+                      data-testid={`paused-session-${session.id}`}
+                    >
+                      <span className="truncate">{session.respondentName || `Session #${session.id.slice(0, 8)}`}</span>
+                      <Badge variant="secondary" className="shrink-0">
+                        {session.pausedDurationHours}h paused
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+            
+            {actionItems.inProgressSessions.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Play className="w-4 h-4 text-blue-500" />
+                  In Progress ({actionItems.inProgressSessions.length})
+                </h4>
+                {actionItems.inProgressSessions.slice(0, 3).map((session) => (
+                  <Link href={`/sessions/${session.id}`} key={session.id}>
+                    <div 
+                      className="flex items-center justify-between gap-2 p-2 rounded hover-elevate cursor-pointer text-sm"
+                      data-testid={`in-progress-session-${session.id}`}
+                    >
+                      <span className="truncate">{session.respondentName || `Session #${session.id.slice(0, 8)}`}</span>
+                      <Badge variant="outline" className="shrink-0">{session.collectionName}</Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {actionItems.staleCollections.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  Inactive Collections ({actionItems.staleCollections.length})
+                </h4>
+                {actionItems.staleCollections.slice(0, 3).map((collection) => (
+                  <Link href={`/collections/${collection.id}`} key={collection.id}>
+                    <div 
+                      className="flex items-center justify-between gap-2 p-2 rounded hover-elevate cursor-pointer text-sm"
+                      data-testid={`stale-collection-${collection.id}`}
+                    >
+                      <span className="truncate">{collection.name}</span>
+                      <Badge variant="outline" className="shrink-0">
+                        {collection.daysSinceActivity} days idle
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-6 text-muted-foreground">
+            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-green-500 opacity-70" />
+            <p className="text-sm">All caught up!</p>
+            <p className="text-xs mt-1">No items need your attention right now</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecentSessionRow({ session }: { session: EnrichedSession }) {
   const duration = session.totalDurationMs 
     ? `${Math.round(session.totalDurationMs / 60000)} min` 
     : "—";
+
+  const statusConfig: Record<string, { variant: "default" | "secondary" | "outline"; color: string }> = {
+    completed: { variant: "default", color: "bg-green-500" },
+    in_progress: { variant: "secondary", color: "bg-blue-500" },
+    paused: { variant: "outline", color: "bg-yellow-500" },
+    pending: { variant: "outline", color: "bg-gray-400" },
+    abandoned: { variant: "outline", color: "bg-red-500" },
+    consent_given: { variant: "outline", color: "bg-purple-500" },
+  };
+  const config = statusConfig[session.status] || statusConfig.pending;
 
   return (
     <Link href={`/sessions/${session.id}`}>
@@ -125,18 +442,19 @@ function RecentSessionRow({ session }: { session: InterviewSession }) {
         data-testid={`row-session-${session.id}`}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-1 h-8 rounded-full ${
-            session.status === "completed" ? "bg-green-500" :
-            session.status === "in_progress" ? "bg-blue-500" :
-            session.status === "paused" ? "bg-yellow-500" :
-            "bg-muted"
-          }`} />
+          <div className={`w-1 h-10 rounded-full ${config.color}`} />
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">Session #{session.id.slice(0, 8)}</p>
-            <p className="text-xs text-muted-foreground">{duration}</p>
+            <p className="text-sm font-medium truncate">
+              {session.respondentName || `Session #${session.id.slice(0, 8)}`}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {session.collectionName} • {duration}
+            </p>
           </div>
         </div>
-        <SessionStatusBadge status={session.status} />
+        <Badge variant={config.variant} className="shrink-0">
+          {session.status.replace("_", " ")}
+        </Badge>
       </div>
     </Link>
   );
@@ -145,15 +463,11 @@ function RecentSessionRow({ session }: { session: InterviewSession }) {
 export default function DashboardPage() {
   const { user } = useAuth();
 
-  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard/stats"],
+  const { data: stats, isLoading: statsLoading } = useQuery<EnhancedDashboardStats>({
+    queryKey: ["/api/dashboard/enhanced-stats"],
   });
 
-  const { data: recentProjects, isLoading: projectsLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
-
-  const { data: recentSessions, isLoading: sessionsLoading } = useQuery<InterviewSession[]>({
+  const { data: recentSessions, isLoading: sessionsLoading } = useQuery<EnrichedSession[]>({
     queryKey: ["/api/sessions?limit=5"],
   });
 
@@ -166,6 +480,14 @@ export default function DashboardPage() {
 
   const firstName = user?.firstName || "there";
 
+  const formatDuration = (ms: number) => {
+    const minutes = Math.round(ms / 60000);
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  };
+
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -174,7 +496,7 @@ export default function DashboardPage() {
             {greeting()}, {firstName}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Here's what's happening with your research
+            Here's an overview of your research activity
           </p>
         </div>
         <Link href="/projects/new">
@@ -208,52 +530,42 @@ export default function DashboardPage() {
           href="/sessions"
         />
         <StatCard
-          title="Completed"
-          value={stats?.completedSessions ?? 0}
-          icon={CheckCircle2}
+          title="Avg Duration"
+          value={stats ? formatDuration(stats.avgSessionDurationMs) : "—"}
+          icon={Timer}
+          description="Per completed session"
           isLoading={statsLoading}
-          href="/sessions?status=completed"
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <CompletionRateRing 
+          rate={stats?.completionRate ?? 0} 
+          isLoading={statsLoading} 
+        />
+        <SessionStatusBreakdown 
+          sessionsByStatus={stats?.sessionsByStatus ?? {}}
+          totalSessions={stats?.sessionCount ?? 0}
+          isLoading={statsLoading}
+        />
+        <ActionItemsCard 
+          actionItems={stats?.actionItems ?? { pausedSessions: [], abandonedSessions: [], inProgressSessions: [], staleCollections: [] }}
+          isLoading={statsLoading}
         />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <CollectionProgressCard 
+          collections={stats?.activeCollections ?? []}
+          isLoading={statsLoading}
+        />
+        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle className="text-lg">Recent Projects</CardTitle>
-            <Link href="/projects">
-              <Button variant="ghost" size="sm" data-testid="link-view-all-projects">
-                View all
-                <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {projectsLoading ? (
-              <>
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </>
-            ) : recentProjects && recentProjects.length > 0 ? (
-              recentProjects.map((project) => (
-                <RecentProjectCard key={project.id} project={project} />
-              ))
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <FolderKanban className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No projects yet</p>
-                <Link href="/projects/new">
-                  <Button variant="link" size="sm" className="mt-2" data-testid="link-create-first-project">
-                    Create your first project
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle className="text-lg">Recent Sessions</CardTitle>
+            <div>
+              <CardTitle className="text-lg">Recent Sessions</CardTitle>
+              <CardDescription>Latest interview activity</CardDescription>
+            </div>
             <Link href="/sessions">
               <Button variant="ghost" size="sm" data-testid="link-view-all-sessions">
                 View all
