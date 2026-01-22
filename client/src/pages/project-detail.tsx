@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HierarchyHeader } from "@/components/ui/hierarchy-nav";
 import { 
-  ArrowLeft, 
   Plus, 
   Settings, 
   FileText, 
@@ -179,33 +179,31 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/projects">
-            <Button variant="ghost" size="icon" data-testid="button-back">
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-            <p className="text-muted-foreground mt-1">{project.description || "No description"}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/projects/${projectId}/edit`}>
-            <Button variant="outline" size="sm" data-testid="button-edit-project">
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
-            </Button>
-          </Link>
-          <Link href={`/projects/${projectId}/templates/new`}>
-            <Button size="sm" data-testid="button-new-template">
-              <Plus className="w-4 h-4 mr-2" />
-              New Template
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <HierarchyHeader
+        level="project"
+        title={project.name}
+        subtitle={project.description || "No description"}
+        breadcrumbItems={[
+          { label: "Projects", href: "/projects", level: "project" },
+          { label: project.name, level: "project" },
+        ]}
+        actions={
+          <>
+            <Link href={`/projects/${projectId}/edit`}>
+              <Button variant="outline" size="sm" data-testid="button-edit-project">
+                <Settings className="w-4 h-4 mr-2" />
+                Settings
+              </Button>
+            </Link>
+            <Link href={`/projects/${projectId}/templates/new`}>
+              <Button size="sm" data-testid="button-new-template">
+                <Plus className="w-4 h-4 mr-2" />
+                New Template
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

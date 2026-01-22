@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HierarchyHeader } from "@/components/ui/hierarchy-nav";
 import { 
-  ArrowLeft, 
   Plus, 
   Settings, 
   Play,
@@ -96,6 +95,11 @@ export default function TemplateDetailPage() {
     enabled: !!templateId,
   });
 
+  const { data: project } = useQuery<Project>({
+    queryKey: ["/api/projects", template?.projectId],
+    enabled: !!template?.projectId,
+  });
+
   if (isLoading) {
     return (
       <div className="p-8 max-w-4xl mx-auto space-y-6">
@@ -133,46 +137,44 @@ export default function TemplateDetailPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href={`/projects/${template.projectId}`}>
-            <Button variant="ghost" size="icon" data-testid="button-back">
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">{template.name}</h1>
-              <Badge variant="outline">v{template.version}</Badge>
-              {template.isActive ? (
-                <Badge className="gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Active
-                </Badge>
-              ) : (
-                <Badge variant="secondary">Draft</Badge>
-              )}
-            </div>
-            <p className="text-muted-foreground mt-1">
-              {template.objective || "No objective set"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/templates/${templateId}/edit`}>
-            <Button variant="outline" size="sm" data-testid="button-edit-template">
-              <Settings className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
-          </Link>
-          <Link href={`/collections/new?templateId=${templateId}`}>
-            <Button size="sm" data-testid="button-launch-collection">
-              <Play className="w-4 h-4 mr-2" />
-              Launch Collection
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <HierarchyHeader
+        level="template"
+        title={template.name}
+        subtitle={template.objective || "No objective set"}
+        breadcrumbItems={[
+          { label: project?.name || "Project", href: `/projects/${template.projectId}`, level: "project" },
+          { label: template.name, level: "template" },
+        ]}
+        badges={
+          <>
+            <Badge variant="outline">v{template.version}</Badge>
+            {template.isActive ? (
+              <Badge className="gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Active
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Draft</Badge>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <Link href={`/templates/${templateId}/edit`}>
+              <Button variant="outline" size="sm" data-testid="button-edit-template">
+                <Settings className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
+            </Link>
+            <Link href={`/collections/new?templateId=${templateId}`}>
+              <Button size="sm" data-testid="button-launch-collection">
+                <Play className="w-4 h-4 mr-2" />
+                Launch Collection
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

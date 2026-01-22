@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HierarchyHeader } from "@/components/ui/hierarchy-nav";
 import {
-  ArrowLeft,
   Copy,
   ExternalLink,
   Users,
@@ -177,55 +177,66 @@ export default function CollectionDetailPage() {
 
   const shareUrl = `${window.location.origin}/join/${collectionId}`;
 
+  const breadcrumbItems = [];
+  if (collection.project) {
+    breadcrumbItems.push({
+      label: collection.project.name,
+      href: `/projects/${collection.project.id}`,
+      level: "project" as const,
+    });
+  }
+  if (collection.template) {
+    breadcrumbItems.push({
+      label: collection.template.name,
+      href: `/templates/${collection.template.id}`,
+      level: "template" as const,
+    });
+  }
+  breadcrumbItems.push({
+    label: collection.name,
+    level: "collection" as const,
+  });
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/collections">
-            <Button variant="ghost" size="icon" data-testid="button-back">
-              <ArrowLeft className="w-4 h-4" />
+      <HierarchyHeader
+        level="collection"
+        title={collection.name}
+        subtitle={collection.description || collection.template?.name || "Interview Collection"}
+        breadcrumbItems={breadcrumbItems}
+        badges={
+          collection.isActive ? (
+            <Badge className="gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              Open
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="gap-1">
+              <XCircle className="w-3 h-3" />
+              Closed
+            </Badge>
+          )
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyShareLink}
+              data-testid="button-copy-link"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy Link
             </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {collection.name}
-              </h1>
-              {collection.isActive ? (
-                <Badge className="gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Open
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="gap-1">
-                  <XCircle className="w-3 h-3" />
-                  Closed
-                </Badge>
-              )}
-            </div>
-            <p className="text-muted-foreground mt-1">
-              {collection.template?.name || "Interview Template"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={copyShareLink}
-            data-testid="button-copy-link"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Copy Link
-          </Button>
-          <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-            <Button size="sm" data-testid="button-preview">
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Preview
-            </Button>
-          </a>
-        </div>
-      </div>
+            <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+              <Button size="sm" data-testid="button-preview">
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Preview
+              </Button>
+            </a>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-4">
         <Card>
