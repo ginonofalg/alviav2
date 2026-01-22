@@ -562,7 +562,10 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
       );
     } else {
       const metrics = state.questionMetrics.get(state.currentQuestionIndex);
-      const recommendedFollowUps = currentQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
+      const recommendedFollowUps =
+        currentQuestion?.recommendedFollowUps ??
+        state.template?.defaultRecommendedFollowUps ??
+        null;
       instructions = buildInterviewInstructions(
         state.template,
         currentQuestion,
@@ -597,7 +600,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
             //silence_duration_ms: 800,
             //prefix_padding_ms: 150,
             type: "semantic_vad",
-            eagerness: "low",
+            eagerness: "auto",
             create_response: true, // Alvia responds immediately; Barbara's guidance applies to NEXT turn
             interrupt_response: true,
           },
@@ -654,7 +657,10 @@ function buildInterviewInstructions(
   barbaraGuidance?: string,
   respondentName?: string | null,
   allQuestions?: Array<{ questionText: string }>,
-  followUpContext?: { followUpCount: number; recommendedFollowUps: number | null },
+  followUpContext?: {
+    followUpCount: number;
+    recommendedFollowUps: number | null;
+  },
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -689,21 +695,22 @@ CURRENT QUESTION TO ASK:
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
-  followUpContext?.recommendedFollowUps !== null && followUpContext?.recommendedFollowUps !== undefined
+  followUpContext?.recommendedFollowUps !== null &&
+  followUpContext?.recommendedFollowUps !== undefined
     ? `
 FOLLOW-UP DEPTH GUIDANCE:
-The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? '' : 's'} for this question.
+The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? "" : "s"} for this question.
 You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
 `
     : ""
 }${
-  upcomingQuestions
-    ? `
+    upcomingQuestions
+      ? `
 UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
 ${upcomingQuestions}
 `
-    : ""
-}
+      : ""
+  }
 INSTRUCTIONS:
 1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
@@ -1084,7 +1091,10 @@ async function triggerBarbaraAnalysis(
 
       // Inject guidance by updating session instructions (system context)
       if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-        const recommendedFollowUps = currentQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
+        const recommendedFollowUps =
+          currentQuestion?.recommendedFollowUps ??
+          state.template?.defaultRecommendedFollowUps ??
+          null;
         const updatedInstructions = buildInterviewInstructions(
           state.template,
           currentQuestion,
@@ -1118,9 +1128,15 @@ async function triggerBarbaraAnalysis(
       if (guidance.action === "probe_followup") {
         metrics.followUpCount++;
         // Update persisted question state with new follow-up count
-        updateQuestionState(state, state.currentQuestionIndex, { followUpCount: metrics.followUpCount });
-        console.log(`[Barbara] Follow-up count for Q${state.currentQuestionIndex + 1}: ${metrics.followUpCount}` + 
-          (metrics.recommendedFollowUps !== null ? ` (recommended: ${metrics.recommendedFollowUps})` : ''));
+        updateQuestionState(state, state.currentQuestionIndex, {
+          followUpCount: metrics.followUpCount,
+        });
+        console.log(
+          `[Barbara] Follow-up count for Q${state.currentQuestionIndex + 1}: ${metrics.followUpCount}` +
+            (metrics.recommendedFollowUps !== null
+              ? ` (recommended: ${metrics.recommendedFollowUps})`
+              : ""),
+        );
       }
 
       // Notify client about Barbara's guidance (for debugging/transparency)
@@ -1396,8 +1412,13 @@ INSTRUCTIONS:
         );
 
         // Update session instructions for new question
-        const newMetrics = state.questionMetrics.get(state.currentQuestionIndex);
-        const recommendedFollowUps = nextQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null;
+        const newMetrics = state.questionMetrics.get(
+          state.currentQuestionIndex,
+        );
+        const recommendedFollowUps =
+          nextQuestion?.recommendedFollowUps ??
+          state.template?.defaultRecommendedFollowUps ??
+          null;
         const instructions = buildInterviewInstructions(
           state.template,
           nextQuestion,
@@ -1406,7 +1427,10 @@ INSTRUCTIONS:
           undefined,
           state.respondentInformalName,
           state.questions,
-          { followUpCount: newMetrics?.followUpCount ?? 0, recommendedFollowUps },
+          {
+            followUpCount: newMetrics?.followUpCount ?? 0,
+            recommendedFollowUps,
+          },
         );
 
         if (state.openaiWs.readyState === WebSocket.OPEN) {
