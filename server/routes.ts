@@ -665,7 +665,16 @@ export async function registerRoutes(
   app.get("/api/templates", isAuthenticated, async (req, res) => {
     try {
       const templates = await storage.getAllTemplates();
-      res.json(templates);
+      const templatesWithCounts = await Promise.all(
+        templates.map(async (template) => {
+          const questions = await storage.getQuestionsByTemplate(template.id);
+          return {
+            ...template,
+            questionCount: questions.length,
+          };
+        })
+      );
+      res.json(templatesWithCounts);
     } catch (error) {
       console.error("Error fetching templates:", error);
       res.status(500).json({ message: "Failed to fetch templates" });
