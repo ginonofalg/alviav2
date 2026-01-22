@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   Play,
   TrendingUp,
-  Target,
   Timer,
   XCircle,
   Activity,
@@ -115,15 +114,13 @@ function StatCard({
           <Icon className="h-4 w-4 text-primary" />
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         {isLoading ? (
           <Skeleton className="h-8 w-20" />
         ) : (
           <div>
             <span className="text-2xl font-semibold">{value}</span>
-            {description && (
-              <p className="text-xs text-muted-foreground mt-1">{description}</p>
-            )}
+            <p className="text-xs text-muted-foreground mt-1 min-h-[1rem]">{description || "\u00A0"}</p>
           </div>
         )}
       </CardContent>
@@ -134,56 +131,6 @@ function StatCard({
     return <Link href={href}>{cardContent}</Link>;
   }
   return cardContent;
-}
-
-function CompletionRateRing({ rate, isLoading }: { rate: number; isLoading: boolean }) {
-  const circumference = 2 * Math.PI * 40;
-  const strokeDashoffset = circumference - (rate / 100) * circumference;
-  
-  return (
-    <Card data-testid="completion-rate-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Target className="w-5 h-5 text-primary" />
-          Completion Rate
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex items-center justify-center">
-        {isLoading ? (
-          <Skeleton className="h-32 w-32 rounded-full" />
-        ) : (
-          <div className="relative w-32 h-32">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle
-                cx="64"
-                cy="64"
-                r="40"
-                stroke="currentColor"
-                strokeWidth="8"
-                fill="none"
-                className="text-muted"
-              />
-              <circle
-                cx="64"
-                cy="64"
-                r="40"
-                stroke="currentColor"
-                strokeWidth="8"
-                fill="none"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-                className="text-primary transition-all duration-500"
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-bold">{rate}%</span>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
 }
 
 function SessionStatusBreakdown({ 
@@ -538,11 +485,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <CompletionRateRing 
-          rate={stats?.completionRate ?? 0} 
-          isLoading={statsLoading} 
-        />
+      <div className="grid gap-6 lg:grid-cols-2">
         <SessionStatusBreakdown 
           sessionsByStatus={stats?.sessionsByStatus ?? {}}
           totalSessions={stats?.sessionCount ?? 0}
