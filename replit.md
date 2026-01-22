@@ -40,3 +40,21 @@ The core data model follows this hierarchy: **Workspace → Project → Intervie
 - **OpenAI API**: For GPT-4o Real-time voice interviews and GPT-based interview guidance and analytics processing.
 - **Gemini API**: For infographic generation.
 - **Replit Authentication**: OpenID Connect for user authentication.
+
+## Recent Changes (January 2026)
+
+### Session Detail Page Enhancements
+Enhanced the individual session detail page for researchers with comprehensive session management tools:
+- **Delete Session**: Confirmation dialog before permanent deletion
+- **Export**: JSON and CSV export options for session data
+- **Respondent Info Panel**: Display consent status, email, name
+- **Copy Transcript**: One-click copy of full transcript to clipboard
+- **Share Review Link**: Generate review link for completed sessions
+- **Resume Link**: Generate resume link for incomplete sessions
+- **Researcher Notes**: Save notes with dedicated storage field (researcherNotes)
+- **Flag/Status Actions**: Add review flags (needs_review, flagged_quality, verified, excluded) and override session status
+- **Navigation**: Prev/Next session navigation scoped to collection context
+- **Quality Summary**: Display average quality score and quality flags from question summaries
+
+### Schema Changes
+Added `researcherNotes` (text) and `reviewFlags` (text array) fields to interviewSessions table to support researcher annotations separate from analytics data.
