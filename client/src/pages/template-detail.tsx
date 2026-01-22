@@ -17,10 +17,13 @@ import {
   List,
   Clock,
   CheckCircle2,
-  BarChart3
+  BarChart3,
+  Layers,
+  Users,
+  ExternalLink
 } from "lucide-react";
 import { TemplateAnalyticsView } from "@/components/analytics";
-import type { InterviewTemplate, Question, Project } from "@shared/schema";
+import type { InterviewTemplate, Question, Project, Collection } from "@shared/schema";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
   open: MessageSquare,
@@ -98,6 +101,11 @@ export default function TemplateDetailPage() {
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", template?.projectId],
     enabled: !!template?.projectId,
+  });
+
+  const { data: collections = [] } = useQuery<Collection[]>({
+    queryKey: ["/api/collections", { templateId }],
+    enabled: !!templateId,
   });
 
   if (isLoading) {
@@ -204,10 +212,10 @@ export default function TemplateDetailPage() {
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Play className="w-5 h-5 text-primary" />
+              <Layers className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-semibold">0</p>
+              <p className="text-2xl font-semibold">{collections.length}</p>
               <p className="text-sm text-muted-foreground">Collections</p>
             </div>
           </CardContent>
@@ -219,6 +227,10 @@ export default function TemplateDetailPage() {
           <TabsTrigger value="questions" data-testid="tab-questions">
             <MessageSquare className="w-4 h-4 mr-2" />
             Questions ({questions.length})
+          </TabsTrigger>
+          <TabsTrigger value="collections" data-testid="tab-collections">
+            <Layers className="w-4 h-4 mr-2" />
+            Collections ({collections.length})
           </TabsTrigger>
           <TabsTrigger value="analytics" data-testid="tab-analytics">
             <BarChart3 className="w-4 h-4 mr-2" />
@@ -256,6 +268,67 @@ export default function TemplateDetailPage() {
                   <Button data-testid="button-add-questions">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Questions
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="collections" className="space-y-4">
+          {collections.length > 0 ? (
+            <div className="space-y-3">
+              {collections.map((collection) => (
+                <Link key={collection.id} href={`/collections/${collection.id}`} data-testid={`link-collection-${collection.id}`}>
+                  <Card className="hover-elevate cursor-pointer" data-testid={`card-collection-${collection.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <Layers className="w-5 h-5 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{collection.name}</p>
+                            {collection.description && (
+                              <p className="text-sm text-muted-foreground truncate">
+                                {collection.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Users className="w-4 h-4" />
+                            <span>{collection.targetResponses || "-"}</span>
+                          </div>
+                          {collection.isActive ? (
+                            <Badge className="gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Open
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Closed</Badge>
+                          )}
+                          <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Layers className="w-10 h-10 mx-auto mb-4 text-muted-foreground/50" />
+                <h3 className="font-medium mb-2">No collections yet</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Launch a collection to start gathering interview responses.
+                </p>
+                <Link href={`/collections/new?templateId=${templateId}`}>
+                  <Button data-testid="button-launch-first-collection">
+                    <Play className="w-4 h-4 mr-2" />
+                    Launch Collection
                   </Button>
                 </Link>
               </CardContent>

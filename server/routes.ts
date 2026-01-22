@@ -803,7 +803,14 @@ export async function registerRoutes(
   // Collections
   app.get("/api/collections", isAuthenticated, async (req, res) => {
     try {
-      const collections = await storage.getAllCollections();
+      const { templateId } = req.query;
+      
+      let collections;
+      if (templateId && typeof templateId === "string") {
+        collections = await storage.getCollectionsByTemplate(templateId);
+      } else {
+        collections = await storage.getAllCollections();
+      }
       
       // Add stats to each collection
       const collectionsWithStats = await Promise.all(
