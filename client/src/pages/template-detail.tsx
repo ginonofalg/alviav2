@@ -104,7 +104,12 @@ export default function TemplateDetailPage() {
   });
 
   const { data: collections = [] } = useQuery<Collection[]>({
-    queryKey: ["/api/collections", { templateId }],
+    queryKey: ["/api/collections", "templateId", templateId],
+    queryFn: async () => {
+      const res = await fetch(`/api/collections?templateId=${templateId}`);
+      if (!res.ok) throw new Error("Failed to fetch collections");
+      return res.json();
+    },
     enabled: !!templateId,
   });
 
