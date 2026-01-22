@@ -192,6 +192,9 @@ export const interviewSessions = pgTable("interview_sessions", {
   reviewSkipped: boolean("review_skipped").default(false),
   reviewRatings: jsonb("review_ratings"),
   reviewComments: jsonb("review_comments"), // Type: Record<string, string> - questionIndex -> comment
+  // Researcher tools
+  researcherNotes: text("researcher_notes"),
+  reviewFlags: text("review_flags").array(), // Values: "needs_review", "flagged_quality", "verified", "excluded"
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -404,6 +407,8 @@ export type PersistedQuestionState = {
 };
 
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
+
+export type SessionReviewFlag = "needs_review" | "flagged_quality" | "verified" | "excluded";
 
 // Verbatim statement captured from respondent's speech
 export type VerbatimStatement = {

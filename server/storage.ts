@@ -85,12 +85,15 @@ export interface IStorage {
   // Sessions
   getSession(id: string): Promise<InterviewSession | undefined>;
   getSessionWithSegments(id: string): Promise<(InterviewSession & { segments: (Segment & { question: Question })[] }) | undefined>;
+  getSessionWithRespondent(id: string): Promise<(InterviewSession & { segments: (Segment & { question: Question })[]; respondent: Respondent | null }) | undefined>;
   getSessionsByCollection(collectionId: string): Promise<InterviewSession[]>;
   getSessionsByRespondent(respondentId: string): Promise<InterviewSession[]>;
+  getSiblingSessionIds(sessionId: string): Promise<{ prevId: string | null; nextId: string | null }>;
   getAllSessions(limit?: number): Promise<InterviewSession[]>;
   getAllSessionsEnriched(limit?: number): Promise<EnrichedSession[]>;
   createSession(session: InsertSession): Promise<InterviewSession>;
   updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined>;
+  deleteSession(id: string): Promise<boolean>;
   persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined>;
   setResumeToken(sessionId: string, tokenHash: string, expiresAt: Date): Promise<void>;
   getSessionByResumeToken(tokenHash: string): Promise<InterviewSession | undefined>;
@@ -423,6 +426,43 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async getSessionWithRespondent(id: string): Promise<(InterviewSession & { segments: (Segment & { question: Question })[]; respondent: Respondent | null }) | undefined> {
+    const [session] = await db.select().from(interviewSessions).where(eq(interviewSessions.id, id));
+    if (!session) return undefined;
+
+    const sessionSegments = await db.select().from(segments)
+      .where(eq(segments.sessionId, id))
+      .leftJoin(questions, eq(segments.questionId, questions.id));
+
+    const [respondent] = await db.select().from(respondents).where(eq(respondents.id, session.respondentId));
+
+    return {
+      ...session,
+      segments: sessionSegments.map(s => ({
+        ...s.segments,
+        question: s.questions!,
+      })),
+      respondent: respondent || null,
+    };
+  }
+
+  async getSiblingSessionIds(sessionId: string): Promise<{ prevId: string | null; nextId: string | null }> {
+    const session = await this.getSession(sessionId);
+    if (!session) return { prevId: null, nextId: null };
+
+    const collectionSessions = await db.select({ id: interviewSessions.id, createdAt: interviewSessions.createdAt })
+      .from(interviewSessions)
+      .where(eq(interviewSessions.collectionId, session.collectionId))
+      .orderBy(desc(interviewSessions.createdAt));
+
+    const currentIndex = collectionSessions.findIndex(s => s.id === sessionId);
+    
+    return {
+      prevId: currentIndex > 0 ? collectionSessions[currentIndex - 1].id : null,
+      nextId: currentIndex < collectionSessions.length - 1 ? collectionSessions[currentIndex + 1].id : null,
+    };
+  }
+
   async getSessionsByCollection(collectionId: string): Promise<InterviewSession[]> {
     return await db.select().from(interviewSessions)
       .where(eq(interviewSessions.collectionId, collectionId))
@@ -482,6 +522,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(interviewSessions.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteSession(id: string): Promise<boolean> {
+    const result = await db.delete(interviewSessions).where(eq(interviewSessions.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   async persistInterviewState(id: string, patch: InterviewStatePatch): Promise<InterviewSession | undefined> {
