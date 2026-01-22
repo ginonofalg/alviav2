@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mic, Shield, FileText, Volume2, ArrowRight, RotateCcw } from "lucide-react";
+import { Mic, Shield, FileText, Volume2, ArrowRight, RotateCcw, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Collection, Project, InterviewSession } from "@shared/schema";
@@ -16,11 +16,38 @@ interface ResumeData {
   isResume: boolean;
 }
 
+interface InvitationData {
+  respondent: {
+    id: string;
+    fullName?: string;
+    informalName?: string;
+    email?: string;
+  };
+  collection: {
+    id: string;
+    name: string;
+    isActive: boolean;
+  };
+  template?: {
+    id: string;
+    name: string;
+  };
+}
+
 export default function InterviewConsentPage() {
   const params = useParams<{ collectionId: string }>();
   const collectionId = params.collectionId;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  
+  // Parse invitation token from URL query params
+  const invitationToken = useMemo(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get("t");
+    }
+    return null;
+  }, []);
 
   const [consents, setConsents] = useState({
     participation: false,
@@ -72,9 +99,24 @@ export default function InterviewConsentPage() {
     queryKey: ["/api/collections", collectionId],
     enabled: !!collectionId,
   });
+  
+  // Fetch invitation data if token is present
+  const { data: invitationData, isLoading: invitationLoading } = useQuery<InvitationData>({
+    queryKey: ["/api/invitation", invitationToken],
+    enabled: !!invitationToken,
+  });
 
   const startSession = useMutation({
     mutationFn: async () => {
+      // Use token-based endpoint if we have an invitation token
+      if (invitationToken) {
+        const response = await apiRequest("POST", `/api/collections/${collectionId}/start-by-token`, {
+          token: invitationToken,
+        });
+        return response.json();
+      }
+      
+      // Otherwise use the standard session creation
       const response = await apiRequest("POST", `/api/collections/${collectionId}/sessions`, {
         consents,
       });
@@ -120,7 +162,10 @@ export default function InterviewConsentPage() {
     setResumeInfo(null);
   };
 
-  if (collectionLoading || checkingResume) {
+  // Personalized greeting for invited respondents
+  const respondentName = invitationData?.respondent?.fullName || invitationData?.respondent?.informalName;
+  
+  if (collectionLoading || checkingResume || (invitationToken && invitationLoading)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
@@ -189,10 +234,16 @@ export default function InterviewConsentPage() {
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Mic className="w-8 h-8 text-primary" />
+            {respondentName ? (
+              <User className="w-8 h-8 text-primary" />
+            ) : (
+              <Mic className="w-8 h-8 text-primary" />
+            )}
           </div>
           <div>
-            <CardTitle className="text-2xl font-serif">Welcome to Your Interview</CardTitle>
+            <CardTitle className="text-2xl font-serif">
+              {respondentName ? `Welcome, ${respondentName}` : "Welcome to Your Interview"}
+            </CardTitle>
             <CardDescription className="text-base mt-2">
               {collection?.name || "Interview Session"}
             </CardDescription>

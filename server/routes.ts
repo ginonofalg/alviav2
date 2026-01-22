@@ -879,6 +879,137 @@ export async function registerRoutes(
     }
   });
 
+  // Respondent Invitation Management
+  app.get("/api/collections/:collectionId/respondents", isAuthenticated, async (req, res) => {
+    try {
+      const respondentList = await storage.getRespondentsByCollection(req.params.collectionId);
+      res.json(respondentList);
+    } catch (error) {
+      console.error("Error fetching respondents:", error);
+      res.status(500).json({ message: "Failed to fetch respondents" });
+    }
+  });
+
+  // Schema for inviting respondents
+  const inviteRespondentSchema = z.object({
+    email: z.string().email().optional().nullable(),
+    fullName: z.string().max(200).optional().nullable(),
+    informalName: z.string().max(100).optional().nullable(),
+  }).refine(data => data.email || data.fullName, {
+    message: "Either email or full name is required",
+  });
+
+  // Invite a single respondent
+  app.post("/api/collections/:collectionId/respondents", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = inviteRespondentSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+      
+      const { email, fullName, informalName } = parseResult.data;
+      
+      // Check if respondent already exists by email
+      if (email) {
+        const existing = await storage.getRespondentByEmail(req.params.collectionId, email);
+        if (existing) {
+          return res.status(400).json({ message: "A respondent with this email already exists" });
+        }
+      }
+      
+      // Generate unique invitation token (192 bits of entropy)
+      const invitationToken = crypto.randomBytes(24).toString('base64url');
+      
+      const respondent = await storage.createRespondent({
+        collectionId: req.params.collectionId,
+        email: email || null,
+        fullName: fullName || null,
+        informalName: informalName || null,
+        invitationToken,
+        invitationStatus: "invited",
+      });
+      
+      res.status(201).json(respondent);
+    } catch (error) {
+      console.error("Error inviting respondent:", error);
+      res.status(500).json({ message: "Failed to invite respondent" });
+    }
+  });
+
+  // Schema for bulk invite
+  const bulkInviteSchema = z.object({
+    respondents: z.array(z.object({
+      email: z.string().email().optional().nullable(),
+      fullName: z.string().max(200).optional().nullable(),
+      informalName: z.string().max(100).optional().nullable(),
+    })).min(1, "At least one respondent is required").max(500, "Maximum 500 respondents per batch"),
+  });
+
+  // Bulk invite respondents (from CSV data)
+  app.post("/api/collections/:collectionId/respondents/bulk", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = bulkInviteSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+      
+      const { respondents: inputRespondents } = parseResult.data;
+      
+      // Filter out duplicates by email within the batch and check existing
+      const existingEmails = new Set<string>();
+      const existingRespondents = await storage.getRespondentsByCollection(req.params.collectionId);
+      existingRespondents.forEach(r => {
+        if (r.email) existingEmails.add(r.email.toLowerCase());
+      });
+      
+      const toCreate: Array<{
+        collectionId: string;
+        email: string | null;
+        fullName: string | null;
+        informalName: string | null;
+        invitationToken: string;
+        invitationStatus: "invited";
+      }> = [];
+      const skipped: string[] = [];
+      const seenEmails = new Set<string>();
+      
+      for (const r of inputRespondents) {
+        const email = r.email?.toLowerCase().trim();
+        
+        // Skip if already exists or duplicate in batch
+        if (email && (existingEmails.has(email) || seenEmails.has(email))) {
+          skipped.push(email);
+          continue;
+        }
+        
+        if (email) seenEmails.add(email);
+        
+        toCreate.push({
+          collectionId: req.params.collectionId,
+          email: r.email?.trim() || null,
+          fullName: r.fullName?.trim() || null,
+          informalName: r.informalName?.trim() || null,
+          invitationToken: crypto.randomBytes(24).toString('base64url'),
+          invitationStatus: "invited",
+        });
+      }
+      
+      const created = await storage.createRespondents(toCreate);
+      
+      res.status(201).json({
+        created: created.length,
+        skipped: skipped.length,
+        skippedEmails: skipped,
+        respondents: created,
+      });
+    } catch (error) {
+      console.error("Error bulk inviting respondents:", error);
+      res.status(500).json({ message: "Failed to bulk invite respondents" });
+    }
+  });
+
   // Sessions
   app.get("/api/sessions", isAuthenticated, async (req, res) => {
     try {
@@ -1138,6 +1269,118 @@ export async function registerRoutes(
     }
   });
 
+  // Start session from invitation token (pre-registered respondent)
+  // This is called when the user submits the consent form with a token
+  const startByTokenSchema = z.object({
+    token: z.string().min(1, "Token is required"),
+  });
+  
+  app.post("/api/collections/:collectionId/start-by-token", async (req, res) => {
+    try {
+      const parseResult = startByTokenSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+      
+      const { token } = parseResult.data;
+      
+      // Find respondent by token using constant-time comparison via database
+      const respondent = await storage.getRespondentByToken(token);
+      if (!respondent) {
+        return res.status(404).json({ message: "Invalid invitation token" });
+      }
+      
+      // Verify respondent belongs to this collection
+      if (respondent.collectionId !== req.params.collectionId) {
+        return res.status(400).json({ message: "Token does not match this collection" });
+      }
+      
+      const collection = await storage.getCollection(req.params.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+      
+      if (!collection.isActive) {
+        return res.status(400).json({ message: "This collection is no longer accepting responses" });
+      }
+      
+      // Update to consented status now that they've submitted the consent form
+      await storage.updateRespondent(respondent.id, {
+        consentGivenAt: new Date(),
+        invitationStatus: "consented",
+      });
+      
+      const session = await storage.createSession({
+        collectionId: req.params.collectionId,
+        respondentId: respondent.id,
+        status: "consent_given",
+      });
+      
+      // Generate resume token for browser recovery
+      const resumeToken = generateResumeToken();
+      const tokenHash = hashToken(resumeToken);
+      const expiresAt = getTokenExpiryDate();
+      await storage.setResumeToken(session.id, tokenHash, expiresAt);
+      
+      // Update with started timestamp
+      const updatedSession = await storage.updateSession(session.id, {
+        startedAt: new Date(),
+      });
+
+      res.status(201).json({ ...updatedSession, resumeToken, respondent });
+    } catch (error) {
+      console.error("Error starting session by token:", error);
+      res.status(500).json({ message: "Failed to start session" });
+    }
+  });
+
+  // Lookup invitation by token (for pre-filling respondent info on join page)
+  app.get("/api/invitation/:token", async (req, res) => {
+    try {
+      const respondent = await storage.getRespondentByToken(req.params.token);
+      if (!respondent) {
+        return res.status(404).json({ message: "Invalid invitation token" });
+      }
+      
+      const collection = await storage.getCollection(respondent.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+      
+      // Mark as clicked if first time
+      if (respondent.invitationStatus === "invited") {
+        await storage.updateRespondent(respondent.id, {
+          invitationStatus: "clicked",
+          clickedAt: new Date(),
+        });
+      }
+      
+      const template = await storage.getTemplate(collection.templateId);
+      
+      res.json({
+        respondent: {
+          id: respondent.id,
+          fullName: respondent.fullName,
+          informalName: respondent.informalName,
+          email: respondent.email,
+        },
+        collection: {
+          id: collection.id,
+          name: collection.name,
+          isActive: collection.isActive,
+        },
+        template: template ? {
+          id: template.id,
+          name: template.name,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error looking up invitation:", error);
+      res.status(500).json({ message: "Failed to lookup invitation" });
+    }
+  });
+
   const updateSessionSchema = z.object({
     status: z.enum(["pending", "consent_given", "in_progress", "paused", "completed", "abandoned"]).optional(),
     currentQuestionIndex: z.number().optional(),
@@ -1169,6 +1412,18 @@ export async function registerRoutes(
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
       }
+      
+      // Update respondent status to "completed" when session completes
+      if (updateData.status === "completed" && session.respondentId) {
+        try {
+          await storage.updateRespondent(session.respondentId, {
+            invitationStatus: "completed",
+          });
+        } catch (e) {
+          console.warn("Could not update respondent status:", e);
+        }
+      }
+      
       res.json(session);
     } catch (error) {
       console.error("Error updating session:", error);

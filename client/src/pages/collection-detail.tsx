@@ -37,6 +37,7 @@ import {
   QuestionAnalysis,
 } from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
+import { InvitationManager } from "@/components/InvitationManager";
 import type {
   Collection,
   InterviewTemplate,
@@ -285,28 +286,7 @@ export default function CollectionDetailPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Share Link</CardTitle>
-          <CardDescription>
-            Share this link with respondents to collect interviews
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 p-3 bg-muted rounded-lg font-mono text-sm truncate">
-              {shareUrl}
-            </div>
-            <Button
-              variant="outline"
-              onClick={copyShareLink}
-              data-testid="button-copy-share-link"
-            >
-              <Copy className="w-4 h-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <InvitationManager collectionId={collectionId} shareUrl={shareUrl} />
 
       <Card>
         <CardHeader>

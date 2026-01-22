@@ -138,6 +138,14 @@ export const collections = pgTable("collections", {
   analyticsData: jsonb("analytics_data"),
 });
 
+// Respondent invitation status enum
+export const respondentStatusEnum = pgEnum("respondent_status", [
+  "invited",      // Pre-registered, link sent
+  "clicked",      // Clicked the link
+  "consented",    // Gave consent
+  "completed",    // Finished the interview
+]);
+
 // Respondents
 export const respondents = pgTable("respondents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -148,7 +156,10 @@ export const respondents = pgTable("respondents", {
   fullName: text("full_name"),
   informalName: text("informal_name"),
   profileFields: jsonb("profile_fields"),
+  invitationToken: varchar("invitation_token").unique(),
+  invitationStatus: respondentStatusEnum("invitation_status").default("invited"),
   invitedAt: timestamp("invited_at").defaultNow(),
+  clickedAt: timestamp("clicked_at"),
   consentGivenAt: timestamp("consent_given_at"),
 });
 
@@ -306,7 +317,14 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true,
 export const insertTemplateSchema = createInsertSchema(interviewTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertQuestionSchema = createInsertSchema(questions).omit({ id: true, createdAt: true });
 export const insertCollectionSchema = createInsertSchema(collections).omit({ id: true, createdAt: true, closedAt: true });
-export const insertRespondentSchema = createInsertSchema(respondents).omit({ id: true, invitedAt: true, consentGivenAt: true });
+export const insertRespondentSchema = createInsertSchema(respondents).omit({ id: true, invitedAt: true, clickedAt: true, consentGivenAt: true });
+
+// Schema for inviting a new respondent (minimal required fields)
+export const inviteRespondentSchema = z.object({
+  email: z.string().email().optional(),
+  fullName: z.string().min(1).optional(),
+  informalName: z.string().optional(),
+});
 export const insertSessionSchema = createInsertSchema(interviewSessions).omit({ id: true, createdAt: true, startedAt: true, completedAt: true, pausedAt: true });
 export const insertSegmentSchema = createInsertSchema(segments).omit({ id: true, createdAt: true });
 export const insertWorkspaceMemberSchema = createInsertSchema(workspaceMembers).omit({ id: true, createdAt: true });

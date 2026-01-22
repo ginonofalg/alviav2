@@ -76,9 +76,11 @@ export interface IStorage {
   getRespondent(id: string): Promise<Respondent | undefined>;
   getRespondentByEmail(collectionId: string, email: string): Promise<Respondent | undefined>;
   getRespondentByUserId(collectionId: string, userId: string): Promise<Respondent | undefined>;
+  getRespondentByToken(token: string): Promise<Respondent | undefined>;
   getRespondentsByCollection(collectionId: string): Promise<Respondent[]>;
   createRespondent(respondent: InsertRespondent): Promise<Respondent>;
-  updateRespondent(id: string, respondent: Partial<InsertRespondent> & { consentGivenAt?: Date }): Promise<Respondent | undefined>;
+  createRespondents(respondentsList: InsertRespondent[]): Promise<Respondent[]>;
+  updateRespondent(id: string, respondent: Partial<InsertRespondent> & { consentGivenAt?: Date; clickedAt?: Date; invitationStatus?: string }): Promise<Respondent | undefined>;
   
   // Sessions
   getSession(id: string): Promise<InterviewSession | undefined>;
@@ -370,8 +372,14 @@ export class DatabaseStorage implements IStorage {
     return respondent;
   }
 
+  async getRespondentByToken(token: string): Promise<Respondent | undefined> {
+    const [respondent] = await db.select().from(respondents)
+      .where(eq(respondents.invitationToken, token));
+    return respondent;
+  }
+
   async getRespondentsByCollection(collectionId: string): Promise<Respondent[]> {
-    return await db.select().from(respondents).where(eq(respondents.collectionId, collectionId));
+    return await db.select().from(respondents).where(eq(respondents.collectionId, collectionId)).orderBy(desc(respondents.invitedAt));
   }
 
   async createRespondent(respondent: InsertRespondent): Promise<Respondent> {
@@ -379,7 +387,12 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateRespondent(id: string, respondent: Partial<InsertRespondent> & { consentGivenAt?: Date }): Promise<Respondent | undefined> {
+  async createRespondents(respondentsList: InsertRespondent[]): Promise<Respondent[]> {
+    if (respondentsList.length === 0) return [];
+    return await db.insert(respondents).values(respondentsList).returning();
+  }
+
+  async updateRespondent(id: string, respondent: Partial<InsertRespondent> & { consentGivenAt?: Date; clickedAt?: Date; invitationStatus?: string }): Promise<Respondent | undefined> {
     const [updated] = await db.update(respondents)
       .set(respondent)
       .where(eq(respondents.id, id))
