@@ -1446,7 +1446,7 @@ INSTRUCTIONS:
 
           // Handle overlap detection and response asynchronously
           (async () => {
-            let transitionInstruction = `Smoothly transition to the next question. You may give a short acknowledgment like *Great* or *Thank you* only if it feels natural, then read the question aloud: "${nextQuestion?.questionText}"`;
+            let transitionInstruction = `The respondent has clicked Next Question - the previous question is now COMPLETE. Do NOT ask follow-ups about it. Simply give a brief acknowledgment (one or two words like "Great" or "Thank you") and then ask this question aloud: "${nextQuestion?.questionText}"`;
 
             // Gather context for overlap detection
             const completedSummaries = state.questionSummaries.filter(

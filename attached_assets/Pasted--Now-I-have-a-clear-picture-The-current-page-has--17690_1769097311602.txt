@@ -1,0 +1,37 @@
+● Now I have a clear picture. The current page has:                                                                                                         
+  - Session header with status badge                                                                                                                        
+  - Date/time and duration                                                                                                                                  
+  - Export button (appears non-functional)                                                                                                                  
+  - Satisfaction rating                                                                                                                                     
+  - Summary tab (question summaries)                                                                                                                        
+  - Transcript tab (full conversation)                                                                                                                      
+  - Closing comments                                                                                                                                        
+                                                                                                                                                            
+  Here are the functions I'd recommend building into this page:                                                                                             
+                                                                                                                                                            
+  Essential (including your delete request):                                                                                                                
+                                                                                                                                                            
+  1. Delete session - With confirmation dialog; should also clean up related segments                                                                       
+  2. Export functionality - The button exists but needs implementation (JSON, CSV, PDF transcript)                                                          
+  3. Respondent info panel - Display linked respondent details (email, name, custom fields)                                                                 
+                                                                                                                                                            
+  High value:                                                                                                                                               
+                                                                                                                                                            
+  4. Researcher notes - Add internal annotations that don't affect analytics                                                                                
+  5. Flag/status actions - Mark as "needs review", "flagged for quality", or manually change status (e.g., mark abandoned session as completed if it was    
+  valid)                                                                                                                                                    
+  6. Regenerate analysis - Trigger Barbara to re-summarize if summaries are missing or poor quality                                                         
+  7. Share review link - Generate/copy the review URL (the review system already exists in schema)                                                          
+                                                                                                                                                            
+  Nice to have:                                                                                                                                             
+                                                                                                                                                            
+  8. Navigate between sessions - Previous/next arrows within the same collection                                                                            
+  9. Audio playback - If recordings are stored                                                                                                              
+  10. Quality score summary - Aggregate view of quality flags across all segments                                                                           
+  11. Copy transcript - Quick copy-to-clipboard for the full transcript                                                                                     
+  12. Session timeline - Visual representation of question progression and timing                                                                           
+                                                                                                                                                            
+  For incomplete sessions specifically:                                                                                                                     
+                                                                                                                                                            
+  13. Resume link - Generate/copy resume URL for interrupted sessions                                                                                       
+  14. Send reminder - If respondent email exists, prompt to send a reminder
