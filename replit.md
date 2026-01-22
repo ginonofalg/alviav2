@@ -58,3 +58,10 @@ Enhanced the individual session detail page for researchers with comprehensive s
 
 ### Schema Changes
 Added `researcherNotes` (text) and `reviewFlags` (text array) fields to interviewSessions table to support researcher annotations separate from analytics data.
+
+### Project-Level Infographics
+Extended the Infographics feature to support project-level generation alongside existing collection-level support:
+- **Collection Level**: Supports summary, themes, and findings infographic types
+- **Project Level**: Supports summary, themes, and strategic insights infographic types
+- **Type Validation**: InfographicGenerator validates type against entityLevel to prevent invalid API calls
+- **Analytics Gating**: Infographic generation is only enabled when analytics data exists for the entity
