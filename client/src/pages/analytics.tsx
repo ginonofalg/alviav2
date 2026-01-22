@@ -385,7 +385,7 @@ function ResearchHealthSection({
   collectionStaleness: CollectionStaleness[];
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card data-testid="card-stat-projects">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
@@ -527,17 +527,17 @@ function ResearchHealthSection({
               </CardHeader>
               <CardContent className="space-y-2">
                 {templateStaleness.slice(0, 5).map((t) => (
-                  <div key={t.templateId} className="flex items-center justify-between p-2 rounded-lg hover-elevate" data-testid={`row-template-stale-${t.templateId}`}>
+                  <div key={t.id} className="flex items-center justify-between p-2 rounded-lg hover-elevate" data-testid={`row-template-stale-${t.id}`}>
                     <div className="flex-1 min-w-0">
-                      <Link href={`/templates/${t.templateId}`}>
-                        <span className="text-sm font-medium hover:underline cursor-pointer">{t.templateName}</span>
+                      <Link href={`/templates/${t.id}`}>
+                        <span className="text-sm font-medium hover:underline cursor-pointer">{t.name}</span>
                       </Link>
-                      <p className="text-xs text-muted-foreground">{t.projectName}</p>
+                      <p className="text-xs text-muted-foreground">{t.sourceProjectName}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <StalenessBadge status={t.stalenessStatus} />
-                      <Link href={`/templates/${t.templateId}`}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-view-template-${t.templateId}`}>
+                      <Link href={`/templates/${t.id}`}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-view-template-${t.id}`}>
                           <ChevronRight className="w-3 h-3" />
                         </Button>
                       </Link>
@@ -564,18 +564,18 @@ function ResearchHealthSection({
               </CardHeader>
               <CardContent className="space-y-2">
                 {collectionStaleness.slice(0, 5).map((c) => (
-                  <div key={c.collectionId} className="flex items-center justify-between p-2 rounded-lg hover-elevate" data-testid={`row-collection-stale-${c.collectionId}`}>
+                  <div key={c.id} className="flex items-center justify-between p-2 rounded-lg hover-elevate" data-testid={`row-collection-stale-${c.id}`}>
                     <div className="flex-1 min-w-0">
-                      <Link href={`/collections/${c.collectionId}`}>
-                        <span className="text-sm font-medium hover:underline cursor-pointer">{c.collectionName}</span>
+                      <Link href={`/collections/${c.id}`}>
+                        <span className="text-sm font-medium hover:underline cursor-pointer">{c.name}</span>
                       </Link>
-                      <p className="text-xs text-muted-foreground">{c.projectName} &gt; {c.templateName}</p>
+                      <p className="text-xs text-muted-foreground">{c.sourceProjectName} &gt; {c.sourceTemplateName}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="text-xs">{c.sessionCount} sessions</Badge>
                       <StalenessBadge status={c.stalenessStatus} />
-                      <Link href={`/collections/${c.collectionId}`}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-view-collection-${c.collectionId}`}>
+                      <Link href={`/collections/${c.id}`}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`button-view-collection-${c.id}`}>
                           <ChevronRight className="w-3 h-3" />
                         </Button>
                       </Link>
