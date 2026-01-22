@@ -584,7 +584,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         session: {
           modalities: ["text", "audio"],
           instructions: instructions,
-          voice: "marin",
+          voice: "cedar",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
           input_audio_noise_reduction: {
