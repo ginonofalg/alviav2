@@ -855,6 +855,46 @@ export async function registerRoutes(
     }
   });
 
+  // Update collection settings
+  const updateCollectionSchema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    description: z.string().max(500).nullable().optional(),
+    targetResponses: z.number().min(1).max(10000).nullable().optional(),
+    isActive: z.boolean().optional(),
+  });
+
+  app.patch("/api/collections/:id", isAuthenticated, async (req, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.id);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const parseResult = updateCollectionSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updated = await storage.updateCollection(req.params.id, parseResult.data);
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to update collection" });
+      }
+
+      // Get template and project info for response
+      const template = await storage.getTemplate(updated.templateId);
+      let project = null;
+      if (template) {
+        project = await storage.getProject(template.projectId);
+      }
+
+      res.json({ ...updated, template, project });
+    } catch (error) {
+      console.error("Error updating collection:", error);
+      res.status(500).json({ message: "Failed to update collection" });
+    }
+  });
+
   const createCollectionSchema = insertCollectionSchema.omit({ templateId: true }).extend({
     name: z.string().min(1).max(100),
     targetResponses: z.number().min(1).optional(),

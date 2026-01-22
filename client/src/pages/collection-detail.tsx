@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Card,
   CardContent,
@@ -13,6 +16,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HierarchyHeader } from "@/components/ui/hierarchy-nav";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Copy,
   ExternalLink,
@@ -27,6 +50,7 @@ import {
   TrendingUp,
   Lightbulb,
   FileText,
+  Settings,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
@@ -72,10 +96,20 @@ const QUALITY_FLAG_LABELS: Record<
   low_engagement: { label: "Low Engagement", color: "text-gray-500" },
 };
 
+const editCollectionSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100, "Name must be 100 characters or less"),
+  description: z.string().max(500, "Description must be 500 characters or less").optional().nullable(),
+  targetResponses: z.coerce.number().min(1, "Must be at least 1").max(10000, "Maximum 10,000").optional().nullable(),
+  isActive: z.boolean(),
+});
+
+type EditCollectionForm = z.infer<typeof editCollectionSchema>;
+
 export default function CollectionDetailPage() {
   const params = useParams<{ id: string }>();
   const collectionId = params.id;
   const { toast } = useToast();
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const { data: collection, isLoading } = useQuery<CollectionWithDetails>({
     queryKey: ["/api/collections", collectionId],
@@ -119,6 +153,64 @@ export default function CollectionDetailPage() {
       });
     },
   });
+
+  const editForm = useForm<EditCollectionForm>({
+    resolver: zodResolver(editCollectionSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      targetResponses: null,
+      isActive: true,
+    },
+  });
+
+  const updateCollectionMutation = useMutation({
+    mutationFn: async (data: EditCollectionForm) => {
+      return apiRequestJson<CollectionWithDetails>(
+        "PATCH",
+        `/api/collections/${collectionId}`,
+        {
+          name: data.name,
+          description: data.description || null,
+          targetResponses: data.targetResponses || null,
+          isActive: data.isActive,
+        },
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/collections", collectionId],
+      });
+      setEditDialogOpen(false);
+      toast({
+        title: "Settings updated",
+        description: "Collection settings have been saved.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const openEditDialog = () => {
+    if (collection) {
+      editForm.reset({
+        name: collection.name,
+        description: collection.description || "",
+        targetResponses: collection.targetResponses,
+        isActive: collection.isActive ?? true,
+      });
+      setEditDialogOpen(true);
+    }
+  };
+
+  const onEditSubmit = (data: EditCollectionForm) => {
+    updateCollectionMutation.mutate(data);
+  };
 
   const copyShareLink = () => {
     const shareUrl = `${window.location.origin}/join/${collectionId}`;
@@ -220,6 +312,15 @@ export default function CollectionDetailPage() {
         }
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openEditDialog}
+              data-testid="button-edit-settings"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -645,6 +746,131 @@ export default function CollectionDetailPage() {
         collectionName={collection?.name || "Collection"}
         hasAnalytics={!!analyticsData?.analytics}
       />
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Collection Settings</DialogTitle>
+            <DialogDescription>
+              Update the settings for this collection.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Collection name"
+                        data-testid="input-collection-name"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Brief description of this collection"
+                        className="resize-none"
+                        rows={3}
+                        data-testid="input-collection-description"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Optional description to help identify this collection.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="targetResponses"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Target Responses</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="e.g. 20"
+                        min={1}
+                        max={10000}
+                        data-testid="input-target-responses"
+                        {...field}
+                        value={field.value ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          field.onChange(val === "" ? null : parseInt(val, 10));
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      The number of completed responses you're aiming for.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="isActive"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Collection Status</FormLabel>
+                      <FormDescription>
+                        {field.value ? "Open for new responses" : "Closed to new responses"}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-collection-active"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditDialogOpen(false)}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={updateCollectionMutation.isPending}
+                  data-testid="button-save-settings"
+                >
+                  {updateCollectionMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
