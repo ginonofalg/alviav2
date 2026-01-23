@@ -465,6 +465,10 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
                 name: projectName,
                 analytics: analytics,
                 lastAnalyzedAt: data?.lastAnalyzedAt || undefined,
+                templateNameMap: analytics.templatePerformance?.reduce((acc, t) => {
+                  acc[t.templateId] = t.templateName;
+                  return acc;
+                }, {} as Record<string, string>) || {},
               }}
               disabled={refreshMutation.isPending}
             />

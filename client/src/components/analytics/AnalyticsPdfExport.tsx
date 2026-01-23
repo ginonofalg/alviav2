@@ -17,6 +17,7 @@ interface ProjectExportData {
   name: string;
   analytics: ProjectAnalytics;
   lastAnalyzedAt?: string;
+  templateNameMap?: Record<string, string>;
 }
 
 interface CollectionExportData {
@@ -327,8 +328,10 @@ class PdfBuilder {
 }
 
 function buildProjectPdf(data: ProjectExportData): PdfBuilder {
-  const { analytics, name, lastAnalyzedAt } = data;
+  const { analytics, name, lastAnalyzedAt, templateNameMap = {} } = data;
   const builder = new PdfBuilder();
+  
+  const getTemplateName = (id: string) => templateNameMap[id] || id;
 
   builder
     .addTitle(`${name} - Project Analytics Report`)
@@ -401,7 +404,8 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
       builder.addKeyValue("Strategic", theme.isStrategic ? "Yes" : "No");
       
       if (theme.templatesAppeared?.length) {
-        builder.addTagLine("Templates", theme.templatesAppeared);
+        const templateNames = theme.templatesAppeared.map(getTemplateName);
+        builder.addTagLine("Templates", templateNames);
       }
       
       if (theme.verbatims?.length) {
@@ -422,7 +426,8 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
       builder.addParagraph(insight.significance);
       
       if (insight.supportingTemplates?.length) {
-        builder.addTagLine("Supporting Templates", insight.supportingTemplates);
+        const templateNames = insight.supportingTemplates.map(getTemplateName);
+        builder.addTagLine("Supporting Templates", templateNames);
       }
       
       if (insight.verbatims?.length) {
@@ -458,6 +463,12 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
 function buildCollectionPdf(data: CollectionExportData): PdfBuilder {
   const { analytics, name, templateName, lastAnalyzedAt } = data;
   const builder = new PdfBuilder();
+  
+  const themeNameMap: Record<string, string> = {};
+  analytics.themes?.forEach((t) => {
+    themeNameMap[t.id] = t.theme;
+  });
+  const getThemeName = (id: string) => themeNameMap[id] || id;
 
   builder
     .addTitle(`${name} - Collection Analytics Report`)
@@ -512,7 +523,8 @@ function buildCollectionPdf(data: CollectionExportData): PdfBuilder {
       builder.addParagraph(finding.significance);
       
       if (finding.relatedThemes?.length) {
-        builder.addTagLine("Related Themes", finding.relatedThemes);
+        const themeNames = finding.relatedThemes.map(getThemeName);
+        builder.addTagLine("Related Themes", themeNames);
       }
       
       if (finding.supportingVerbatims?.length) {
@@ -573,7 +585,8 @@ function buildCollectionPdf(data: CollectionExportData): PdfBuilder {
       builder.addKeyValue("Perspective Range", q.perspectiveRange);
       
       if (q.primaryThemes?.length) {
-        builder.addTagLine("Themes", q.primaryThemes);
+        const themeNames = q.primaryThemes.map(getThemeName);
+        builder.addTagLine("Themes", themeNames);
       }
       
       if (q.verbatims?.length) {
@@ -597,7 +610,8 @@ function buildCollectionPdf(data: CollectionExportData): PdfBuilder {
       builder.addParagraph(rec.description);
       
       if (rec.relatedThemes?.length) {
-        builder.addTagLine("Related Themes", rec.relatedThemes);
+        const themeNames = rec.relatedThemes.map(getThemeName);
+        builder.addTagLine("Related Themes", themeNames);
       }
       builder.addSpacer();
     });
