@@ -65,3 +65,12 @@ Extended the Infographics feature to support project-level generation alongside 
 - **Project Level**: Supports summary, themes, and strategic insights infographic types
 - **Type Validation**: InfographicGenerator validates type against entityLevel to prevent invalid API calls
 - **Analytics Gating**: Infographic generation is only enabled when analytics data exists for the entity
+
+### PDF Export for Analytics
+Added comprehensive PDF export functionality for project and collection analytics:
+- **AnalyticsPdfExport Component**: Located at `client/src/components/analytics/AnalyticsPdfExport.tsx`
+- **Project Analytics Export**: Includes overview, tailored recommendations, cross-template themes, strategic insights, quality issues
+- **Collection Analytics Export**: Includes executive summary, key themes, findings, question performance with all verbatims, recommendations, quality issues
+- **Multi-Page PDF**: Uses jsPDF and html2canvas for multi-page generation
+- **Export Button**: `data-testid="button-export-pdf"` on both project and collection analytics views
+- **File Format**: `{name}_analytics_{date}.pdf`
