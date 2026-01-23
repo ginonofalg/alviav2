@@ -71,6 +71,8 @@ Added comprehensive PDF export functionality for project and collection analytic
 - **AnalyticsPdfExport Component**: Located at `client/src/components/analytics/AnalyticsPdfExport.tsx`
 - **Project Analytics Export**: Includes overview, tailored recommendations, cross-template themes, strategic insights, quality issues
 - **Collection Analytics Export**: Includes executive summary, key themes, findings, question performance with all verbatims, recommendations, quality issues
-- **Multi-Page PDF**: Uses jsPDF and html2canvas for multi-page generation
+- **Text-Based PDF**: Uses jsPDF native text APIs with PdfBuilder helper class for clean, formatted output
+- **Smart Page Breaks**: Automatic page break logic that avoids splitting sections mid-content
+- **Consistent Styling**: Color palette, fonts (Helvetica), headers, bullets, numbered lists, quotes with vertical bar styling, badges, metric grids
 - **Export Button**: `data-testid="button-export-pdf"` on both project and collection analytics views
 - **File Format**: `{name}_analytics_{date}.pdf`
