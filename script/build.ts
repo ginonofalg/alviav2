@@ -55,6 +55,7 @@ async function buildAll() {
     define: {
       "process.env.NODE_ENV": '"production"',
       "import.meta.url": "__import_meta_url",
+      "import.meta.dirname": "__dirname",
     },
     banner: {
       js: `var __import_meta_url = require("url").pathToFileURL(__filename).href;`,
