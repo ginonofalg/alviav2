@@ -41,8 +41,8 @@ import {
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = import.meta.url ? fileURLToPath(import.meta.url) : "";
+const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
 export async function registerRoutes(
   httpServer: Server,

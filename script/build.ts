@@ -54,6 +54,7 @@ async function buildAll() {
     outfile: "dist/index.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
+      "import.meta.url": 'require("url").pathToFileURL(__filename).href',
     },
     minify: true,
     external: externals,
