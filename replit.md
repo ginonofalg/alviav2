@@ -76,3 +76,4 @@ Added comprehensive PDF export functionality for project and collection analytic
 - **Consistent Styling**: Color palette, fonts (Helvetica), headers, bullets, numbered lists, quotes with vertical bar styling, badges, metric grids
 - **Export Button**: `data-testid="button-export-pdf"` on both project and collection analytics views
 - **File Format**: `{name}_analytics_{date}.pdf`
+- **Name Mapping**: Template IDs are mapped to names via `templateNameMap` from `templatePerformance`. Theme IDs (which AI generates as `theme_1`, `theme_2`, etc.) are mapped to actual theme names by index position in the themes array.

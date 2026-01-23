@@ -332,6 +332,12 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
   const builder = new PdfBuilder();
   
   const getTemplateName = (id: string) => templateNameMap[id] || id;
+  
+  const themeNameMap: Record<string, string> = {};
+  analytics.crossTemplateThemes?.forEach((t, index) => {
+    themeNameMap[`theme_${index + 1}`] = t.theme;
+  });
+  const getThemeName = (id: string) => themeNameMap[id] || id;
 
   builder
     .addTitle(`${name} - Project Analytics Report`)
@@ -381,7 +387,8 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
         builder.addSubsectionHeader(item.title);
         builder.addParagraph(item.description);
         if (item.relatedThemes?.length) {
-          builder.addTagLine("Related Themes", item.relatedThemes);
+          const themeNames = item.relatedThemes.map(getThemeName);
+          builder.addTagLine("Related Themes", themeNames);
         }
         builder.addSpacer(2);
       });
@@ -451,7 +458,8 @@ function buildProjectPdf(data: ProjectExportData): PdfBuilder {
       builder.addParagraph(rec.description);
       
       if (rec.relatedThemes?.length) {
-        builder.addTagLine("Related Themes", rec.relatedThemes);
+        const themeNames = rec.relatedThemes.map(getThemeName);
+        builder.addTagLine("Related Themes", themeNames);
       }
       builder.addSpacer();
     });
@@ -465,8 +473,9 @@ function buildCollectionPdf(data: CollectionExportData): PdfBuilder {
   const builder = new PdfBuilder();
   
   const themeNameMap: Record<string, string> = {};
-  analytics.themes?.forEach((t) => {
+  analytics.themes?.forEach((t, index) => {
     themeNameMap[t.id] = t.theme;
+    themeNameMap[`theme_${index + 1}`] = t.theme;
   });
   const getThemeName = (id: string) => themeNameMap[id] || id;
 
