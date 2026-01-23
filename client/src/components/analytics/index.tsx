@@ -4,3 +4,4 @@ export { RecommendationsPanel, RecommendationCard } from "./RecommendationsPanel
 export { QuestionAnalysis, QuestionCard, QualityBars } from "./QuestionAnalysis";
 export { TemplateAnalyticsView } from "./TemplateAnalyticsView";
 export { ProjectAnalyticsView } from "./ProjectAnalyticsView";
+export { AnalyticsPdfExport } from "./AnalyticsPdfExport";

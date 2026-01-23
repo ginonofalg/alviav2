@@ -59,6 +59,7 @@ import {
   InsightPanel,
   RecommendationsPanel,
   QuestionAnalysis,
+  AnalyticsPdfExport,
 } from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
 import { InvitationManager } from "@/components/InvitationManager";
@@ -502,6 +503,18 @@ export default function CollectionDetailPage() {
                   Last updated:{" "}
                   {new Date(analyticsData.lastAnalyzedAt).toLocaleDateString()}
                 </span>
+              )}
+              {analyticsData?.analytics && (
+                <AnalyticsPdfExport
+                  data={{
+                    level: "collection",
+                    name: collection.name,
+                    templateName: collection.template?.name,
+                    analytics: analyticsData.analytics,
+                    lastAnalyzedAt: analyticsData.lastAnalyzedAt || undefined,
+                  }}
+                  disabled={refreshAnalyticsMutation.isPending}
+                />
               )}
               <Button
                 variant="outline"

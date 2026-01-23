@@ -27,6 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { RecommendationsPanel } from "./RecommendationsPanel";
 import { SentimentIndicator, VerbatimQuote } from "./ThemeCard";
+import { AnalyticsPdfExport } from "./AnalyticsPdfExport";
 import type { ProjectAnalytics, TemplatePerformanceSummary, CrossTemplateTheme, ThemeVerbatim, ThemeSentiment } from "@shared/schema";
 
 interface ProjectAnalyticsResponse {
@@ -456,6 +457,17 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
             <span className="text-xs text-muted-foreground" data-testid="text-last-updated">
               Last updated: {new Date(data.lastAnalyzedAt).toLocaleDateString()}
             </span>
+          )}
+          {hasData && analytics && (
+            <AnalyticsPdfExport
+              data={{
+                level: "project",
+                name: projectName,
+                analytics: analytics,
+                lastAnalyzedAt: data?.lastAnalyzedAt || undefined,
+              }}
+              disabled={refreshMutation.isPending}
+            />
           )}
           <Button
             onClick={() => refreshMutation.mutate()}
