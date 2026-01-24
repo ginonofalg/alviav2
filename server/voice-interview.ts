@@ -1178,22 +1178,27 @@ async function handleOpenAIEvent(
       state.isBarbaraGuidanceUpdate = false;
       break;
 
-    case "response.audio.delta":
+    case "response.audio.delta": {
+      const now = Date.now();
       // Update activity - AI speaking keeps session alive
-      state.lastActivityAt = Date.now();
+      state.lastActivityAt = now;
       state.terminationWarned = false;
       
       // Track response latency (time from transcription to first audio)
       if (state.metricsTracker.latency.waitingForFirstAudio && 
           state.metricsTracker.latency.lastTranscriptionAt) {
-        const responseLatency = Date.now() - state.metricsTracker.latency.lastTranscriptionAt;
+        const responseLatency = now - state.metricsTracker.latency.lastTranscriptionAt;
         state.metricsTracker.latency.responseLatencies.push(responseLatency);
         state.metricsTracker.latency.waitingForFirstAudio = false;
       }
       
       // Track Alvia speaking time - mark start of this response
       if (state.metricsTracker.alviaSpeaking.currentResponseStartAt === null) {
-        state.metricsTracker.alviaSpeaking.currentResponseStartAt = Date.now();
+        state.metricsTracker.alviaSpeaking.currentResponseStartAt = now;
+        
+        // Record silence segment that just ended (Alvia starting to speak)
+        recordSilenceSegment(state.metricsTracker, state, now, 'alvia_started');
+        state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
       }
       
       // Forward audio chunks to client
@@ -1204,17 +1209,25 @@ async function handleOpenAIEvent(
         }),
       );
       break;
+    }
 
-    case "response.audio.done":
+    case "response.audio.done": {
+      const now = Date.now();
       // Track Alvia speaking time - accumulate duration
       if (state.metricsTracker.alviaSpeaking.currentResponseStartAt !== null) {
-        const elapsed = Date.now() - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
+        const elapsed = now - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
         state.metricsTracker.alviaSpeaking.totalMs += elapsed;
         state.metricsTracker.alviaSpeaking.turnCount++;
         state.metricsTracker.alviaSpeaking.currentResponseStartAt = null;
       }
+      
+      // Track silence - Alvia finished speaking
+      state.metricsTracker.silenceTracking.lastAlviaEndAt = now;
+      state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
+      
       clientWs.send(JSON.stringify({ type: "audio_done" }));
       break;
+    }
 
     case "response.audio_transcript.delta":
       // AI's speech transcript
@@ -1314,21 +1327,29 @@ async function handleOpenAIEvent(
       })();
       break;
 
-    case "input_audio_buffer.speech_started":
+    case "input_audio_buffer.speech_started": {
+      const now = Date.now();
       // Start timing when user starts speaking and capture the current question index
       // This ensures transcript entries are tagged with the question they were answering,
       // not the question that's current when the transcription completes (race condition fix)
       if (!state.isPaused) {
-        state.speakingStartTime = Date.now();
+        state.speakingStartTime = now;
         state.questionIndexAtSpeechStart = state.currentQuestionIndex;
       }
+      
+      // Record silence segment that just ended (respondent starting to speak)
+      recordSilenceSegment(state.metricsTracker, state, now, 'respondent_started');
+      state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
+      
       clientWs.send(JSON.stringify({ type: "user_speaking_started" }));
       break;
+    }
 
-    case "input_audio_buffer.speech_stopped":
+    case "input_audio_buffer.speech_stopped": {
+      const now = Date.now();
       // Stop timing and accumulate - use questionIndexAtSpeechStart for consistency
       if (state.speakingStartTime && !state.isPaused) {
-        const elapsed = Date.now() - state.speakingStartTime;
+        const elapsed = now - state.speakingStartTime;
         // Use the question index at speech start to correctly attribute time
         const correctQuestionIndex =
           state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
@@ -1342,10 +1363,15 @@ async function handleOpenAIEvent(
       }
       
       // Track timestamp for transcription latency measurement
-      state.metricsTracker.latency.lastSpeechStoppedAt = Date.now();
+      state.metricsTracker.latency.lastSpeechStoppedAt = now;
+      
+      // Track silence - respondent finished speaking
+      state.metricsTracker.silenceTracking.lastRespondentEndAt = now;
+      state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
       
       clientWs.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
+    }
 
     case "response.done":
       // Capture token usage from OpenAI response
