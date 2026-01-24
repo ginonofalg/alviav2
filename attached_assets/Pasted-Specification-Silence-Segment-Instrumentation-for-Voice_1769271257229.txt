@@ -1,0 +1,439 @@
+Specification: Silence Segment Instrumentation for Voice Interviews                                                                             
+                                                                                                                                                  
+  Summary                                                                                                                                         
+                                                                                                                                                  
+  Add observational instrumentation to track individual silence segments during voice interviews. This data will inform threshold tuning for a    
+  future client-side VAD implementation. The instrumentation is purely additive—it observes existing events without modifying interview behavior, 
+  audio streaming, or turn detection.                                                                                                             
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Goals                                                                                                                                           
+                                                                                                                                                  
+  - Capture every silence segment (gap between speech events) with duration and context                                                           
+  - Persist segment data alongside existing performance metrics                                                                                   
+  - Enable analysis of silence distribution patterns across sessions                                                                              
+  - Zero interference with current interview operation                                                                                            
+                                                                                                                                                  
+  Non-goals                                                                                                                                       
+                                                                                                                                                  
+  - Changing audio streaming behavior                                                                                                             
+  - Modifying OpenAI semantic VAD configuration                                                                                                   
+  - Altering conversation flow or Barbara orchestration                                                                                           
+  - Real-time silence detection or intervention                                                                                                   
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Data Structure                                                                                                                                  
+                                                                                                                                                  
+  Add to MetricsTracker interface in server/voice-interview.ts                                                                                    
+                                                                                                                                                  
+  // Add after line 95 (after alviaSpeaking block)                                                                                                
+  silenceTracking: {                                                                                                                              
+    segments: SilenceSegment[];                                                                                                                   
+    lastAlviaEndAt: number | null;      // When Alvia last finished speaking                                                                      
+    lastRespondentEndAt: number | null; // When respondent last stopped speaking                                                                  
+    lastSpeechStartAt: number | null;   // When anyone last started speaking                                                                      
+  }                                                                                                                                               
+                                                                                                                                                  
+  Define SilenceSegment type                                                                                                                      
+                                                                                                                                                  
+  Add to shared/schema.ts near the other metrics types (around line 430):                                                                         
+                                                                                                                                                  
+  export type SilenceSegment = {                                                                                                                  
+    startAt: number;        // Timestamp when silence began                                                                                       
+    endAt: number;          // Timestamp when silence ended (speech resumed)                                                                      
+    durationMs: number;     // Calculated duration                                                                                                
+    context: SilenceContext;                                                                                                                      
+    questionIndex: number | null;  // Which question was active, if any                                                                           
+  };                                                                                                                                              
+                                                                                                                                                  
+  export type SilenceContext =                                                                                                                    
+    | 'post_alvia'          // After Alvia finished, before respondent started                                                                    
+    | 'post_respondent'     // After respondent stopped, before Alvia responded                                                                   
+    | 'mid_respondent'      // Gap within respondent's turn (pause while thinking)                                                                
+    | 'initial';            // Before any speech in the session                                                                                   
+                                                                                                                                                  
+  Update SpeakingTimeMetrics type                                                                                                                 
+                                                                                                                                                  
+  Add to the existing type in shared/schema.ts (around line 438):                                                                                 
+                                                                                                                                                  
+  export type SpeakingTimeMetrics = {                                                                                                             
+    respondentSpeakingMs: number;                                                                                                                 
+    alviaSpeakingMs: number;                                                                                                                      
+    silenceMs: number;                                                                                                                            
+    respondentTurnCount: number;                                                                                                                  
+    alviaTurnCount: number;                                                                                                                       
+    // Add these fields:                                                                                                                          
+    silenceSegments: SilenceSegment[];                                                                                                            
+    silenceStats: {                                                                                                                               
+      count: number;                                                                                                                              
+      meanMs: number;                                                                                                                             
+      medianMs: number;                                                                                                                           
+      p90Ms: number;                                                                                                                              
+      p95Ms: number;                                                                                                                              
+      maxMs: number;                                                                                                                              
+      byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }>;                                                      
+    } | null;                                                                                                                                     
+  };                                                                                                                                              
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Implementation                                                                                                                                  
+                                                                                                                                                  
+  1. Initialize tracking state                                                                                                                    
+                                                                                                                                                  
+  In voice-interview.ts, update the MetricsTracker initialization (around line 270 in handleVoiceInterview):                                      
+                                                                                                                                                  
+  const tracker: MetricsTracker = {                                                                                                               
+    // ... existing fields ...                                                                                                                    
+    silenceTracking: {                                                                                                                            
+      segments: [],                                                                                                                               
+      lastAlviaEndAt: null,                                                                                                                       
+      lastRespondentEndAt: null,                                                                                                                  
+      lastSpeechStartAt: null,                                                                                                                    
+    }                                                                                                                                             
+  };                                                                                                                                              
+                                                                                                                                                  
+  2. Capture Alvia speech end                                                                                                                     
+                                                                                                                                                  
+  In the response.audio.done handler (around line 1083), add after existing logic:                                                                
+                                                                                                                                                  
+  case 'response.audio.done': {                                                                                                                   
+    // ... existing alviaSpeaking tracking ...                                                                                                    
+                                                                                                                                                  
+    // Track for silence measurement                                                                                                              
+    tracker.silenceTracking.lastAlviaEndAt = Date.now();                                                                                          
+    tracker.silenceTracking.lastSpeechStartAt = null; // Reset to detect next speech                                                              
+    break;                                                                                                                                        
+  }                                                                                                                                               
+                                                                                                                                                  
+  3. Capture respondent speech start                                                                                                              
+                                                                                                                                                  
+  In the input_audio_buffer.speech_started handler (around line 1195), add:                                                                       
+                                                                                                                                                  
+  case 'input_audio_buffer.speech_started': {                                                                                                     
+    const now = Date.now();                                                                                                                       
+                                                                                                                                                  
+    // Record silence segment that just ended                                                                                                     
+    recordSilenceSegment(tracker, state, now, 'respondent_started');                                                                              
+                                                                                                                                                  
+    // ... existing logic (questionMetrics.startedAt, etc.) ...                                                                                   
+                                                                                                                                                  
+    // Update tracking state                                                                                                                      
+    tracker.silenceTracking.lastSpeechStartAt = now;                                                                                              
+    break;                                                                                                                                        
+  }                                                                                                                                               
+                                                                                                                                                  
+  4. Capture respondent speech end                                                                                                                
+                                                                                                                                                  
+  In the input_audio_buffer.speech_stopped handler (around line 1202), add after existing logic:                                                  
+                                                                                                                                                  
+  case 'input_audio_buffer.speech_stopped': {                                                                                                     
+    // ... existing activeTimeMs calculation ...                                                                                                  
+                                                                                                                                                  
+    // Track for silence measurement                                                                                                              
+    tracker.silenceTracking.lastRespondentEndAt = Date.now();                                                                                     
+    tracker.silenceTracking.lastSpeechStartAt = null; // Reset to detect next speech                                                              
+    break;                                                                                                                                        
+  }                                                                                                                                               
+                                                                                                                                                  
+  5. Capture Alvia speech start (for mid-turn silence detection)                                                                                  
+                                                                                                                                                  
+  In the response.audio.delta handler where waitingForFirstAudio is checked (around line 1055), add:                                              
+                                                                                                                                                  
+  if (tracker.latency.waitingForFirstAudio) {                                                                                                     
+    // ... existing latency tracking ...                                                                                                          
+                                                                                                                                                  
+    // Record silence segment that just ended                                                                                                     
+    recordSilenceSegment(tracker, state, now, 'alvia_started');                                                                                   
+    tracker.silenceTracking.lastSpeechStartAt = now;                                                                                              
+  }                                                                                                                                               
+                                                                                                                                                  
+  6. Implement recordSilenceSegment helper function                                                                                               
+                                                                                                                                                  
+  Add this function in voice-interview.ts (suggest placing near other helper functions, around line 200):                                         
+                                                                                                                                                  
+  function recordSilenceSegment(                                                                                                                  
+    tracker: MetricsTracker,                                                                                                                      
+    state: InterviewState,                                                                                                                        
+    endAt: number,                                                                                                                                
+    trigger: 'respondent_started' | 'alvia_started'                                                                                               
+  ): void {                                                                                                                                       
+    const { lastAlviaEndAt, lastRespondentEndAt, lastSpeechStartAt } = tracker.silenceTracking;                                                   
+                                                                                                                                                  
+    // If someone was already speaking, no silence to record                                                                                      
+    if (lastSpeechStartAt !== null) {                                                                                                             
+      return;                                                                                                                                     
+    }                                                                                                                                             
+                                                                                                                                                  
+    // Determine when silence started and its context                                                                                             
+    let startAt: number | null = null;                                                                                                            
+    let context: SilenceContext;                                                                                                                  
+                                                                                                                                                  
+    if (lastAlviaEndAt !== null && lastRespondentEndAt !== null) {                                                                                
+      // Both have spoken before - use the more recent end time                                                                                   
+      if (lastAlviaEndAt > lastRespondentEndAt) {                                                                                                 
+        startAt = lastAlviaEndAt;                                                                                                                 
+        context = trigger === 'respondent_started' ? 'post_alvia' : 'post_alvia';                                                                 
+      } else {                                                                                                                                    
+        startAt = lastRespondentEndAt;                                                                                                            
+        context = trigger === 'alvia_started' ? 'post_respondent' : 'mid_respondent';                                                             
+      }                                                                                                                                           
+    } else if (lastAlviaEndAt !== null) {                                                                                                         
+      startAt = lastAlviaEndAt;                                                                                                                   
+      context = 'post_alvia';                                                                                                                     
+    } else if (lastRespondentEndAt !== null) {                                                                                                    
+      startAt = lastRespondentEndAt;                                                                                                              
+      context = trigger === 'alvia_started' ? 'post_respondent' : 'mid_respondent';                                                               
+    } else {                                                                                                                                      
+      // No prior speech - this is initial silence                                                                                                
+      startAt = state.createdAt;                                                                                                                  
+      context = 'initial';                                                                                                                        
+    }                                                                                                                                             
+                                                                                                                                                  
+    if (startAt === null || endAt <= startAt) {                                                                                                   
+      return; // Invalid segment                                                                                                                  
+    }                                                                                                                                             
+                                                                                                                                                  
+    const durationMs = endAt - startAt;                                                                                                           
+                                                                                                                                                  
+    // Only record segments >= 100ms to filter noise                                                                                              
+    if (durationMs < 100) {                                                                                                                       
+      return;                                                                                                                                     
+    }                                                                                                                                             
+                                                                                                                                                  
+    const segment: SilenceSegment = {                                                                                                             
+      startAt,                                                                                                                                    
+      endAt,                                                                                                                                      
+      durationMs,                                                                                                                                 
+      context,                                                                                                                                    
+      questionIndex: state.currentQuestionIndex ?? null,                                                                                          
+    };                                                                                                                                            
+                                                                                                                                                  
+    tracker.silenceTracking.segments.push(segment);                                                                                               
+  }                                                                                                                                               
+                                                                                                                                                  
+  7. Calculate statistics at session end                                                                                                          
+                                                                                                                                                  
+  Add a helper function to compute summary statistics:                                                                                            
+                                                                                                                                                  
+  function calculateSilenceStats(segments: SilenceSegment[]): SpeakingTimeMetrics['silenceStats'] {                                               
+    if (segments.length === 0) {                                                                                                                  
+      return null;                                                                                                                                
+    }                                                                                                                                             
+                                                                                                                                                  
+    const durations = segments.map(s => s.durationMs).sort((a, b) => a - b);                                                                      
+    const count = durations.length;                                                                                                               
+    const totalMs = durations.reduce((sum, d) => sum + d, 0);                                                                                     
+                                                                                                                                                  
+    const percentile = (arr: number[], p: number): number => {                                                                                    
+      const index = Math.ceil((p / 100) * arr.length) - 1;                                                                                        
+      return arr[Math.max(0, index)];                                                                                                             
+    };                                                                                                                                            
+                                                                                                                                                  
+    // Group by context                                                                                                                           
+    const byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }> = {                                               
+      post_alvia: { count: 0, totalMs: 0, meanMs: 0 },                                                                                            
+      post_respondent: { count: 0, totalMs: 0, meanMs: 0 },                                                                                       
+      mid_respondent: { count: 0, totalMs: 0, meanMs: 0 },                                                                                        
+      initial: { count: 0, totalMs: 0, meanMs: 0 },                                                                                               
+    };                                                                                                                                            
+                                                                                                                                                  
+    for (const segment of segments) {                                                                                                             
+      byContext[segment.context].count++;                                                                                                         
+      byContext[segment.context].totalMs += segment.durationMs;                                                                                   
+    }                                                                                                                                             
+                                                                                                                                                  
+    for (const ctx of Object.keys(byContext) as SilenceContext[]) {                                                                               
+      if (byContext[ctx].count > 0) {                                                                                                             
+        byContext[ctx].meanMs = Math.round(byContext[ctx].totalMs / byContext[ctx].count);                                                        
+      }                                                                                                                                           
+    }                                                                                                                                             
+                                                                                                                                                  
+    return {                                                                                                                                      
+      count,                                                                                                                                      
+      meanMs: Math.round(totalMs / count),                                                                                                        
+      medianMs: percentile(durations, 50),                                                                                                        
+      p90Ms: percentile(durations, 90),                                                                                                           
+      p95Ms: percentile(durations, 95),                                                                                                           
+      maxMs: durations[count - 1],                                                                                                                
+      byContext,                                                                                                                                  
+    };                                                                                                                                            
+  }                                                                                                                                               
+                                                                                                                                                  
+  8. Update finalizeAndPersistMetrics                                                                                                             
+                                                                                                                                                  
+  In the finalizeAndPersistMetrics function (around line 1836), update the metrics object construction:                                           
+                                                                                                                                                  
+  const silenceStats = calculateSilenceStats(tracker.silenceTracking.segments);                                                                   
+                                                                                                                                                  
+  const metrics: RealtimePerformanceMetrics = {                                                                                                   
+    // ... existing fields ...                                                                                                                    
+    speakingTime: {                                                                                                                               
+      respondentSpeakingMs,                                                                                                                       
+      alviaSpeakingMs,                                                                                                                            
+      silenceMs,                                                                                                                                  
+      respondentTurnCount,                                                                                                                        
+      alviaTurnCount,                                                                                                                             
+      // Add these:                                                                                                                               
+      silenceSegments: tracker.silenceTracking.segments,                                                                                          
+      silenceStats,                                                                                                                               
+    },                                                                                                                                            
+  };                                                                                                                                              
+                                                                                                                                                  
+  9. Add console logging for debugging                                                                                                            
+                                                                                                                                                  
+  At the end of finalizeAndPersistMetrics, add:                                                                                                   
+                                                                                                                                                  
+  if (silenceStats) {                                                                                                                             
+    console.log(`[Session ${sessionId}] Silence analysis:`, {                                                                                     
+      segmentCount: silenceStats.count,                                                                                                           
+      meanMs: silenceStats.meanMs,                                                                                                                
+      medianMs: silenceStats.medianMs,                                                                                                            
+      p90Ms: silenceStats.p90Ms,                                                                                                                  
+      p95Ms: silenceStats.p95Ms,                                                                                                                  
+      maxMs: silenceStats.maxMs,                                                                                                                  
+      byContext: silenceStats.byContext,                                                                                                          
+    });                                                                                                                                           
+  }                                                                                                                                               
+                                                                                                                                                  
+  ---                                                                                                                                             
+  API Enhancement (Optional)                                                                                                                      
+                                                                                                                                                  
+  Add an endpoint to retrieve silence analysis across multiple sessions for aggregate analysis.                                                   
+                                                                                                                                                  
+  In server/routes.ts, add:                                                                                                                       
+                                                                                                                                                  
+  app.get('/api/analytics/silence', requireAuth, async (req, res) => {                                                                            
+    const { workspaceId, collectionId, limit = '50' } = req.query;                                                                                
+                                                                                                                                                  
+    // Fetch recent sessions with performance metrics                                                                                             
+    const sessions = await storage.getSessionsWithMetrics({                                                                                       
+      workspaceId: workspaceId as string,                                                                                                         
+      collectionId: collectionId as string,                                                                                                       
+      limit: parseInt(limit as string, 10),                                                                                                       
+    });                                                                                                                                           
+                                                                                                                                                  
+    // Aggregate silence stats                                                                                                                    
+    const allSegments: Array<SilenceSegment & { sessionId: string }> = [];                                                                        
+                                                                                                                                                  
+    for (const session of sessions) {                                                                                                             
+      const metrics = session.performanceMetrics as RealtimePerformanceMetrics | null;                                                            
+      if (metrics?.speakingTime?.silenceSegments) {                                                                                               
+        for (const segment of metrics.speakingTime.silenceSegments) {                                                                             
+          allSegments.push({ ...segment, sessionId: session.id });                                                                                
+        }                                                                                                                                         
+      }                                                                                                                                           
+    }                                                                                                                                             
+                                                                                                                                                  
+    // Calculate aggregate stats                                                                                                                  
+    const stats = calculateSilenceStats(allSegments);                                                                                             
+                                                                                                                                                  
+    // Distribution buckets for histogram                                                                                                         
+    const buckets = [500, 1000, 2000, 3000, 5000, 8000, 10000, 15000, 20000];                                                                     
+    const distribution: Record<string, number> = {};                                                                                              
+                                                                                                                                                  
+    for (const bucket of buckets) {                                                                                                               
+      distribution[`<${bucket}ms`] = allSegments.filter(s => s.durationMs < bucket).length;                                                       
+    }                                                                                                                                             
+    distribution['>=20000ms'] = allSegments.filter(s => s.durationMs >= 20000).length;                                                            
+                                                                                                                                                  
+    res.json({                                                                                                                                    
+      sessionCount: sessions.length,                                                                                                              
+      segmentCount: allSegments.length,                                                                                                           
+      stats,                                                                                                                                      
+      distribution,                                                                                                                               
+    });                                                                                                                                           
+  });                                                                                                                                             
+                                                                                                                                                  
+  Add corresponding storage method in server/storage.ts:                                                                                          
+                                                                                                                                                  
+  async getSessionsWithMetrics(params: {                                                                                                          
+    workspaceId?: string;                                                                                                                         
+    collectionId?: string;                                                                                                                        
+    limit: number;                                                                                                                                
+  }): Promise<InterviewSession[]> {                                                                                                               
+    let query = db                                                                                                                                
+      .select()                                                                                                                                   
+      .from(interviewSessions)                                                                                                                    
+      .where(isNotNull(interviewSessions.performanceMetrics))                                                                                     
+      .orderBy(desc(interviewSessions.completedAt))                                                                                               
+      .limit(params.limit);                                                                                                                       
+                                                                                                                                                  
+    if (params.collectionId) {                                                                                                                    
+      query = query.where(eq(interviewSessions.collectionId, params.collectionId));                                                               
+    }                                                                                                                                             
+                                                                                                                                                  
+    // Add workspace filtering via join if needed                                                                                                 
+                                                                                                                                                  
+    return query;                                                                                                                                 
+  }                                                                                                                                               
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Testing                                                                                                                                         
+                                                                                                                                                  
+  Manual verification                                                                                                                             
+                                                                                                                                                  
+  1. Run a test interview with varied pause patterns                                                                                              
+  2. Check console logs for silence analysis output                                                                                               
+  3. Verify segments are persisted in performanceMetrics JSONB                                                                                    
+  4. Query the database directly to inspect segment data:                                                                                         
+                                                                                                                                                  
+  SELECT                                                                                                                                          
+    id,                                                                                                                                           
+    performance_metrics->'speakingTime'->'silenceStats' as silence_stats,                                                                         
+    jsonb_array_length(performance_metrics->'speakingTime'->'silenceSegments') as segment_count                                                   
+  FROM interview_sessions                                                                                                                         
+  WHERE performance_metrics IS NOT NULL                                                                                                           
+  ORDER BY completed_at DESC                                                                                                                      
+  LIMIT 10;                                                                                                                                       
+                                                                                                                                                  
+  Validation checks                                                                                                                               
+                                                                                                                                                  
+  - Segments should have positive duration (enforced by 100ms minimum)                                                                            
+  - Context labels should match expected patterns (post_alvia most common)                                                                        
+  - Sum of segment durations should approximate the existing silenceMs value                                                                      
+  - No segments should overlap                                                                                                                    
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Memory Considerations                                                                                                                           
+                                                                                                                                                  
+  Typical interview profile:                                                                                                                      
+  - 20-30 minute interview                                                                                                                        
+  - ~100-200 silence segments                                                                                                                     
+  - ~100 bytes per segment                                                                                                                        
+  - Total: ~20KB per session                                                                                                                      
+                                                                                                                                                  
+  This is negligible compared to existing liveTranscript and questionSummaries JSONB fields which can be 50-200KB.                                
+                                                                                                                                                  
+  If concerned, add a cap:                                                                                                                        
+                                                                                                                                                  
+  const MAX_SILENCE_SEGMENTS = 500;                                                                                                               
+                                                                                                                                                  
+  if (tracker.silenceTracking.segments.length < MAX_SILENCE_SEGMENTS) {                                                                           
+    tracker.silenceTracking.segments.push(segment);                                                                                               
+  }                                                                                                                                               
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Files to Modify                                                                                                                                 
+  File: shared/schema.ts                                                                                                                          
+  Changes: Add SilenceSegment, SilenceContext types; extend SpeakingTimeMetrics                                                                   
+  ────────────────────────────────────────                                                                                                        
+  File: server/voice-interview.ts                                                                                                                 
+  Changes: Add silenceTracking to MetricsTracker; add recordSilenceSegment and calculateSilenceStats helpers; update event handlers; update       
+    finalizeAndPersistMetrics                                                                                                                     
+  ────────────────────────────────────────                                                                                                        
+  File: server/routes.ts                                                                                                                          
+  Changes: (Optional) Add /api/analytics/silence endpoint                                                                                         
+  ────────────────────────────────────────                                                                                                        
+  File: server/storage.ts                                                                                                                         
+  Changes: (Optional) Add getSessionsWithMetrics method                                                                                           
+  ---                                                                                                                                             
+  Acceptance Criteria                                                                                                                             
+                                                                                                                                                  
+  - Silence segments are captured for all gaps ≥100ms between speech events                                                                       
+  - Each segment has accurate context classification                                                                                              
+  - Statistics (mean, median, p90, p95, max) are calculated at session end                                                                        
+  - Breakdown by context type is included                                                                                                         
+  - Data is persisted in performanceMetrics JSONB column                                                                                          
+  - Console logging shows silence analysis summary                                                                                                
+  - Existing interview functionality is unchanged                                                                                                 
+  - No impact on audio streaming or turn detection  
