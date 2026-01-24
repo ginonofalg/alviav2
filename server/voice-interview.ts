@@ -98,10 +98,16 @@ interface MetricsTracker {
   };
   // Silence segment tracking for VAD threshold tuning
   silenceTracking: {
-    segments: SilenceSegment[];              // All observed segments (stats computed from all, but only 100 stored)
+    segments: SilenceSegment[];              // Recent segments (capped at MAX_STORED_SEGMENTS)
     lastAlviaEndAt: number | null;           // When Alvia last finished speaking
     lastRespondentEndAt: number | null;      // When respondent last stopped speaking
     lastSpeechStartAt: number | null;        // When anyone last started speaking (to detect if in-speech)
+    // Running stats accumulator (computed from ALL observed segments, not just stored)
+    accumulator: {
+      allDurations: number[];                // All durations for percentile calculation
+      countByContext: Record<SilenceContext, number>;
+      totalMsByContext: Record<SilenceContext, number>;
+    };
   };
   // Connection tracking
   openaiConnectionCount: number;
@@ -134,6 +140,11 @@ function createEmptyMetricsTracker(): MetricsTracker {
       lastAlviaEndAt: null,
       lastRespondentEndAt: null,
       lastSpeechStartAt: null,
+      accumulator: {
+        allDurations: [],
+        countByContext: { post_alvia: 0, post_respondent: 0, initial: 0 },
+        totalMsByContext: { post_alvia: 0, post_respondent: 0, initial: 0 },
+      },
     },
     openaiConnectionCount: 0,
   };
@@ -147,8 +158,7 @@ const MAX_STORED_SEGMENTS = 100;       // Cap stored segments (stats computed fr
 function recordSilenceSegment(
   tracker: MetricsTracker,
   state: InterviewState,
-  endAt: number,
-  trigger: 'respondent_started' | 'alvia_started'
+  endAt: number
 ): void {
   const { lastAlviaEndAt, lastRespondentEndAt, lastSpeechStartAt } = tracker.silenceTracking;
 
@@ -201,50 +211,74 @@ function recordSilenceSegment(
     questionIndex: state.currentQuestionIndex ?? null,
   };
 
-  // Always add to array - we compute stats from all, but cap what's stored
+  // Update running stats accumulator (tracks ALL observed segments for accurate stats)
+  const acc = tracker.silenceTracking.accumulator;
+  acc.allDurations.push(durationMs);
+  acc.countByContext[context]++;
+  acc.totalMsByContext[context] += durationMs;
+
+  // Add segment to stored array (capped at runtime for memory efficiency)
   tracker.silenceTracking.segments.push(segment);
+  
+  // Keep only the most recent MAX_STORED_SEGMENTS for detailed analysis
+  if (tracker.silenceTracking.segments.length > MAX_STORED_SEGMENTS) {
+    tracker.silenceTracking.segments.shift();  // Remove oldest
+  }
 }
 
-// Calculate statistical summary from silence segments
-function calculateSilenceStats(segments: SilenceSegment[]): SilenceStats | null {
-  if (segments.length === 0) {
+// Calculate statistical summary from silence data
+// Uses accumulator for counts/totals (from ALL segments) and durations array for percentiles
+function calculateSilenceStats(
+  accumulator: MetricsTracker['silenceTracking']['accumulator']
+): SilenceStats | null {
+  const { allDurations, countByContext, totalMsByContext } = accumulator;
+  
+  if (allDurations.length === 0) {
     return null;
   }
 
-  const durations = segments.map(s => s.durationMs).sort((a, b) => a - b);
-  const count = durations.length;
-  const totalMs = durations.reduce((sum, d) => sum + d, 0);
+  // Sort durations for percentile calculations
+  const sortedDurations = [...allDurations].sort((a, b) => a - b);
+  const count = sortedDurations.length;
+  const totalMs = sortedDurations.reduce((sum, d) => sum + d, 0);
 
   const percentile = (arr: number[], p: number): number => {
     const index = Math.ceil((p / 100) * arr.length) - 1;
     return arr[Math.max(0, index)];
   };
 
-  // Group by context
+  // Build byContext stats from accumulator
   const byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }> = {
-    post_alvia: { count: 0, totalMs: 0, meanMs: 0 },
-    post_respondent: { count: 0, totalMs: 0, meanMs: 0 },
-    initial: { count: 0, totalMs: 0, meanMs: 0 },
+    post_alvia: { 
+      count: countByContext.post_alvia, 
+      totalMs: totalMsByContext.post_alvia, 
+      meanMs: countByContext.post_alvia > 0 
+        ? Math.round(totalMsByContext.post_alvia / countByContext.post_alvia) 
+        : 0 
+    },
+    post_respondent: { 
+      count: countByContext.post_respondent, 
+      totalMs: totalMsByContext.post_respondent, 
+      meanMs: countByContext.post_respondent > 0 
+        ? Math.round(totalMsByContext.post_respondent / countByContext.post_respondent) 
+        : 0 
+    },
+    initial: { 
+      count: countByContext.initial, 
+      totalMs: totalMsByContext.initial, 
+      meanMs: countByContext.initial > 0 
+        ? Math.round(totalMsByContext.initial / countByContext.initial) 
+        : 0 
+    },
   };
-
-  for (const segment of segments) {
-    byContext[segment.context].count++;
-    byContext[segment.context].totalMs += segment.durationMs;
-  }
-
-  for (const ctx of Object.keys(byContext) as SilenceContext[]) {
-    if (byContext[ctx].count > 0) {
-      byContext[ctx].meanMs = Math.round(byContext[ctx].totalMs / byContext[ctx].count);
-    }
-  }
 
   return {
     count,
     meanMs: Math.round(totalMs / count),
-    medianMs: percentile(durations, 50),
-    p90Ms: percentile(durations, 90),
-    p95Ms: percentile(durations, 95),
-    maxMs: durations[count - 1],
+    medianMs: percentile(sortedDurations, 50),
+    p90Ms: percentile(sortedDurations, 90),
+    p95Ms: percentile(sortedDurations, 95),
+    maxMs: sortedDurations[count - 1],
     byContext,
   };
 }
@@ -1197,7 +1231,7 @@ async function handleOpenAIEvent(
         state.metricsTracker.alviaSpeaking.currentResponseStartAt = now;
         
         // Record silence segment that just ended (Alvia starting to speak)
-        recordSilenceSegment(state.metricsTracker, state, now, 'alvia_started');
+        recordSilenceSegment(state.metricsTracker, state, now);
         state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
       }
       
@@ -1338,7 +1372,7 @@ async function handleOpenAIEvent(
       }
       
       // Record silence segment that just ended (respondent starting to speak)
-      recordSilenceSegment(state.metricsTracker, state, now, 'respondent_started');
+      recordSilenceSegment(state.metricsTracker, state, now);
       state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
       
       clientWs.send(JSON.stringify({ type: "user_speaking_started" }));
@@ -2004,6 +2038,11 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
   // Calculate silence time (approximation: session duration - speaking times)
   const silenceMs = Math.max(0, sessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs);
 
+  // Calculate silence statistics from accumulator (includes ALL observed segments)
+  const silenceSegments = tracker.silenceTracking.segments;  // Capped recent segments for storage
+  const silenceStats = calculateSilenceStats(tracker.silenceTracking.accumulator);
+  const totalSilenceCount = tracker.silenceTracking.accumulator.allDurations.length;
+
   // Calculate average latencies
   const transcriptionLatencies = tracker.latency.transcriptionLatencies;
   const responseLatencies = tracker.latency.responseLatencies;
@@ -2047,6 +2086,8 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
       silenceMs,
       respondentTurnCount,
       alviaTurnCount: tracker.alviaSpeaking.turnCount,
+      silenceSegments: silenceSegments,
+      silenceStats: silenceStats ?? undefined,
     },
     sessionDurationMs,
     openaiConnectionCount: tracker.openaiConnectionCount,
@@ -2059,6 +2100,7 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
     tokens: `${tracker.tokens.inputTokens} in / ${tracker.tokens.outputTokens} out`,
     avgLatency: `transcription=${Math.round(avgTranscriptionLatencyMs)}ms, response=${Math.round(avgResponseLatencyMs)}ms`,
     speaking: `respondent=${Math.round(respondentSpeakingMs / 1000)}s, alvia=${Math.round(tracker.alviaSpeaking.totalMs / 1000)}s`,
+    silenceSegments: `${silenceSegments.length} stored / ${totalSilenceCount} total observed`,
   });
 
   // Persist metrics to database
