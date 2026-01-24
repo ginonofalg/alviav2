@@ -1,0 +1,204 @@
+ Current State Analysis                                                                                                                          
+                                                                                                                                                  
+  How it works now:                                                                                                                               
+  1. Analytics are hierarchical: Collection → Template → Project                                                                                  
+  2. Each level must be manually refreshed                                                                                                        
+  3. If you try to refresh Project analytics but Template analytics don't exist, you get an error: "Please refresh analytics for at least one     
+  template first"                                                                                                                                 
+  4. Staleness is tracked but there's no unified UX for handling dependencies                                                                     
+  5. Users must manually navigate to each stale entity and refresh in sequence                                                                    
+                                                                                                                                                  
+  The Problem:                                                                                                                                    
+  When a user wants fresh Project analytics, they may need to:                                                                                    
+  1. Navigate to Collection A → Refresh                                                                                                           
+  2. Navigate to Collection B → Refresh                                                                                                           
+  3. Navigate to Template 1 → Refresh                                                                                                             
+  4. Navigate to Template 2 → Refresh                                                                                                             
+  5. Finally refresh Project analytics                                                                                                            
+                                                                                                                                                  
+  This is tedious and doesn't communicate the dependency chain clearly.                                                                           
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Recommended Approach                                                                                                                            
+                                                                                                                                                  
+  I recommend a Dependency-Aware Refresh Dialog with cascading options:                                                                           
+                                                                                                                                                  
+  Key UX Changes:                                                                                                                                 
+                                                                                                                                                  
+  1. Pre-flight Dependency Check: Before any refresh, check what's stale downstream                                                               
+  2. Informative Dialog: Show exactly what needs refreshing with options                                                                          
+  3. Cascade Refresh: Allow "Refresh All Stale" that works bottom-up                                                                              
+  4. Proceed Anyway: Allow refreshing with current (possibly stale) data                                                                          
+  5. Progress Indicator: Show multi-step progress during cascade                                                                                  
+                                                                                                                                                  
+  User Flow Example:                                                                                                                              
+                                                                                                                                                  
+  User clicks "Refresh Analytics" on a Project:                                                                                                   
+  ┌─────────────────────────────────────────────────────────┐                                                                                     
+  │ Analytics Dependencies                                   │                                                                                    
+  ├─────────────────────────────────────────────────────────┤                                                                                     
+  │ Some analytics are out of date:                         │                                                                                     
+  │                                                         │                                                                                     
+  │ ⚠️  2 collections need refresh                          │                                                                                     
+  │     • Customer Interviews (3 new sessions)              │                                                                                     
+  │     • Expert Interviews (never analyzed)                │                                                                                     
+  │                                                         │                                                                                     
+  │ ⚠️  1 template needs refresh                            │                                                                                     
+  │     • Discovery Template (1 collection updated)         │                                                                                     
+  │                                                         │                                                                                     
+  │ ─────────────────────────────────────────────────────── │                                                                                     
+  │                                                         │                                                                                     
+  │ [Refresh All]  [Project Only]  [Cancel]                 │                                                                                     
+  │                                                         │                                                                                     
+  │ "Refresh All" will refresh 2 collections, 1 template,  │                                                                                      
+  │ then project analytics.                                 │                                                                                     
+  └─────────────────────────────────────────────────────────┘                                                                                     
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Implementation Plan                                                                                                                             
+                                                                                                                                                  
+  Here's the plan formatted for passing to Replit:                                                                                                
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Plan: Analytics Cascade Refresh UX                                                                                                              
+                                                                                                                                                  
+  Goal: Improve the user experience when refreshing Project or Template analytics by detecting stale dependencies and offering cascade refresh    
+  options.                                                                                                                                        
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 1: Backend - Dependency Status Endpoint                                                                                                   
+                                                                                                                                                  
+  File: server/routes.ts                                                                                                                          
+                                                                                                                                                  
+  1. Create new endpoint: GET /api/projects/:projectId/analytics/dependencies                                                                     
+    - Returns the staleness status of all templates and collections under this project                                                            
+    - Response structure:                                                                                                                         
+  {                                                                                                                                               
+    projectId: number;                                                                                                                            
+    projectStale: boolean;                                                                                                                        
+    templates: Array<{                                                                                                                            
+      id: number;                                                                                                                                 
+      name: string;                                                                                                                               
+      isStale: boolean;                                                                                                                           
+      lastAnalyzedAt: string | null;                                                                                                              
+      collections: Array<{                                                                                                                        
+        id: number;                                                                                                                               
+        name: string;                                                                                                                             
+        isStale: boolean;                                                                                                                         
+        lastAnalyzedAt: string | null;                                                                                                            
+        totalSessions: number;                                                                                                                    
+        analyzedSessions: number;                                                                                                                 
+        newSessions: number;                                                                                                                      
+      }>;                                                                                                                                         
+      staleCollectionCount: number;                                                                                                               
+    }>;                                                                                                                                           
+    summary: {                                                                                                                                    
+      staleCollections: number;                                                                                                                   
+      staleTemplates: number;                                                                                                                     
+      totalRefreshesNeeded: number;                                                                                                               
+    };                                                                                                                                            
+  }                                                                                                                                               
+  2. Create new endpoint: GET /api/templates/:templateId/analytics/dependencies                                                                   
+    - Similar structure for template-level dependency check                                                                                       
+  3. Create new endpoint: POST /api/projects/:projectId/analytics/cascade-refresh                                                                 
+    - Accepts options: { refreshCollections: boolean, refreshTemplates: boolean }                                                                 
+    - Performs sequential refresh: Collections → Templates → Project                                                                              
+    - Returns progress updates via response streaming or polling token                                                                            
+    - Implements error handling to continue with partial success                                                                                  
+  4. Create new endpoint: POST /api/templates/:templateId/analytics/cascade-refresh                                                               
+    - Similar cascade for template level                                                                                                          
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 2: Shared Types                                                                                                                           
+                                                                                                                                                  
+  File: shared/schema.ts                                                                                                                          
+                                                                                                                                                  
+  1. Add TypeScript types for dependency status response:                                                                                         
+  export type AnalyticsDependencyStatus = {                                                                                                       
+    projectId: number;                                                                                                                            
+    projectStale: boolean;                                                                                                                        
+    templates: TemplateDependencyStatus[];                                                                                                        
+    summary: DependencySummary;                                                                                                                   
+  };                                                                                                                                              
+                                                                                                                                                  
+  export type CascadeRefreshResult = {                                                                                                            
+    success: boolean;                                                                                                                             
+    collectionsRefreshed: number;                                                                                                                 
+    templatesRefreshed: number;                                                                                                                   
+    projectRefreshed: boolean;                                                                                                                    
+    errors: Array<{ level: string; id: number; error: string }>;                                                                                  
+  };                                                                                                                                              
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 3: Frontend - Analytics Refresh Dialog Component                                                                                          
+                                                                                                                                                  
+  File: client/src/components/analytics/AnalyticsRefreshDialog.tsx (new file)                                                                     
+                                                                                                                                                  
+  1. Create a reusable dialog component that:                                                                                                     
+    - Fetches dependency status when opened                                                                                                       
+    - Displays hierarchical list of stale items with details                                                                                      
+    - Shows "new sessions" count for collections                                                                                                  
+    - Shows "never analyzed" for items without analytics                                                                                          
+    - Offers three action buttons:                                                                                                                
+        - "Refresh All" - Cascade refresh everything stale                                                                                        
+      - "Refresh [Level] Only" - Use current downstream data                                                                                      
+      - "Cancel"                                                                                                                                  
+  2. Include loading state while fetching dependencies                                                                                            
+  3. Include progress indicator during cascade refresh:                                                                                           
+    - Step indicator: "Refreshing Collection 1/3..."                                                                                              
+    - Overall progress bar                                                                                                                        
+    - List of completed/pending items                                                                                                             
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 4: Frontend - Update Project Analytics View                                                                                               
+                                                                                                                                                  
+  File: client/src/components/analytics/ProjectAnalyticsView.tsx                                                                                  
+                                                                                                                                                  
+  1. Replace direct refresh button with dialog trigger                                                                                            
+  2. Add "View Dependencies" link in staleness badge area                                                                                         
+  3. Update refresh mutation to handle cascade option                                                                                             
+  4. Add toast notifications for cascade progress milestones                                                                                      
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 5: Frontend - Update Template Analytics View                                                                                              
+                                                                                                                                                  
+  File: client/src/components/analytics/TemplateAnalyticsView.tsx                                                                                 
+                                                                                                                                                  
+  1. Same pattern as Project view                                                                                                                 
+  2. Dialog shows collection dependencies only                                                                                                    
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 6: Command Center Integration                                                                                                             
+                                                                                                                                                  
+  File: client/src/pages/analytics.tsx                                                                                                            
+                                                                                                                                                  
+  1. Add "Refresh All Stale" button in Analytics Health section                                                                                   
+  2. Shows global cascade dialog with all stale items across projects                                                                             
+  3. Allows selective refresh by project                                                                                                          
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Phase 7: Polish & Edge Cases                                                                                                                    
+                                                                                                                                                  
+  1. Timeout handling: If cascade takes too long, show partial progress and option to continue in background                                      
+  2. Error recovery: If one collection fails, continue with others and report at end                                                              
+  3. Cancel support: Allow canceling mid-cascade (completed items remain refreshed)                                                               
+  4. Empty states: Handle projects with no templates/collections gracefully                                                                       
+  5. Concurrent refresh prevention: Disable refresh buttons during active refresh                                                                 
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Technical Notes                                                                                                                                 
+                                                                                                                                                  
+  - Cascade refresh should be sequential (Collection 1 → Collection 2 → Template 1 → Project) to avoid API rate limits                            
+  - Consider adding a loading state to the sidebar/breadcrumb to indicate background refresh                                                      
+  - The "Project Only" option should update the project's lastAnalyzedAt and analyzedTemplateCount to reflect current state, even if templates are
+   stale                                                                                                                                          
+  - Add confirmation if user tries to navigate away during cascade refresh                                                                        
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Success Criteria                                                                                                                                
+                                                                                                                                                  
+  1. User can see exactly what's stale before refreshing                                                                                          
+  2. User can refresh all dependencies with one click                                                                                             
+  3. User can choose to proceed with stale data if preferred                                                                                      
+  4. Progress is visible during multi-step refresh                                                                                                
+  5. Errors in cascade don't block entire operation  
