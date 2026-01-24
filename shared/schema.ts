@@ -431,12 +431,40 @@ export type LatencyMetrics = {
   responseSamples: number;
 };
 
+// Silence segment context - when in the conversation flow did silence occur
+export type SilenceContext = 
+  | 'post_alvia'          // After Alvia finished speaking, before respondent started
+  | 'post_respondent'     // After respondent stopped, before Alvia responded
+  | 'initial';            // Before any speech in the session
+
+// Individual silence segment captured during an interview
+export type SilenceSegment = {
+  startAt: number;                       // Timestamp when silence began
+  endAt: number;                         // Timestamp when silence ended
+  durationMs: number;                    // Calculated duration
+  context: SilenceContext;               // When this silence occurred
+  questionIndex: number | null;          // Which question was active, if any
+};
+
+// Aggregated statistics about silence segments
+export type SilenceStats = {
+  count: number;
+  meanMs: number;
+  medianMs: number;
+  p90Ms: number;
+  p95Ms: number;
+  maxMs: number;
+  byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }>;
+};
+
 export type SpeakingTimeMetrics = {
   respondentSpeakingMs: number;          // Total respondent speaking time
   alviaSpeakingMs: number;               // Total Alvia speaking time (estimated from audio responses)
   silenceMs: number;                     // Calculated: session duration - speaking times
   respondentTurnCount: number;
   alviaTurnCount: number;
+  silenceSegments?: SilenceSegment[];    // Individual silence segments (capped at 100 for storage)
+  silenceStats?: SilenceStats | null;    // Aggregated statistics computed from all segments
 };
 
 export type RealtimePerformanceMetrics = {
