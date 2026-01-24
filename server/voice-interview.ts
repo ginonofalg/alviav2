@@ -17,6 +17,10 @@ import type {
   PersistedBarbaraGuidance,
   PersistedQuestionState,
   QuestionSummary as PersistedQuestionSummary,
+  RealtimePerformanceMetrics,
+  TokenUsage,
+  LatencyMetrics,
+  SpeakingTimeMetrics,
 } from "@shared/schema";
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
@@ -58,9 +62,66 @@ interface InterviewState {
   lastActivityAt: number; // Any meaningful activity (audio, interaction, AI response)
   terminationWarned: boolean; // Whether client has been warned about impending termination
   clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
+  // Realtime API performance metrics
+  metricsTracker: MetricsTracker;
 }
 
 type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded' | 'client_disconnected';
+
+// Realtime API metrics tracking during session
+interface MetricsTracker {
+  // Token usage (accumulated from response.done events)
+  tokens: {
+    inputTokens: number;
+    outputTokens: number;
+    inputAudioTokens: number;
+    outputAudioTokens: number;
+    inputTextTokens: number;
+    outputTextTokens: number;
+  };
+  // Latency tracking
+  latency: {
+    transcriptionLatencies: number[];   // Each measurement: speech_stopped → transcription completed
+    responseLatencies: number[];         // Each measurement: transcription → first audio delta
+    lastSpeechStoppedAt: number | null;  // Timestamp when user stopped speaking
+    lastTranscriptionAt: number | null;  // Timestamp when transcription completed
+    waitingForFirstAudio: boolean;       // Flag to capture first audio delta latency
+  };
+  // Alvia speaking time
+  alviaSpeaking: {
+    totalMs: number;
+    currentResponseStartAt: number | null;  // When current response audio started
+    turnCount: number;
+  };
+  // Connection tracking
+  openaiConnectionCount: number;
+}
+
+function createEmptyMetricsTracker(): MetricsTracker {
+  return {
+    tokens: {
+      inputTokens: 0,
+      outputTokens: 0,
+      inputAudioTokens: 0,
+      outputAudioTokens: 0,
+      inputTextTokens: 0,
+      outputTextTokens: 0,
+    },
+    latency: {
+      transcriptionLatencies: [],
+      responseLatencies: [],
+      lastSpeechStoppedAt: null,
+      lastTranscriptionAt: null,
+      waitingForFirstAudio: false,
+    },
+    alviaSpeaking: {
+      totalMs: 0,
+      currentResponseStartAt: null,
+      turnCount: 0,
+    },
+    openaiConnectionCount: 0,
+  };
+}
 
 interface SessionWatchdogState {
   interval: ReturnType<typeof setInterval> | null;
@@ -458,6 +519,8 @@ export function handleVoiceInterview(
     lastActivityAt: now,
     terminationWarned: false,
     clientDisconnectedAt: null,
+    // Realtime API performance metrics
+    metricsTracker: createEmptyMetricsTracker(),
   };
   interviewStates.set(sessionId, state);
 
@@ -656,6 +719,9 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
   });
 
   state.openaiWs = openaiWs;
+  
+  // Track OpenAI connection count for metrics
+  state.metricsTracker.openaiConnectionCount++;
 
   openaiWs.on("open", () => {
     console.log(
@@ -990,6 +1056,20 @@ async function handleOpenAIEvent(
       // Update activity - AI speaking keeps session alive
       state.lastActivityAt = Date.now();
       state.terminationWarned = false;
+      
+      // Track response latency (time from transcription to first audio)
+      if (state.metricsTracker.latency.waitingForFirstAudio && 
+          state.metricsTracker.latency.lastTranscriptionAt) {
+        const responseLatency = Date.now() - state.metricsTracker.latency.lastTranscriptionAt;
+        state.metricsTracker.latency.responseLatencies.push(responseLatency);
+        state.metricsTracker.latency.waitingForFirstAudio = false;
+      }
+      
+      // Track Alvia speaking time - mark start of this response
+      if (state.metricsTracker.alviaSpeaking.currentResponseStartAt === null) {
+        state.metricsTracker.alviaSpeaking.currentResponseStartAt = Date.now();
+      }
+      
       // Forward audio chunks to client
       clientWs.send(
         JSON.stringify({
@@ -1000,6 +1080,13 @@ async function handleOpenAIEvent(
       break;
 
     case "response.audio.done":
+      // Track Alvia speaking time - accumulate duration
+      if (state.metricsTracker.alviaSpeaking.currentResponseStartAt !== null) {
+        const elapsed = Date.now() - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
+        state.metricsTracker.alviaSpeaking.totalMs += elapsed;
+        state.metricsTracker.alviaSpeaking.turnCount++;
+        state.metricsTracker.alviaSpeaking.currentResponseStartAt = null;
+      }
       clientWs.send(JSON.stringify({ type: "audio_done" }));
       break;
 
@@ -1039,6 +1126,17 @@ async function handleOpenAIEvent(
       // User's speech transcript (from Whisper)
       // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
       (async () => {
+        // Track transcription latency (time from speech_stopped to transcription completed)
+        if (state.metricsTracker.latency.lastSpeechStoppedAt) {
+          const transcriptionLatency = Date.now() - state.metricsTracker.latency.lastSpeechStoppedAt;
+          state.metricsTracker.latency.transcriptionLatencies.push(transcriptionLatency);
+          state.metricsTracker.latency.lastSpeechStoppedAt = null;
+        }
+        
+        // Record transcription timestamp and prepare for response latency measurement
+        state.metricsTracker.latency.lastTranscriptionAt = Date.now();
+        state.metricsTracker.latency.waitingForFirstAudio = true;
+        
         if (event.transcript) {
           // CRITICAL: Use questionIndexAtSpeechStart if available to avoid race condition
           // where user clicks "next_question" before transcription completes
@@ -1116,10 +1214,25 @@ async function handleOpenAIEvent(
         state.speakingStartTime = null;
         // Note: don't clear questionIndexAtSpeechStart here - transcription may still be pending
       }
+      
+      // Track timestamp for transcription latency measurement
+      state.metricsTracker.latency.lastSpeechStoppedAt = Date.now();
+      
       clientWs.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
 
     case "response.done":
+      // Capture token usage from OpenAI response
+      const usage = event.response?.usage;
+      if (usage) {
+        state.metricsTracker.tokens.inputTokens += usage.input_tokens || 0;
+        state.metricsTracker.tokens.outputTokens += usage.output_tokens || 0;
+        state.metricsTracker.tokens.inputAudioTokens += usage.input_token_details?.audio_tokens || 0;
+        state.metricsTracker.tokens.outputAudioTokens += usage.output_token_details?.audio_tokens || 0;
+        state.metricsTracker.tokens.inputTextTokens += usage.input_token_details?.text_tokens || 0;
+        state.metricsTracker.tokens.outputTextTokens += usage.output_token_details?.text_tokens || 0;
+        console.log(`[Metrics] Token usage for ${sessionId}: input=${usage.input_tokens}, output=${usage.output_tokens}`);
+      }
       clientWs.send(JSON.stringify({ type: "response_done" }));
       break;
 
@@ -1691,7 +1804,7 @@ INSTRUCTIONS:
           completedAt: new Date(),
         });
         clientWs.send(JSON.stringify({ type: "interview_complete" }));
-        cleanupSession(sessionId);
+        cleanupSession(sessionId, 'completed');
       }
       break;
 
@@ -1715,14 +1828,99 @@ INSTRUCTIONS:
         completedAt: new Date(),
       });
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
-      cleanupSession(sessionId);
+      cleanupSession(sessionId, 'completed');
       break;
   }
 }
 
-async function cleanupSession(sessionId: string) {
+function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string): void {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  const tracker = state.metricsTracker;
+  const now = Date.now();
+  const sessionDurationMs = now - state.createdAt;
+
+  // Calculate respondent speaking time from question metrics
+  let respondentSpeakingMs = 0;
+  let respondentTurnCount = 0;
+  state.questionMetrics.forEach((metrics) => {
+    respondentSpeakingMs += metrics.activeTimeMs;
+    respondentTurnCount += metrics.turnCount;
+  });
+
+  // Calculate silence time (approximation: session duration - speaking times)
+  const silenceMs = Math.max(0, sessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs);
+
+  // Calculate average latencies
+  const transcriptionLatencies = tracker.latency.transcriptionLatencies;
+  const responseLatencies = tracker.latency.responseLatencies;
+
+  const avgTranscriptionLatencyMs = transcriptionLatencies.length > 0
+    ? transcriptionLatencies.reduce((a, b) => a + b, 0) / transcriptionLatencies.length
+    : 0;
+  const avgResponseLatencyMs = responseLatencies.length > 0
+    ? responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length
+    : 0;
+  const maxTranscriptionLatencyMs = transcriptionLatencies.length > 0
+    ? Math.max(...transcriptionLatencies)
+    : 0;
+  const maxResponseLatencyMs = responseLatencies.length > 0
+    ? Math.max(...responseLatencies)
+    : 0;
+
+  // Build the final metrics object
+  const performanceMetrics: RealtimePerformanceMetrics = {
+    sessionId,
+    recordedAt: now,
+    tokenUsage: {
+      inputTokens: tracker.tokens.inputTokens,
+      outputTokens: tracker.tokens.outputTokens,
+      inputAudioTokens: tracker.tokens.inputAudioTokens,
+      outputAudioTokens: tracker.tokens.outputAudioTokens,
+      inputTextTokens: tracker.tokens.inputTextTokens,
+      outputTextTokens: tracker.tokens.outputTextTokens,
+    },
+    latency: {
+      avgTranscriptionLatencyMs,
+      avgResponseLatencyMs,
+      maxTranscriptionLatencyMs,
+      maxResponseLatencyMs,
+      transcriptionSamples: transcriptionLatencies.length,
+      responseSamples: responseLatencies.length,
+    },
+    speakingTime: {
+      respondentSpeakingMs,
+      alviaSpeakingMs: tracker.alviaSpeaking.totalMs,
+      silenceMs,
+      respondentTurnCount,
+      alviaTurnCount: tracker.alviaSpeaking.turnCount,
+    },
+    sessionDurationMs,
+    openaiConnectionCount: tracker.openaiConnectionCount,
+    terminationReason,
+  };
+
+  // Log metrics summary
+  console.log(`[Metrics] Final metrics for ${sessionId}:`, {
+    duration: `${Math.round(sessionDurationMs / 1000)}s`,
+    tokens: `${tracker.tokens.inputTokens} in / ${tracker.tokens.outputTokens} out`,
+    avgLatency: `transcription=${Math.round(avgTranscriptionLatencyMs)}ms, response=${Math.round(avgResponseLatencyMs)}ms`,
+    speaking: `respondent=${Math.round(respondentSpeakingMs / 1000)}s, alvia=${Math.round(tracker.alviaSpeaking.totalMs / 1000)}s`,
+  });
+
+  // Persist metrics to database
+  storage.persistInterviewState(sessionId, { performanceMetrics }).catch((error) => {
+    console.error(`[Metrics] Failed to persist metrics for ${sessionId}:`, error);
+  });
+}
+
+async function cleanupSession(sessionId: string, terminationReason?: string) {
   const state = interviewStates.get(sessionId);
   if (state) {
+    // Finalize and persist performance metrics
+    finalizeAndPersistMetrics(sessionId, terminationReason);
+    
     // Flush any pending persist before cleanup
     await flushPersist(sessionId);
 
@@ -1871,5 +2069,5 @@ async function terminateSession(sessionId: string, reason: TerminationReason): P
   }
 
   // Clean up
-  await cleanupSession(sessionId);
+  await cleanupSession(sessionId, reason);
 }

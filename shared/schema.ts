@@ -195,6 +195,8 @@ export const interviewSessions = pgTable("interview_sessions", {
   // Researcher tools
   researcherNotes: text("researcher_notes"),
   reviewFlags: text("review_flags").array(), // Values: "needs_review", "flagged_quality", "verified", "excluded"
+  // Realtime API monitoring metrics
+  performanceMetrics: jsonb("performance_metrics"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -409,6 +411,44 @@ export type PersistedQuestionState = {
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
 
 export type SessionReviewFlag = "needs_review" | "flagged_quality" | "verified" | "excluded";
+
+// Realtime API Performance Metrics
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  inputAudioTokens: number;
+  outputAudioTokens: number;
+  inputTextTokens: number;
+  outputTextTokens: number;
+};
+
+export type LatencyMetrics = {
+  avgTranscriptionLatencyMs: number;    // speech_stopped → transcription completed
+  avgResponseLatencyMs: number;          // transcription completed → first audio delta
+  maxTranscriptionLatencyMs: number;
+  maxResponseLatencyMs: number;
+  transcriptionSamples: number;
+  responseSamples: number;
+};
+
+export type SpeakingTimeMetrics = {
+  respondentSpeakingMs: number;          // Total respondent speaking time
+  alviaSpeakingMs: number;               // Total Alvia speaking time (estimated from audio responses)
+  silenceMs: number;                     // Calculated: session duration - speaking times
+  respondentTurnCount: number;
+  alviaTurnCount: number;
+};
+
+export type RealtimePerformanceMetrics = {
+  sessionId: string;
+  recordedAt: number;                    // Timestamp when metrics were finalized
+  tokenUsage: TokenUsage;
+  latency: LatencyMetrics;
+  speakingTime: SpeakingTimeMetrics;
+  sessionDurationMs: number;             // Total session duration
+  openaiConnectionCount: number;         // Number of OpenAI WS connections (ideally 1)
+  terminationReason?: string;            // How the session ended
+};
 
 // Verbatim statement captured from respondent's speech
 export type VerbatimStatement = {

@@ -12,7 +12,8 @@ import {
   type AggregatedStrategicInsight, type AggregatedKeyFinding, 
   type AggregatedCrossTemplateTheme, type AggregatedContextualRecommendation,
   type AggregatedConsensusPoint, type AggregatedDivergencePoint,
-  type TemplateStaleness, type CollectionStaleness
+  type TemplateStaleness, type CollectionStaleness,
+  type RealtimePerformanceMetrics
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -24,6 +25,7 @@ export interface InterviewStatePatch {
   status?: InterviewSession["status"];
   pausedAt?: Date | null;
   completedAt?: Date | null;
+  performanceMetrics?: RealtimePerformanceMetrics;
 }
 
 export interface EnrichedSession extends InterviewSession {
@@ -555,6 +557,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.completedAt !== undefined) {
       updateData.completedAt = patch.completedAt;
+    }
+    if (patch.performanceMetrics !== undefined) {
+      updateData.performanceMetrics = patch.performanceMetrics;
     }
 
     if (Object.keys(updateData).length === 0) {

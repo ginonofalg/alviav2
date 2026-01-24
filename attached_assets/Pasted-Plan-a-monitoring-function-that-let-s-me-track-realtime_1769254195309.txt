@@ -1,0 +1,181 @@
+Plan a monitoring function that let's me track realtime API interactions with regards to latency, token use, silence vs talking time (by        
+  either the interviewee or Alvia) across interviews. What would the main components of such a system look like? How feasible is                  
+  implementation?                                                                                                                                 
+                                                                                                                                                  
+● I'll explore the current voice interview architecture to understand what's already in place and design a monitoring system.                     
+                                                                                                                                                  
+● Explore(Explore voice interview architecture)                                                                                                   
+  ⎿  Done (10 tool uses · 73.8k tokens · 55s)                                                                                                     
+                                                                                                                                                  
+● Based on my exploration of the codebase, here's a comprehensive analysis of a monitoring system for your realtime API interactions:             
+                                                                                                                                                  
+  Current State                                                                                                                                   
+                                                                                                                                                  
+  You already have partial tracking in place:                                                                                                     
+  - Per-question activeTimeMs (speaking time) in QuestionMetrics                                                                                  
+  - Transcript entries with timestamp fields                                                                                                      
+  - Speech start/stop detection via OpenAI's semantic_vad                                                                                         
+  - Session lifecycle timestamps (startedAt, completedAt)                                                                                         
+                                                                                                                                                  
+  Not currently tracked:                                                                                                                          
+  - Token usage from OpenAI Realtime API                                                                                                          
+  - Latency measurements (transcription, Barbara analysis, response generation)                                                                   
+  - Silence intervals or Alvia's speaking duration                                                                                                
+  - End-to-end turn latency                                                                                                                       
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Proposed Monitoring System Components                                                                                                           
+                                                                                                                                                  
+  1. Metrics Collection Layer (server-side)                                                                                                       
+                                                                                                                                                  
+  ┌─────────────────────────────────────────────────────────────┐                                                                                 
+  │                    voice-interview.ts                        │                                                                                
+  │                                                              │                                                                                
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │                                                                                 
+  │  │ Audio Events │  │ OpenAI Events│  │ Barbara Events│      │                                                                                 
+  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘       │                                                                                 
+  │         │                 │                 │                │                                                                                
+  │         └─────────────────┼─────────────────┘                │                                                                                
+  │                           ▼                                  │                                                                                
+  │               ┌───────────────────────┐                      │                                                                                
+  │               │   MetricsCollector    │                      │                                                                                
+  │               │  - recordLatency()    │                      │                                                                                
+  │               │  - recordTokenUsage() │                      │                                                                                
+  │               │  - recordSpeechTime() │                      │                                                                                
+  │               └───────────┬───────────┘                      │                                                                                
+  └───────────────────────────┼──────────────────────────────────┘                                                                                
+                              ▼                                                                                                                   
+                  ┌───────────────────────┐                                                                                                       
+                  │  interview_metrics    │  (new table)                                                                                          
+                  │  or performanceMetrics│  (JSONB field)                                                                                        
+                  └───────────────────────┘                                                                                                       
+                                                                                                                                                  
+  2. Key Metrics to Capture                                                                                                                       
+  ┌─────────────────────────────┬─────────────────────────────────────────────────────────┬───────────────────────────┐                           
+  │           Metric            │                         Source                          │     Integration Point     │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Transcription latency       │ Time from speech_stopped → transcription.completed      │ Lines 1104-1091           │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Barbara analysis latency    │ Time in triggerBarbaraAnalysis()                        │ Lines 1142-1287           │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Response generation latency │ Time from Barbara complete → first response.audio.delta │ Line 1315                 │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Token usage                 │ Parse response.done event from OpenAI                   │ New handler needed        │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Respondent speaking time    │ Already tracked as activeTimeMs                         │ Exists                    │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Alvia speaking time         │ Track response.audio.delta start → response.done        │ Lines 1315-1390           │                           
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼───────────────────────────┤                           
+  │ Silence intervals           │ Gap between Alvia done → respondent starts              │ Calculate from timestamps │                           
+  └─────────────────────────────┴─────────────────────────────────────────────────────────┴───────────────────────────┘                           
+  3. Token Tracking (requires new code)                                                                                                           
+                                                                                                                                                  
+  OpenAI Realtime API includes usage data in response.done events. You'd need to parse:                                                           
+                                                                                                                                                  
+  // In OpenAI message handler, case "response.done":                                                                                             
+  const usage = parsed.response?.usage;                                                                                                           
+  if (usage) {                                                                                                                                    
+    metrics.tokens = {                                                                                                                            
+      inputTokens: usage.input_tokens,                                                                                                            
+      outputTokens: usage.output_tokens,                                                                                                          
+      inputAudioTokens: usage.input_token_details?.audio_tokens,                                                                                  
+      outputAudioTokens: usage.output_token_details?.audio_tokens                                                                                 
+    };                                                                                                                                            
+  }                                                                                                                                               
+                                                                                                                                                  
+  4. Silence/Speaking Time Analysis                                                                                                               
+                                                                                                                                                  
+  Structure for per-turn timing:                                                                                                                  
+                                                                                                                                                  
+  interface TurnMetrics {                                                                                                                         
+    turnIndex: number;                                                                                                                            
+    questionIndex: number;                                                                                                                        
+                                                                                                                                                  
+    // Respondent                                                                                                                                 
+    respondentSpeakingMs: number;      // From activeTimeMs                                                                                       
+    respondentWordCount: number;                                                                                                                  
+                                                                                                                                                  
+    // Alvia                                                                                                                                      
+    alviaSpeakingMs: number;           // New: track audio delta duration                                                                         
+    alviaWordCount: number;            // From transcript                                                                                         
+                                                                                                                                                  
+    // Latencies                                                                                                                                  
+    transcriptionLatencyMs: number;    // speech_stopped → transcription complete                                                                 
+    barbaraLatencyMs: number;          // analysis start → complete                                                                               
+    responseLatencyMs: number;         // transcription complete → first audio                                                                    
+                                                                                                                                                  
+    // Silence                                                                                                                                    
+    preTurnSilenceMs: number;          // Gap before respondent spoke                                                                             
+    postTurnSilenceMs: number;         // Gap after Alvia finished                                                                                
+                                                                                                                                                  
+    // Tokens                                                                                                                                     
+    inputTokens: number;                                                                                                                          
+    outputTokens: number;                                                                                                                         
+  }                                                                                                                                               
+                                                                                                                                                  
+  5. Storage Options                                                                                                                              
+                                                                                                                                                  
+  Option A: JSONB field on interviewSessions (simpler)                                                                                            
+  performanceMetrics: jsonb  // Array of TurnMetrics                                                                                              
+                                                                                                                                                  
+  Option B: Dedicated table (better for querying across interviews)                                                                               
+  // New table: interview_turn_metrics                                                                                                            
+  sessionId, turnIndex, questionIndex,                                                                                                            
+  respondentSpeakingMs, alviaSpeakingMs,                                                                                                          
+  transcriptionLatencyMs, barbaraLatencyMs,                                                                                                       
+  inputTokens, outputTokens, createdAt                                                                                                            
+                                                                                                                                                  
+  6. Real-time Dashboard Component                                                                                                                
+                                                                                                                                                  
+  ┌─────────────────────────────────────────────────────────┐                                                                                     
+  │  Live Interview Metrics                                  │                                                                                    
+  ├─────────────────────────────────────────────────────────┤                                                                                     
+  │  Session: abc123        Duration: 12:34                  │                                                                                    
+  │                                                          │                                                                                    
+  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │                                                                                     
+  │  │ Avg Latency │  │ Token Usage │  │ Speaking %  │      │                                                                                     
+  │  │   342ms     │  │   12,450    │  │ R:65 A:35   │      │                                                                                     
+  │  └─────────────┘  └─────────────┘  └─────────────┘      │                                                                                     
+  │                                                          │                                                                                    
+  │  Turn-by-turn breakdown:                                 │                                                                                    
+  │  Q1: ████████░░ 2.3s resp | 0.8s silence | 245 tokens   │                                                                                     
+  │  Q2: ██████████ 4.1s resp | 0.3s silence | 312 tokens   │                                                                                     
+  │  Q3: █████░░░░░ 1.2s resp | 1.5s silence | 189 tokens   │                                                                                     
+  └─────────────────────────────────────────────────────────┘                                                                                     
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Feasibility Assessment                                                                                                                          
+  ┌─────────────────────────────┬──────────────┬─────────────────────────────────────────────────────┐                                            
+  │           Aspect            │  Difficulty  │                        Notes                        │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Latency tracking            │ Low          │ Natural hooks exist at lines 1093, 1104, 1142, 1315 │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Token usage                 │ Low          │ Parse existing response.done events                 │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Respondent speaking time    │ Already done │ activeTimeMs exists                                 │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Alvia speaking time         │ Low          │ Track delta start/end times                         │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Silence calculation         │ Medium       │ Derive from timestamp gaps in transcript            │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Cross-interview aggregation │ Medium       │ Requires new table or query logic                   │                                            
+  ├─────────────────────────────┼──────────────┼─────────────────────────────────────────────────────┤                                            
+  │ Real-time dashboard         │ Medium       │ WebSocket already exists; add metrics channel       │                                            
+  └─────────────────────────────┴──────────────┴─────────────────────────────────────────────────────┘                                            
+  Estimated scope:                                                                                                                                
+  - ~150-200 lines in voice-interview.ts for collection                                                                                           
+  - ~50 lines schema changes                                                                                                                      
+  - ~200-300 lines for a dashboard component                                                                                                      
+                                                                                                                                                  
+  Risks:                                                                                                                                          
+  - Token usage format may vary by OpenAI API version                                                                                             
+  - High-frequency metrics could add database write overhead (mitigate with batching)                                                             
+  - Calculating silence requires careful handling of overlapping audio                                                                            
+                                                                                                                                                  
+  ---                                                                                                                                             
+  Recommended Implementation Approach                                                                                                             
+                                                                                                                                                  
+  1. Phase 1: Add token tracking and latency timestamps to existing TurnMetrics (low effort, high value)                                          
+  2. Phase 2: Add Alvia speaking duration tracking using response.audio.delta start/end                                                           
+  3. Phase 3: Create aggregation queries for cross-interview analysis                                                                             
+  4. Phase 4: Build monitoring dashboard component 
