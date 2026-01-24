@@ -78,6 +78,12 @@ Implemented comprehensive monitoring to track OpenAI Realtime API interactions f
 - **Persistence**: Stores metrics in `performanceMetrics` JSONB field on `interviewSessions` table
 - **API Endpoint**: `GET /api/sessions/:sessionId/metrics` returns session performance data (requires authentication)
 - **Termination Tracking**: Records termination reason (completed, heartbeat_timeout, idle_timeout, max_age_exceeded, client_disconnected)
+- **Silence Segment Tracking**: Captures individual silence gaps for future VAD threshold tuning:
+  - Three contexts: `post_alvia` (after AI speaks), `post_respondent` (after user speaks), `initial` (before any speech)
+  - Statistical analysis: mean, median, p90, p95, max durations computed from ALL observed segments
+  - Memory-bounded: Only 100 most recent segments stored, but stats computed from full accumulator
+  - 100ms minimum threshold filters noise/micro-pauses
+  - Question index tracking for per-question analysis
 
 ### Project-Level Infographics
 Extended the Infographics feature to support project-level generation alongside existing collection-level support:
