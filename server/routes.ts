@@ -422,6 +422,499 @@ export async function registerRoutes(
     }
   });
 
+  // Project Analytics - Check dependencies (what needs refreshing)
+  app.get("/api/projects/:projectId/analytics/dependencies", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const templates = await storage.getTemplatesByProject(project.id);
+      
+      const templatesData = await Promise.all(
+        templates.map(async (template) => {
+          const collections = await storage.getCollectionsByTemplate(template.id);
+          
+          const collectionsData = await Promise.all(
+            collections.map(async (collection) => {
+              const sessions = await storage.getSessionsByCollection(collection.id);
+              const completedSessions = sessions.filter(s => s.status === "completed");
+              
+              const isStale = !collection.lastAnalyzedAt || 
+                completedSessions.length !== collection.analyzedSessionCount;
+              const hasData = completedSessions.length > 0;
+              
+              return {
+                id: collection.id,
+                name: collection.name,
+                isStale: isStale && hasData,
+                hasData,
+                lastAnalyzedAt: collection.lastAnalyzedAt,
+                totalSessions: completedSessions.length,
+                analyzedSessions: collection.analyzedSessionCount || 0,
+                newSessions: Math.max(0, completedSessions.length - (collection.analyzedSessionCount || 0)),
+              };
+            })
+          );
+
+          const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+          const templateIsStale = template.lastAnalyzedAt 
+            ? collections.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
+            : collectionsWithAnalytics.length > 0;
+          const hasRefreshableCollections = collectionsData.some(c => c.hasData);
+
+          return {
+            id: template.id,
+            name: template.name,
+            isStale: templateIsStale && hasRefreshableCollections,
+            hasData: collectionsWithAnalytics.length > 0 || hasRefreshableCollections,
+            lastAnalyzedAt: template.lastAnalyzedAt,
+            collections: collectionsData.filter(c => c.hasData),
+            staleCollectionCount: collectionsData.filter(c => c.isStale).length,
+          };
+        })
+      );
+
+      const staleCollections = templatesData.flatMap(t => t.collections.filter(c => c.isStale));
+      const staleTemplates = templatesData.filter(t => t.isStale || t.staleCollectionCount > 0);
+
+      const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null);
+      const projectIsStale = project.lastAnalyzedAt 
+        ? templates.some(t => t.lastAnalyzedAt && t.lastAnalyzedAt > project.lastAnalyzedAt!)
+        : templatesWithAnalytics.length > 0;
+
+      res.json({
+        projectId: project.id,
+        projectName: project.name,
+        projectStale: projectIsStale,
+        templates: templatesData.filter(t => t.hasData),
+        summary: {
+          staleCollections: staleCollections.length,
+          staleTemplates: staleTemplates.length,
+          totalRefreshesNeeded: staleCollections.length + staleTemplates.length + (projectIsStale ? 1 : 0),
+          hasAnyStale: staleCollections.length > 0 || staleTemplates.length > 0 || projectIsStale,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching project analytics dependencies:", error);
+      res.status(500).json({ message: "Failed to fetch analytics dependencies" });
+    }
+  });
+
+  // Project Analytics - Cascade refresh (refresh all stale dependencies then project)
+  app.post("/api/projects/:projectId/analytics/cascade-refresh", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const results = {
+        collectionsRefreshed: 0,
+        templatesRefreshed: 0,
+        projectRefreshed: false,
+        errors: [] as Array<{ level: string; id: string; name: string; error: string }>,
+      };
+
+      const templates = await storage.getTemplatesByProject(project.id);
+      
+      // Step 1: Refresh all stale collections
+      for (const template of templates) {
+        const collections = await storage.getCollectionsByTemplate(template.id);
+        const questions = await storage.getQuestionsByTemplate(template.id);
+        
+        for (const collection of collections) {
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          const completedSessions = sessions.filter(s => s.status === "completed");
+          
+          if (completedSessions.length === 0) continue;
+          
+          const isStale = !collection.lastAnalyzedAt || 
+            completedSessions.length !== collection.analyzedSessionCount;
+          
+          if (isStale) {
+            try {
+              console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+              
+              const sessionsWithSummaries = completedSessions.map(s => {
+                let durationMs = s.totalDurationMs || 0;
+                if (durationMs === 0 && s.startedAt && s.completedAt) {
+                  const startTime = new Date(s.startedAt).getTime();
+                  const endTime = new Date(s.completedAt).getTime();
+                  durationMs = endTime - startTime;
+                }
+                return {
+                  sessionId: s.id,
+                  questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
+                  durationMs,
+                };
+              });
+
+              const analysisResult = await generateCrossInterviewAnalysis({
+                sessions: sessionsWithSummaries,
+                templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
+                templateObjective: project.objective || "",
+              });
+
+              const analyticsData: CollectionAnalytics = {
+                ...analysisResult,
+                generatedAt: Date.now(),
+              };
+
+              await storage.updateCollection(collection.id, {
+                lastAnalyzedAt: new Date(),
+                analyzedSessionCount: completedSessions.length,
+                analyticsData,
+              } as any);
+
+              results.collectionsRefreshed++;
+            } catch (error: any) {
+              console.error("[Cascade Refresh] Collection error:", collection.name, error);
+              results.errors.push({
+                level: "collection",
+                id: collection.id,
+                name: collection.name,
+                error: error.message || "Unknown error",
+              });
+            }
+          }
+        }
+      }
+
+      // Step 2: Refresh all templates (they are now stale because collections were refreshed)
+      for (const template of templates) {
+        const collections = await storage.getCollectionsByTemplate(template.id);
+        const questions = await storage.getQuestionsByTemplate(template.id);
+        
+        const collectionsData = await Promise.all(
+          collections.map(async (collection) => {
+            const freshCollection = await storage.getCollection(collection.id);
+            const sessions = await storage.getSessionsByCollection(collection.id);
+            const completedSessions = sessions.filter(s => s.status === "completed");
+            return {
+              collection: freshCollection!,
+              analytics: freshCollection?.analyticsData as CollectionAnalytics | null,
+              sessionCount: completedSessions.length,
+            };
+          })
+        );
+
+        const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null);
+        
+        if (collectionsWithAnalytics.length === 0) continue;
+
+        try {
+          console.log("[Cascade Refresh] Refreshing template:", template.name);
+          
+          const analysisResult = await generateTemplateAnalytics({
+            collections: collectionsData,
+            templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
+            templateName: template.name,
+          });
+
+          const analyticsData: TemplateAnalytics = {
+            ...analysisResult,
+            generatedAt: Date.now(),
+          };
+
+          await storage.updateTemplate(template.id, {
+            lastAnalyzedAt: new Date(),
+            analyzedCollectionCount: collectionsWithAnalytics.length,
+            analyticsData,
+          } as any);
+
+          results.templatesRefreshed++;
+        } catch (error: any) {
+          console.error("[Cascade Refresh] Template error:", template.name, error);
+          results.errors.push({
+            level: "template",
+            id: template.id,
+            name: template.name,
+            error: error.message || "Unknown error",
+          });
+        }
+      }
+
+      // Step 3: Refresh project analytics
+      const freshTemplates = await storage.getTemplatesByProject(project.id);
+      const templatesData = await Promise.all(
+        freshTemplates.map(async (template) => {
+          const collections = await storage.getCollectionsByTemplate(template.id);
+          const questions = await storage.getQuestionsByTemplate(template.id);
+          let totalSessions = 0;
+          for (const collection of collections) {
+            const sessions = await storage.getSessionsByCollection(collection.id);
+            totalSessions += sessions.filter(s => s.status === "completed").length;
+          }
+          return {
+            template,
+            questions,
+            analytics: template.analyticsData as TemplateAnalytics | null,
+            collectionCount: collections.length,
+            totalSessions,
+          };
+        })
+      );
+
+      const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null);
+
+      if (templatesWithAnalytics.length > 0) {
+        try {
+          console.log("[Cascade Refresh] Refreshing project:", project.name);
+          
+          const analysisResult = await generateProjectAnalytics({
+            templates: templatesData,
+            projectName: project.name,
+            projectObjective: project.objective || "",
+            strategicContext: project.strategicContext || undefined,
+            contextType: project.contextType || undefined,
+          });
+
+          const projectAnalyticsData: ProjectAnalytics = {
+            ...analysisResult,
+            generatedAt: Date.now(),
+          };
+
+          await storage.updateProject(project.id, {
+            lastAnalyzedAt: new Date(),
+            analyzedTemplateCount: templatesWithAnalytics.length,
+            analyticsData: projectAnalyticsData,
+          } as any);
+
+          results.projectRefreshed = true;
+        } catch (error: any) {
+          console.error("[Cascade Refresh] Project error:", project.name, error);
+          results.errors.push({
+            level: "project",
+            id: project.id,
+            name: project.name,
+            error: error.message || "Unknown error",
+          });
+        }
+      }
+
+      // Return final analytics state
+      const updatedProject = await storage.getProject(project.id);
+      
+      res.json({
+        success: results.errors.length === 0,
+        results,
+        analytics: updatedProject?.analyticsData as ProjectAnalytics | null,
+        lastAnalyzedAt: updatedProject?.lastAnalyzedAt,
+        analyzedTemplateCount: updatedProject?.analyzedTemplateCount || 0,
+        currentTemplateCount: templatesWithAnalytics.length,
+        totalTemplateCount: templates.length,
+        isStale: false,
+        missingAnalytics: templates.length - templatesWithAnalytics.length,
+      });
+    } catch (error) {
+      console.error("Error in cascade refresh:", error);
+      res.status(500).json({ message: "Failed to cascade refresh analytics" });
+    }
+  });
+
+  // Template Analytics - Check dependencies
+  app.get("/api/templates/:templateId/analytics/dependencies", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const collections = await storage.getCollectionsByTemplate(template.id);
+      
+      const collectionsData = await Promise.all(
+        collections.map(async (collection) => {
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          const completedSessions = sessions.filter(s => s.status === "completed");
+          
+          const isStale = !collection.lastAnalyzedAt || 
+            completedSessions.length !== collection.analyzedSessionCount;
+          const hasData = completedSessions.length > 0;
+          
+          return {
+            id: collection.id,
+            name: collection.name,
+            isStale: isStale && hasData,
+            hasData,
+            lastAnalyzedAt: collection.lastAnalyzedAt,
+            totalSessions: completedSessions.length,
+            analyzedSessions: collection.analyzedSessionCount || 0,
+            newSessions: Math.max(0, completedSessions.length - (collection.analyzedSessionCount || 0)),
+          };
+        })
+      );
+
+      const staleCollections = collectionsData.filter(c => c.isStale);
+      const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+      
+      const templateIsStale = template.lastAnalyzedAt 
+        ? collections.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
+        : collectionsWithAnalytics.length > 0;
+
+      res.json({
+        templateId: template.id,
+        templateName: template.name,
+        templateStale: templateIsStale,
+        collections: collectionsData.filter(c => c.hasData),
+        summary: {
+          staleCollections: staleCollections.length,
+          totalRefreshesNeeded: staleCollections.length + (templateIsStale ? 1 : 0),
+          hasAnyStale: staleCollections.length > 0 || templateIsStale,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching template analytics dependencies:", error);
+      res.status(500).json({ message: "Failed to fetch analytics dependencies" });
+    }
+  });
+
+  // Template Analytics - Cascade refresh
+  app.post("/api/templates/:templateId/analytics/cascade-refresh", isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const project = await storage.getProject(template.projectId);
+      const results = {
+        collectionsRefreshed: 0,
+        templateRefreshed: false,
+        errors: [] as Array<{ level: string; id: string; name: string; error: string }>,
+      };
+
+      const collections = await storage.getCollectionsByTemplate(template.id);
+      const questions = await storage.getQuestionsByTemplate(template.id);
+
+      // Step 1: Refresh all stale collections
+      for (const collection of collections) {
+        const sessions = await storage.getSessionsByCollection(collection.id);
+        const completedSessions = sessions.filter(s => s.status === "completed");
+        
+        if (completedSessions.length === 0) continue;
+        
+        const isStale = !collection.lastAnalyzedAt || 
+          completedSessions.length !== collection.analyzedSessionCount;
+        
+        if (isStale) {
+          try {
+            console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+            
+            const sessionsWithSummaries = completedSessions.map(s => {
+              let durationMs = s.totalDurationMs || 0;
+              if (durationMs === 0 && s.startedAt && s.completedAt) {
+                const startTime = new Date(s.startedAt).getTime();
+                const endTime = new Date(s.completedAt).getTime();
+                durationMs = endTime - startTime;
+              }
+              return {
+                sessionId: s.id,
+                questionSummaries: (s.questionSummaries as QuestionSummary[]) || [],
+                durationMs,
+              };
+            });
+
+            const analysisResult = await generateCrossInterviewAnalysis({
+              sessions: sessionsWithSummaries,
+              templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
+              templateObjective: project?.objective || "",
+            });
+
+            const analyticsData: CollectionAnalytics = {
+              ...analysisResult,
+              generatedAt: Date.now(),
+            };
+
+            await storage.updateCollection(collection.id, {
+              lastAnalyzedAt: new Date(),
+              analyzedSessionCount: completedSessions.length,
+              analyticsData,
+            } as any);
+
+            results.collectionsRefreshed++;
+          } catch (error: any) {
+            console.error("[Cascade Refresh] Collection error:", collection.name, error);
+            results.errors.push({
+              level: "collection",
+              id: collection.id,
+              name: collection.name,
+              error: error.message || "Unknown error",
+            });
+          }
+        }
+      }
+
+      // Step 2: Refresh template
+      const freshCollections = await storage.getCollectionsByTemplate(template.id);
+      const collectionsData = await Promise.all(
+        freshCollections.map(async (collection) => {
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          const completedSessions = sessions.filter(s => s.status === "completed");
+          return {
+            collection,
+            analytics: collection.analyticsData as CollectionAnalytics | null,
+            sessionCount: completedSessions.length,
+          };
+        })
+      );
+
+      const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null);
+
+      if (collectionsWithAnalytics.length > 0) {
+        try {
+          console.log("[Cascade Refresh] Refreshing template:", template.name);
+          
+          const analysisResult = await generateTemplateAnalytics({
+            collections: collectionsData,
+            templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
+            templateName: template.name,
+          });
+
+          const templateAnalyticsData: TemplateAnalytics = {
+            ...analysisResult,
+            generatedAt: Date.now(),
+          };
+
+          await storage.updateTemplate(template.id, {
+            lastAnalyzedAt: new Date(),
+            analyzedCollectionCount: collectionsWithAnalytics.length,
+            analyticsData: templateAnalyticsData,
+          } as any);
+
+          results.templateRefreshed = true;
+        } catch (error: any) {
+          console.error("[Cascade Refresh] Template error:", template.name, error);
+          results.errors.push({
+            level: "template",
+            id: template.id,
+            name: template.name,
+            error: error.message || "Unknown error",
+          });
+        }
+      }
+
+      // Return final analytics state
+      const updatedTemplate = await storage.getTemplate(template.id);
+      
+      res.json({
+        success: results.errors.length === 0,
+        results,
+        analytics: updatedTemplate?.analyticsData as TemplateAnalytics | null,
+        lastAnalyzedAt: updatedTemplate?.lastAnalyzedAt,
+        analyzedCollectionCount: updatedTemplate?.analyzedCollectionCount || 0,
+        currentCollectionCount: collectionsWithAnalytics.length,
+        totalCollectionCount: collections.length,
+        isStale: false,
+        missingAnalytics: collections.length - collectionsWithAnalytics.length,
+      });
+    } catch (error) {
+      console.error("Error in template cascade refresh:", error);
+      res.status(500).json({ message: "Failed to cascade refresh analytics" });
+    }
+  });
+
   // Serve static infographics
   app.use('/infographics', express.static(path.join(__dirname, '../generated-infographics')));
 

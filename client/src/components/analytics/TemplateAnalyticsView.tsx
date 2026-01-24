@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,8 +28,8 @@ import {
   Target,
   Split,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequestJson, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
+import { AnalyticsCascadeRefreshDialog } from "./AnalyticsCascadeRefreshDialog";
 import { RecommendationsPanel } from "./RecommendationsPanel";
 import { SentimentIndicator, VerbatimQuote } from "./ThemeCard";
 import type { 
@@ -446,40 +446,19 @@ function DivergenceCard({ divergence, index }: { divergence: DivergencePointWith
 }
 
 export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnalyticsViewProps) {
-  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
+  const [showCascadeDialog, setShowCascadeDialog] = useState(false);
 
   const { data, isLoading } = useQuery<TemplateAnalyticsResponse>({
     queryKey: ["/api/templates", templateId, "analytics"],
     enabled: !!templateId,
   });
 
-  const refreshMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequestJson<TemplateAnalyticsResponse>(
-        "POST",
-        `/api/templates/${templateId}/analytics/refresh`,
-        undefined,
-        { timeoutMs: 120000 },
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/templates", templateId, "analytics"],
-      });
-      toast({
-        title: "Analysis complete",
-        description: "Template analytics have been refreshed.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Analysis failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  const handleRefreshSuccess = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["/api/templates", templateId, "analytics"],
+    });
+  };
 
   if (isLoading) {
     return (
@@ -525,15 +504,24 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
             </span>
           )}
           <Button
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending || data?.currentCollectionCount === 0}
+            onClick={() => setShowCascadeDialog(true)}
+            disabled={data?.currentCollectionCount === 0 && data?.totalCollectionCount === 0}
             data-testid="button-refresh-analytics"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
-            {refreshMutation.isPending ? "Analyzing..." : "Refresh Analytics"}
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh Analytics
           </Button>
         </div>
       </div>
+
+      <AnalyticsCascadeRefreshDialog
+        open={showCascadeDialog}
+        onOpenChange={setShowCascadeDialog}
+        level="template"
+        entityId={templateId}
+        entityName={templateName}
+        onSuccess={handleRefreshSuccess}
+      />
 
       {!hasData || !analytics ? (
         <Card data-testid="card-no-analytics">

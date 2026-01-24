@@ -110,3 +110,16 @@ Added comprehensive PDF export functionality for project and collection analytic
 - **Export Button**: `data-testid="button-export-pdf"` on both project and collection analytics views
 - **File Format**: `{name}_analytics_{date}.pdf`
 - **Name Mapping**: Template IDs are mapped to names via `templateNameMap` from `templatePerformance`. Theme IDs (which AI generates as `theme_1`, `theme_2`, etc.) are mapped to actual theme names by index position in the themes array.
+
+### Analytics Cascade Refresh
+Implemented a simplified cascade refresh UX for analytics to address the tedious multi-step process of refreshing analytics in the correct dependency order:
+- **Problem Solved**: Previously, users had to manually navigate to refresh collections, then templates, then project analytics in sequence
+- **Cascade Dialog**: New `AnalyticsCascadeRefreshDialog` component shows what's stale and offers a single "Refresh All" action
+- **Dependency Detection API**: 
+  - `GET /api/projects/:projectId/analytics/dependencies` - Returns staleness status of all templates and collections
+  - `GET /api/templates/:templateId/analytics/dependencies` - Returns staleness status of collections under a template
+- **Cascade Refresh API**:
+  - `POST /api/projects/:projectId/analytics/cascade-refresh` - Refreshes stale collections → templates → project in order
+  - `POST /api/templates/:templateId/analytics/cascade-refresh` - Refreshes stale collections → template in order
+- **Smart UX**: Dialog explains what needs refreshing (collections, templates) before proceeding, with error handling for dependency fetch failures
+- **Partial Success Handling**: Continues refreshing even if individual items fail, reports errors at the end
