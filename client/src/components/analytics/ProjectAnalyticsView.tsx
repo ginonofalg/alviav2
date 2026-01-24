@@ -388,10 +388,9 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
     enabled: !!projectId,
   });
 
+  // The cascade dialog now handles query invalidation directly
   const handleRefreshSuccess = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["/api/projects", projectId, "analytics"],
-    });
+    // Intentionally empty - dialog handles invalidation
   };
 
   if (isLoading) {

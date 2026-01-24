@@ -127,21 +127,21 @@ export function AnalyticsCascadeRefreshDialog({
         "POST",
         cascadeEndpoint,
         undefined,
-        { timeoutMs: 300000 }
+        { timeoutMs: 600000 } // 10 minutes for large projects
       );
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setIsRefreshing(false);
       
-      if (level === "project") {
-        queryClient.invalidateQueries({
-          queryKey: ["/api/projects", entityId, "analytics"],
-        });
-      } else {
-        queryClient.invalidateQueries({
-          queryKey: ["/api/templates", entityId, "analytics"],
-        });
-      }
+      // Invalidate and wait for refetch to complete
+      const queryKey = level === "project"
+        ? ["/api/projects", entityId, "analytics"]
+        : ["/api/templates", entityId, "analytics"];
+      
+      await queryClient.invalidateQueries({
+        queryKey,
+        refetchType: "active",
+      });
 
       const results = data.results;
       const parts: string[] = [];
@@ -177,11 +177,30 @@ export function AnalyticsCascadeRefreshDialog({
     },
     onError: (error: Error) => {
       setIsRefreshing(false);
-      toast({
-        title: "Refresh failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      
+      // Check if this was a timeout - if so, refresh anyway as data may have been saved
+      const isTimeout = error.message.includes("timed out");
+      const isNetworkError = error.message.includes("Network error");
+      
+      if (isTimeout || isNetworkError) {
+        toast({
+          title: "Connection issue",
+          description: "The refresh may have completed. Please reload to check for updates.",
+          variant: "destructive",
+        });
+        // Still try to invalidate the query so a page refresh will show new data
+        const queryKey = level === "project"
+          ? ["/api/projects", entityId, "analytics"]
+          : ["/api/templates", entityId, "analytics"];
+        queryClient.invalidateQueries({ queryKey });
+      } else {
+        toast({
+          title: "Refresh failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+      onOpenChange(false);
     },
   });
 

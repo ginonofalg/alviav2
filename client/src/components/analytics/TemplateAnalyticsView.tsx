@@ -454,10 +454,9 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
     enabled: !!templateId,
   });
 
+  // The cascade dialog now handles query invalidation directly
   const handleRefreshSuccess = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["/api/templates", templateId, "analytics"],
-    });
+    // Intentionally empty - dialog handles invalidation
   };
 
   if (isLoading) {
