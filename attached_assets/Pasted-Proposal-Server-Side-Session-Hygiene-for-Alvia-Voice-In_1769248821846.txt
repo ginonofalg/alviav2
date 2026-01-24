@@ -1,0 +1,553 @@
+Proposal: Server-Side Session Hygiene for Alvia Voice Interviews                                                                 
+                                                                                                                                   
+  Summary                                                                                                                          
+                                                                                                                                   
+  The current implementation has no mechanism to clean up abandoned interview sessions. Sessions persist indefinitely in the       
+  interviewStates Map until an explicit client disconnect event is received. This creates a critical cost risk: if a browser tab   
+  crashes, network silently drops, or a user simply walks away, the OpenAI Realtime API connection remains open and billable.      
+                                                                                                                                   
+  This proposal adds:                                                                                                              
+  - Activity tracking on all sessions                                                                                              
+  - Watchdog timer to terminate idle/stale sessions                                                                                
+  - Heartbeat protocol to detect dead connections                                                                                  
+  - Graceful termination with client notification                                                                                  
+                                                                                                                                   
+  Estimated scope: ~100 lines of server code, ~30 lines of client code                                                             
+                                                                                                                                   
+  ---                                                                                                                              
+  Goals                                                                                                                            
+                                                                                                                                   
+  - Terminate sessions that have been idle for more than 5 minutes                                                                 
+  - Terminate sessions that exceed 1 hour total duration                                                                           
+  - Detect dead client connections within 90 seconds via heartbeat                                                                 
+  - Persist session state before termination so interviews can be resumed                                                          
+  - Notify connected clients before termination so UI can respond gracefully                                                       
+                                                                                                                                   
+  Non-Goals                                                                                                                        
+                                                                                                                                   
+  - Changing audio streaming behavior                                                                                              
+  - Implementing client-side VAD or silence detection                                                                              
+  - Modifying Barbara orchestrator or analysis frequency                                                                           
+  - Changing interview flow or question logic                                                                                      
+                                                                                                                                   
+  ---                                                                                                                              
+  Implementation                                                                                                                   
+                                                                                                                                   
+  Target Files                                                                                                                     
+  ┌────────────────────────────────┬────────────────────────────────────────────────┐                                              
+  │              File              │                    Changes                     │                                              
+  ├────────────────────────────────┼────────────────────────────────────────────────┤                                              
+  │ server/voice-interview.ts      │ Activity tracking, watchdog, heartbeat handler │                                              
+  ├────────────────────────────────┼────────────────────────────────────────────────┤                                              
+  │ client/src/pages/interview.tsx │ Heartbeat sender, termination handler          │                                              
+  └────────────────────────────────┴────────────────────────────────────────────────┘                                              
+  ---                                                                                                                              
+  Server Implementation                                                                                                            
+                                                                                                                                   
+  1. Add Constants                                                                                                                 
+                                                                                                                                   
+  Add these constants near the top of server/voice-interview.ts, after the existing PERSIST_DEBOUNCE_MS and                        
+  MAX_TRANSCRIPT_IN_MEMORY constants (around line 58):                                                                             
+                                                                                                                                   
+  // Session hygiene constants                                                                                                     
+  const HEARTBEAT_INTERVAL_MS = 30_000;        // Client sends ping every 30s                                                      
+  const HEARTBEAT_TIMEOUT_MS = 90_000;         // Terminate if no ping for 90s (3 missed heartbeats)                               
+  const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;  // Terminate after 5 min of no audio/interaction                                    
+  const SESSION_MAX_AGE_MS = 60 * 60_000;      // Absolute max session duration: 1 hour                                            
+  const WATCHDOG_INTERVAL_MS = 30_000;         // Run watchdog every 30s                                                           
+                                                                                                                                   
+  2. Extend InterviewState Interface                                                                                               
+                                                                                                                                   
+  Add these fields to the InterviewState interface (around line 26):                                                               
+                                                                                                                                   
+  interface InterviewState {                                                                                                       
+    // ... existing fields ...                                                                                                     
+                                                                                                                                   
+    // Session hygiene tracking                                                                                                    
+    createdAt: number;                                                                                                             
+    lastHeartbeatAt: number;                                                                                                       
+    lastAudioActivityAt: number;                                                                                                   
+    lastInteractionAt: number;  // Any meaningful event (question change, pause, etc.)                                             
+    terminationReason: string | null;                                                                                              
+  }                                                                                                                                
+                                                                                                                                   
+  3. Initialize Timestamps on Session Creation                                                                                     
+                                                                                                                                   
+  In the setupVoiceInterviewWebSocket function, where the state object is created (around line 330-364), add the new fields:       
+                                                                                                                                   
+  const now = Date.now();                                                                                                          
+  const state: InterviewState = {                                                                                                  
+    // ... existing fields ...                                                                                                     
+                                                                                                                                   
+    // Session hygiene tracking                                                                                                    
+    createdAt: now,                                                                                                                
+    lastHeartbeatAt: now,                                                                                                          
+    lastAudioActivityAt: now,                                                                                                      
+    lastInteractionAt: now,                                                                                                        
+    terminationReason: null,                                                                                                       
+  };                                                                                                                               
+                                                                                                                                   
+  4. Add Heartbeat Handler                                                                                                         
+                                                                                                                                   
+  In the handleClientMessage function (around line 1173), add a case for the heartbeat ping. Add this at the beginning of the      
+  switch statement or as an early check:                                                                                           
+                                                                                                                                   
+  async function handleClientMessage(                                                                                              
+    sessionId: string,                                                                                                             
+    message: any,                                                                                                                  
+    clientWs: WebSocket,                                                                                                           
+  ) {                                                                                                                              
+    const state = interviewStates.get(sessionId);                                                                                  
+    if (!state) return;                                                                                                            
+                                                                                                                                   
+    // Handle heartbeat immediately, before other processing                                                                       
+    if (message.type === 'heartbeat.ping') {                                                                                       
+      state.lastHeartbeatAt = Date.now();                                                                                          
+      clientWs.send(JSON.stringify({ type: 'heartbeat.pong' }));                                                                   
+      return;                                                                                                                      
+    }                                                                                                                              
+                                                                                                                                   
+    // ... rest of existing function ...                                                                                           
+  }                                                                                                                                
+                                                                                                                                   
+  5. Update Activity Timestamps                                                                                                    
+                                                                                                                                   
+  Add timestamp updates at strategic points in handleClientMessage:                                                                
+                                                                                                                                   
+  For audio activity (in the audio case, around line 1182):                                                                        
+                                                                                                                                   
+  case "audio":                                                                                                                    
+    state.lastAudioActivityAt = Date.now();  // Add this line                                                                      
+    if (state.openaiWs && !state.isPaused) {                                                                                       
+      // ... existing code ...                                                                                                     
+    }                                                                                                                              
+    break;                                                                                                                         
+                                                                                                                                   
+  For interaction events (in cases like pause_interview, resume_interview, next_question, end_interview):                          
+                                                                                                                                   
+  case "pause_interview":                                                                                                          
+    state.lastInteractionAt = Date.now();  // Add this line                                                                        
+    // ... existing code ...                                                                                                       
+    break;                                                                                                                         
+                                                                                                                                   
+  case "resume_interview":                                                                                                         
+    state.lastInteractionAt = Date.now();  // Add this line                                                                        
+    // ... existing code ...                                                                                                       
+    break;                                                                                                                         
+                                                                                                                                   
+  case "next_question":                                                                                                            
+    state.lastInteractionAt = Date.now();  // Add this line                                                                        
+    // ... existing code ...                                                                                                       
+    break;                                                                                                                         
+                                                                                                                                   
+  6. Add Watchdog Functions                                                                                                        
+                                                                                                                                   
+  Add these functions after the cleanupSession function (after line 1595):                                                         
+                                                                                                                                   
+  type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded';                                              
+                                                                                                                                   
+  interface SessionWatchdogState {                                                                                                 
+    interval: ReturnType<typeof setInterval> | null;                                                                               
+  }                                                                                                                                
+                                                                                                                                   
+  const watchdogState: SessionWatchdogState = {                                                                                    
+    interval: null,                                                                                                                
+  };                                                                                                                               
+                                                                                                                                   
+  function startSessionWatchdog(): void {                                                                                          
+    if (watchdogState.interval) {                                                                                                  
+      console.log('[SessionWatchdog] Already running');                                                                            
+      return;                                                                                                                      
+    }                                                                                                                              
+                                                                                                                                   
+    watchdogState.interval = setInterval(() => {                                                                                   
+      runWatchdogCycle();                                                                                                          
+    }, WATCHDOG_INTERVAL_MS);                                                                                                      
+                                                                                                                                   
+    console.log('[SessionWatchdog] Started - checking every', WATCHDOG_INTERVAL_MS / 1000, 'seconds');                             
+  }                                                                                                                                
+                                                                                                                                   
+  function stopSessionWatchdog(): void {                                                                                           
+    if (watchdogState.interval) {                                                                                                  
+      clearInterval(watchdogState.interval);                                                                                       
+      watchdogState.interval = null;                                                                                               
+      console.log('[SessionWatchdog] Stopped');                                                                                    
+    }                                                                                                                              
+  }                                                                                                                                
+                                                                                                                                   
+  function runWatchdogCycle(): void {                                                                                              
+    const now = Date.now();                                                                                                        
+    const sessionsToTerminate: Array<{ sessionId: string; reason: TerminationReason }> = [];                                       
+                                                                                                                                   
+    for (const [sessionId, state] of interviewStates.entries()) {                                                                  
+      // Skip sessions already marked for termination                                                                              
+      if (state.terminationReason) continue;                                                                                       
+                                                                                                                                   
+      const age = now - state.createdAt;                                                                                           
+      const timeSinceHeartbeat = now - state.lastHeartbeatAt;                                                                      
+      const timeSinceActivity = now - Math.max(state.lastAudioActivityAt, state.lastInteractionAt);                                
+                                                                                                                                   
+      let reason: TerminationReason | null = null;                                                                                 
+                                                                                                                                   
+      // Check conditions in order of severity                                                                                     
+      if (age > SESSION_MAX_AGE_MS) {                                                                                              
+        reason = 'max_age_exceeded';                                                                                               
+      } else if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {                                                                      
+        reason = 'heartbeat_timeout';                                                                                              
+      } else if (timeSinceActivity > SESSION_IDLE_TIMEOUT_MS) {                                                                    
+        reason = 'idle_timeout';                                                                                                   
+      }                                                                                                                            
+                                                                                                                                   
+      if (reason) {                                                                                                                
+        sessionsToTerminate.push({ sessionId, reason });                                                                           
+      }                                                                                                                            
+    }                                                                                                                              
+                                                                                                                                   
+    // Process terminations outside the iteration                                                                                  
+    for (const { sessionId, reason } of sessionsToTerminate) {                                                                     
+      terminateSession(sessionId, reason);                                                                                         
+    }                                                                                                                              
+                                                                                                                                   
+    // Log watchdog status periodically (every 5 minutes worth of cycles)                                                          
+    if (interviewStates.size > 0) {                                                                                                
+      console.log(`[SessionWatchdog] Active sessions: ${interviewStates.size}`);                                                   
+    }                                                                                                                              
+  }                                                                                                                                
+                                                                                                                                   
+  async function terminateSession(sessionId: string, reason: TerminationReason): Promise<void> {                                   
+    const state = interviewStates.get(sessionId);                                                                                  
+    if (!state) return;                                                                                                            
+                                                                                                                                   
+    // Mark as terminating to prevent duplicate cleanup                                                                            
+    state.terminationReason = reason;                                                                                              
+                                                                                                                                   
+    const age = Math.round((Date.now() - state.createdAt) / 1000);                                                                 
+    console.log(`[SessionWatchdog] Terminating session ${sessionId}: ${reason} (age: ${age}s, question:                            
+  ${state.currentQuestionIndex + 1}/${state.questions.length})`);                                                                  
+                                                                                                                                   
+    // Notify client if connection is still open                                                                                   
+    if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {                                                          
+      try {                                                                                                                        
+        state.clientWs.send(JSON.stringify({                                                                                       
+          type: 'session.terminated',                                                                                              
+          reason: reason,                                                                                                          
+          message: getTerminationMessage(reason),                                                                                  
+        }));                                                                                                                       
+      } catch (error) {                                                                                                            
+        console.error(`[SessionWatchdog] Error notifying client ${sessionId}:`, error);                                            
+      }                                                                                                                            
+    }                                                                                                                              
+                                                                                                                                   
+    // Clean up session (this persists state and closes connections)                                                               
+    await cleanupSession(sessionId);                                                                                               
+  }                                                                                                                                
+                                                                                                                                   
+  function getTerminationMessage(reason: TerminationReason): string {                                                              
+    switch (reason) {                                                                                                              
+      case 'heartbeat_timeout':                                                                                                    
+        return 'Connection lost. Your progress has been saved and you can resume the interview.';                                  
+      case 'idle_timeout':                                                                                                         
+        return 'Session ended due to inactivity. Your progress has been saved and you can resume the interview.';                  
+      case 'max_age_exceeded':                                                                                                     
+        return 'Maximum session duration reached. Your progress has been saved and you can resume the interview.';                 
+    }                                                                                                                              
+  }                                                                                                                                
+                                                                                                                                   
+  7. Start Watchdog on Server Init                                                                                                 
+                                                                                                                                   
+  Modify the setupVoiceInterviewWebSocket export function to start the watchdog:                                                   
+                                                                                                                                   
+  export function setupVoiceInterviewWebSocket(wss: WebSocketServer) {                                                             
+    // Start the session watchdog                                                                                                  
+    startSessionWatchdog();                                                                                                        
+                                                                                                                                   
+    wss.on("connection", (clientWs: WebSocket, req: IncomingMessage) => {                                                          
+      // ... existing connection handling code ...                                                                                 
+    });                                                                                                                            
+  }                                                                                                                                
+                                                                                                                                   
+  8. Update cleanupSession for Idempotency                                                                                         
+                                                                                                                                   
+  Modify the existing cleanupSession function to be idempotent and handle the termination reason:                                  
+                                                                                                                                   
+  async function cleanupSession(sessionId: string) {                                                                               
+    const state = interviewStates.get(sessionId);                                                                                  
+    if (!state) return;                                                                                                            
+                                                                                                                                   
+    // Remove from map first to prevent duplicate cleanup                                                                          
+    interviewStates.delete(sessionId);                                                                                             
+                                                                                                                                   
+    // Flush any pending persist before cleanup                                                                                    
+    await flushPersist(sessionId);                                                                                                 
+                                                                                                                                   
+    // Clear any pending persist timeout                                                                                           
+    if (state.pendingPersistTimeout) {                                                                                             
+      clearTimeout(state.pendingPersistTimeout);                                                                                   
+      state.pendingPersistTimeout = null;                                                                                          
+    }                                                                                                                              
+                                                                                                                                   
+    // Close OpenAI connection                                                                                                     
+    if (state.openaiWs) {                                                                                                          
+      try {                                                                                                                        
+        state.openaiWs.close();                                                                                                    
+      } catch (error) {                                                                                                            
+        console.error(`[VoiceInterview] Error closing OpenAI WS for ${sessionId}:`, error);                                        
+      }                                                                                                                            
+      state.openaiWs = null;                                                                                                       
+    }                                                                                                                              
+                                                                                                                                   
+    // Close client connection if still open (and not already closing)                                                             
+    if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {                                                          
+      try {                                                                                                                        
+        state.clientWs.close();                                                                                                    
+      } catch (error) {                                                                                                            
+        console.error(`[VoiceInterview] Error closing client WS for ${sessionId}:`, error);                                        
+      }                                                                                                                            
+    }                                                                                                                              
+    state.clientWs = null;                                                                                                         
+                                                                                                                                   
+    const reason = state.terminationReason || 'client_disconnect';                                                                 
+    console.log(`[VoiceInterview] Session cleaned up: ${sessionId} (reason: ${reason})`);                                          
+  }                                                                                                                                
+                                                                                                                                   
+  ---                                                                                                                              
+  Client Implementation                                                                                                            
+                                                                                                                                   
+  Target File: client/src/pages/interview.tsx                                                                                      
+                                                                                                                                   
+  1. Add Heartbeat Sender                                                                                                          
+                                                                                                                                   
+  Inside the WebSocket setup useEffect (where the WebSocket connection is established), add a heartbeat interval:                  
+                                                                                                                                   
+  // After WebSocket is connected and ready                                                                                        
+  useEffect(() => {                                                                                                                
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;                                                     
+                                                                                                                                   
+    const heartbeatInterval = setInterval(() => {                                                                                  
+      if (wsRef.current?.readyState === WebSocket.OPEN) {                                                                          
+        wsRef.current.send(JSON.stringify({ type: 'heartbeat.ping' }));                                                            
+      }                                                                                                                            
+    }, 30000); // Every 30 seconds                                                                                                 
+                                                                                                                                   
+    return () => {                                                                                                                 
+      clearInterval(heartbeatInterval);                                                                                            
+    };                                                                                                                             
+  }, [wsRef.current?.readyState]);                                                                                                 
+                                                                                                                                   
+  Alternatively, integrate into existing WebSocket setup:                                                                          
+                                                                                                                                   
+  // Inside the WebSocket onopen handler or after connection is established                                                        
+  const startHeartbeat = () => {                                                                                                   
+    const heartbeatInterval = setInterval(() => {                                                                                  
+      if (ws.readyState === WebSocket.OPEN) {                                                                                      
+        ws.send(JSON.stringify({ type: 'heartbeat.ping' }));                                                                       
+      }                                                                                                                            
+    }, 30000);                                                                                                                     
+                                                                                                                                   
+    // Store interval ID for cleanup                                                                                               
+    return heartbeatInterval;                                                                                                      
+  };                                                                                                                               
+                                                                                                                                   
+  // In cleanup function                                                                                                           
+  const cleanup = () => {                                                                                                          
+    if (heartbeatIntervalRef.current) {                                                                                            
+      clearInterval(heartbeatIntervalRef.current);                                                                                 
+    }                                                                                                                              
+    // ... rest of cleanup                                                                                                         
+  };                                                                                                                               
+                                                                                                                                   
+  2. Handle Termination Message                                                                                                    
+                                                                                                                                   
+  In the WebSocket message handler (where other message types are processed), add handling for session termination:                
+                                                                                                                                   
+  case 'session.terminated':                                                                                                       
+    console.log(`[Interview] Session terminated by server: ${message.reason}`);                                                    
+                                                                                                                                   
+    // Stop audio capture immediately                                                                                              
+    stopAudioCapture();                                                                                                            
+                                                                                                                                   
+    // Clear any intervals                                                                                                         
+    if (heartbeatIntervalRef.current) {                                                                                            
+      clearInterval(heartbeatIntervalRef.current);                                                                                 
+    }                                                                                                                              
+                                                                                                                                   
+    // Show user-friendly message based on reason                                                                                  
+    setSessionTerminated(true);                                                                                                    
+    setTerminationMessage(message.message);                                                                                        
+                                                                                                                                   
+    // Optionally navigate to a recovery page or show resume option                                                                
+    // The message already tells user their progress is saved                                                                      
+    break;                                                                                                                         
+                                                                                                                                   
+  case 'heartbeat.pong':                                                                                                           
+    // Optional: track connection health, update last-pong timestamp                                                               
+    // For basic implementation, no action needed                                                                                  
+    break;                                                                                                                         
+                                                                                                                                   
+  3. Add Termination UI State                                                                                                      
+                                                                                                                                   
+  Add state variables to track termination:                                                                                        
+                                                                                                                                   
+  const [sessionTerminated, setSessionTerminated] = useState(false);                                                               
+  const [terminationMessage, setTerminationMessage] = useState<string | null>(null);                                               
+                                                                                                                                   
+  4. Add Termination UI                                                                                                            
+                                                                                                                                   
+  Add a UI component or modal to display when the session is terminated:                                                           
+                                                                                                                                   
+  {sessionTerminated && (                                                                                                          
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">                        
+      <div className="bg-card border rounded-lg p-6 max-w-md mx-4 shadow-lg">                                                      
+        <h2 className="text-lg font-semibold mb-2">Session Ended</h2>                                                              
+        <p className="text-muted-foreground mb-4">{terminationMessage}</p>                                                         
+        <div className="flex gap-3">                                                                                               
+          <Button                                                                                                                  
+            onClick={() => window.location.reload()}                                                                               
+            variant="default"                                                                                                      
+          >                                                                                                                        
+            Resume Interview                                                                                                       
+          </Button>                                                                                                                
+          <Button                                                                                                                  
+            onClick={() => navigate('/')}                                                                                          
+            variant="outline"                                                                                                      
+          >                                                                                                                        
+            Return Home                                                                                                            
+          </Button>                                                                                                                
+        </div>                                                                                                                     
+      </div>                                                                                                                       
+    </div>                                                                                                                         
+  )}                                                                                                                               
+                                                                                                                                   
+  5. Handle Page Visibility (Optional Enhancement)                                                                                 
+                                                                                                                                   
+  Send a signal when the page is hidden/shown to help with activity tracking:                                                      
+                                                                                                                                   
+  useEffect(() => {                                                                                                                
+    const handleVisibilityChange = () => {                                                                                         
+      if (document.visibilityState === 'visible' && wsRef.current?.readyState === WebSocket.OPEN) {                                
+        // Send immediate heartbeat when tab becomes visible again                                                                 
+        wsRef.current.send(JSON.stringify({ type: 'heartbeat.ping' }));                                                            
+      }                                                                                                                            
+    };                                                                                                                             
+                                                                                                                                   
+    document.addEventListener('visibilitychange', handleVisibilityChange);                                                         
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);                                         
+  }, []);                                                                                                                          
+                                                                                                                                   
+  ---                                                                                                                              
+  Configuration                                                                                                                    
+                                                                                                                                   
+  All timeout values are defined as constants at the top of voice-interview.ts. To adjust behavior:                                
+  ┌─────────────────────────┬───────────┬───────────────────────────────────────────────┐                                          
+  │        Constant         │  Default  │                  Description                  │                                          
+  ├─────────────────────────┼───────────┼───────────────────────────────────────────────┤                                          
+  │ HEARTBEAT_INTERVAL_MS   │ 30,000    │ How often client sends ping                   │                                          
+  ├─────────────────────────┼───────────┼───────────────────────────────────────────────┤                                          
+  │ HEARTBEAT_TIMEOUT_MS    │ 90,000    │ Max time without heartbeat before termination │                                          
+  ├─────────────────────────┼───────────┼───────────────────────────────────────────────┤                                          
+  │ SESSION_IDLE_TIMEOUT_MS │ 300,000   │ Max time without audio/interaction            │                                          
+  ├─────────────────────────┼───────────┼───────────────────────────────────────────────┤                                          
+  │ SESSION_MAX_AGE_MS      │ 3,600,000 │ Absolute maximum session duration             │                                          
+  ├─────────────────────────┼───────────┼───────────────────────────────────────────────┤                                          
+  │ WATCHDOG_INTERVAL_MS    │ 30,000    │ How often watchdog checks sessions            │                                          
+  └─────────────────────────┴───────────┴───────────────────────────────────────────────┘                                          
+  These can later be moved to environment variables or runtime configuration if needed.                                            
+                                                                                                                                   
+  ---                                                                                                                              
+  Testing Plan                                                                                                                     
+                                                                                                                                   
+  Unit Tests                                                                                                                       
+                                                                                                                                   
+  1. Watchdog cycle detection                                                                                                      
+    - Create mock session with old createdAt → verify max_age_exceeded detected                                                    
+    - Create mock session with old lastHeartbeatAt → verify heartbeat_timeout detected                                             
+    - Create mock session with old activity timestamps → verify idle_timeout detected                                              
+    - Create fresh session → verify no termination                                                                                 
+  2. Timestamp updates                                                                                                             
+    - Send audio message → verify lastAudioActivityAt updated                                                                      
+    - Send heartbeat ping → verify lastHeartbeatAt updated                                                                         
+    - Send interaction message → verify lastInteractionAt updated                                                                  
+                                                                                                                                   
+  Integration Tests                                                                                                                
+                                                                                                                                   
+  1. Normal interview flow                                                                                                         
+    - Connect, conduct interview with pauses, complete normally                                                                    
+    - Verify no premature termination during natural pauses (< 5 min)                                                              
+    - Verify heartbeat messages are exchanged                                                                                      
+  2. Heartbeat timeout                                                                                                             
+    - Connect, stop sending heartbeats                                                                                             
+    - Verify termination after 90 seconds                                                                                          
+    - Verify client receives session.terminated message                                                                            
+    - Verify session state was persisted                                                                                           
+  3. Idle timeout                                                                                                                  
+    - Connect, keep heartbeat running, stop all audio/interaction                                                                  
+    - Verify termination after 5 minutes                                                                                           
+    - Verify client receives session.terminated message                                                                            
+  4. Max age                                                                                                                       
+    - Connect, keep active                                                                                                         
+    - Verify termination after 1 hour                                                                                              
+    - Verify client receives session.terminated message                                                                            
+  5. Resume after termination                                                                                                      
+    - Get terminated for idle timeout                                                                                              
+    - Reconnect with same session ID                                                                                               
+    - Verify interview resumes from saved state                                                                                    
+                                                                                                                                   
+  Manual Tests                                                                                                                     
+                                                                                                                                   
+  1. Browser tab close - Close tab abruptly, verify server cleans up within 90s                                                    
+  2. Network disconnect - Disable network, verify cleanup after heartbeat timeout                                                  
+  3. Long interview - Run 65+ minute interview, verify max age termination with warning                                            
+  4. Tab backgrounding - Background tab for extended period, verify heartbeat keeps session alive                                  
+                                                                                                                                   
+  ---                                                                                                                              
+  Edge Cases                                                                                                                       
+  ┌───────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────┐           
+  │                     Scenario                      │                       Expected Behavior                        │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ Client sends heartbeat but no audio for 6 minutes │ Terminate (idle timeout)                                       │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ Client sends audio but no heartbeat               │ Terminate (heartbeat timeout)                                  │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ Interview paused for 10 minutes                   │ No termination (paused state should update lastInteractionAt)  │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ OpenAI connection drops                           │ Existing error handling closes session                         │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ Multiple rapid reconnects                         │ Each creates new session, old ones timeout normally            │           
+  ├───────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤           
+  │ Server restart                                    │ All sessions lost (acceptable - resume tokens handle recovery) │           
+  └───────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────┘           
+  ---                                                                                                                              
+  Monitoring                                                                                                                       
+                                                                                                                                   
+  Add these log patterns for operational monitoring:                                                                               
+                                                                                                                                   
+  [SessionWatchdog] Started                                                                                                        
+  [SessionWatchdog] Active sessions: N                                                                                             
+  [SessionWatchdog] Terminating session XXX: reason (age: Ns, question: M/T)                                                       
+  [VoiceInterview] Session cleaned up: XXX (reason: YYY)                                                                           
+                                                                                                                                   
+  For production alerting, consider:                                                                                               
+  - Alert if Active sessions exceeds expected threshold                                                                            
+  - Track termination reasons to identify patterns (many heartbeat timeouts = network issues)                                      
+                                                                                                                                   
+  ---                                                                                                                              
+  Rollout                                                                                                                          
+                                                                                                                                   
+  1. Deploy to development - Test all scenarios manually                                                                           
+  2. Enable logging - Run for 1-2 days with enhanced logging to baseline normal behavior                                           
+  3. Adjust thresholds - If legitimate interviews are being terminated, increase timeouts                                          
+  4. Deploy to production - Monitor termination rates                                                                              
+  5. Optional: Add metrics - Track sessions terminated by reason for ongoing monitoring                                            
+                                                                                                                                   
+  ---                                                                                                                              
+  Summary                                                                                                                          
+                                                                                                                                   
+  This implementation adds robust session lifecycle management with minimal code changes and no impact on interview logic. The key 
+  benefits:                                                                                                                        
+                                                                                                                                   
+  - Dead sessions cleaned up within 90 seconds (heartbeat timeout)                                                                 
+  - Idle sessions cleaned up within 5 minutes (idle timeout)                                                                       
+  - No session exceeds 1 hour (max age)                                                                                            
+  - State always persisted before termination                                                                                      
+  - User notified with actionable message                                                                                          
+  - Resume capability preserved via existing resume token system 
