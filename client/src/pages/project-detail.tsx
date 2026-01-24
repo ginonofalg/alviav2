@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { HierarchyHeader } from "@/components/ui/hierarchy-nav";
+import { HierarchyHeader, levelConfig } from "@/components/ui/hierarchy-nav";
 import { 
   Plus, 
   Settings, 
@@ -17,6 +17,7 @@ import {
   Clock,
   CheckCircle2
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,21 +36,37 @@ interface ProjectWithCounts extends Project {
 import { formatDistanceToNow } from "date-fns";
 
 function TemplateCard({ template }: { template: InterviewTemplate }) {
+  const templateConfig = levelConfig.template;
+  const TemplateIcon = templateConfig.icon;
+  
   return (
     <Card className="hover-elevate transition-all duration-200 group" data-testid={`card-template-${template.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
-        <div className="space-y-1 min-w-0">
-          <div className="flex items-center gap-2">
+        <div className="flex items-start gap-3 min-w-0">
+          <div
+            className={cn(
+              "flex items-center justify-center w-9 h-9 rounded-lg shrink-0",
+              templateConfig.bgColor
+            )}
+          >
+            <TemplateIcon className={cn("w-4 h-4", templateConfig.color)} />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={cn("text-xs font-medium", templateConfig.color)}>
+                Template
+              </span>
+              <Badge variant="outline" className="text-xs">v{template.version}</Badge>
+            </div>
             <Link href={`/templates/${template.id}`}>
               <CardTitle className="text-base font-medium hover:text-primary cursor-pointer">
                 {template.name}
               </CardTitle>
             </Link>
-            <Badge variant="outline" className="text-xs">v{template.version}</Badge>
+            <p className="text-sm text-muted-foreground line-clamp-2">
+              {template.objective || "No objective set"}
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground line-clamp-2">
-            {template.objective || "No objective set"}
-          </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -74,8 +91,8 @@ function TemplateCard({ template }: { template: InterviewTemplate }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="flex items-center gap-2 mt-2">
+      <CardContent className="pt-0 pl-[3.25rem]">
+        <div className="flex items-center gap-2">
           {template.isActive ? (
             <Badge variant="default" className="text-xs gap-1">
               <CheckCircle2 className="w-3 h-3" />
@@ -94,25 +111,41 @@ function CollectionCard({ collection }: { collection: Collection }) {
   const createdAt = collection.createdAt 
     ? formatDistanceToNow(new Date(collection.createdAt), { addSuffix: true })
     : "Recently";
+  
+  const collectionConfig = levelConfig.collection;
+  const CollectionIcon = collectionConfig.icon;
 
   return (
     <Card className="hover-elevate transition-all duration-200" data-testid={`card-collection-${collection.id}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1 min-w-0">
-            <Link href={`/collections/${collection.id}`}>
-              <CardTitle className="text-base font-medium hover:text-primary cursor-pointer">
-                {collection.name}
-              </CardTitle>
-            </Link>
-            <p className="text-sm text-muted-foreground">{collection.description || "No description"}</p>
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className={cn(
+                "flex items-center justify-center w-9 h-9 rounded-lg shrink-0",
+                collectionConfig.bgColor
+              )}
+            >
+              <CollectionIcon className={cn("w-4 h-4", collectionConfig.color)} />
+            </div>
+            <div className="space-y-1 min-w-0">
+              <span className={cn("text-xs font-medium", collectionConfig.color)}>
+                Collection
+              </span>
+              <Link href={`/collections/${collection.id}`}>
+                <CardTitle className="text-base font-medium hover:text-primary cursor-pointer">
+                  {collection.name}
+                </CardTitle>
+              </Link>
+              <p className="text-sm text-muted-foreground">{collection.description || "No description"}</p>
+            </div>
           </div>
           <Badge variant={collection.isActive ? "default" : "secondary"}>
             {collection.isActive ? "Active" : "Closed"}
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 pl-[3.25rem]">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <Clock className="w-3.5 h-3.5" />
