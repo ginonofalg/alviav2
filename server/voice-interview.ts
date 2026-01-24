@@ -57,9 +57,10 @@ interface InterviewState {
   lastHeartbeatAt: number;
   lastActivityAt: number; // Any meaningful activity (audio, interaction, AI response)
   terminationWarned: boolean; // Whether client has been warned about impending termination
+  clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
 }
 
-type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded';
+type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded' | 'client_disconnected';
 
 interface SessionWatchdogState {
   interval: ReturnType<typeof setInterval> | null;
@@ -351,7 +352,74 @@ export function handleVoiceInterview(
     return;
   }
 
+  // Check if we're reconnecting to a disconnected session (within heartbeat timeout window)
+  if (existingState && existingState.clientDisconnectedAt !== null) {
+    console.log(`[VoiceInterview] Reconnecting to disconnected session: ${sessionId}`);
+    
+    // Reuse existing state - update client connection and reset timestamps
+    const now = Date.now();
+    existingState.clientWs = clientWs;
+    existingState.clientDisconnectedAt = null;
+    existingState.lastHeartbeatAt = now;
+    existingState.lastActivityAt = now;
+    existingState.terminationWarned = false;
+    
+    // Set up message handlers for reconnected client
+    clientWs.on("message", (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        handleClientMessage(sessionId, message, clientWs);
+      } catch (error) {
+        console.error("[VoiceInterview] Error parsing client message:", error);
+      }
+    });
+
+    clientWs.on("close", () => {
+      console.log(`[VoiceInterview] Client disconnected: ${sessionId}`);
+      const state = interviewStates.get(sessionId);
+      if (state) {
+        state.clientDisconnectedAt = Date.now();
+        state.clientWs = null;
+        console.log(`[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`);
+      }
+    });
+
+    clientWs.on("error", (error) => {
+      console.error(`[VoiceInterview] Client error for ${sessionId}:`, error);
+      const state = interviewStates.get(sessionId);
+      if (state) {
+        state.clientDisconnectedAt = Date.now();
+        state.clientWs = null;
+      }
+    });
+
+    // Send reconnected message to client with current state
+    clientWs.send(JSON.stringify({
+      type: "connected",
+      sessionId,
+      questionIndex: existingState.currentQuestionIndex,
+      totalQuestions: existingState.questions.length,
+      currentQuestion: existingState.questions[existingState.currentQuestionIndex]?.questionText || "",
+      isResumed: true,
+      persistedTranscript: existingState.fullTranscriptForPersistence,
+    }));
+    
+    console.log(`[VoiceInterview] Session ${sessionId} reconnected successfully`);
+    return;
+  }
+
   console.log(`[VoiceInterview] New connection for session: ${sessionId}`);
+
+  // Clean up any orphaned state before creating new one
+  if (existingState) {
+    console.log(`[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`);
+    if (existingState.openaiWs && existingState.openaiWs.readyState === WebSocket.OPEN) {
+      existingState.openaiWs.close();
+    }
+    if (existingState.pendingPersistTimeout) {
+      clearTimeout(existingState.pendingPersistTimeout);
+    }
+  }
 
   // Initialize interview state
   const now = Date.now();
@@ -389,6 +457,7 @@ export function handleVoiceInterview(
     lastHeartbeatAt: now,
     lastActivityAt: now,
     terminationWarned: false,
+    clientDisconnectedAt: null,
   };
   interviewStates.set(sessionId, state);
 
@@ -410,12 +479,24 @@ export function handleVoiceInterview(
 
   clientWs.on("close", () => {
     console.log(`[VoiceInterview] Client disconnected: ${sessionId}`);
-    cleanupSession(sessionId);
+    // Don't immediately cleanup - mark as disconnected and let watchdog handle
+    // This allows for reconnection/resume within heartbeat timeout
+    const state = interviewStates.get(sessionId);
+    if (state) {
+      state.clientDisconnectedAt = Date.now();
+      state.clientWs = null;
+      console.log(`[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`);
+    }
   });
 
   clientWs.on("error", (error) => {
     console.error(`[VoiceInterview] Client error for ${sessionId}:`, error);
-    cleanupSession(sessionId);
+    // Same as close - mark as disconnected, let watchdog handle
+    const state = interviewStates.get(sessionId);
+    if (state) {
+      state.clientDisconnectedAt = Date.now();
+      state.clientWs = null;
+    }
   });
 }
 
@@ -1698,6 +1779,12 @@ function runWatchdogCycle(): void {
     // Check conditions in order of severity
     if (age > SESSION_MAX_AGE_MS) {
       reason = 'max_age_exceeded';
+    } else if (state.clientDisconnectedAt !== null) {
+      // Client disconnected - terminate after heartbeat timeout from disconnect time
+      const timeSinceDisconnect = now - state.clientDisconnectedAt;
+      if (timeSinceDisconnect > HEARTBEAT_TIMEOUT_MS) {
+        reason = 'client_disconnected';
+      }
     } else if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
       reason = 'heartbeat_timeout';
     } else if (timeSinceActivity > SESSION_IDLE_TIMEOUT_MS) {
@@ -1756,11 +1843,12 @@ async function terminateSession(sessionId: string, reason: TerminationReason): P
 
   console.log(`[SessionWatchdog] Terminating session ${sessionId} - reason: ${reason}`);
 
-  // Notify client about termination
+  // Notify client about termination (if client is still connected)
   const reasonMessages: Record<TerminationReason, string> = {
     heartbeat_timeout: 'Connection lost - no heartbeat received',
     idle_timeout: 'Session ended due to inactivity',
     max_age_exceeded: 'Maximum session duration reached',
+    client_disconnected: 'Connection closed - session will be cleaned up',
   };
 
   if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
@@ -1768,7 +1856,7 @@ async function terminateSession(sessionId: string, reason: TerminationReason): P
       type: 'session_terminated',
       reason,
       message: reasonMessages[reason],
-      canResume: reason !== 'max_age_exceeded', // Allow resume for idle/heartbeat, not for max age
+      canResume: reason !== 'max_age_exceeded', // Allow resume for idle/heartbeat/disconnect, not for max age
     }));
   }
 
