@@ -1481,6 +1481,52 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/sessions/:sessionId/metrics - Get session performance metrics
+  app.get("/api/sessions/:sessionId/metrics", isAuthenticated, async (req, res) => {
+    try {
+      const session = await storage.getSession(req.params.sessionId);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      // Verify user has access to this session's project
+      const collection = await storage.getCollection(session.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const template = await storage.getTemplate(collection.templateId);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const project = await storage.getProject(template.projectId);
+      if (!project || project.workspaceId !== (req.user as any).workspaceId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Return performance metrics if available
+      if (!session.performanceMetrics) {
+        return res.status(404).json({ 
+          message: "No performance metrics available for this session",
+          hasMetrics: false 
+        });
+      }
+
+      res.json({
+        hasMetrics: true,
+        metrics: session.performanceMetrics,
+        sessionStatus: session.status,
+        sessionDuration: session.completedAt && session.startedAt 
+          ? new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime()
+          : null,
+      });
+    } catch (error) {
+      console.error("Error fetching session metrics:", error);
+      res.status(500).json({ message: "Failed to fetch session metrics" });
+    }
+  });
+
   // GET /api/collections/:collectionId/sessions - Get sessions for a collection
   app.get("/api/collections/:collectionId/sessions", isAuthenticated, async (req, res) => {
     try {

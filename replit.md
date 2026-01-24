@@ -69,6 +69,16 @@ Enhanced the individual session detail page for researchers with comprehensive s
 ### Schema Changes
 Added `researcherNotes` (text) and `reviewFlags` (text array) fields to interviewSessions table to support researcher annotations separate from analytics data.
 
+### Realtime API Performance Monitoring
+Implemented comprehensive monitoring to track OpenAI Realtime API interactions for cost and performance visibility:
+- **Token Usage Tracking**: Captures input/output tokens (audio and text) from `response.done` events
+- **Latency Measurements**: Tracks transcription latency (speech end → transcript) and response latency (transcript → first audio delta)
+- **Speaking Time Metrics**: Measures Alvia speaking time, respondent speaking time, and silence periods
+- **Session Aggregates**: Calculates averages and maximums at session completion
+- **Persistence**: Stores metrics in `performanceMetrics` JSONB field on `interviewSessions` table
+- **API Endpoint**: `GET /api/sessions/:sessionId/metrics` returns session performance data (requires authentication)
+- **Termination Tracking**: Records termination reason (completed, heartbeat_timeout, idle_timeout, max_age_exceeded, client_disconnected)
+
 ### Project-Level Infographics
 Extended the Infographics feature to support project-level generation alongside existing collection-level support:
 - **Collection Level**: Supports summary, themes, and findings infographic types
