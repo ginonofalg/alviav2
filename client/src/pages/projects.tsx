@@ -14,6 +14,8 @@ import {
   Users,
   Calendar
 } from "lucide-react";
+import { levelConfig } from "@/components/ui/hierarchy-nav";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,18 +36,34 @@ function ProjectCard({ project }: { project: ProjectWithCounts }) {
     ? formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })
     : "Recently";
 
+  const projectConfig = levelConfig.project;
+  const ProjectIcon = projectConfig.icon;
+
   return (
     <Card className="hover-elevate transition-all duration-200 group" data-testid={`card-project-${project.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
-        <div className="space-y-1 min-w-0">
-          <Link href={`/projects/${project.id}`}>
-            <CardTitle className="text-base font-medium hover:text-primary cursor-pointer truncate">
-              {project.name}
-            </CardTitle>
-          </Link>
-          <p className="text-sm text-muted-foreground line-clamp-2">
-            {project.description || "No description"}
-          </p>
+        <div className="flex items-start gap-3 min-w-0">
+          <div
+            className={cn(
+              "flex items-center justify-center w-9 h-9 rounded-lg shrink-0",
+              projectConfig.bgColor
+            )}
+          >
+            <ProjectIcon className={cn("w-4 h-4", projectConfig.color)} />
+          </div>
+          <div className="space-y-1 min-w-0">
+            <span className={cn("text-xs font-medium", projectConfig.color)}>
+              Project
+            </span>
+            <Link href={`/projects/${project.id}`}>
+              <CardTitle className="text-base font-medium hover:text-primary cursor-pointer truncate">
+                {project.name}
+              </CardTitle>
+            </Link>
+            <p className="text-sm text-muted-foreground line-clamp-2">
+              {project.description || "No description"}
+            </p>
+          </div>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -71,7 +89,7 @@ function ProjectCard({ project }: { project: ProjectWithCounts }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 pl-[3.25rem]">
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <FileText className="w-3.5 h-3.5" />

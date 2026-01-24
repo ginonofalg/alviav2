@@ -18,6 +18,8 @@ import {
   Calendar,
   Target
 } from "lucide-react";
+import { levelConfig } from "@/components/ui/hierarchy-nav";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 import type { Collection } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
@@ -36,6 +38,9 @@ function CollectionCard({ collection }: { collection: CollectionWithStats }) {
     ? (collection.completedSessions / collection.targetResponses) * 100
     : 0;
 
+  const collectionConfig = levelConfig.collection;
+  const CollectionIcon = collectionConfig.icon;
+
   return (
     <Link href={`/collections/${collection.id}`}>
       <Card 
@@ -44,23 +49,36 @@ function CollectionCard({ collection }: { collection: CollectionWithStats }) {
       >
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2">
+            <div className="flex items-start gap-3 min-w-0">
+              <div
+                className={cn(
+                  "flex items-center justify-center w-9 h-9 rounded-lg shrink-0",
+                  collectionConfig.bgColor
+                )}
+              >
+                <CollectionIcon className={cn("w-4 h-4", collectionConfig.color)} />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-xs font-medium", collectionConfig.color)}>
+                    Collection
+                  </span>
+                  <Badge variant={collection.isActive ? "default" : "secondary"}>
+                    {collection.isActive ? "Active" : "Closed"}
+                  </Badge>
+                </div>
                 <CardTitle className="text-base font-medium truncate">
                   {collection.name}
                 </CardTitle>
-                <Badge variant={collection.isActive ? "default" : "secondary"}>
-                  {collection.isActive ? "Active" : "Closed"}
-                </Badge>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {collection.description || "No description"}
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-2">
-                {collection.description || "No description"}
-              </p>
             </div>
             <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </div>
         </CardHeader>
-        <CardContent className="pt-0 space-y-4">
+        <CardContent className="pt-0 pl-[3.25rem] space-y-4">
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Users className="w-4 h-4" />

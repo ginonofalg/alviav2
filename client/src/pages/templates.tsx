@@ -24,6 +24,8 @@ import {
   Clock,
   X
 } from "lucide-react";
+import { levelConfig } from "@/components/ui/hierarchy-nav";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 import type { InterviewTemplate, Project, Collection } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
@@ -42,6 +44,9 @@ function TemplateCard({ template, collections }: { template: TemplateWithDetails
   const templateCollections = collections.filter(c => c.templateId === template.id);
   const activeCollections = templateCollections.filter(c => c.isActive).length;
 
+  const templateConfig = levelConfig.template;
+  const TemplateIcon = templateConfig.icon;
+
   return (
     <Card 
       className="hover-elevate cursor-pointer transition-all duration-200 group"
@@ -50,24 +55,37 @@ function TemplateCard({ template, collections }: { template: TemplateWithDetails
       <Link href={`/templates/${template.id}`} data-testid={`link-template-${template.id}`}>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-start gap-3 min-w-0">
+              <div
+                className={cn(
+                  "flex items-center justify-center w-9 h-9 rounded-lg shrink-0",
+                  templateConfig.bgColor
+                )}
+              >
+                <TemplateIcon className={cn("w-4 h-4", templateConfig.color)} />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={cn("text-xs font-medium", templateConfig.color)}>
+                    Template
+                  </span>
+                  <Badge variant={template.isActive ? "default" : "secondary"} data-testid={`badge-template-status-${template.id}`}>
+                    {template.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
                 <CardTitle className="text-base font-medium truncate" data-testid={`text-template-name-${template.id}`}>
                   {template.name}
                 </CardTitle>
-                <Badge variant={template.isActive ? "default" : "secondary"} data-testid={`badge-template-status-${template.id}`}>
-                  {template.isActive ? "Active" : "Inactive"}
-                </Badge>
+                <p className="text-sm text-muted-foreground line-clamp-2" data-testid={`text-template-objective-${template.id}`}>
+                  {template.objective || "No objective set"}
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-2" data-testid={`text-template-objective-${template.id}`}>
-                {template.objective || "No objective set"}
-              </p>
             </div>
             <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </div>
         </CardHeader>
       </Link>
-      <CardContent className="pt-0 space-y-4">
+      <CardContent className="pt-0 pl-[3.25rem] space-y-4">
         {template.project && (
           <Link href={`/projects/${template.projectId}`} data-testid={`link-project-${template.id}`}>
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground hover-elevate rounded px-1 -mx-1">
