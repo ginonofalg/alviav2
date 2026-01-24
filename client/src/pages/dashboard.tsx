@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   Play,
   TrendingUp,
-  Timer,
   XCircle,
   Activity,
   BarChart3
@@ -43,6 +42,7 @@ interface EnrichedSession {
 
 interface EnhancedDashboardStats {
   projectCount: number;
+  templateCount: number;
   collectionCount: number;
   sessionCount: number;
   completedSessions: number;
@@ -474,24 +474,26 @@ export default function DashboardPage() {
           icon={Play}
           isLoading={statsLoading}
           href="/collections"
+          iconBgColor="bg-purple-500/10"
+          iconColor="text-purple-500"
+        />
+        <StatCard
+          title="Templates"
+          value={stats?.templateCount ?? 0}
+          icon={FileText}
+          isLoading={statsLoading}
+          href="/templates"
           iconBgColor="bg-emerald-500/10"
           iconColor="text-emerald-500"
         />
         <StatCard
-          title="Total Sessions"
+          title="Sessions"
           value={stats?.sessionCount ?? 0}
           icon={Users}
           isLoading={statsLoading}
           href="/sessions"
-          iconBgColor="bg-orange-500/10"
-          iconColor="text-orange-500"
-        />
-        <StatCard
-          title="Avg Duration"
-          value={stats ? formatDuration(stats.avgSessionDurationMs) : "—"}
-          icon={Timer}
-          description="Per completed session"
-          isLoading={statsLoading}
+          iconBgColor="bg-blue-500/10"
+          iconColor="text-blue-500"
         />
       </div>
 
