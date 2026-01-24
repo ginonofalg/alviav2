@@ -1720,6 +1720,8 @@ async function handleClientMessage(
       state.lastActivityAt = Date.now();
       state.terminationWarned = false;
       state.isPaused = true;
+      // Track pause start time for accurate silence metrics
+      state.pauseStartedAt = Date.now();
       // Stop timing if currently speaking
       if (state.speakingStartTime) {
         const elapsed = Date.now() - state.speakingStartTime;
@@ -1742,8 +1744,26 @@ async function handleClientMessage(
       );
       break;
 
-    case "resume_interview":
-      state.lastActivityAt = Date.now();
+    case "resume_interview": {
+      // FIRST: Accumulate pause duration before clearing pause state
+      // This ensures accurate silence metrics that distinguish pause time from active silence
+      if (state.pauseStartedAt) {
+        const pauseDuration = Date.now() - state.pauseStartedAt;
+        state.totalPauseDurationMs += pauseDuration;
+        console.log(
+          `[VoiceInterview] Pause duration: ${pauseDuration}ms, total paused: ${state.totalPauseDurationMs}ms`,
+        );
+        state.pauseStartedAt = null;
+      }
+      
+      // Reset silence tracking reference points to avoid inflated silence segments
+      // that would otherwise include the pause time (when no audio was streaming)
+      const tracker = state.metricsTracker;
+      const now = Date.now();
+      tracker.silenceTracking.lastAlviaEndAt = now;
+      tracker.silenceTracking.lastRespondentEndAt = now;
+      
+      state.lastActivityAt = now;
       state.terminationWarned = false;
       // Handle resume from pause - Alvia decides what to say based on transcript context
       state.isPaused = false;
@@ -1812,6 +1832,7 @@ INSTRUCTIONS:
         );
       }
       break;
+    }
 
     case "next_question":
       state.lastActivityAt = Date.now();
@@ -2031,7 +2052,22 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
 
   const tracker = state.metricsTracker;
   const now = Date.now();
+  
+  // If session ends while paused, accumulate final pause duration
+  if (state.pauseStartedAt) {
+    const finalPauseDuration = now - state.pauseStartedAt;
+    state.totalPauseDurationMs += finalPauseDuration;
+    state.pauseStartedAt = null;
+    console.log(
+      `[VoiceInterview] Final pause duration: ${finalPauseDuration}ms, total paused: ${state.totalPauseDurationMs}ms`,
+    );
+  }
+  
   const sessionDurationMs = now - state.createdAt;
+  
+  // Calculate pause-aware metrics for accurate silence analysis
+  const totalPauseDurationMs = state.totalPauseDurationMs;
+  const activeSessionDurationMs = sessionDurationMs - totalPauseDurationMs;
 
   // Calculate respondent speaking time from question metrics
   let respondentSpeakingMs = 0;
@@ -2042,7 +2078,14 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
   });
 
   // Calculate silence time (approximation: session duration - speaking times)
+  // This includes pause time for backward compatibility
   const silenceMs = Math.max(0, sessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs);
+  
+  // Calculate active silence (silence during active streaming only, excludes pause time)
+  const activeSilenceMs = Math.max(
+    0,
+    activeSessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs
+  );
 
   // Calculate silence statistics from accumulator (includes ALL observed segments)
   const silenceSegments = tracker.silenceTracking.segments;  // Capped recent segments for storage
@@ -2094,18 +2137,28 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
       alviaTurnCount: tracker.alviaSpeaking.turnCount,
       silenceSegments: silenceSegments,
       silenceStats: silenceStats ?? undefined,
+      // Pause-aware metrics for accurate silence analysis
+      totalPauseDurationMs,
+      activeSilenceMs,
+      activeSessionDurationMs,
     },
     sessionDurationMs,
     openaiConnectionCount: tracker.openaiConnectionCount,
     terminationReason,
   };
 
-  // Log metrics summary
+  // Log metrics summary with pause-aware breakdown
+  const activeSilencePercent = activeSessionDurationMs > 0 
+    ? ((activeSilenceMs / activeSessionDurationMs) * 100).toFixed(1)
+    : 'N/A';
   console.log(`[Metrics] Final metrics for ${sessionId}:`, {
     duration: `${Math.round(sessionDurationMs / 1000)}s`,
+    activeDuration: `${Math.round(activeSessionDurationMs / 1000)}s`,
+    totalPaused: `${Math.round(totalPauseDurationMs / 1000)}s`,
     tokens: `${tracker.tokens.inputTokens} in / ${tracker.tokens.outputTokens} out`,
     avgLatency: `transcription=${Math.round(avgTranscriptionLatencyMs)}ms, response=${Math.round(avgResponseLatencyMs)}ms`,
     speaking: `respondent=${Math.round(respondentSpeakingMs / 1000)}s, alvia=${Math.round(tracker.alviaSpeaking.totalMs / 1000)}s`,
+    activeSilence: `${Math.round(activeSilenceMs / 1000)}s (${activeSilencePercent}%)`,
     silenceSegments: `${silenceSegments.length} stored / ${totalSilenceCount} total observed`,
   });
 
