@@ -95,7 +95,9 @@ function StatCard({
   icon: Icon, 
   description,
   isLoading,
-  href
+  href,
+  iconBgColor = "bg-primary/10",
+  iconColor = "text-primary"
 }: { 
   title: string; 
   value: number | string; 
@@ -103,6 +105,8 @@ function StatCard({
   description?: string;
   isLoading?: boolean;
   href?: string;
+  iconBgColor?: string;
+  iconColor?: string;
 }) {
   const cardContent = (
     <Card className={`hover-elevate transition-all duration-200 ${href ? "cursor-pointer" : ""}`} data-testid={`stat-card-${title.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -110,8 +114,8 @@ function StatCard({
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
-        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Icon className="h-4 w-4 text-primary" />
+        <div className={`w-8 h-8 rounded-lg ${iconBgColor} flex items-center justify-center`}>
+          <Icon className={`h-4 w-4 ${iconColor}`} />
         </div>
       </CardHeader>
       <CardContent className="pt-0">
@@ -461,13 +465,17 @@ export default function DashboardPage() {
           icon={FolderKanban}
           isLoading={statsLoading}
           href="/projects"
+          iconBgColor="bg-blue-500/10"
+          iconColor="text-blue-500"
         />
         <StatCard
           title="Collections"
           value={stats?.collectionCount ?? 0}
-          icon={FileText}
+          icon={Play}
           isLoading={statsLoading}
           href="/collections"
+          iconBgColor="bg-emerald-500/10"
+          iconColor="text-emerald-500"
         />
         <StatCard
           title="Total Sessions"
@@ -475,6 +483,8 @@ export default function DashboardPage() {
           icon={Users}
           isLoading={statsLoading}
           href="/sessions"
+          iconBgColor="bg-orange-500/10"
+          iconColor="text-orange-500"
         />
         <StatCard
           title="Avg Duration"
