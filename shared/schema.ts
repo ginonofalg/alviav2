@@ -460,11 +460,15 @@ export type SilenceStats = {
 export type SpeakingTimeMetrics = {
   respondentSpeakingMs: number;          // Total respondent speaking time
   alviaSpeakingMs: number;               // Total Alvia speaking time (estimated from audio responses)
-  silenceMs: number;                     // Calculated: session duration - speaking times
+  silenceMs: number;                     // Calculated: session duration - speaking times (includes pause time, kept for backward compatibility)
   respondentTurnCount: number;
   alviaTurnCount: number;
   silenceSegments?: SilenceSegment[];    // Individual silence segments (capped at 100 for storage)
   silenceStats?: SilenceStats | null;    // Aggregated statistics computed from all segments
+  // Pause-aware metrics for accurate silence analysis
+  totalPauseDurationMs?: number;         // Time spent paused (not streaming audio)
+  activeSilenceMs?: number;              // Silence during active streaming only (excludes pause time)
+  activeSessionDurationMs?: number;      // Session duration minus pause time
 };
 
 export type RealtimePerformanceMetrics = {

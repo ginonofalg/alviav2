@@ -40,6 +40,9 @@ interface InterviewState {
   isConnected: boolean;
   lastAIPrompt: string;
   isPaused: boolean;
+  // Pause duration tracking for accurate silence metrics
+  pauseStartedAt: number | null;
+  totalPauseDurationMs: number;
   // Respondent info
   respondentInformalName: string | null;
   // Barbara-related state
@@ -654,6 +657,9 @@ export function handleVoiceInterview(
     isConnected: false,
     lastAIPrompt: "",
     isPaused: false,
+    // Pause duration tracking
+    pauseStartedAt: null,
+    totalPauseDurationMs: 0,
     // Respondent info
     respondentInformalName: null,
     // Barbara-related state
