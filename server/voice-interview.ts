@@ -906,6 +906,9 @@ async function handleOpenAIEvent(
       break;
 
     case "response.audio.delta":
+      // Update activity - AI speaking keeps session alive
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       // Forward audio chunks to client
       clientWs.send(
         JSON.stringify({
@@ -1208,10 +1211,24 @@ async function handleClientMessage(
   clientWs: WebSocket,
 ) {
   const state = interviewStates.get(sessionId);
-  if (!state || !state.openaiWs) return;
+  if (!state) return;
+
+  // Handle heartbeat immediately, before other processing
+  if (message.type === 'heartbeat.ping') {
+    state.lastHeartbeatAt = Date.now();
+    // Reset warning flag on activity
+    state.terminationWarned = false;
+    clientWs.send(JSON.stringify({ type: 'heartbeat.pong' }));
+    return;
+  }
+
+  if (!state.openaiWs) return;
 
   switch (message.type) {
     case "audio":
+      // Update activity timestamp on audio
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       // Forward audio from client to OpenAI
       if (state.openaiWs.readyState === WebSocket.OPEN) {
         state.openaiWs.send(
@@ -1238,6 +1255,9 @@ async function handleClientMessage(
       break;
 
     case "text_input":
+      // Update activity timestamp
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       // Handle text input from keyboard (use async IIFE to await Barbara)
       (async () => {
         if (
@@ -1311,6 +1331,8 @@ async function handleClientMessage(
       break;
 
     case "pause_interview":
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       state.isPaused = true;
       // Stop timing if currently speaking
       if (state.speakingStartTime) {
@@ -1335,6 +1357,8 @@ async function handleClientMessage(
       break;
 
     case "resume_interview":
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       // Handle resume from pause - Alvia decides what to say based on transcript context
       state.isPaused = false;
       // Update session status back to in_progress
@@ -1404,6 +1428,8 @@ INSTRUCTIONS:
       break;
 
     case "next_question":
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
       // Move to next question
       if (state.currentQuestionIndex < state.questions.length - 1) {
         const previousIndex = state.currentQuestionIndex;
@@ -1589,6 +1615,7 @@ INSTRUCTIONS:
       break;
 
     case "end_interview":
+      state.lastActivityAt = Date.now();
       // Trigger summarization for final question in background before cleanup
       // Capture transcript snapshot for the final question
       const finalTranscriptSnapshot = [
@@ -1621,7 +1648,139 @@ async function cleanupSession(sessionId: string) {
     if (state.openaiWs) {
       state.openaiWs.close();
     }
+    if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
+      state.clientWs.close();
+    }
     interviewStates.delete(sessionId);
     console.log(`[VoiceInterview] Session cleaned up: ${sessionId}`);
+
+    // Stop watchdog if no more sessions
+    if (interviewStates.size === 0) {
+      stopSessionWatchdog();
+    }
   }
+}
+
+function startSessionWatchdog(): void {
+  if (watchdogState.interval) {
+    // Already running
+    return;
+  }
+
+  watchdogState.interval = setInterval(() => {
+    runWatchdogCycle();
+  }, WATCHDOG_INTERVAL_MS);
+
+  console.log('[SessionWatchdog] Started - checking every', WATCHDOG_INTERVAL_MS / 1000, 'seconds');
+}
+
+function stopSessionWatchdog(): void {
+  if (watchdogState.interval) {
+    clearInterval(watchdogState.interval);
+    watchdogState.interval = null;
+    console.log('[SessionWatchdog] Stopped - no active sessions');
+  }
+}
+
+function runWatchdogCycle(): void {
+  const now = Date.now();
+  const sessionsToTerminate: Array<{ sessionId: string; reason: TerminationReason }> = [];
+  const sessionsToWarn: string[] = [];
+
+  for (const [sessionId, state] of interviewStates.entries()) {
+    const age = now - state.createdAt;
+    const timeSinceHeartbeat = now - state.lastHeartbeatAt;
+    const timeSinceActivity = now - state.lastActivityAt;
+
+    let reason: TerminationReason | null = null;
+
+    // Check conditions in order of severity
+    if (age > SESSION_MAX_AGE_MS) {
+      reason = 'max_age_exceeded';
+    } else if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      reason = 'heartbeat_timeout';
+    } else if (timeSinceActivity > SESSION_IDLE_TIMEOUT_MS) {
+      reason = 'idle_timeout';
+    }
+
+    if (reason) {
+      sessionsToTerminate.push({ sessionId, reason });
+    } else if (!state.terminationWarned) {
+      // Check if we should warn about impending termination
+      const timeUntilMaxAge = SESSION_MAX_AGE_MS - age;
+      const timeUntilIdle = SESSION_IDLE_TIMEOUT_MS - timeSinceActivity;
+      const timeUntilHeartbeatTimeout = HEARTBEAT_TIMEOUT_MS - timeSinceHeartbeat;
+
+      const minTimeRemaining = Math.min(timeUntilMaxAge, timeUntilIdle, timeUntilHeartbeatTimeout);
+
+      if (minTimeRemaining <= TERMINATION_WARNING_MS && minTimeRemaining > 0) {
+        sessionsToWarn.push(sessionId);
+      }
+    }
+  }
+
+  // Warn sessions about impending termination
+  for (const sessionId of sessionsToWarn) {
+    warnSessionTermination(sessionId);
+  }
+
+  // Terminate stale sessions
+  for (const { sessionId, reason } of sessionsToTerminate) {
+    terminateSession(sessionId, reason);
+  }
+}
+
+function warnSessionTermination(sessionId: string): void {
+  const state = interviewStates.get(sessionId);
+  if (!state || state.terminationWarned) return;
+
+  state.terminationWarned = true;
+
+  const message = {
+    type: 'session_warning',
+    reason: 'inactivity',
+    message: 'Your session will end soon due to inactivity. Please interact to keep it active.',
+    timeoutMs: TERMINATION_WARNING_MS,
+  };
+
+  if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
+    state.clientWs.send(JSON.stringify(message));
+    console.log(`[SessionWatchdog] Warning sent to session: ${sessionId}`);
+  }
+}
+
+async function terminateSession(sessionId: string, reason: TerminationReason): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  console.log(`[SessionWatchdog] Terminating session ${sessionId} - reason: ${reason}`);
+
+  // Notify client about termination
+  const reasonMessages: Record<TerminationReason, string> = {
+    heartbeat_timeout: 'Connection lost - no heartbeat received',
+    idle_timeout: 'Session ended due to inactivity',
+    max_age_exceeded: 'Maximum session duration reached',
+  };
+
+  if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
+    state.clientWs.send(JSON.stringify({
+      type: 'session_terminated',
+      reason,
+      message: reasonMessages[reason],
+      canResume: reason !== 'max_age_exceeded', // Allow resume for idle/heartbeat, not for max age
+    }));
+  }
+
+  // Update session status to indicate it was terminated
+  try {
+    await storage.persistInterviewState(sessionId, {
+      status: 'paused',
+      pausedAt: new Date(),
+    });
+  } catch (error) {
+    console.error(`[SessionWatchdog] Failed to persist terminated status for ${sessionId}:`, error);
+  }
+
+  // Clean up
+  await cleanupSession(sessionId);
 }
