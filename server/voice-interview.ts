@@ -52,10 +52,33 @@ interface InterviewState {
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
+  // Session hygiene tracking
+  createdAt: number;
+  lastHeartbeatAt: number;
+  lastActivityAt: number; // Any meaningful activity (audio, interaction, AI response)
+  terminationWarned: boolean; // Whether client has been warned about impending termination
 }
+
+type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded';
+
+interface SessionWatchdogState {
+  interval: ReturnType<typeof setInterval> | null;
+}
+
+const watchdogState: SessionWatchdogState = {
+  interval: null,
+};
 
 const PERSIST_DEBOUNCE_MS = 2000;
 const MAX_TRANSCRIPT_IN_MEMORY = 100;
+
+// Session hygiene constants
+const HEARTBEAT_INTERVAL_MS = 30_000;        // Client sends ping every 30s
+const HEARTBEAT_TIMEOUT_MS = 90_000;         // Terminate if no ping for 90s (3 missed heartbeats)
+const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;  // Terminate after 5 min of no activity
+const SESSION_MAX_AGE_MS = 60 * 60_000;      // Absolute max session duration: 1 hour
+const WATCHDOG_INTERVAL_MS = 30_000;         // Run watchdog every 30s
+const TERMINATION_WARNING_MS = 30_000;       // Warn client 30s before termination
 
 const interviewStates = new Map<string, InterviewState>();
 
@@ -331,6 +354,7 @@ export function handleVoiceInterview(
   console.log(`[VoiceInterview] New connection for session: ${sessionId}`);
 
   // Initialize interview state
+  const now = Date.now();
   const state: InterviewState = {
     sessionId,
     currentQuestionIndex: 0,
@@ -360,8 +384,16 @@ export function handleVoiceInterview(
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
+    // Session hygiene tracking
+    createdAt: now,
+    lastHeartbeatAt: now,
+    lastActivityAt: now,
+    terminationWarned: false,
   };
   interviewStates.set(sessionId, state);
+
+  // Start watchdog if this is the first session
+  startSessionWatchdog();
 
   // Load interview data and connect to OpenAI
   initializeInterview(sessionId, clientWs);
