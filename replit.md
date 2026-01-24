@@ -84,6 +84,13 @@ Implemented comprehensive monitoring to track OpenAI Realtime API interactions f
   - Memory-bounded: Only 100 most recent segments stored, but stats computed from full accumulator
   - 100ms minimum threshold filters noise/micro-pauses
   - Question index tracking for per-question analysis
+- **Pause Duration Tracking**: Separates paused time from active silence for accurate VAD optimization analysis:
+  - `totalPauseDurationMs`: Cumulative time interview was paused (no audio streaming, no cost)
+  - `activeSilenceMs`: Silence during active streaming only (billable silence that VAD could eliminate)
+  - `activeSessionDurationMs`: Session duration minus pause time (true interview duration)
+  - Original `silenceMs` preserved for backward compatibility (includes pause time)
+  - Edge cases handled: session ends while paused, multiple pause/resume cycles
+  - Silence tracking reference points reset on resume to avoid inflated segments
 
 ### Project-Level Infographics
 Extended the Infographics feature to support project-level generation alongside existing collection-level support:
