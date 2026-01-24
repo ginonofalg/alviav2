@@ -139,6 +139,116 @@ function createEmptyMetricsTracker(): MetricsTracker {
   };
 }
 
+// Constants for silence tracking
+const MIN_SILENCE_DURATION_MS = 100;  // Filter out noise/micro-pauses
+const MAX_STORED_SEGMENTS = 100;       // Cap stored segments (stats computed from all)
+
+// Record a silence segment when speech resumes
+function recordSilenceSegment(
+  tracker: MetricsTracker,
+  state: InterviewState,
+  endAt: number,
+  trigger: 'respondent_started' | 'alvia_started'
+): void {
+  const { lastAlviaEndAt, lastRespondentEndAt, lastSpeechStartAt } = tracker.silenceTracking;
+
+  // If someone was already speaking, no silence to record
+  if (lastSpeechStartAt !== null) {
+    return;
+  }
+
+  // Determine when silence started and its context
+  let startAt: number | null = null;
+  let context: SilenceContext;
+
+  if (lastAlviaEndAt !== null && lastRespondentEndAt !== null) {
+    // Both have spoken before - use the more recent end time
+    if (lastAlviaEndAt > lastRespondentEndAt) {
+      startAt = lastAlviaEndAt;
+      context = 'post_alvia';
+    } else {
+      startAt = lastRespondentEndAt;
+      context = 'post_respondent';
+    }
+  } else if (lastAlviaEndAt !== null) {
+    startAt = lastAlviaEndAt;
+    context = 'post_alvia';
+  } else if (lastRespondentEndAt !== null) {
+    startAt = lastRespondentEndAt;
+    context = 'post_respondent';
+  } else {
+    // No prior speech - this is initial silence
+    startAt = state.createdAt;
+    context = 'initial';
+  }
+
+  if (startAt === null || endAt <= startAt) {
+    return; // Invalid segment
+  }
+
+  const durationMs = endAt - startAt;
+
+  // Only record segments >= minimum threshold to filter noise
+  if (durationMs < MIN_SILENCE_DURATION_MS) {
+    return;
+  }
+
+  const segment: SilenceSegment = {
+    startAt,
+    endAt,
+    durationMs,
+    context,
+    questionIndex: state.currentQuestionIndex ?? null,
+  };
+
+  // Always add to array - we compute stats from all, but cap what's stored
+  tracker.silenceTracking.segments.push(segment);
+}
+
+// Calculate statistical summary from silence segments
+function calculateSilenceStats(segments: SilenceSegment[]): SilenceStats | null {
+  if (segments.length === 0) {
+    return null;
+  }
+
+  const durations = segments.map(s => s.durationMs).sort((a, b) => a - b);
+  const count = durations.length;
+  const totalMs = durations.reduce((sum, d) => sum + d, 0);
+
+  const percentile = (arr: number[], p: number): number => {
+    const index = Math.ceil((p / 100) * arr.length) - 1;
+    return arr[Math.max(0, index)];
+  };
+
+  // Group by context
+  const byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }> = {
+    post_alvia: { count: 0, totalMs: 0, meanMs: 0 },
+    post_respondent: { count: 0, totalMs: 0, meanMs: 0 },
+    initial: { count: 0, totalMs: 0, meanMs: 0 },
+  };
+
+  for (const segment of segments) {
+    byContext[segment.context].count++;
+    byContext[segment.context].totalMs += segment.durationMs;
+  }
+
+  for (const ctx of Object.keys(byContext) as SilenceContext[]) {
+    if (byContext[ctx].count > 0) {
+      byContext[ctx].meanMs = Math.round(byContext[ctx].totalMs / byContext[ctx].count);
+    }
+  }
+
+  return {
+    count,
+    meanMs: Math.round(totalMs / count),
+    medianMs: percentile(durations, 50),
+    p90Ms: percentile(durations, 90),
+    p95Ms: percentile(durations, 95),
+    maxMs: durations[count - 1],
+    byContext,
+  };
+}
+
 interface SessionWatchdogState {
   interval: ReturnType<typeof setInterval> | null;
 }
