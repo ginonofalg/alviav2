@@ -236,8 +236,8 @@ export default function TemplatesPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-primary" />
+            <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-purple-500" />
             </div>
             <div>
               <p className="text-2xl font-semibold" data-testid="text-total-templates">

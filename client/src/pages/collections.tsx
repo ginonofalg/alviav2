@@ -165,8 +165,8 @@ export default function CollectionsPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-primary" />
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <Play className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
               <p className="text-2xl font-semibold">{collections?.length || 0}</p>
@@ -176,8 +176,8 @@ export default function CollectionsPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-              <Play className="w-5 h-5 text-green-500" />
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
               <p className="text-2xl font-semibold">{activeCount}</p>
