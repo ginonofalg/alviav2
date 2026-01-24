@@ -221,6 +221,9 @@ export default function InterviewPage() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const HEARTBEAT_INTERVAL_MS = 30_000; // Send heartbeat every 30 seconds
 
   const { data: interviewData, isLoading } = useQuery<InterviewData>({
     queryKey: ["/api/interview", sessionId],
@@ -297,6 +300,18 @@ export default function InterviewPage() {
     source.start();
   }, []);
 
+  // Stop audio capture - defined early for use in message handlers
+  const stopAudioCapture = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+  }, []);
+
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {
     if (!sessionId || wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -311,6 +326,15 @@ export default function InterviewPage() {
 
     ws.onopen = () => {
       console.log("[Interview] WebSocket connected");
+      // Start heartbeat interval
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'heartbeat.ping' }));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
     };
 
     ws.onmessage = (event) => {
@@ -327,6 +351,11 @@ export default function InterviewPage() {
       setIsConnected(false);
       setIsConnecting(false);
       setIsListening(false);
+      // Stop heartbeat on disconnect
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
     };
 
     ws.onerror = (error) => {
@@ -474,9 +503,40 @@ export default function InterviewPage() {
             setHighlightNextButton(true);
           }
           break;
+
+        case "heartbeat.pong":
+          // Server acknowledged heartbeat - connection is healthy
+          break;
+
+        case "session_warning":
+          // Session is about to be terminated due to inactivity
+          toast({
+            title: "Session Inactive",
+            description: message.message || "Your session will end soon due to inactivity.",
+            variant: "destructive",
+          });
+          break;
+
+        case "session_terminated":
+          // Session was terminated by server
+          console.log("[Interview] Session terminated:", message.reason);
+          toast({
+            title: "Session Ended",
+            description: message.message || "Your interview session has ended.",
+            variant: message.canResume ? "default" : "destructive",
+          });
+          // Stop audio capture
+          stopAudioCapture();
+          // Navigate back - user can resume if allowed
+          if (message.canResume) {
+            navigate(`/sessions/${sessionId}`);
+          } else {
+            navigate(`/review/${sessionId}`);
+          }
+          break;
       }
     },
-    [playAudio, toast, navigate],
+    [playAudio, toast, navigate, stopAudioCapture],
   );
 
   // Start audio capture
@@ -538,18 +598,6 @@ export default function InterviewPage() {
     }
   }, [initAudioContext, isAiSpeaking]);
 
-  // Stop audio capture
-  const stopAudioCapture = useCallback(() => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-  }, []);
-
   const requestMicPermission = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -589,6 +637,11 @@ export default function InterviewPage() {
       }
       if (audioContextRef.current) {
         audioContextRef.current.close();
+      }
+      // Stop heartbeat interval on unmount
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
     };
   }, [stopAudioCapture]);

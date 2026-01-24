@@ -1687,7 +1687,8 @@ function runWatchdogCycle(): void {
   const sessionsToTerminate: Array<{ sessionId: string; reason: TerminationReason }> = [];
   const sessionsToWarn: string[] = [];
 
-  for (const [sessionId, state] of interviewStates.entries()) {
+  const sessionEntries = Array.from(interviewStates.entries());
+  for (const [sessionId, state] of sessionEntries) {
     const age = now - state.createdAt;
     const timeSinceHeartbeat = now - state.lastHeartbeatAt;
     const timeSinceActivity = now - state.lastActivityAt;

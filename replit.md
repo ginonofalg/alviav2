@@ -43,6 +43,16 @@ The core data model follows this hierarchy: **Workspace → Project → Intervie
 
 ## Recent Changes (January 2026)
 
+### Session Hygiene System (Automatic Cleanup of Abandoned Sessions)
+Implemented a server-side watchdog system to automatically clean up abandoned interview sessions and prevent unnecessary OpenAI Realtime API costs:
+- **Heartbeat Protocol**: Client sends heartbeat every 30 seconds; server terminates after 90 seconds of no heartbeat
+- **Idle Timeout**: Sessions with no activity (audio, interactions) for 5 minutes are terminated
+- **Max Age Limit**: Sessions exceeding 1 hour are automatically terminated
+- **Graceful Warnings**: Clients receive a warning 30 seconds before termination
+- **Smart Watchdog**: Watchdog starts with first session, stops when no sessions remain
+- **Activity Tracking**: Audio, text input, pause/resume, next question, and AI responses all reset activity timers
+- **Client Handling**: Client receives session_warning and session_terminated messages with navigation to appropriate pages
+
 ### Session Detail Page Enhancements
 Enhanced the individual session detail page for researchers with comprehensive session management tools:
 - **Delete Session**: Confirmation dialog before permanent deletion
