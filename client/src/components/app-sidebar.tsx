@@ -3,7 +3,7 @@ import {
   Home, 
   FolderKanban, 
   FileText, 
-  ClipboardList,
+  Play,
   Users, 
   BarChart3, 
   Settings,
@@ -37,8 +37,8 @@ import { useAuth } from "@/hooks/use-auth";
 const mainNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Projects", url: "/projects", icon: FolderKanban },
-  { title: "Templates", url: "/templates", icon: ClipboardList },
-  { title: "Collections", url: "/collections", icon: FileText },
+  { title: "Templates", url: "/templates", icon: FileText },
+  { title: "Collections", url: "/collections", icon: Play },
   { title: "Sessions", url: "/sessions", icon: Users },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
