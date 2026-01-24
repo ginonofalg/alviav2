@@ -21,6 +21,9 @@ import type {
   TokenUsage,
   LatencyMetrics,
   SpeakingTimeMetrics,
+  SilenceSegment,
+  SilenceContext,
+  SilenceStats,
 } from "@shared/schema";
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
@@ -93,6 +96,13 @@ interface MetricsTracker {
     currentResponseStartAt: number | null;  // When current response audio started
     turnCount: number;
   };
+  // Silence segment tracking for VAD threshold tuning
+  silenceTracking: {
+    segments: SilenceSegment[];              // All observed segments (stats computed from all, but only 100 stored)
+    lastAlviaEndAt: number | null;           // When Alvia last finished speaking
+    lastRespondentEndAt: number | null;      // When respondent last stopped speaking
+    lastSpeechStartAt: number | null;        // When anyone last started speaking (to detect if in-speech)
+  };
   // Connection tracking
   openaiConnectionCount: number;
 }
@@ -118,6 +128,12 @@ function createEmptyMetricsTracker(): MetricsTracker {
       totalMs: 0,
       currentResponseStartAt: null,
       turnCount: 0,
+    },
+    silenceTracking: {
+      segments: [],
+      lastAlviaEndAt: null,
+      lastRespondentEndAt: null,
+      lastSpeechStartAt: null,
     },
     openaiConnectionCount: 0,
   };
