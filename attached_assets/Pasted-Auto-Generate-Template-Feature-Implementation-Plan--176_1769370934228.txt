@@ -1,0 +1,299 @@
+Auto-Generate Template Feature: Implementation Plan                                                                                            
+                                                                                                                                                 
+  Overview                                                                                                                                       
+                                                                                                                                                 
+  Add functionality to the Project Detail page allowing users to auto-generate an interview template with questions based on the project's       
+  metadata (Description, Research Objectives, Target Audience, Context Type, Strategic Context).                                                 
+                                                                                                                                                 
+  ---                                                                                                                                            
+  UX Flow                                                                                                                                        
+                                                                                                                                                 
+  Project Detail Page                                                                                                                            
+         │                                                                                                                                       
+         ▼                                                                                                                                       
+  [✨ Generate Template] button (next to "New Template")                                                                                         
+         │                                                                                                                                       
+         ▼                                                                                                                                       
+  ◌ Loading state (spinner with "Generating template...")                                                                                        
+         │                                                                                                                                       
+         ▼                                                                                                                                       
+  ┌─────────────────────────────────────────────┐                                                                                                
+  │  Preview Modal                              │                                                                                                
+  │  ─────────────────────────────────────────  │                                                                                                
+  │  Template Name: [editable]                  │                                                                                                
+  │  Objective: [editable]                      │                                                                                                
+  │                                             │                                                                                                
+  │  Generated Questions:                       │                                                                                                
+  │  ┌─────────────────────────────────────┐   │                                                                                                 
+  │  │ 1. [Question text]         [open ▼] │   │                                                                                                 
+  │  │    Guidance: [editable]             │   │                                                                                                 
+  │  │    [🗑️ Remove]                       │   │                                                                                                
+  │  └─────────────────────────────────────┘   │                                                                                                 
+  │  ┌─────────────────────────────────────┐   │                                                                                                 
+  │  │ 2. [Question text]         [scale ▼]│   │                                                                                                 
+  │  │    Guidance: [editable]             │   │                                                                                                 
+  │  │    Scale: 1-10                       │   │                                                                                                
+  │  │    [🗑️ Remove]                       │   │                                                                                                
+  │  └─────────────────────────────────────┘   │                                                                                                 
+  │  ... (5-10 questions)                      │                                                                                                 
+  │                                             │                                                                                                
+  │  [+ Add Question]                           │                                                                                                
+  │                                             │                                                                                                
+  │  [🔄 Regenerate]  [Cancel]  [Create Template]│                                                                                               
+  └─────────────────────────────────────────────┘                                                                                                
+                                                                                                                                                 
+  ---                                                                                                                                            
+  UX Considerations                                                                                                                              
+  Consideration: Button placement                                                                                                                
+  Decision: Header actions, next to "New Template"                                                                                               
+  Rationale: Discoverable but doesn't overshadow manual creation                                                                                 
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Empty fields                                                                                                                    
+  Decision: Show warning if key fields empty, still allow generation                                                                             
+  Rationale: Some context is better than none; let AI work with what's available                                                                 
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Preview before save                                                                                                             
+  Decision: Required via modal                                                                                                                   
+  Rationale: Users must review AI output before it becomes a real template                                                                       
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Editability                                                                                                                     
+  Decision: Full inline editing in preview                                                                                                       
+  Rationale: Users can tweak generated content without starting over                                                                             
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Regenerate option                                                                                                               
+  Decision: Button in preview modal                                                                                                              
+  Rationale: If output is poor, regenerate without closing modal                                                                                 
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Question count                                                                                                                  
+  Decision: AI generates 5-8 questions by default                                                                                                
+  Rationale: Enough to cover research objectives without overwhelming                                                                            
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Question types                                                                                                                  
+  Decision: AI chooses appropriate types                                                                                                         
+  Rationale: Based on question intent (scale for ratings, open for exploration)                                                                  
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Loading time                                                                                                                    
+  Decision: Show spinner + estimated wait                                                                                                        
+  Rationale: Set expectations (typically 3-5 seconds)                                                                                            
+  ────────────────────────────────────────                                                                                                       
+  Consideration: Error handling                                                                                                                  
+  Decision: Toast with retry option                                                                                                              
+  Rationale: Network/API failures gracefully handled                                                                                             
+  ---                                                                                                                                            
+  Technical Implementation                                                                                                                       
+                                                                                                                                                 
+  1. Backend API Endpoint                                                                                                                        
+                                                                                                                                                 
+  File: server/routes.ts                                                                                                                         
+                                                                                                                                                 
+  Endpoint: POST /api/projects/:projectId/generate-template                                                                                      
+                                                                                                                                                 
+  Request: Empty body (uses project data from DB)                                                                                                
+                                                                                                                                                 
+  Response:                                                                                                                                      
+  {                                                                                                                                              
+    name: string;           // Suggested template name                                                                                           
+    objective: string;      // Interview objective                                                                                               
+    tone: string;           // Suggested tone                                                                                                    
+    questions: Array<{                                                                                                                           
+      questionText: string;                                                                                                                      
+      questionType: "open" | "yes_no" | "scale" | "numeric" | "multi_select";                                                                    
+      guidance: string;                                                                                                                          
+      scaleMin?: number;                                                                                                                         
+      scaleMax?: number;                                                                                                                         
+      multiSelectOptions?: string[];                                                                                                             
+      timeHintSeconds?: number;                                                                                                                  
+      recommendedFollowUps?: number;                                                                                                             
+    }>;                                                                                                                                          
+  }                                                                                                                                              
+                                                                                                                                                 
+  Implementation logic:                                                                                                                          
+  1. Authenticate user + verify project access                                                                                                   
+  2. Fetch project with all fields                                                                                                               
+  3. Validate project has at least name (warn if key fields empty)                                                                               
+  4. Build prompt with project context                                                                                                           
+  5. Call OpenAI API with JSON mode                                                                                                              
+  6. Parse and validate response                                                                                                                 
+  7. Return generated template data (NOT saved yet)                                                                                              
+                                                                                                                                                 
+  ---                                                                                                                                            
+  2. AI Prompt Structure                                                                                                                         
+                                                                                                                                                 
+  System prompt:                                                                                                                                 
+  You are an expert research interview designer. Generate interview templates                                                                    
+  that elicit rich, actionable insights from respondents.                                                                                        
+                                                                                                                                                 
+  Output JSON with this exact structure:                                                                                                         
+  {                                                                                                                                              
+    "name": "Template name based on research focus",                                                                                             
+    "objective": "1-2 sentence interview objective",                                                                                             
+    "tone": "professional|friendly|empathetic|neutral",                                                                                          
+    "questions": [                                                                                                                               
+      {                                                                                                                                          
+        "questionText": "The question to ask",                                                                                                   
+        "questionType": "open|yes_no|scale|numeric|multi_select",                                                                                
+        "guidance": "Instructions for the AI interviewer on what to probe",                                                                      
+        "scaleMin": 1,  // only if scale type                                                                                                    
+        "scaleMax": 10, // only if scale type                                                                                                    
+        "multiSelectOptions": [], // only if multi_select type                                                                                   
+        "timeHintSeconds": 60,                                                                                                                   
+        "recommendedFollowUps": 2                                                                                                                
+      }                                                                                                                                          
+    ]                                                                                                                                            
+  }                                                                                                                                              
+                                                                                                                                                 
+  Guidelines:                                                                                                                                    
+  - Generate 5-8 questions covering the research objectives                                                                                      
+  - Start with rapport-building, end with wrap-up/future questions                                                                               
+  - Use "open" type for exploratory questions (most common)                                                                                      
+  - Use "scale" for satisfaction/rating questions                                                                                                
+  - Use "yes_no" sparingly for filtering questions                                                                                               
+  - Write guidance that helps probe deeper on key themes                                                                                         
+  - Match tone to the project's specified tone                                                                                                   
+                                                                                                                                                 
+  User prompt:                                                                                                                                   
+  Generate an interview template for this research project:                                                                                      
+                                                                                                                                                 
+  PROJECT NAME: {name}                                                                                                                           
+  DESCRIPTION: {description}                                                                                                                     
+  RESEARCH OBJECTIVES: {objective}                                                                                                               
+  TARGET AUDIENCE: {audienceContext}                                                                                                             
+  CONTEXT TYPE: {contextType}                                                                                                                    
+  STRATEGIC CONTEXT: {strategicContext}                                                                                                          
+  PREFERRED TONE: {tone}                                                                                                                         
+                                                                                                                                                 
+  Focus questions on achieving the research objectives while keeping the                                                                         
+  target audience in mind. The context type is "{contextType}" so frame                                                                          
+  questions appropriately for {contextType} research.                                                                                            
+                                                                                                                                                 
+  ---                                                                                                                                            
+  3. Frontend Components                                                                                                                         
+                                                                                                                                                 
+  File: client/src/pages/project-detail.tsx                                                                                                      
+                                                                                                                                                 
+  Changes:                                                                                                                                       
+  1. Add "Generate Template" button in header actions                                                                                            
+  2. Add state for generation loading/preview modal                                                                                              
+  3. Import and render GenerateTemplateModal component                                                                                           
+                                                                                                                                                 
+  New file: client/src/components/GenerateTemplateModal.tsx                                                                                      
+                                                                                                                                                 
+  Component structure:                                                                                                                           
+  interface GeneratedTemplate {                                                                                                                  
+    name: string;                                                                                                                                
+    objective: string;                                                                                                                           
+    tone: string;                                                                                                                                
+    questions: GeneratedQuestion[];                                                                                                              
+  }                                                                                                                                              
+                                                                                                                                                 
+  interface GenerateTemplateModalProps {                                                                                                         
+    projectId: string;                                                                                                                           
+    projectName: string;                                                                                                                         
+    open: boolean;                                                                                                                               
+    onClose: () => void;                                                                                                                         
+    onSuccess: (templateId: string) => void;                                                                                                     
+  }                                                                                                                                              
+                                                                                                                                                 
+  function GenerateTemplateModal({ ... }) {                                                                                                      
+    const [isGenerating, setIsGenerating] = useState(false);                                                                                     
+    const [generatedTemplate, setGeneratedTemplate] = useState<GeneratedTemplate | null>(null);                                                  
+    const [editedTemplate, setEditedTemplate] = useState<GeneratedTemplate | null>(null);                                                        
+                                                                                                                                                 
+    // Generate API call                                                                                                                         
+    const handleGenerate = async () => { ... };                                                                                                  
+                                                                                                                                                 
+    // Create template from edited data                                                                                                          
+    const handleCreate = async () => { ... };                                                                                                    
+                                                                                                                                                 
+    // Render states: generating, preview/edit, error                                                                                            
+  }                                                                                                                                              
+                                                                                                                                                 
+  ---                                                                                                                                            
+  4. Data Flow                                                                                                                                   
+                                                                                                                                                 
+  ┌────────────────────────────────────────────────────────────────┐                                                                             
+  │ 1. User clicks "Generate Template"                             │                                                                             
+  └────────────────────────────────────────────────────────────────┘                                                                             
+                                │                                                                                                                
+                                ▼                                                                                                                
+  ┌────────────────────────────────────────────────────────────────┐                                                                             
+  │ 2. POST /api/projects/:projectId/generate-template             │                                                                             
+  │    - Fetches project data                                      │                                                                             
+  │    - Builds prompt with project context                        │                                                                             
+  │    - Calls OpenAI API (gpt-4o or gpt-5-mini)                  │                                                                              
+  │    - Returns generated template JSON                           │                                                                             
+  └────────────────────────────────────────────────────────────────┘                                                                             
+                                │                                                                                                                
+                                ▼                                                                                                                
+  ┌────────────────────────────────────────────────────────────────┐                                                                             
+  │ 3. Preview modal opens with editable template                  │                                                                             
+  │    - User can edit name, objective, questions                  │                                                                             
+  │    - User can add/remove questions                             │                                                                             
+  │    - User can regenerate if unsatisfied                        │                                                                             
+  └────────────────────────────────────────────────────────────────┘                                                                             
+                                │                                                                                                                
+                                ▼                                                                                                                
+  ┌────────────────────────────────────────────────────────────────┐                                                                             
+  │ 4. User clicks "Create Template"                               │                                                                             
+  │    POST /api/projects/:projectId/templates (existing endpoint) │                                                                             
+  │    - Saves template + questions to database                    │                                                                             
+  └────────────────────────────────────────────────────────────────┘                                                                             
+                                │                                                                                                                
+                                ▼                                                                                                                
+  ┌────────────────────────────────────────────────────────────────┐                                                                             
+  │ 5. Navigate to /templates/:newTemplateId                       │                                                                             
+  │    - User lands on template detail page                        │                                                                             
+  │    - Can further edit or launch a collection                   │                                                                             
+  └────────────────────────────────────────────────────────────────┘                                                                             
+                                                                                                                                                 
+  ---                                                                                                                                            
+  Files to Create/Modify                                                                                                                         
+  ┌─────────────────────────────────────────────────┬────────┬─────────────────────────────────────────────────────────────────┐                 
+  │                      File                       │ Action │                           Description                           │                 
+  ├─────────────────────────────────────────────────┼────────┼─────────────────────────────────────────────────────────────────┤                 
+  │ server/routes.ts                                │ Modify │ Add POST /api/projects/:projectId/generate-template endpoint    │                 
+  ├─────────────────────────────────────────────────┼────────┼─────────────────────────────────────────────────────────────────┤                 
+  │ server/template-generator.ts                    │ Create │ AI logic for generating templates (similar to Barbara patterns) │                 
+  ├─────────────────────────────────────────────────┼────────┼─────────────────────────────────────────────────────────────────┤                 
+  │ client/src/pages/project-detail.tsx             │ Modify │ Add Generate button, modal state, import modal                  │                 
+  ├─────────────────────────────────────────────────┼────────┼─────────────────────────────────────────────────────────────────┤                 
+  │ client/src/components/GenerateTemplateModal.tsx │ Create │ Preview/edit modal for generated template                       │                 
+  └─────────────────────────────────────────────────┴────────┴─────────────────────────────────────────────────────────────────┘                 
+  ---                                                                                                                                            
+  Edge Cases & Error Handling                                                                                                                    
+  ┌────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────┐                              
+  │                Scenario                │                               Handling                               │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ Project has no description/objectives  │ Show warning banner in modal, generate anyway with available context │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ OpenAI API timeout                     │ Show error toast with "Retry" button                                 │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ OpenAI returns malformed JSON          │ Catch parse error, show "Generation failed, please retry"            │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ User closes modal mid-generation       │ Abort request, no side effects                                       │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ Generated questions have invalid types │ Validate and default to "open" type                                  │                              
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤                              
+  │ User creates template but API fails    │ Show error, keep modal open with data intact                         │                              
+  └────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘                              
+  ---                                                                                                                                            
+  Configuration                                                                                                                                  
+                                                                                                                                                 
+  Add to BarbaraConfig (or create separate config):                                                                                              
+  templateGeneration: {                                                                                                                          
+    model: "gpt-4o" | "gpt-5-mini",  // gpt-4o recommended for quality                                                                           
+    maxQuestions: 8,                                                                                                                             
+    minQuestions: 5,                                                                                                                             
+  }                                                                                                                                              
+                                                                                                                                                 
+  ---                                                                                                                                            
+  Future Enhancements (Out of Scope)                                                                                                             
+                                                                                                                                                 
+  - Save generation history for comparison                                                                                                       
+  - "Improve this template" feature for existing templates                                                                                       
+  - Generate questions for specific audience segments                                                                                            
+  - A/B template generation (generate two versions)                                                                                              
+                                                                                                                                                 
+  ---                                                                                                                                            
+  This plan provides a complete path from user click to saved template while maintaining user control through the preview/edit step. The         
+  implementation follows existing patterns in the codebase (Barbara orchestrator for AI, existing template creation endpoint for saving). 

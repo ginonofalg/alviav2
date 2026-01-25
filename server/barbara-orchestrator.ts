@@ -33,6 +33,7 @@ export interface BarbaraConfig {
   summarisation: BarbaraUseCaseConfig;
   templateAnalytics: BarbaraUseCaseConfig;
   projectAnalytics: BarbaraUseCaseConfig;
+  templateGeneration: BarbaraUseCaseConfig;
 }
 
 // Default configuration - can be updated at runtime
@@ -62,6 +63,11 @@ const barbaraConfig: BarbaraConfig = {
     verbosity: "medium",
     reasoningEffort: "medium",
   },
+  templateGeneration: {
+    model: "gpt-5",
+    verbosity: "low",
+    reasoningEffort: "low",
+  },
 };
 
 // Getters and setters for Barbara configuration
@@ -86,6 +92,9 @@ export function updateBarbaraConfig(
   }
   if (updates.projectAnalytics) {
     Object.assign(barbaraConfig.projectAnalytics, updates.projectAnalytics);
+  }
+  if (updates.templateGeneration) {
+    Object.assign(barbaraConfig.templateGeneration, updates.templateGeneration);
   }
   return getBarbaraConfig();
 }
@@ -2528,4 +2537,181 @@ function createEmptyProjectAnalytics(): Omit<ProjectAnalytics, "generatedAt"> {
     },
     recommendations: [],
   };
+}
+
+// Template Generation Types
+export interface GeneratedQuestion {
+  questionText: string;
+  questionType: "open" | "yes_no" | "scale" | "numeric" | "multi_select";
+  guidance: string;
+  scaleMin?: number;
+  scaleMax?: number;
+  multiSelectOptions?: string[];
+  timeHintSeconds?: number;
+  recommendedFollowUps?: number;
+}
+
+export interface GeneratedTemplate {
+  name: string;
+  objective: string;
+  tone: string;
+  questions: GeneratedQuestion[];
+}
+
+export interface TemplateGenerationInput {
+  projectName: string;
+  description?: string | null;
+  objective?: string | null;
+  audienceContext?: string | null;
+  contextType?: string | null;
+  strategicContext?: string | null;
+  tone?: string | null;
+}
+
+export async function generateTemplateFromProject(
+  input: TemplateGenerationInput,
+): Promise<GeneratedTemplate> {
+  console.log("[Barbara] Generating template from project:", input.projectName);
+
+  const config = barbaraConfig.templateGeneration;
+
+  const systemPrompt = `You are an expert research interview designer. Generate interview templates that elicit rich, actionable insights from respondents.
+
+Output JSON with this exact structure:
+{
+  "name": "Template name based on research focus",
+  "objective": "1-2 sentence interview objective",
+  "tone": "professional|friendly|empathetic|neutral",
+  "questions": [
+    {
+      "questionText": "The question to ask",
+      "questionType": "open|yes_no|scale|numeric|multi_select",
+      "guidance": "Instructions for the AI interviewer on what to probe",
+      "scaleMin": 1,
+      "scaleMax": 10,
+      "multiSelectOptions": [],
+      "timeHintSeconds": 60,
+      "recommendedFollowUps": 2
+    }
+  ]
+}
+
+Guidelines:
+- Generate 5-8 questions covering the research objectives
+- Start with rapport-building, end with wrap-up/future questions
+- Use "open" type for exploratory questions (most common)
+- Use "scale" for satisfaction/rating questions (include scaleMin and scaleMax)
+- Use "yes_no" sparingly for filtering questions
+- Use "multi_select" only when specific options should be provided
+- Write guidance that helps probe deeper on key themes
+- Match tone to the project's specified tone or default to professional
+- timeHintSeconds should be 30-120 based on question depth
+- recommendedFollowUps should be 1-3 based on question importance`;
+
+  const hasContent = input.description || input.objective || input.audienceContext;
+  
+  const userPrompt = `Generate an interview template for this research project:
+
+PROJECT NAME: ${input.projectName}
+${input.description ? `DESCRIPTION: ${input.description}` : ""}
+${input.objective ? `RESEARCH OBJECTIVES: ${input.objective}` : ""}
+${input.audienceContext ? `TARGET AUDIENCE: ${input.audienceContext}` : ""}
+${input.contextType ? `CONTEXT TYPE: ${input.contextType}` : ""}
+${input.strategicContext ? `STRATEGIC CONTEXT: ${input.strategicContext}` : ""}
+${input.tone ? `PREFERRED TONE: ${input.tone}` : ""}
+
+${hasContent ? `Focus questions on achieving the research objectives while keeping the target audience in mind.${input.contextType ? ` The context type is "${input.contextType}" so frame questions appropriately for ${input.contextType} research.` : ""}` : "Generate a general interview template based on the project name, suitable for exploratory research."}`;
+
+  try {
+    const response = (await openai.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 2000,
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
+    } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error("No content in response");
+    }
+
+    const parsed = JSON.parse(content);
+
+    const validatedQuestions: GeneratedQuestion[] = (parsed.questions || []).map((q: any, idx: number) => ({
+      questionText: q.questionText || `Question ${idx + 1}`,
+      questionType: ["open", "yes_no", "scale", "numeric", "multi_select"].includes(q.questionType) 
+        ? q.questionType 
+        : "open",
+      guidance: q.guidance || "",
+      scaleMin: q.questionType === "scale" ? (q.scaleMin || 1) : undefined,
+      scaleMax: q.questionType === "scale" ? (q.scaleMax || 10) : undefined,
+      multiSelectOptions: q.questionType === "multi_select" ? (q.multiSelectOptions || []) : undefined,
+      timeHintSeconds: q.timeHintSeconds || 60,
+      recommendedFollowUps: q.recommendedFollowUps || 2,
+    }));
+
+    const result: GeneratedTemplate = {
+      name: parsed.name || `${input.projectName} Template`,
+      objective: parsed.objective || input.objective || "",
+      tone: ["professional", "friendly", "empathetic", "neutral"].includes(parsed.tone) 
+        ? parsed.tone 
+        : input.tone || "professional",
+      questions: validatedQuestions.length > 0 ? validatedQuestions : getDefaultQuestions(),
+    };
+
+    console.log("[Barbara] Template generation complete:", {
+      name: result.name,
+      questionCount: result.questions.length,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("[Barbara] Template generation failed:", error);
+    throw new Error("Failed to generate template. Please try again.");
+  }
+}
+
+function getDefaultQuestions(): GeneratedQuestion[] {
+  return [
+    {
+      questionText: "Can you tell me a bit about yourself and your experience with this topic?",
+      questionType: "open",
+      guidance: "Build rapport and understand background context",
+      timeHintSeconds: 60,
+      recommendedFollowUps: 2,
+    },
+    {
+      questionText: "What has been your overall experience so far?",
+      questionType: "open",
+      guidance: "Understand general impressions and satisfaction",
+      timeHintSeconds: 90,
+      recommendedFollowUps: 2,
+    },
+    {
+      questionText: "What challenges or pain points have you encountered?",
+      questionType: "open",
+      guidance: "Probe for specific issues and their impact",
+      timeHintSeconds: 90,
+      recommendedFollowUps: 3,
+    },
+    {
+      questionText: "What improvements would make the biggest difference for you?",
+      questionType: "open",
+      guidance: "Identify priorities and desired outcomes",
+      timeHintSeconds: 90,
+      recommendedFollowUps: 2,
+    },
+    {
+      questionText: "Is there anything else you'd like to share?",
+      questionType: "open",
+      guidance: "Allow respondent to add anything missed",
+      timeHintSeconds: 60,
+      recommendedFollowUps: 1,
+    },
+  ];
 }

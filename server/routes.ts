@@ -21,6 +21,7 @@ import {
   generateCrossInterviewAnalysis,
   generateTemplateAnalytics,
   generateProjectAnalytics,
+  generateTemplateFromProject,
 } from "./barbara-orchestrator";
 import { getInfographicService } from "./infographic-service";
 import { InfographicPromptBuilder } from "./infographic-prompts";
@@ -1451,6 +1452,42 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating template:", error);
       res.status(500).json({ message: "Failed to create template" });
+    }
+  });
+
+  // Generate template using AI based on project metadata
+  app.post("/api/projects/:projectId/generate-template", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const projectId = req.params.projectId;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Get project data
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Generate template using AI
+      const generatedTemplate = await generateTemplateFromProject({
+        projectName: project.name,
+        description: project.description,
+        objective: project.objective,
+        audienceContext: project.audienceContext,
+        contextType: project.contextType,
+        strategicContext: project.strategicContext,
+        tone: project.tone,
+      });
+      
+      res.json(generatedTemplate);
+    } catch (error) {
+      console.error("Error generating template:", error);
+      res.status(500).json({ message: "Failed to generate template. Please try again." });
     }
   });
 

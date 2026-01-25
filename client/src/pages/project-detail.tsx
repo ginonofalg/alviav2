@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,7 +16,8 @@ import {
   MoreVertical,
   Play,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ProjectAnalyticsView } from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
+import { GenerateTemplateDialog } from "@/components/GenerateTemplateDialog";
 import { Image as ImageIcon } from "lucide-react";
 import type { Project, InterviewTemplate, Collection } from "@shared/schema";
 
@@ -163,6 +166,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
 
   const { data: project, isLoading: projectLoading } = useQuery<ProjectWithCounts>({
     queryKey: ["/api/projects", projectId],
@@ -235,6 +239,15 @@ export default function ProjectDetailPage() {
                 Settings
               </Button>
             </Link>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setGenerateDialogOpen(true)}
+              data-testid="button-generate-template"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate Template
+            </Button>
             <Link href={`/projects/${projectId}/templates/new`}>
               <Button size="sm" data-testid="button-new-template">
                 <Plus className="w-4 h-4 mr-2" />
@@ -382,6 +395,14 @@ export default function ProjectDetailPage() {
           />
         </TabsContent>
       </Tabs>
+
+      <GenerateTemplateDialog
+        projectId={projectId!}
+        projectName={project.name}
+        hasProjectMetadata={!!(project.description || project.objective || project.audienceContext)}
+        open={generateDialogOpen}
+        onOpenChange={setGenerateDialogOpen}
+      />
     </div>
   );
 }
