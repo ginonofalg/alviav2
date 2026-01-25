@@ -123,3 +123,20 @@ Implemented a simplified cascade refresh UX for analytics to address the tedious
   - `POST /api/templates/:templateId/analytics/cascade-refresh` - Refreshes stale collections → template in order
 - **Smart UX**: Dialog explains what needs refreshing (collections, templates) before proceeding, with error handling for dependency fetch failures
 - **Partial Success Handling**: Continues refreshing even if individual items fail, reports errors at the end
+
+### Security: Data Isolation Fix (January 25, 2026)
+Fixed a critical security vulnerability where new users could access Templates, Collections, and Sessions belonging to other users. The system now enforces proper access control through the ownership hierarchy.
+
+**Changes Made:**
+1. **User-Filtered Queries**: Added `getTemplatesByUser()`, `getCollectionsByUser()`, and `getSessionsByUser()` methods that filter data through the User→Workspace→Project chain
+2. **Ownership Verification Helpers**: Added `verifyUserAccessToProject()`, `verifyUserAccessToTemplate()`, `verifyUserAccessToCollection()`, and `verifyUserAccessToSession()` methods to validate ownership through the hierarchy
+3. **List Endpoints**: Updated GET /api/templates, /api/collections, and /api/sessions to return only user-owned data
+4. **Individual Resource Endpoints**: Added ownership verification to all GET/PATCH/DELETE endpoints for templates, collections, and sessions
+5. **Analytics Endpoints**: Added ownership verification to all analytics endpoints (collection, template, project level)
+6. **Legacy Analytics Fix**: GET /api/analytics now requires projectId or collectionId and verifies ownership before returning data
+7. **Management Endpoints**: Added ownership verification to all project-scoped and template-scoped management endpoints
+
+**Security Model:**
+- User → Workspace (via ownerId) → Project → Template → Collection → Session
+- All authenticated endpoints verify ownership by tracing back through this hierarchy
+- Public endpoints for respondent interview flow remain intentionally unauthenticated

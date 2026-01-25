@@ -53,6 +53,7 @@ export interface IStorage {
   // Templates
   getTemplate(id: string): Promise<InterviewTemplate | undefined>;
   getTemplatesByProject(projectId: string): Promise<InterviewTemplate[]>;
+  getTemplatesByUser(userId: string): Promise<InterviewTemplate[]>;
   getAllTemplates(): Promise<InterviewTemplate[]>;
   createTemplate(template: InsertTemplate): Promise<InterviewTemplate>;
   updateTemplate(id: string, template: Partial<InsertTemplate>): Promise<InterviewTemplate | undefined>;
@@ -70,6 +71,7 @@ export interface IStorage {
   getCollection(id: string): Promise<Collection | undefined>;
   getCollectionsByTemplate(templateId: string): Promise<Collection[]>;
   getCollectionsByProject(projectId: string): Promise<Collection[]>;
+  getCollectionsByUser(userId: string): Promise<Collection[]>;
   getAllCollections(): Promise<Collection[]>;
   createCollection(collection: InsertCollection): Promise<Collection>;
   updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined>;
@@ -93,6 +95,7 @@ export interface IStorage {
   getSiblingSessionIds(sessionId: string): Promise<{ prevId: string | null; nextId: string | null }>;
   getAllSessions(limit?: number): Promise<InterviewSession[]>;
   getAllSessionsEnriched(limit?: number): Promise<EnrichedSession[]>;
+  getSessionsByUser(userId: string, limit?: number): Promise<EnrichedSession[]>;
   createSession(session: InsertSession): Promise<InterviewSession>;
   updateSession(id: string, session: Partial<InterviewSession>): Promise<InterviewSession | undefined>;
   deleteSession(id: string): Promise<boolean>;
@@ -182,6 +185,12 @@ export interface IStorage {
   }>;
   
   getAggregatedAnalytics(userId: string): Promise<AggregatedAnalytics>;
+  
+  // Ownership verification helpers
+  verifyUserAccessToProject(userId: string, projectId: string): Promise<boolean>;
+  verifyUserAccessToTemplate(userId: string, templateId: string): Promise<boolean>;
+  verifyUserAccessToCollection(userId: string, collectionId: string): Promise<boolean>;
+  verifyUserAccessToSession(userId: string, sessionId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -262,6 +271,18 @@ export class DatabaseStorage implements IStorage {
   async getAllTemplates(): Promise<InterviewTemplate[]> {
     return await db.select().from(interviewTemplates)
       .orderBy(desc(interviewTemplates.createdAt));
+  }
+
+  async getTemplatesByUser(userId: string): Promise<InterviewTemplate[]> {
+    const userProjects = await this.getProjectsByUser(userId);
+    if (userProjects.length === 0) return [];
+    
+    const allTemplates: InterviewTemplate[] = [];
+    for (const project of userProjects) {
+      const projectTemplates = await this.getTemplatesByProject(project.id);
+      allTemplates.push(...projectTemplates);
+    }
+    return allTemplates;
   }
 
   async createTemplate(template: InsertTemplate): Promise<InterviewTemplate> {
@@ -345,6 +366,18 @@ export class DatabaseStorage implements IStorage {
 
   async getAllCollections(): Promise<Collection[]> {
     return await db.select().from(collections).orderBy(desc(collections.createdAt));
+  }
+
+  async getCollectionsByUser(userId: string): Promise<Collection[]> {
+    const userProjects = await this.getProjectsByUser(userId);
+    if (userProjects.length === 0) return [];
+    
+    const allCollections: Collection[] = [];
+    for (const project of userProjects) {
+      const projectCollections = await this.getCollectionsByProject(project.id);
+      allCollections.push(...projectCollections);
+    }
+    return allCollections;
   }
 
   async createCollection(collection: InsertCollection): Promise<Collection> {
@@ -501,6 +534,41 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(interviewTemplates, eq(collections.templateId, interviewTemplates.id))
       .innerJoin(projects, eq(interviewTemplates.projectId, projects.id))
       .leftJoin(respondents, eq(interviewSessions.respondentId, respondents.id))
+      .orderBy(desc(interviewSessions.createdAt));
+
+    const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
+
+    return rows.map((row) => ({
+      ...row.session,
+      collectionName: row.collectionName,
+      templateName: row.templateName,
+      projectName: row.projectName,
+      respondentName: row.respondentInformalName || row.respondentFullName || null,
+    }));
+  }
+
+  async getSessionsByUser(userId: string, limit?: number): Promise<EnrichedSession[]> {
+    const userWorkspaces = await this.getWorkspacesByOwner(userId);
+    if (userWorkspaces.length === 0) return [];
+    
+    const workspaceIds = userWorkspaces.map(w => w.id);
+    
+    const baseQuery = db
+      .select({
+        session: interviewSessions,
+        collectionName: collections.name,
+        templateName: interviewTemplates.name,
+        projectName: projects.name,
+        respondentInformalName: respondents.informalName,
+        respondentFullName: respondents.fullName,
+      })
+      .from(interviewSessions)
+      .innerJoin(collections, eq(interviewSessions.collectionId, collections.id))
+      .innerJoin(interviewTemplates, eq(collections.templateId, interviewTemplates.id))
+      .innerJoin(projects, eq(interviewTemplates.projectId, projects.id))
+      .innerJoin(workspaces, eq(projects.workspaceId, workspaces.id))
+      .leftJoin(respondents, eq(interviewSessions.respondentId, respondents.id))
+      .where(sql`${workspaces.id} IN ${workspaceIds}`)
       .orderBy(desc(interviewSessions.createdAt));
 
     const rows = limit ? await baseQuery.limit(limit) : await baseQuery;
@@ -1377,6 +1445,38 @@ export class DatabaseStorage implements IStorage {
         collectionsNeedingRefresh,
       },
     };
+  }
+
+  // Ownership verification helpers
+  async verifyUserAccessToProject(userId: string, projectId: string): Promise<boolean> {
+    const project = await this.getProject(projectId);
+    if (!project) return false;
+    
+    const workspace = await this.getWorkspace(project.workspaceId);
+    if (!workspace) return false;
+    
+    return workspace.ownerId === userId;
+  }
+
+  async verifyUserAccessToTemplate(userId: string, templateId: string): Promise<boolean> {
+    const template = await this.getTemplate(templateId);
+    if (!template) return false;
+    
+    return this.verifyUserAccessToProject(userId, template.projectId);
+  }
+
+  async verifyUserAccessToCollection(userId: string, collectionId: string): Promise<boolean> {
+    const collection = await this.getCollection(collectionId);
+    if (!collection) return false;
+    
+    return this.verifyUserAccessToTemplate(userId, collection.templateId);
+  }
+
+  async verifyUserAccessToSession(userId: string, sessionId: string): Promise<boolean> {
+    const session = await this.getSession(sessionId);
+    if (!session) return false;
+    
+    return this.verifyUserAccessToCollection(userId, session.collectionId);
   }
 }
 

@@ -88,11 +88,31 @@ export async function registerRoutes(
     }
   });
 
-  // Analytics - legacy basic stats endpoint
-  app.get("/api/analytics", isAuthenticated, async (req, res) => {
+  // Analytics - legacy basic stats endpoint (requires projectId or collectionId for scoping)
+  app.get("/api/analytics", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const projectId = req.query.projectId as string | undefined;
       const collectionId = req.query.collectionId as string | undefined;
+      
+      // Require at least one scope parameter to prevent cross-tenant data exposure
+      if (!projectId && !collectionId) {
+        return res.status(400).json({ message: "Either projectId or collectionId is required" });
+      }
+      
+      // Verify ownership of the requested scope
+      if (projectId) {
+        const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+      if (collectionId) {
+        const hasAccess = await storage.verifyUserAccessToCollection(userId, collectionId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
       
       const analytics = await storage.getAnalytics({ projectId, collectionId });
       res.json(analytics);
@@ -115,11 +135,18 @@ export async function registerRoutes(
   });
 
   // Collection Analytics - Get analytics for a specific collection
-  app.get("/api/collections/:collectionId/analytics", isAuthenticated, async (req, res) => {
+  app.get("/api/collections/:collectionId/analytics", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);
@@ -142,11 +169,18 @@ export async function registerRoutes(
   });
 
   // Collection Analytics - Trigger cross-interview analysis
-  app.post("/api/collections/:collectionId/analytics/refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/collections/:collectionId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const template = await storage.getTemplate(collection.templateId);
@@ -213,11 +247,18 @@ export async function registerRoutes(
   });
 
   // Template Analytics
-  app.get("/api/templates/:templateId/analytics", isAuthenticated, async (req, res) => {
+  app.get("/api/templates/:templateId/analytics", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const collections = await storage.getCollectionsByTemplate(template.id);
@@ -246,11 +287,18 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/templates/:templateId/analytics/refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/templates/:templateId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const questions = await storage.getQuestionsByTemplate(template.id);
@@ -314,11 +362,18 @@ export async function registerRoutes(
   });
 
   // Project Analytics
-  app.get("/api/projects/:projectId/analytics", isAuthenticated, async (req, res) => {
+  app.get("/api/projects/:projectId/analytics", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const templates = await storage.getTemplatesByProject(project.id);
@@ -347,11 +402,18 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects/:projectId/analytics/refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const templates = await storage.getTemplatesByProject(project.id);
@@ -423,11 +485,18 @@ export async function registerRoutes(
   });
 
   // Project Analytics - Check dependencies (what needs refreshing)
-  app.get("/api/projects/:projectId/analytics/dependencies", isAuthenticated, async (req, res) => {
+  app.get("/api/projects/:projectId/analytics/dependencies", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const templates = await storage.getTemplatesByProject(project.id);
@@ -503,11 +572,18 @@ export async function registerRoutes(
   });
 
   // Project Analytics - Cascade refresh (refresh all stale dependencies then project)
-  app.post("/api/projects/:projectId/analytics/cascade-refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/analytics/cascade-refresh", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const results = {
@@ -1030,13 +1106,20 @@ export async function registerRoutes(
   });
 
   // Project-level infographic endpoints
-  app.post("/api/projects/:projectId/infographic/summary", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/infographic/summary", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       if (!project.analyticsData) {
@@ -1066,13 +1149,20 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects/:projectId/infographic/themes", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/infographic/themes", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       if (!project.analyticsData) {
@@ -1102,13 +1192,20 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects/:projectId/infographic/insights", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/infographic/insights", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
       }
 
       if (!project.analyticsData) {
@@ -1264,9 +1361,10 @@ export async function registerRoutes(
   });
 
   // Templates
-  app.get("/api/templates", isAuthenticated, async (req, res) => {
+  app.get("/api/templates", isAuthenticated, async (req: any, res) => {
     try {
-      const templates = await storage.getAllTemplates();
+      const userId = req.user.claims.sub;
+      const templates = await storage.getTemplatesByUser(userId);
       const templatesWithCounts = await Promise.all(
         templates.map(async (template) => {
           const questions = await storage.getQuestionsByTemplate(template.id);
@@ -1283,8 +1381,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/projects/:projectId/templates", isAuthenticated, async (req, res) => {
+  app.get("/api/projects/:projectId/templates", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const templates = await storage.getTemplatesByProject(req.params.projectId);
       res.json(templates);
     } catch (error) {
@@ -1309,8 +1415,16 @@ export async function registerRoutes(
     })).optional(),
   });
 
-  app.post("/api/projects/:projectId/templates", isAuthenticated, async (req, res) => {
+  app.post("/api/projects/:projectId/templates", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const parseResult = createTemplateWithQuestionsSchema.safeParse(req.body);
       if (!parseResult.success) {
         const errorMessage = fromError(parseResult.error).toString();
@@ -1340,11 +1454,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/templates/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/templates/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const template = await storage.getTemplate(req.params.id);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
+      }
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       const questions = await storage.getQuestionsByTemplate(template.id);
@@ -1374,11 +1495,18 @@ export async function registerRoutes(
     })).optional(),
   });
 
-  app.patch("/api/templates/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/templates/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const template = await storage.getTemplate(req.params.id);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const parseResult = updateTemplateSchema.safeParse(req.body);
@@ -1412,15 +1540,21 @@ export async function registerRoutes(
   });
 
   // Collections
-  app.get("/api/collections", isAuthenticated, async (req, res) => {
+  app.get("/api/collections", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const { templateId } = req.query;
       
       let collections;
       if (templateId && typeof templateId === "string") {
+        // Verify user has access to this template
+        const hasAccess = await storage.verifyUserAccessToTemplate(userId, templateId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Access denied" });
+        }
         collections = await storage.getCollectionsByTemplate(templateId);
       } else {
-        collections = await storage.getAllCollections();
+        collections = await storage.getCollectionsByUser(userId);
       }
       
       // Add stats to each collection
@@ -1442,8 +1576,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/projects/:projectId/collections", isAuthenticated, async (req, res) => {
+  app.get("/api/projects/:projectId/collections", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const collections = await storage.getCollectionsByProject(req.params.projectId);
       res.json(collections);
     } catch (error) {
@@ -1452,11 +1594,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/collections/:id", async (req, res) => {
+  app.get("/api/collections/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const collection = await storage.getCollection(req.params.id);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
+      }
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       // Get template and project info
@@ -1481,11 +1630,18 @@ export async function registerRoutes(
     isActive: z.boolean().optional(),
   });
 
-  app.patch("/api/collections/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const collection = await storage.getCollection(req.params.id);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
+      }
+
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const parseResult = updateCollectionSchema.safeParse(req.body);
@@ -1518,8 +1674,16 @@ export async function registerRoutes(
     targetResponses: z.number().min(1).optional(),
   });
 
-  app.post("/api/templates/:templateId/collections", isAuthenticated, async (req, res) => {
+  app.post("/api/templates/:templateId/collections", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const parseResult = createCollectionSchema.safeParse(req.body);
       if (!parseResult.success) {
         const errorMessage = fromError(parseResult.error).toString();
@@ -1538,8 +1702,16 @@ export async function registerRoutes(
   });
 
   // Respondent Invitation Management
-  app.get("/api/collections/:collectionId/respondents", isAuthenticated, async (req, res) => {
+  app.get("/api/collections/:collectionId/respondents", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const respondentList = await storage.getRespondentsByCollection(req.params.collectionId);
       res.json(respondentList);
     } catch (error) {
@@ -1558,8 +1730,16 @@ export async function registerRoutes(
   });
 
   // Invite a single respondent
-  app.post("/api/collections/:collectionId/respondents", isAuthenticated, async (req, res) => {
+  app.post("/api/collections/:collectionId/respondents", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const parseResult = inviteRespondentSchema.safeParse(req.body);
       if (!parseResult.success) {
         const errorMessage = fromError(parseResult.error).toString();
@@ -1605,8 +1785,16 @@ export async function registerRoutes(
   });
 
   // Bulk invite respondents (from CSV data)
-  app.post("/api/collections/:collectionId/respondents/bulk", isAuthenticated, async (req, res) => {
+  app.post("/api/collections/:collectionId/respondents/bulk", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const parseResult = bulkInviteSchema.safeParse(req.body);
       if (!parseResult.success) {
         const errorMessage = fromError(parseResult.error).toString();
@@ -1669,10 +1857,11 @@ export async function registerRoutes(
   });
 
   // Sessions
-  app.get("/api/sessions", isAuthenticated, async (req, res) => {
+  app.get("/api/sessions", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const sessions = await storage.getAllSessionsEnriched(limit);
+      const sessions = await storage.getSessionsByUser(userId, limit);
       res.json(sessions);
     } catch (error) {
       console.error("Error fetching sessions:", error);
@@ -1680,12 +1869,20 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/sessions/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/sessions/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const session = await storage.getSessionWithRespondent(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
       }
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       res.json(session);
     } catch (error) {
       console.error("Error fetching session:", error);
@@ -1694,11 +1891,18 @@ export async function registerRoutes(
   });
 
   // Delete session
-  app.delete("/api/sessions/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/sessions/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const session = await storage.getSession(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
+      }
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       const deleted = await storage.deleteSession(req.params.id);
@@ -1714,8 +1918,16 @@ export async function registerRoutes(
   });
 
   // Update researcher notes
-  app.patch("/api/sessions/:id/notes", isAuthenticated, async (req, res) => {
+  app.patch("/api/sessions/:id/notes", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const { notes } = req.body;
       const session = await storage.updateSession(req.params.id, { 
         researcherNotes: notes 
@@ -1731,8 +1943,16 @@ export async function registerRoutes(
   });
 
   // Update review flags
-  app.patch("/api/sessions/:id/flags", isAuthenticated, async (req, res) => {
+  app.patch("/api/sessions/:id/flags", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const { flags } = req.body;
       if (!Array.isArray(flags)) {
         return res.status(400).json({ message: "flags must be an array" });
@@ -1757,8 +1977,16 @@ export async function registerRoutes(
   });
 
   // Override session status
-  app.patch("/api/sessions/:id/status", isAuthenticated, async (req, res) => {
+  app.patch("/api/sessions/:id/status", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const { status } = req.body;
       const validStatuses = ["pending", "consent_given", "in_progress", "paused", "completed", "abandoned"];
       if (!validStatuses.includes(status)) {
@@ -1777,8 +2005,16 @@ export async function registerRoutes(
   });
 
   // Export session data (JSON/CSV)
-  app.get("/api/sessions/:id/export", isAuthenticated, async (req, res) => {
+  app.get("/api/sessions/:id/export", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const format = req.query.format as string || "json";
       const session = await storage.getSessionWithRespondent(req.params.id);
       if (!session) {
@@ -1842,8 +2078,16 @@ export async function registerRoutes(
   });
 
   // Get sibling session IDs for navigation
-  app.get("/api/sessions/:id/siblings", isAuthenticated, async (req, res) => {
+  app.get("/api/sessions/:id/siblings", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
       const siblings = await storage.getSiblingSessionIds(req.params.id);
       res.json(siblings);
     } catch (error) {
@@ -1853,11 +2097,18 @@ export async function registerRoutes(
   });
 
   // Generate resume link for incomplete sessions
-  app.post("/api/sessions/:id/resume-link", isAuthenticated, async (req, res) => {
+  app.post("/api/sessions/:id/resume-link", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const session = await storage.getSession(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
+      }
+      
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       if (!["paused", "in_progress", "consent_given", "pending"].includes(session.status)) {
@@ -1975,26 +2226,17 @@ export async function registerRoutes(
   });
 
   // GET /api/sessions/:sessionId/metrics - Get session performance metrics
-  app.get("/api/sessions/:sessionId/metrics", isAuthenticated, async (req, res) => {
+  app.get("/api/sessions/:sessionId/metrics", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const session = await storage.getSession(req.params.sessionId);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
       }
 
-      // Verify user has access to this session's project
-      const collection = await storage.getCollection(session.collectionId);
-      if (!collection) {
-        return res.status(404).json({ message: "Collection not found" });
-      }
-
-      const template = await storage.getTemplate(collection.templateId);
-      if (!template) {
-        return res.status(404).json({ message: "Template not found" });
-      }
-
-      const project = await storage.getProject(template.projectId);
-      if (!project || project.workspaceId !== (req.user as any).workspaceId) {
+      // Verify ownership
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.sessionId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
