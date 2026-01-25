@@ -140,3 +140,14 @@ Fixed a critical security vulnerability where new users could access Templates, 
 - User → Workspace (via ownerId) → Project → Template → Collection → Session
 - All authenticated endpoints verify ownership by tracing back through this hierarchy
 - Public endpoints for respondent interview flow remain intentionally unauthenticated
+
+### Auto-Generate Template Feature (January 25, 2026)
+Added AI-powered template generation that creates interview templates from project metadata using GPT-5:
+- **Generate Button**: "Generate Template" button in project detail page header (next to "New Template")
+- **AI Generation**: Uses `generateTemplateFromProject()` function in barbara-orchestrator.ts with gpt-5, low verbosity, and low reasoning
+- **API Endpoint**: `POST /api/projects/:projectId/generate-template` with ownership verification
+- **Dialog Flow**: GenerateTemplateDialog component provides generate → preview → create → redirect workflow
+- **Input Context**: Uses project description, research objectives, audience context, context type, and strategic context to generate relevant questions
+- **Preview Features**: Shows generated template name, objective, tone, and numbered question list with question types
+- **Editing**: Template name is editable before creation; full editing available in template editor after redirect
+- **Output**: Creates a new template with 5-8 AI-generated questions tailored to the project's research goals
