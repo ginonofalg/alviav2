@@ -1,0 +1,218 @@
+Security Fix: Data Isolation for Templates, Collections, and Sessions                                                                           
+                                                                                                                                                 
+ Problem Summary                                                                                                                                 
+                                                                                                                                                 
+ New users can see Templates, Collections, and Sessions belonging to other users because these API endpoints use unfiltered database queries:    
+                                                                                                                                                 
+ - GET /api/templates → storage.getAllTemplates() returns ALL templates in the system                                                            
+ - GET /api/collections → storage.getAllCollections() returns ALL collections                                                                    
+ - GET /api/sessions → storage.getAllSessionsEnriched() returns ALL sessions                                                                     
+ - GET /api/collections/:id → Missing isAuthenticated middleware entirely                                                                        
+                                                                                                                                                 
+ Projects work correctly because they filter through the workspace ownership chain:                                                              
+ User → Workspace (ownerId) → Project (workspaceId)                                                                                              
+                                                                                                                                                 
+ Templates/Collections/Sessions need to filter through the same chain:                                                                           
+ User → Workspace → Project → Template → Collection → Session                                                                                    
+                                                                                                                                                 
+ Affected Endpoints                                                                                                                              
+                                                                                                                                                 
+ List Endpoints (return ALL data, need user filtering)                                                                                           
+ ┌──────────────────────┬─────────────────────────┬─────────────────────────────┐                                                                
+ │       Endpoint       │      Current Issue      │        Fix Required         │                                                                
+ ├──────────────────────┼─────────────────────────┼─────────────────────────────┤                                                                
+ │ GET /api/templates   │ Returns all templates   │ Filter by user's workspaces │                                                                
+ ├──────────────────────┼─────────────────────────┼─────────────────────────────┤                                                                
+ │ GET /api/collections │ Returns all collections │ Filter by user's workspaces │                                                                
+ ├──────────────────────┼─────────────────────────┼─────────────────────────────┤                                                                
+ │ GET /api/sessions    │ Returns all sessions    │ Filter by user's workspaces │                                                                
+ └──────────────────────┴─────────────────────────┴─────────────────────────────┘                                                                
+ Resource Endpoints (authenticated but no ownership check)                                                                                       
+ ┌──────────────────────────────────────┬───────────────────────────────────────┐                                                                
+ │               Endpoint               │             Fix Required              │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/collections/:id             │ Add isAuthenticated + ownership check │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ PATCH /api/collections/:id           │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/templates/:id               │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ PATCH /api/templates/:id             │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/sessions/:id                │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ DELETE /api/sessions/:id             │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ PATCH /api/sessions/:id/notes        │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ PATCH /api/sessions/:id/flags        │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ PATCH /api/sessions/:id/status       │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/sessions/:id/export         │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/sessions/:id/siblings       │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ POST /api/sessions/:id/resume-link   │ Add ownership verification            │                                                                
+ ├──────────────────────────────────────┼───────────────────────────────────────┤                                                                
+ │ GET /api/sessions/:sessionId/metrics │ Add ownership verification            │                                                                
+ └──────────────────────────────────────┴───────────────────────────────────────┘                                                                
+ Analytics & Related Endpoints (authenticated but no ownership check)                                                                            
+ ┌───────────────────────────────────────────────────────────┬────────────────────────────┐                                                      
+ │                         Endpoint                          │        Fix Required        │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ GET /api/collections/:collectionId/analytics              │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/collections/:collectionId/analytics/refresh     │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ GET /api/collections/:collectionId/respondents            │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/collections/:collectionId/respondents           │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/collections/:collectionId/respondents/bulk      │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ GET /api/collections/:collectionId/sessions               │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/collections/:collectionId/infographic/*         │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ GET /api/templates/:templateId/analytics                  │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/templates/:templateId/analytics/refresh         │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ GET /api/templates/:templateId/analytics/dependencies     │ Add ownership verification │                                                      
+ ├───────────────────────────────────────────────────────────┼────────────────────────────┤                                                      
+ │ POST /api/templates/:templateId/analytics/cascade-refresh │ Add ownership verification │                                                      
+ └───────────────────────────────────────────────────────────┴────────────────────────────┘                                                      
+ Intentionally Public Endpoints (for respondent interview flow)                                                                                  
+                                                                                                                                                 
+ These endpoints should remain unauthenticated:                                                                                                  
+ - GET /api/sessions/:sessionId/questions - Respondent needs questions during interview                                                          
+ - POST /api/collections/:collectionId/sessions - Start interview (consent flow)                                                                 
+ - POST /api/collections/:collectionId/start-by-token - Token-based interview start                                                              
+ - PATCH /api/sessions/:id - Update session during interview                                                                                     
+ - POST /api/sessions/:sessionId/segments - Save responses during interview                                                                      
+ - GET /api/sessions/:id/review - Public review view (protected by 64-char token)                                                                
+ - POST /api/sessions/:id/review - Submit review (protected by token)                                                                            
+ - POST /api/sessions/:id/review/generate-link - Generate shareable review link                                                                  
+                                                                                                                                                 
+ Implementation Plan                                                                                                                             
+                                                                                                                                                 
+ Step 1: Add Ownership Verification Helper (storage.ts)                                                                                          
+                                                                                                                                                 
+ Add helper methods to verify user access through the hierarchy:                                                                                 
+                                                                                                                                                 
+ async verifyUserAccessToProject(userId: string, projectId: string): Promise<boolean>                                                            
+ async verifyUserAccessToTemplate(userId: string, templateId: string): Promise<boolean>                                                          
+ async verifyUserAccessToCollection(userId: string, collectionId: string): Promise<boolean>                                                      
+ async verifyUserAccessToSession(userId: string, sessionId: string): Promise<boolean>                                                            
+                                                                                                                                                 
+ These will trace the hierarchy chain and verify ownership:                                                                                      
+ - Project: Project → Workspace → check ownerId matches userId                                                                                   
+ - Template: Template → Project → Workspace → check ownerId matches userId                                                                       
+ - Collection: Collection → Template → Project → Workspace → check ownerId matches userId                                                        
+ - Session: Session → Collection → Template → Project → Workspace → check ownerId matches userId                                                 
+                                                                                                                                                 
+ Step 2: Add User-Filtered Query Methods (storage.ts)                                                                                            
+                                                                                                                                                 
+ Following the existing getProjectsByUser pattern, add:                                                                                          
+                                                                                                                                                 
+ async getTemplatesByUser(userId: string): Promise<InterviewTemplate[]>                                                                          
+ async getCollectionsByUser(userId: string): Promise<Collection[]>                                                                               
+ async getSessionsByUser(userId: string, limit?: number): Promise<EnrichedSession[]>                                                             
+                                                                                                                                                 
+ Each method will:                                                                                                                               
+ 1. Get user's workspaces (where ownerId = userId)                                                                                               
+ 2. Get projects in those workspaces                                                                                                             
+ 3. Get templates/collections/sessions through the hierarchy                                                                                     
+                                                                                                                                                 
+ Step 3: Update API Routes (routes.ts)                                                                                                           
+                                                                                                                                                 
+ Update endpoints to use user-filtered queries:                                                                                                  
+                                                                                                                                                 
+ Line ~1267: GET /api/templates                                                                                                                  
+ // Before: const templates = await storage.getAllTemplates();                                                                                   
+ // After:  const templates = await storage.getTemplatesByUser(userId);                                                                          
+                                                                                                                                                 
+ Line ~1415: GET /api/collections                                                                                                                
+ // Before: collections = await storage.getAllCollections();                                                                                     
+ // After:  collections = await storage.getCollectionsByUser(userId);                                                                            
+                                                                                                                                                 
+ Line ~1455: GET /api/collections/:id                                                                                                            
+ - Add isAuthenticated middleware                                                                                                                
+ - Add ownership verification before returning data                                                                                              
+                                                                                                                                                 
+ Line ~1672: GET /api/sessions                                                                                                                   
+ // Before: const sessions = await storage.getAllSessionsEnriched(limit);                                                                        
+ // After:  const sessions = await storage.getSessionsByUser(userId, limit);                                                                     
+                                                                                                                                                 
+ Step 4: Add Ownership Checks to Sensitive Endpoints (routes.ts)                                                                                 
+                                                                                                                                                 
+ For endpoints that access specific resources, add ownership verification.                                                                       
+                                                                                                                                                 
+ Pattern to add at start of each handler:                                                                                                        
+ const userId = req.user.claims.sub;                                                                                                             
+ const hasAccess = await storage.verifyUserAccessToCollection(userId, collectionId);                                                             
+ if (!hasAccess) {                                                                                                                               
+   return res.status(403).json({ message: "Access denied" });                                                                                    
+ }                                                                                                                                               
+                                                                                                                                                 
+ Collection endpoints requiring ownership check:                                                                                                 
+ - GET /api/collections/:id (line ~1455) - also add isAuthenticated                                                                              
+ - PATCH /api/collections/:id (line ~1484)                                                                                                       
+ - GET /api/collections/:collectionId/analytics (line ~118)                                                                                      
+ - POST /api/collections/:collectionId/analytics/refresh (line ~145)                                                                             
+ - GET /api/collections/:collectionId/respondents (line ~1541)                                                                                   
+ - POST /api/collections/:collectionId/respondents (line ~1561)                                                                                  
+ - POST /api/collections/:collectionId/respondents/bulk                                                                                          
+ - GET /api/collections/:collectionId/sessions (line ~2024)                                                                                      
+ - POST /api/collections/:collectionId/infographic/summary (line ~922)                                                                           
+ - POST /api/collections/:collectionId/infographic/themes (line ~959)                                                                            
+ - POST /api/collections/:collectionId/infographic/findings (line ~996)                                                                          
+                                                                                                                                                 
+ Template endpoints requiring ownership check:                                                                                                   
+ - GET /api/templates/:id (line ~1343)                                                                                                           
+ - PATCH /api/templates/:id (line ~1377)                                                                                                         
+ - GET /api/templates/:templateId/analytics (line ~216)                                                                                          
+ - POST /api/templates/:templateId/analytics/refresh (line ~249)                                                                                 
+ - GET /api/templates/:templateId/analytics/dependencies (line ~718)                                                                             
+ - POST /api/templates/:templateId/analytics/cascade-refresh (line ~774)                                                                         
+                                                                                                                                                 
+ Session endpoints requiring ownership check:                                                                                                    
+ - GET /api/sessions/:id (line ~1683)                                                                                                            
+ - DELETE /api/sessions/:id (line ~1697)                                                                                                         
+ - PATCH /api/sessions/:id/notes (line ~1717)                                                                                                    
+ - PATCH /api/sessions/:id/flags (line ~1734)                                                                                                    
+ - PATCH /api/sessions/:id/status (line ~1760)                                                                                                   
+ - GET /api/sessions/:id/export (line ~1780)                                                                                                     
+ - GET /api/sessions/:id/siblings (line ~1845)                                                                                                   
+ - POST /api/sessions/:id/resume-link (line ~1856)                                                                                               
+ - GET /api/sessions/:sessionId/metrics (line ~1978)                                                                                             
+                                                                                                                                                 
+ Files to Modify                                                                                                                                 
+                                                                                                                                                 
+ 1. /home/runner/workspace/server/storage.ts                                                                                                     
+   - Add interface methods to IStorage interface (~line 95)                                                                                      
+   - Add verifyUserAccessToProject(), verifyUserAccessToTemplate(), verifyUserAccessToCollection(), verifyUserAccessToSession()                  
+   - Add getTemplatesByUser(), getCollectionsByUser(), getSessionsByUser()                                                                       
+ 2. /home/runner/workspace/server/routes.ts                                                                                                      
+   - Update list endpoints to use user-filtered queries (~3 changes)                                                                             
+   - Add isAuthenticated middleware to GET /api/collections/:id                                                                                  
+   - Add ownership verification to ~25 endpoints (collections, templates, sessions)                                                              
+                                                                                                                                                 
+ Verification Steps                                                                                                                              
+                                                                                                                                                 
+ 1. Create test scenario:                                                                                                                        
+   - User A: Create workspace, project, template, collection with some sessions                                                                  
+   - User B: New account, no data                                                                                                                
+ 2. Test isolation (as User B):                                                                                                                  
+   - GET /api/projects → Should return empty array (already works)                                                                               
+   - GET /api/templates → Should return empty array (currently broken)                                                                           
+   - GET /api/collections → Should return empty array (currently broken)                                                                         
+   - GET /api/sessions → Should return empty array (currently broken)                                                                            
+ 3. Test ownership checks (as User B trying to access User A's data):                                                                            
+   - GET /api/collections/:userACollectionId → Should return 403                                                                                 
+   - GET /api/collections/:userACollectionId/analytics → Should return 403                                                                       
+   - PATCH /api/collections/:userACollectionId → Should return 403                                                                               
+ 4. Verify User A still has access:                                                                                                              
+   - All endpoints should continue working for User A's own data                                                                                 
+ 5. Run type check: npm run check   
