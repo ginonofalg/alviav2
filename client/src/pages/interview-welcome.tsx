@@ -20,10 +20,12 @@ export default function InterviewWelcomePage() {
   const [fullName, setFullName] = useState("");
   const [informalName, setInformalName] = useState("");
 
-  const { data: session, isLoading } = useQuery<InterviewSession & { respondentId: string }>({
-    queryKey: ["/api/sessions", sessionId],
+  const { data: interviewData, isLoading } = useQuery<{ session: InterviewSession & { respondentId: string } }>({
+    queryKey: ["/api/interview", sessionId],
     enabled: !!sessionId,
   });
+  
+  const session = interviewData?.session;
 
   const updateNames = useMutation({
     mutationFn: async () => {
