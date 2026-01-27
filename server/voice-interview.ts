@@ -28,7 +28,7 @@ import type {
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
 const OPENAI_REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+  "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 
 interface InterviewState {
   sessionId: string;
@@ -1243,9 +1243,15 @@ async function handleOpenAIEvent(
         state.sessionConfigured = true;
         // Check if client audio is ready - if so, trigger the initial response
         // If not, the audio_ready message handler will trigger it
-        if (state.clientAudioReady && state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+        if (
+          state.clientAudioReady &&
+          state.openaiWs &&
+          state.openaiWs.readyState === WebSocket.OPEN
+        ) {
           state.isInitialSession = false; // Mark initial setup complete
-          console.log(`[VoiceInterview] Client ready, triggering initial response for ${sessionId}`);
+          console.log(
+            `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
+          );
           state.openaiWs.send(
             JSON.stringify({
               type: "response.create",
@@ -1255,7 +1261,9 @@ async function handleOpenAIEvent(
             }),
           );
         } else {
-          console.log(`[VoiceInterview] Session configured, waiting for client audio_ready for ${sessionId}`);
+          console.log(
+            `[VoiceInterview] Session configured, waiting for client audio_ready for ${sessionId}`,
+          );
         }
       }
       // Reset Barbara guidance flag after any session update
@@ -1670,9 +1678,16 @@ async function handleClientMessage(
     console.log(`[VoiceInterview] Client audio ready for ${sessionId}`);
     state.clientAudioReady = true;
     // Check if session is already configured - if so, trigger the initial response
-    if (state.isInitialSession && state.sessionConfigured && state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+    if (
+      state.isInitialSession &&
+      state.sessionConfigured &&
+      state.openaiWs &&
+      state.openaiWs.readyState === WebSocket.OPEN
+    ) {
       state.isInitialSession = false;
-      console.log(`[VoiceInterview] Session configured, triggering initial response for ${sessionId}`);
+      console.log(
+        `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
+      );
       state.openaiWs.send(
         JSON.stringify({
           type: "response.create",
