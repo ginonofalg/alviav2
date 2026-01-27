@@ -959,7 +959,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         session: {
           modalities: ["text", "audio"],
           instructions: instructions,
-          voice: "cedar",
+          voice: "marin",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
           input_audio_noise_reduction: {
@@ -1087,7 +1087,7 @@ ${upcomingQuestions}
       : ""
   }
 INSTRUCTIONS:
-1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""} and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
+1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly explain the interview purpose: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
