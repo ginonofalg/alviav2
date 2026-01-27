@@ -1056,6 +1056,8 @@ function buildInterviewInstructions(
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
+CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
+
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
@@ -1166,6 +1168,8 @@ function buildResumeInstructions(state: InterviewState): string {
     : "The respondent has not provided their name.";
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
+
+CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
