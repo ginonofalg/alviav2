@@ -54,6 +54,9 @@ interface InterviewState {
   isWaitingForBarbara: boolean;
   isBarbaraGuidanceUpdate: boolean;
   isInitialSession: boolean;
+  // Audio ready handshake - prevents audio cutoff at interview start
+  clientAudioReady: boolean;
+  sessionConfigured: boolean;
   // Persistence state
   fullTranscriptForPersistence: PersistedTranscriptEntry[]; // Complete transcript history - never truncated
   lastBarbaraGuidance: PersistedBarbaraGuidance | null;
@@ -699,6 +702,9 @@ export function handleVoiceInterview(
     isWaitingForBarbara: false,
     isBarbaraGuidanceUpdate: false,
     isInitialSession: true,
+    // Audio ready handshake - prevents audio cutoff at interview start
+    clientAudioReady: false,
+    sessionConfigured: false,
     // Persistence state
     fullTranscriptForPersistence: [], // Complete transcript history - never truncated
     lastBarbaraGuidance: null,
@@ -1233,20 +1239,24 @@ async function handleOpenAIEvent(
     case "session.updated":
       console.log(`[VoiceInterview] Session updated for ${sessionId}`);
       // Only trigger response on initial session setup, not Barbara guidance updates
-      if (
-        state.isInitialSession &&
-        state.openaiWs &&
-        state.openaiWs.readyState === WebSocket.OPEN
-      ) {
-        state.isInitialSession = false; // Mark initial setup complete
-        state.openaiWs.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              modalities: ["text", "audio"],
-            },
-          }),
-        );
+      if (state.isInitialSession) {
+        state.sessionConfigured = true;
+        // Check if client audio is ready - if so, trigger the initial response
+        // If not, the audio_ready message handler will trigger it
+        if (state.clientAudioReady && state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+          state.isInitialSession = false; // Mark initial setup complete
+          console.log(`[VoiceInterview] Client ready, triggering initial response for ${sessionId}`);
+          state.openaiWs.send(
+            JSON.stringify({
+              type: "response.create",
+              response: {
+                modalities: ["text", "audio"],
+              },
+            }),
+          );
+        } else {
+          console.log(`[VoiceInterview] Session configured, waiting for client audio_ready for ${sessionId}`);
+        }
       }
       // Reset Barbara guidance flag after any session update
       state.isBarbaraGuidanceUpdate = false;
@@ -1652,6 +1662,26 @@ async function handleClientMessage(
     // Reset warning flag on activity
     state.terminationWarned = false;
     clientWs.send(JSON.stringify({ type: "heartbeat.pong" }));
+    return;
+  }
+
+  // Handle audio_ready - client signals its audio context is ready to receive audio
+  if (message.type === "audio_ready") {
+    console.log(`[VoiceInterview] Client audio ready for ${sessionId}`);
+    state.clientAudioReady = true;
+    // Check if session is already configured - if so, trigger the initial response
+    if (state.isInitialSession && state.sessionConfigured && state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+      state.isInitialSession = false;
+      console.log(`[VoiceInterview] Session configured, triggering initial response for ${sessionId}`);
+      state.openaiWs.send(
+        JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+          },
+        }),
+      );
+    }
     return;
   }
 

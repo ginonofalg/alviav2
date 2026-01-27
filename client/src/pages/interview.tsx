@@ -389,9 +389,14 @@ export default function InterviewPage() {
           if (message.currentQuestion) {
             setCurrentQuestionText(message.currentQuestion);
           }
-          // Pre-warm the audio context so it's ready for playback
+          // Pre-warm the audio context so it's ready for playback, then signal server
           // This must happen in response to user interaction (which started the interview)
-          initAudioContext().catch(console.error);
+          initAudioContext().then(() => {
+            console.log("[Interview] Audio context ready, signaling server");
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: "audio_ready" }));
+            }
+          }).catch(console.error);
           // Restore persisted transcript on resume
           if (
             message.isResumed &&
