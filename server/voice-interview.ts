@@ -28,7 +28,7 @@ import type {
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
 const OPENAI_REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+  "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 
 interface InterviewState {
   sessionId: string;
@@ -72,7 +72,11 @@ interface InterviewState {
   metricsTracker: MetricsTracker;
 }
 
-type TerminationReason = 'heartbeat_timeout' | 'idle_timeout' | 'max_age_exceeded' | 'client_disconnected';
+type TerminationReason =
+  | "heartbeat_timeout"
+  | "idle_timeout"
+  | "max_age_exceeded"
+  | "client_disconnected";
 
 // Realtime API metrics tracking during session
 interface MetricsTracker {
@@ -87,27 +91,27 @@ interface MetricsTracker {
   };
   // Latency tracking
   latency: {
-    transcriptionLatencies: number[];   // Each measurement: speech_stopped → transcription completed
-    responseLatencies: number[];         // Each measurement: transcription → first audio delta
-    lastSpeechStoppedAt: number | null;  // Timestamp when user stopped speaking
-    lastTranscriptionAt: number | null;  // Timestamp when transcription completed
-    waitingForFirstAudio: boolean;       // Flag to capture first audio delta latency
+    transcriptionLatencies: number[]; // Each measurement: speech_stopped → transcription completed
+    responseLatencies: number[]; // Each measurement: transcription → first audio delta
+    lastSpeechStoppedAt: number | null; // Timestamp when user stopped speaking
+    lastTranscriptionAt: number | null; // Timestamp when transcription completed
+    waitingForFirstAudio: boolean; // Flag to capture first audio delta latency
   };
   // Alvia speaking time
   alviaSpeaking: {
     totalMs: number;
-    currentResponseStartAt: number | null;  // When current response audio started
+    currentResponseStartAt: number | null; // When current response audio started
     turnCount: number;
   };
   // Silence segment tracking for VAD threshold tuning
   silenceTracking: {
-    segments: SilenceSegment[];              // Recent segments (capped at MAX_STORED_SEGMENTS)
-    lastAlviaEndAt: number | null;           // When Alvia last finished speaking
-    lastRespondentEndAt: number | null;      // When respondent last stopped speaking
-    lastSpeechStartAt: number | null;        // When anyone last started speaking (to detect if in-speech)
+    segments: SilenceSegment[]; // Recent segments (capped at MAX_STORED_SEGMENTS)
+    lastAlviaEndAt: number | null; // When Alvia last finished speaking
+    lastRespondentEndAt: number | null; // When respondent last stopped speaking
+    lastSpeechStartAt: number | null; // When anyone last started speaking (to detect if in-speech)
     // Running stats accumulator (computed from ALL observed segments, not just stored)
     accumulator: {
-      allDurations: number[];                // All durations for percentile calculation
+      allDurations: number[]; // All durations for percentile calculation
       countByContext: Record<SilenceContext, number>;
       totalMsByContext: Record<SilenceContext, number>;
     };
@@ -154,16 +158,17 @@ function createEmptyMetricsTracker(): MetricsTracker {
 }
 
 // Constants for silence tracking
-const MIN_SILENCE_DURATION_MS = 100;  // Filter out noise/micro-pauses
-const MAX_STORED_SEGMENTS = 100;       // Cap stored segments (stats computed from all)
+const MIN_SILENCE_DURATION_MS = 100; // Filter out noise/micro-pauses
+const MAX_STORED_SEGMENTS = 100; // Cap stored segments (stats computed from all)
 
 // Record a silence segment when speech resumes
 function recordSilenceSegment(
   tracker: MetricsTracker,
   state: InterviewState,
-  endAt: number
+  endAt: number,
 ): void {
-  const { lastAlviaEndAt, lastRespondentEndAt, lastSpeechStartAt } = tracker.silenceTracking;
+  const { lastAlviaEndAt, lastRespondentEndAt, lastSpeechStartAt } =
+    tracker.silenceTracking;
 
   // If someone was already speaking, no silence to record
   if (lastSpeechStartAt !== null) {
@@ -178,21 +183,21 @@ function recordSilenceSegment(
     // Both have spoken before - use the more recent end time
     if (lastAlviaEndAt > lastRespondentEndAt) {
       startAt = lastAlviaEndAt;
-      context = 'post_alvia';
+      context = "post_alvia";
     } else {
       startAt = lastRespondentEndAt;
-      context = 'post_respondent';
+      context = "post_respondent";
     }
   } else if (lastAlviaEndAt !== null) {
     startAt = lastAlviaEndAt;
-    context = 'post_alvia';
+    context = "post_alvia";
   } else if (lastRespondentEndAt !== null) {
     startAt = lastRespondentEndAt;
-    context = 'post_respondent';
+    context = "post_respondent";
   } else {
     // No prior speech - this is initial silence
     startAt = state.createdAt;
-    context = 'initial';
+    context = "initial";
   }
 
   if (startAt === null || endAt <= startAt) {
@@ -222,20 +227,20 @@ function recordSilenceSegment(
 
   // Add segment to stored array (capped at runtime for memory efficiency)
   tracker.silenceTracking.segments.push(segment);
-  
+
   // Keep only the most recent MAX_STORED_SEGMENTS for detailed analysis
   if (tracker.silenceTracking.segments.length > MAX_STORED_SEGMENTS) {
-    tracker.silenceTracking.segments.shift();  // Remove oldest
+    tracker.silenceTracking.segments.shift(); // Remove oldest
   }
 }
 
 // Calculate statistical summary from silence data
 // Uses accumulator for counts/totals (from ALL segments) and durations array for percentiles
 function calculateSilenceStats(
-  accumulator: MetricsTracker['silenceTracking']['accumulator']
+  accumulator: MetricsTracker["silenceTracking"]["accumulator"],
 ): SilenceStats | null {
   const { allDurations, countByContext, totalMsByContext } = accumulator;
-  
+
   if (allDurations.length === 0) {
     return null;
   }
@@ -251,27 +256,35 @@ function calculateSilenceStats(
   };
 
   // Build byContext stats from accumulator
-  const byContext: Record<SilenceContext, { count: number; totalMs: number; meanMs: number }> = {
-    post_alvia: { 
-      count: countByContext.post_alvia, 
-      totalMs: totalMsByContext.post_alvia, 
-      meanMs: countByContext.post_alvia > 0 
-        ? Math.round(totalMsByContext.post_alvia / countByContext.post_alvia) 
-        : 0 
+  const byContext: Record<
+    SilenceContext,
+    { count: number; totalMs: number; meanMs: number }
+  > = {
+    post_alvia: {
+      count: countByContext.post_alvia,
+      totalMs: totalMsByContext.post_alvia,
+      meanMs:
+        countByContext.post_alvia > 0
+          ? Math.round(totalMsByContext.post_alvia / countByContext.post_alvia)
+          : 0,
     },
-    post_respondent: { 
-      count: countByContext.post_respondent, 
-      totalMs: totalMsByContext.post_respondent, 
-      meanMs: countByContext.post_respondent > 0 
-        ? Math.round(totalMsByContext.post_respondent / countByContext.post_respondent) 
-        : 0 
+    post_respondent: {
+      count: countByContext.post_respondent,
+      totalMs: totalMsByContext.post_respondent,
+      meanMs:
+        countByContext.post_respondent > 0
+          ? Math.round(
+              totalMsByContext.post_respondent / countByContext.post_respondent,
+            )
+          : 0,
     },
-    initial: { 
-      count: countByContext.initial, 
-      totalMs: totalMsByContext.initial, 
-      meanMs: countByContext.initial > 0 
-        ? Math.round(totalMsByContext.initial / countByContext.initial) 
-        : 0 
+    initial: {
+      count: countByContext.initial,
+      totalMs: totalMsByContext.initial,
+      meanMs:
+        countByContext.initial > 0
+          ? Math.round(totalMsByContext.initial / countByContext.initial)
+          : 0,
     },
   };
 
@@ -298,12 +311,12 @@ const PERSIST_DEBOUNCE_MS = 2000;
 const MAX_TRANSCRIPT_IN_MEMORY = 100;
 
 // Session hygiene constants
-const HEARTBEAT_INTERVAL_MS = 30_000;        // Client sends ping every 30s
-const HEARTBEAT_TIMEOUT_MS = 90_000;         // Terminate if no ping for 90s (3 missed heartbeats)
-const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000;  // Terminate after 5 min of no activity
-const SESSION_MAX_AGE_MS = 60 * 60_000;      // Absolute max session duration: 1 hour
-const WATCHDOG_INTERVAL_MS = 30_000;         // Run watchdog every 30s
-const TERMINATION_WARNING_MS = 30_000;       // Warn client 30s before termination
+const HEARTBEAT_INTERVAL_MS = 30_000; // Client sends ping every 30s
+const HEARTBEAT_TIMEOUT_MS = 90_000; // Terminate if no ping for 90s (3 missed heartbeats)
+const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000; // Terminate after 5 min of no activity
+const SESSION_MAX_AGE_MS = 60 * 60_000; // Absolute max session duration: 1 hour
+const WATCHDOG_INTERVAL_MS = 30_000; // Run watchdog every 30s
+const TERMINATION_WARNING_MS = 30_000; // Warn client 30s before termination
 
 const interviewStates = new Map<string, InterviewState>();
 
@@ -578,8 +591,10 @@ export function handleVoiceInterview(
 
   // Check if we're reconnecting to a disconnected session (within heartbeat timeout window)
   if (existingState && existingState.clientDisconnectedAt !== null) {
-    console.log(`[VoiceInterview] Reconnecting to disconnected session: ${sessionId}`);
-    
+    console.log(
+      `[VoiceInterview] Reconnecting to disconnected session: ${sessionId}`,
+    );
+
     // Reuse existing state - update client connection and reset timestamps
     const now = Date.now();
     existingState.clientWs = clientWs;
@@ -587,7 +602,7 @@ export function handleVoiceInterview(
     existingState.lastHeartbeatAt = now;
     existingState.lastActivityAt = now;
     existingState.terminationWarned = false;
-    
+
     // Set up message handlers for reconnected client
     clientWs.on("message", (data) => {
       try {
@@ -604,7 +619,9 @@ export function handleVoiceInterview(
       if (state) {
         state.clientDisconnectedAt = Date.now();
         state.clientWs = null;
-        console.log(`[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`);
+        console.log(
+          `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
+        );
       }
     });
 
@@ -618,17 +635,23 @@ export function handleVoiceInterview(
     });
 
     // Send reconnected message to client with current state
-    clientWs.send(JSON.stringify({
-      type: "connected",
-      sessionId,
-      questionIndex: existingState.currentQuestionIndex,
-      totalQuestions: existingState.questions.length,
-      currentQuestion: existingState.questions[existingState.currentQuestionIndex]?.questionText || "",
-      isResumed: true,
-      persistedTranscript: existingState.fullTranscriptForPersistence,
-    }));
-    
-    console.log(`[VoiceInterview] Session ${sessionId} reconnected successfully`);
+    clientWs.send(
+      JSON.stringify({
+        type: "connected",
+        sessionId,
+        questionIndex: existingState.currentQuestionIndex,
+        totalQuestions: existingState.questions.length,
+        currentQuestion:
+          existingState.questions[existingState.currentQuestionIndex]
+            ?.questionText || "",
+        isResumed: true,
+        persistedTranscript: existingState.fullTranscriptForPersistence,
+      }),
+    );
+
+    console.log(
+      `[VoiceInterview] Session ${sessionId} reconnected successfully`,
+    );
     return;
   }
 
@@ -636,8 +659,13 @@ export function handleVoiceInterview(
 
   // Clean up any orphaned state before creating new one
   if (existingState) {
-    console.log(`[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`);
-    if (existingState.openaiWs && existingState.openaiWs.readyState === WebSocket.OPEN) {
+    console.log(
+      `[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`,
+    );
+    if (
+      existingState.openaiWs &&
+      existingState.openaiWs.readyState === WebSocket.OPEN
+    ) {
       existingState.openaiWs.close();
     }
     if (existingState.pendingPersistTimeout) {
@@ -714,7 +742,9 @@ export function handleVoiceInterview(
     if (state) {
       state.clientDisconnectedAt = Date.now();
       state.clientWs = null;
-      console.log(`[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`);
+      console.log(
+        `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
+      );
     }
   });
 
@@ -885,7 +915,7 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
   });
 
   state.openaiWs = openaiWs;
-  
+
   // Track OpenAI connection count for metrics
   state.metricsTracker.openaiConnectionCount++;
 
@@ -1223,24 +1253,27 @@ async function handleOpenAIEvent(
       // Update activity - AI speaking keeps session alive
       state.lastActivityAt = now;
       state.terminationWarned = false;
-      
+
       // Track response latency (time from transcription to first audio)
-      if (state.metricsTracker.latency.waitingForFirstAudio && 
-          state.metricsTracker.latency.lastTranscriptionAt) {
-        const responseLatency = now - state.metricsTracker.latency.lastTranscriptionAt;
+      if (
+        state.metricsTracker.latency.waitingForFirstAudio &&
+        state.metricsTracker.latency.lastTranscriptionAt
+      ) {
+        const responseLatency =
+          now - state.metricsTracker.latency.lastTranscriptionAt;
         state.metricsTracker.latency.responseLatencies.push(responseLatency);
         state.metricsTracker.latency.waitingForFirstAudio = false;
       }
-      
+
       // Track Alvia speaking time - mark start of this response
       if (state.metricsTracker.alviaSpeaking.currentResponseStartAt === null) {
         state.metricsTracker.alviaSpeaking.currentResponseStartAt = now;
-        
+
         // Record silence segment that just ended (Alvia starting to speak)
         recordSilenceSegment(state.metricsTracker, state, now);
         state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
       }
-      
+
       // Forward audio chunks to client
       clientWs.send(
         JSON.stringify({
@@ -1255,16 +1288,17 @@ async function handleOpenAIEvent(
       const now = Date.now();
       // Track Alvia speaking time - accumulate duration
       if (state.metricsTracker.alviaSpeaking.currentResponseStartAt !== null) {
-        const elapsed = now - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
+        const elapsed =
+          now - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
         state.metricsTracker.alviaSpeaking.totalMs += elapsed;
         state.metricsTracker.alviaSpeaking.turnCount++;
         state.metricsTracker.alviaSpeaking.currentResponseStartAt = null;
       }
-      
+
       // Track silence - Alvia finished speaking
       state.metricsTracker.silenceTracking.lastAlviaEndAt = now;
       state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
-      
+
       clientWs.send(JSON.stringify({ type: "audio_done" }));
       break;
     }
@@ -1307,15 +1341,18 @@ async function handleOpenAIEvent(
       (async () => {
         // Track transcription latency (time from speech_stopped to transcription completed)
         if (state.metricsTracker.latency.lastSpeechStoppedAt) {
-          const transcriptionLatency = Date.now() - state.metricsTracker.latency.lastSpeechStoppedAt;
-          state.metricsTracker.latency.transcriptionLatencies.push(transcriptionLatency);
+          const transcriptionLatency =
+            Date.now() - state.metricsTracker.latency.lastSpeechStoppedAt;
+          state.metricsTracker.latency.transcriptionLatencies.push(
+            transcriptionLatency,
+          );
           state.metricsTracker.latency.lastSpeechStoppedAt = null;
         }
-        
+
         // Record transcription timestamp and prepare for response latency measurement
         state.metricsTracker.latency.lastTranscriptionAt = Date.now();
         state.metricsTracker.latency.waitingForFirstAudio = true;
-        
+
         if (event.transcript) {
           // CRITICAL: Use questionIndexAtSpeechStart if available to avoid race condition
           // where user clicks "next_question" before transcription completes
@@ -1376,11 +1413,11 @@ async function handleOpenAIEvent(
         state.speakingStartTime = now;
         state.questionIndexAtSpeechStart = state.currentQuestionIndex;
       }
-      
+
       // Record silence segment that just ended (respondent starting to speak)
       recordSilenceSegment(state.metricsTracker, state, now);
       state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
-      
+
       clientWs.send(JSON.stringify({ type: "user_speaking_started" }));
       break;
     }
@@ -1401,14 +1438,14 @@ async function handleOpenAIEvent(
         state.speakingStartTime = null;
         // Note: don't clear questionIndexAtSpeechStart here - transcription may still be pending
       }
-      
+
       // Track timestamp for transcription latency measurement
       state.metricsTracker.latency.lastSpeechStoppedAt = now;
-      
+
       // Track silence - respondent finished speaking
       state.metricsTracker.silenceTracking.lastRespondentEndAt = now;
       state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
-      
+
       clientWs.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
     }
@@ -1419,11 +1456,17 @@ async function handleOpenAIEvent(
       if (usage) {
         state.metricsTracker.tokens.inputTokens += usage.input_tokens || 0;
         state.metricsTracker.tokens.outputTokens += usage.output_tokens || 0;
-        state.metricsTracker.tokens.inputAudioTokens += usage.input_token_details?.audio_tokens || 0;
-        state.metricsTracker.tokens.outputAudioTokens += usage.output_token_details?.audio_tokens || 0;
-        state.metricsTracker.tokens.inputTextTokens += usage.input_token_details?.text_tokens || 0;
-        state.metricsTracker.tokens.outputTextTokens += usage.output_token_details?.text_tokens || 0;
-        console.log(`[Metrics] Token usage for ${sessionId}: input=${usage.input_tokens}, output=${usage.output_tokens}`);
+        state.metricsTracker.tokens.inputAudioTokens +=
+          usage.input_token_details?.audio_tokens || 0;
+        state.metricsTracker.tokens.outputAudioTokens +=
+          usage.output_token_details?.audio_tokens || 0;
+        state.metricsTracker.tokens.inputTextTokens +=
+          usage.input_token_details?.text_tokens || 0;
+        state.metricsTracker.tokens.outputTextTokens +=
+          usage.output_token_details?.text_tokens || 0;
+        console.log(
+          `[Metrics] Token usage for ${sessionId}: input=${usage.input_tokens}, output=${usage.output_tokens}`,
+        );
       }
       clientWs.send(JSON.stringify({ type: "response_done" }));
       break;
@@ -1600,11 +1643,11 @@ async function handleClientMessage(
   if (!state) return;
 
   // Handle heartbeat immediately, before other processing
-  if (message.type === 'heartbeat.ping') {
+  if (message.type === "heartbeat.ping") {
     state.lastHeartbeatAt = Date.now();
     // Reset warning flag on activity
     state.terminationWarned = false;
-    clientWs.send(JSON.stringify({ type: 'heartbeat.pong' }));
+    clientWs.send(JSON.stringify({ type: "heartbeat.pong" }));
     return;
   }
 
@@ -1755,14 +1798,14 @@ async function handleClientMessage(
         );
         state.pauseStartedAt = null;
       }
-      
+
       // Reset silence tracking reference points to avoid inflated silence segments
       // that would otherwise include the pause time (when no audio was streaming)
       const tracker = state.metricsTracker;
       const now = Date.now();
       tracker.silenceTracking.lastAlviaEndAt = now;
       tracker.silenceTracking.lastRespondentEndAt = now;
-      
+
       state.lastActivityAt = now;
       state.terminationWarned = false;
       // Handle resume from pause - Alvia decides what to say based on transcript context
@@ -2017,7 +2060,7 @@ INSTRUCTIONS:
           completedAt: new Date(),
         });
         clientWs.send(JSON.stringify({ type: "interview_complete" }));
-        cleanupSession(sessionId, 'completed');
+        cleanupSession(sessionId, "completed");
       }
       break;
 
@@ -2041,18 +2084,21 @@ INSTRUCTIONS:
         completedAt: new Date(),
       });
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
-      cleanupSession(sessionId, 'completed');
+      cleanupSession(sessionId, "completed");
       break;
   }
 }
 
-function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string): void {
+function finalizeAndPersistMetrics(
+  sessionId: string,
+  terminationReason?: string,
+): void {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
   const tracker = state.metricsTracker;
   const now = Date.now();
-  
+
   // If session ends while paused, accumulate final pause duration
   if (state.pauseStartedAt) {
     const finalPauseDuration = now - state.pauseStartedAt;
@@ -2062,9 +2108,9 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
       `[VoiceInterview] Final pause duration: ${finalPauseDuration}ms, total paused: ${state.totalPauseDurationMs}ms`,
     );
   }
-  
+
   const sessionDurationMs = now - state.createdAt;
-  
+
   // Calculate pause-aware metrics for accurate silence analysis
   const totalPauseDurationMs = state.totalPauseDurationMs;
   const activeSessionDurationMs = sessionDurationMs - totalPauseDurationMs;
@@ -2079,35 +2125,44 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
 
   // Calculate silence time (approximation: session duration - speaking times)
   // This includes pause time for backward compatibility
-  const silenceMs = Math.max(0, sessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs);
-  
+  const silenceMs = Math.max(
+    0,
+    sessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs,
+  );
+
   // Calculate active silence (silence during active streaming only, excludes pause time)
   const activeSilenceMs = Math.max(
     0,
-    activeSessionDurationMs - respondentSpeakingMs - tracker.alviaSpeaking.totalMs
+    activeSessionDurationMs -
+      respondentSpeakingMs -
+      tracker.alviaSpeaking.totalMs,
   );
 
   // Calculate silence statistics from accumulator (includes ALL observed segments)
-  const silenceSegments = tracker.silenceTracking.segments;  // Capped recent segments for storage
-  const silenceStats = calculateSilenceStats(tracker.silenceTracking.accumulator);
-  const totalSilenceCount = tracker.silenceTracking.accumulator.allDurations.length;
+  const silenceSegments = tracker.silenceTracking.segments; // Capped recent segments for storage
+  const silenceStats = calculateSilenceStats(
+    tracker.silenceTracking.accumulator,
+  );
+  const totalSilenceCount =
+    tracker.silenceTracking.accumulator.allDurations.length;
 
   // Calculate average latencies
   const transcriptionLatencies = tracker.latency.transcriptionLatencies;
   const responseLatencies = tracker.latency.responseLatencies;
 
-  const avgTranscriptionLatencyMs = transcriptionLatencies.length > 0
-    ? transcriptionLatencies.reduce((a, b) => a + b, 0) / transcriptionLatencies.length
-    : 0;
-  const avgResponseLatencyMs = responseLatencies.length > 0
-    ? responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length
-    : 0;
-  const maxTranscriptionLatencyMs = transcriptionLatencies.length > 0
-    ? Math.max(...transcriptionLatencies)
-    : 0;
-  const maxResponseLatencyMs = responseLatencies.length > 0
-    ? Math.max(...responseLatencies)
-    : 0;
+  const avgTranscriptionLatencyMs =
+    transcriptionLatencies.length > 0
+      ? transcriptionLatencies.reduce((a, b) => a + b, 0) /
+        transcriptionLatencies.length
+      : 0;
+  const avgResponseLatencyMs =
+    responseLatencies.length > 0
+      ? responseLatencies.reduce((a, b) => a + b, 0) / responseLatencies.length
+      : 0;
+  const maxTranscriptionLatencyMs =
+    transcriptionLatencies.length > 0 ? Math.max(...transcriptionLatencies) : 0;
+  const maxResponseLatencyMs =
+    responseLatencies.length > 0 ? Math.max(...responseLatencies) : 0;
 
   // Build the final metrics object
   const performanceMetrics: RealtimePerformanceMetrics = {
@@ -2148,9 +2203,10 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
   };
 
   // Log metrics summary with pause-aware breakdown
-  const activeSilencePercent = activeSessionDurationMs > 0 
-    ? ((activeSilenceMs / activeSessionDurationMs) * 100).toFixed(1)
-    : 'N/A';
+  const activeSilencePercent =
+    activeSessionDurationMs > 0
+      ? ((activeSilenceMs / activeSessionDurationMs) * 100).toFixed(1)
+      : "N/A";
   console.log(`[Metrics] Final metrics for ${sessionId}:`, {
     duration: `${Math.round(sessionDurationMs / 1000)}s`,
     activeDuration: `${Math.round(activeSessionDurationMs / 1000)}s`,
@@ -2163,9 +2219,14 @@ function finalizeAndPersistMetrics(sessionId: string, terminationReason?: string
   });
 
   // Persist metrics to database
-  storage.persistInterviewState(sessionId, { performanceMetrics }).catch((error) => {
-    console.error(`[Metrics] Failed to persist metrics for ${sessionId}:`, error);
-  });
+  storage
+    .persistInterviewState(sessionId, { performanceMetrics })
+    .catch((error) => {
+      console.error(
+        `[Metrics] Failed to persist metrics for ${sessionId}:`,
+        error,
+      );
+    });
 }
 
 async function cleanupSession(sessionId: string, terminationReason?: string) {
@@ -2173,7 +2234,7 @@ async function cleanupSession(sessionId: string, terminationReason?: string) {
   if (state) {
     // Finalize and persist performance metrics
     finalizeAndPersistMetrics(sessionId, terminationReason);
-    
+
     // Flush any pending persist before cleanup
     await flushPersist(sessionId);
 
@@ -2203,20 +2264,27 @@ function startSessionWatchdog(): void {
     runWatchdogCycle();
   }, WATCHDOG_INTERVAL_MS);
 
-  console.log('[SessionWatchdog] Started - checking every', WATCHDOG_INTERVAL_MS / 1000, 'seconds');
+  console.log(
+    "[SessionWatchdog] Started - checking every",
+    WATCHDOG_INTERVAL_MS / 1000,
+    "seconds",
+  );
 }
 
 function stopSessionWatchdog(): void {
   if (watchdogState.interval) {
     clearInterval(watchdogState.interval);
     watchdogState.interval = null;
-    console.log('[SessionWatchdog] Stopped - no active sessions');
+    console.log("[SessionWatchdog] Stopped - no active sessions");
   }
 }
 
 function runWatchdogCycle(): void {
   const now = Date.now();
-  const sessionsToTerminate: Array<{ sessionId: string; reason: TerminationReason }> = [];
+  const sessionsToTerminate: Array<{
+    sessionId: string;
+    reason: TerminationReason;
+  }> = [];
   const sessionsToWarn: string[] = [];
 
   const sessionEntries = Array.from(interviewStates.entries());
@@ -2229,17 +2297,17 @@ function runWatchdogCycle(): void {
 
     // Check conditions in order of severity
     if (age > SESSION_MAX_AGE_MS) {
-      reason = 'max_age_exceeded';
+      reason = "max_age_exceeded";
     } else if (state.clientDisconnectedAt !== null) {
       // Client disconnected - terminate after heartbeat timeout from disconnect time
       const timeSinceDisconnect = now - state.clientDisconnectedAt;
       if (timeSinceDisconnect > HEARTBEAT_TIMEOUT_MS) {
-        reason = 'client_disconnected';
+        reason = "client_disconnected";
       }
     } else if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
-      reason = 'heartbeat_timeout';
+      reason = "heartbeat_timeout";
     } else if (timeSinceActivity > SESSION_IDLE_TIMEOUT_MS) {
-      reason = 'idle_timeout';
+      reason = "idle_timeout";
     }
 
     if (reason) {
@@ -2248,9 +2316,14 @@ function runWatchdogCycle(): void {
       // Check if we should warn about impending termination
       const timeUntilMaxAge = SESSION_MAX_AGE_MS - age;
       const timeUntilIdle = SESSION_IDLE_TIMEOUT_MS - timeSinceActivity;
-      const timeUntilHeartbeatTimeout = HEARTBEAT_TIMEOUT_MS - timeSinceHeartbeat;
+      const timeUntilHeartbeatTimeout =
+        HEARTBEAT_TIMEOUT_MS - timeSinceHeartbeat;
 
-      const minTimeRemaining = Math.min(timeUntilMaxAge, timeUntilIdle, timeUntilHeartbeatTimeout);
+      const minTimeRemaining = Math.min(
+        timeUntilMaxAge,
+        timeUntilIdle,
+        timeUntilHeartbeatTimeout,
+      );
 
       if (minTimeRemaining <= TERMINATION_WARNING_MS && minTimeRemaining > 0) {
         sessionsToWarn.push(sessionId);
@@ -2276,9 +2349,10 @@ function warnSessionTermination(sessionId: string): void {
   state.terminationWarned = true;
 
   const message = {
-    type: 'session_warning',
-    reason: 'inactivity',
-    message: 'Your session will end soon due to inactivity. Please interact to keep it active.',
+    type: "session_warning",
+    reason: "inactivity",
+    message:
+      "Your session will end soon due to inactivity. Please interact to keep it active.",
     timeoutMs: TERMINATION_WARNING_MS,
   };
 
@@ -2288,37 +2362,47 @@ function warnSessionTermination(sessionId: string): void {
   }
 }
 
-async function terminateSession(sessionId: string, reason: TerminationReason): Promise<void> {
+async function terminateSession(
+  sessionId: string,
+  reason: TerminationReason,
+): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
-  console.log(`[SessionWatchdog] Terminating session ${sessionId} - reason: ${reason}`);
+  console.log(
+    `[SessionWatchdog] Terminating session ${sessionId} - reason: ${reason}`,
+  );
 
   // Notify client about termination (if client is still connected)
   const reasonMessages: Record<TerminationReason, string> = {
-    heartbeat_timeout: 'Connection lost - no heartbeat received',
-    idle_timeout: 'Session ended due to inactivity',
-    max_age_exceeded: 'Maximum session duration reached',
-    client_disconnected: 'Connection closed - session will be cleaned up',
+    heartbeat_timeout: "Connection lost - no heartbeat received",
+    idle_timeout: "Session ended due to inactivity",
+    max_age_exceeded: "Maximum session duration reached",
+    client_disconnected: "Connection closed - session will be cleaned up",
   };
 
   if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
-    state.clientWs.send(JSON.stringify({
-      type: 'session_terminated',
-      reason,
-      message: reasonMessages[reason],
-      canResume: reason !== 'max_age_exceeded', // Allow resume for idle/heartbeat/disconnect, not for max age
-    }));
+    state.clientWs.send(
+      JSON.stringify({
+        type: "session_terminated",
+        reason,
+        message: reasonMessages[reason],
+        canResume: reason !== "max_age_exceeded", // Allow resume for idle/heartbeat/disconnect, not for max age
+      }),
+    );
   }
 
   // Update session status to indicate it was terminated
   try {
     await storage.persistInterviewState(sessionId, {
-      status: 'paused',
+      status: "paused",
       pausedAt: new Date(),
     });
   } catch (error) {
-    console.error(`[SessionWatchdog] Failed to persist terminated status for ${sessionId}:`, error);
+    console.error(
+      `[SessionWatchdog] Failed to persist terminated status for ${sessionId}:`,
+      error,
+    );
   }
 
   // Clean up
