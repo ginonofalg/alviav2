@@ -28,7 +28,7 @@ import type {
 
 // the newest OpenAI model is "gpt-realtime" for realtime voice conversations
 const OPENAI_REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-realtime";
+  "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
 
 interface InterviewState {
   sessionId: string;

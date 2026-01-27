@@ -239,21 +239,24 @@ export default function InterviewPage() {
       : 0;
 
   // Initialize audio context
-  const initAudioContext = useCallback(() => {
+  const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext ||
         (window as any).webkitAudioContext)({
         sampleRate: 24000,
       });
     }
+    // Resume the audio context if it's suspended (browsers require user interaction)
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
     return audioContextRef.current;
   }, []);
 
   // Play audio from base64 PCM16 data
   const playAudio = useCallback(
-    (base64Audio: string) => {
+    async (base64Audio: string) => {
       try {
-        const audioContext = initAudioContext();
         const binaryString = atob(base64Audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -270,7 +273,11 @@ export default function InterviewPage() {
         audioQueueRef.current.push(float32Array);
 
         if (!isPlayingRef.current) {
-          playNextChunk(audioContext);
+          // Ensure audio context is ready before starting playback
+          const audioContext = await initAudioContext();
+          if (audioContext.state === "running") {
+            playNextChunk(audioContext);
+          }
         }
       } catch (error) {
         console.error("Error playing audio:", error);
@@ -382,6 +389,9 @@ export default function InterviewPage() {
           if (message.currentQuestion) {
             setCurrentQuestionText(message.currentQuestion);
           }
+          // Pre-warm the audio context so it's ready for playback
+          // This must happen in response to user interaction (which started the interview)
+          initAudioContext().catch(console.error);
           // Restore persisted transcript on resume
           if (
             message.isResumed &&
@@ -536,13 +546,14 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture],
+    [playAudio, toast, navigate, stopAudioCapture, initAudioContext],
   );
 
   // Start audio capture
   const startAudioCapture = useCallback(async () => {
     try {
-      const audioContext = initAudioContext();
+      // Initialize and resume audio context (handles browser autoplay policy)
+      const audioContext = await initAudioContext();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 24000,
