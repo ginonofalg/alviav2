@@ -238,7 +238,7 @@ export default function InterviewPage() {
       ? ((currentQuestionIndex + 1) / totalQuestions) * 100
       : 0;
 
-  // Initialize audio context
+  // Initialize audio context with mobile-friendly priming
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext ||
@@ -246,11 +246,46 @@ export default function InterviewPage() {
         sampleRate: 24000,
       });
     }
+    
+    const audioContext = audioContextRef.current;
+    
     // Resume the audio context if it's suspended (browsers require user interaction)
-    if (audioContextRef.current.state === "suspended") {
-      await audioContextRef.current.resume();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
     }
-    return audioContextRef.current;
+    
+    // Wait for running state (mobile browsers may take time)
+    if (audioContext.state !== "running") {
+      await new Promise<void>((resolve) => {
+        const checkState = () => {
+          if (audioContext.state === "running") {
+            resolve();
+          } else {
+            setTimeout(checkState, 50);
+          }
+        };
+        checkState();
+      });
+    }
+    
+    // Prime the audio system by playing a silent buffer
+    // This forces mobile browsers to fully initialize the audio pipeline
+    const silentBuffer = audioContext.createBuffer(1, 2400, 24000); // 100ms of silence
+    const silentSource = audioContext.createBufferSource();
+    silentSource.buffer = silentBuffer;
+    silentSource.connect(audioContext.destination);
+    silentSource.start();
+    
+    // Wait for the silent buffer to finish and add a small delay for mobile
+    await new Promise<void>((resolve) => {
+      silentSource.onended = () => {
+        // Additional delay for mobile audio system stabilization
+        setTimeout(resolve, 100);
+      };
+    });
+    
+    console.log("[Interview] Audio context fully primed and ready");
+    return audioContext;
   }, []);
 
   // Play audio from base64 PCM16 data
