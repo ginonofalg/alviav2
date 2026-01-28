@@ -1,12 +1,26 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mic, Shield, FileText, Volume2, ArrowRight, RotateCcw, User } from "lucide-react";
+import {
+  Mic,
+  Shield,
+  FileText,
+  Volume2,
+  ArrowRight,
+  RotateCcw,
+  User,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Collection, Project, InterviewSession } from "@shared/schema";
@@ -39,7 +53,7 @@ export default function InterviewConsentPage() {
   const collectionId = params.collectionId;
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  
+
   // Parse invitation token from URL query params
   const invitationToken = useMemo(() => {
     if (typeof window !== "undefined") {
@@ -54,7 +68,10 @@ export default function InterviewConsentPage() {
     audioRecording: false,
     dataProcessing: false,
   });
-  const [resumeInfo, setResumeInfo] = useState<{ sessionId: string; token: string } | null>(null);
+  const [resumeInfo, setResumeInfo] = useState<{
+    sessionId: string;
+    token: string;
+  } | null>(null);
   const [checkingResume, setCheckingResume] = useState(true);
 
   // Check for existing resume token on mount
@@ -74,10 +91,15 @@ export default function InterviewConsentPage() {
       try {
         const { token, sessionId } = JSON.parse(stored);
         const response = await fetch(`/api/interview/resume/${token}`);
-        
+
         if (response.ok) {
           const data: ResumeData = await response.json();
-          if (data.isResume && ["paused", "in_progress", "consent_given"].includes(data.session.status)) {
+          if (
+            data.isResume &&
+            ["paused", "in_progress", "consent_given"].includes(
+              data.session.status,
+            )
+          ) {
             setResumeInfo({ sessionId, token });
           }
         } else {
@@ -88,48 +110,62 @@ export default function InterviewConsentPage() {
         console.error("Error checking resume token:", error);
         localStorage.removeItem(`alvia_resume_${collectionId}`);
       }
-      
+
       setCheckingResume(false);
     }
 
     checkForResume();
   }, [collectionId]);
 
-  const { data: collection, isLoading: collectionLoading } = useQuery<Collection & { project?: Project }>({
+  const { data: collection, isLoading: collectionLoading } = useQuery<
+    Collection & { project?: Project }
+  >({
     queryKey: ["/api/collections", collectionId],
     enabled: !!collectionId,
   });
-  
+
   // Fetch invitation data if token is present
-  const { data: invitationData, isLoading: invitationLoading } = useQuery<InvitationData>({
-    queryKey: ["/api/invitation", invitationToken],
-    enabled: !!invitationToken,
-  });
+  const { data: invitationData, isLoading: invitationLoading } =
+    useQuery<InvitationData>({
+      queryKey: ["/api/invitation", invitationToken],
+      enabled: !!invitationToken,
+    });
 
   const startSession = useMutation({
     mutationFn: async () => {
       // Use token-based endpoint if we have an invitation token
       if (invitationToken) {
-        const response = await apiRequest("POST", `/api/collections/${collectionId}/start-by-token`, {
-          token: invitationToken,
-        });
+        const response = await apiRequest(
+          "POST",
+          `/api/collections/${collectionId}/start-by-token`,
+          {
+            token: invitationToken,
+          },
+        );
         return response.json();
       }
-      
+
       // Otherwise use the standard session creation
-      const response = await apiRequest("POST", `/api/collections/${collectionId}/sessions`, {
-        consents,
-      });
+      const response = await apiRequest(
+        "POST",
+        `/api/collections/${collectionId}/sessions`,
+        {
+          consents,
+        },
+      );
       return response.json();
     },
     onSuccess: (data) => {
       // Store resume token in localStorage for browser recovery
       if (data.resumeToken) {
-        localStorage.setItem(`alvia_resume_${collectionId}`, JSON.stringify({
-          token: data.resumeToken,
-          sessionId: data.id,
-          createdAt: Date.now(),
-        }));
+        localStorage.setItem(
+          `alvia_resume_${collectionId}`,
+          JSON.stringify({
+            token: data.resumeToken,
+            sessionId: data.id,
+            createdAt: Date.now(),
+          }),
+        );
       }
       // Navigate to welcome page for name capture before interview
       navigate(`/welcome/${data.id}`);
@@ -147,7 +183,8 @@ export default function InterviewConsentPage() {
   const project = collection?.project;
   const requiresAudioConsent = project?.consentAudioRecording !== false;
 
-  const canProceed = allConsentsGiven && (!requiresAudioConsent || consents.audioRecording);
+  const canProceed =
+    allConsentsGiven && (!requiresAudioConsent || consents.audioRecording);
 
   const handleResume = () => {
     if (resumeInfo) {
@@ -163,9 +200,15 @@ export default function InterviewConsentPage() {
   };
 
   // Personalized greeting for invited respondents
-  const respondentName = invitationData?.respondent?.fullName || invitationData?.respondent?.informalName;
-  
-  if (collectionLoading || checkingResume || (invitationToken && invitationLoading)) {
+  const respondentName =
+    invitationData?.respondent?.fullName ||
+    invitationData?.respondent?.informalName;
+
+  if (
+    collectionLoading ||
+    checkingResume ||
+    (invitationToken && invitationLoading)
+  ) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
@@ -189,7 +232,9 @@ export default function InterviewConsentPage() {
               <RotateCcw className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-2xl font-serif">Welcome Back</CardTitle>
+              <CardTitle className="text-2xl font-serif">
+                Welcome Back
+              </CardTitle>
               <CardDescription className="text-base mt-2">
                 You have an interview in progress
               </CardDescription>
@@ -199,24 +244,25 @@ export default function InterviewConsentPage() {
           <CardContent className="space-y-6 pt-4">
             <div className="bg-muted/50 rounded-lg p-4 text-center">
               <p className="text-sm text-muted-foreground">
-                It looks like you were in the middle of an interview. Would you like to continue where you left off?
+                It looks like you were in the middle of an interview. Would you
+                like to continue where you left off?
               </p>
             </div>
 
             <div className="flex flex-col gap-3">
-              <Button 
-                onClick={handleResume} 
-                size="lg" 
+              <Button
+                onClick={handleResume}
+                size="lg"
                 className="w-full"
                 data-testid="button-resume-interview"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Resume Interview
               </Button>
-              <Button 
-                onClick={handleStartFresh} 
-                variant="outline" 
-                size="lg" 
+              <Button
+                onClick={handleStartFresh}
+                variant="outline"
+                size="lg"
                 className="w-full"
                 data-testid="button-start-fresh"
               >
@@ -242,7 +288,9 @@ export default function InterviewConsentPage() {
           </div>
           <div>
             <CardTitle className="text-2xl font-serif">
-              {respondentName ? `Welcome, ${respondentName}` : "Welcome to Your Interview"}
+              {respondentName
+                ? `Welcome, ${respondentName}`
+                : "Welcome to Your Interview"}
             </CardTitle>
             <CardDescription className="text-base mt-2">
               {collection?.name || "Interview Session"}
@@ -259,15 +307,24 @@ export default function InterviewConsentPage() {
             <ul className="text-sm text-muted-foreground space-y-2">
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">1.</span>
-                <span>You'll have a voice conversation with Alvia, our AI interviewer</span>
+                <span>
+                  You'll have a voice conversation with Alvia, our AI
+                  interviewer
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">2.</span>
-                <span>There are a number of set questions which Alvia will explore with follow-up questions; you decide when to move to the next one</span>
+                <span>
+                  There are a number of set questions which Alvia will explore
+                  with follow-up questions; you decide when to move to the next
+                  one
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">3.</span>
-                <span>Speak naturally - there are no right or wrong answers</span>
+                <span>
+                  Speak naturally - there are no right or wrong answers
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">4.</span>
@@ -285,23 +342,30 @@ export default function InterviewConsentPage() {
               <Shield className="w-4 h-4 text-primary" />
               Consent
             </h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-start gap-3 p-3 rounded-lg border">
                 <Checkbox
                   id="participation"
                   checked={consents.participation}
-                  onCheckedChange={(checked) => 
-                    setConsents(prev => ({ ...prev, participation: checked === true }))
+                  onCheckedChange={(checked) =>
+                    setConsents((prev) => ({
+                      ...prev,
+                      participation: checked === true,
+                    }))
                   }
                   data-testid="checkbox-participation"
                 />
                 <div className="space-y-1">
-                  <Label htmlFor="participation" className="font-medium cursor-pointer">
-                    I agree to participate in this interview *
+                  <Label
+                    htmlFor="participation"
+                    className="font-medium cursor-pointer"
+                  >
+                    I agree to participate in the interview *
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    I understand that my responses will be recorded and analyzed.
+                    I understand that my responses will be recorded and
+                    analysed.
                   </p>
                 </div>
               </div>
@@ -311,17 +375,24 @@ export default function InterviewConsentPage() {
                   <Checkbox
                     id="audioRecording"
                     checked={consents.audioRecording}
-                    onCheckedChange={(checked) => 
-                      setConsents(prev => ({ ...prev, audioRecording: checked === true }))
+                    onCheckedChange={(checked) =>
+                      setConsents((prev) => ({
+                        ...prev,
+                        audioRecording: checked === true,
+                      }))
                     }
                     data-testid="checkbox-audio"
                   />
                   <div className="space-y-1">
-                    <Label htmlFor="audioRecording" className="font-medium cursor-pointer">
+                    <Label
+                      htmlFor="audioRecording"
+                      className="font-medium cursor-pointer"
+                    >
                       I consent to audio recording *
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Audio will be recorded for transcription and quality purposes.
+                      Audio will be recorded for transcription and quality
+                      purposes.
                     </p>
                   </div>
                 </div>
@@ -331,18 +402,26 @@ export default function InterviewConsentPage() {
                 <Checkbox
                   id="dataProcessing"
                   checked={consents.dataProcessing}
-                  onCheckedChange={(checked) => 
-                    setConsents(prev => ({ ...prev, dataProcessing: checked === true }))
+                  onCheckedChange={(checked) =>
+                    setConsents((prev) => ({
+                      ...prev,
+                      dataProcessing: checked === true,
+                    }))
                   }
                   data-testid="checkbox-data"
                 />
                 <div className="space-y-1">
-                  <Label htmlFor="dataProcessing" className="font-medium cursor-pointer">
+                  <Label
+                    htmlFor="dataProcessing"
+                    className="font-medium cursor-pointer"
+                  >
                     I agree to data processing *
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    My responses may be summarized and analyzed. Personal information will be protected.
-                    {project?.piiRedactionEnabled && " PII will be automatically redacted."}
+                    My responses may be summarized and analysed. Personal
+                    information will be protected.
+                    {project?.piiRedactionEnabled &&
+                      " PII will be automatically redacted."}
                   </p>
                 </div>
               </div>
