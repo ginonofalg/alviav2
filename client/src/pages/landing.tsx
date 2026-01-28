@@ -46,9 +46,9 @@ const features = [
   },
   {
     icon: FileText,
-    title: "Rich Reports",
+    title: "Actionable Results",
     description:
-      "Per-interview summaries and cross-interview theme analysis with exportable data.",
+      "Cross-interview themes, actionable insights and tailored recommendations.",
   },
 ];
 
