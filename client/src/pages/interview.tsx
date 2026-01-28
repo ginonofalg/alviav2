@@ -238,7 +238,7 @@ export default function InterviewPage() {
       ? ((currentQuestionIndex + 1) / totalQuestions) * 100
       : 0;
 
-  // Initialize audio context with mobile-friendly priming
+  // Initialize audio context
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext ||
@@ -246,71 +246,11 @@ export default function InterviewPage() {
         sampleRate: 24000,
       });
     }
-    
-    const audioContext = audioContextRef.current;
-    
     // Resume the audio context if it's suspended (browsers require user interaction)
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
     }
-    
-    // Poll until the audio context is truly running (mobile devices may need extra time)
-    const maxWaitMs = 2000;
-    const pollIntervalMs = 50;
-    let waited = 0;
-    while (audioContext.state !== "running" && waited < maxWaitMs) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-      waited += pollIntervalMs;
-    }
-    
-    if (audioContext.state !== "running") {
-      console.warn("[Audio] AudioContext did not reach running state after polling");
-    }
-    
-    // Play a silent buffer to force the mobile audio pipeline to fully initialize
-    // This "primes" the audio system so subsequent real audio doesn't clip
-    const silentBufferDuration = 0.1; // 100ms
-    const silentBuffer = audioContext.createBuffer(
-      1,
-      Math.ceil(audioContext.sampleRate * silentBufferDuration),
-      audioContext.sampleRate
-    );
-    const silentSource = audioContext.createBufferSource();
-    silentSource.buffer = silentBuffer;
-    silentSource.connect(audioContext.destination);
-    
-    await new Promise<void>((resolve) => {
-      silentSource.onended = () => resolve();
-      silentSource.start();
-    });
-    
-    // Stabilization delay after silent buffer completes
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    
-    console.log("[Audio] AudioContext fully initialized and primed");
-    return audioContext;
-  }, []);
-
-  // Play queued audio chunks sequentially
-  const playNextChunk = useCallback((audioContext: AudioContext) => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      setIsAiSpeaking(false);
-      return;
-    }
-
-    isPlayingRef.current = true;
-    setIsAiSpeaking(true);
-
-    const chunk = audioQueueRef.current.shift()!;
-    const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
-    audioBuffer.copyToChannel(chunk, 0);
-
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.onended = () => playNextChunk(audioContext);
-    source.start();
+    return audioContextRef.current;
   }, []);
 
   // Play audio from base64 PCM16 data
@@ -337,35 +277,35 @@ export default function InterviewPage() {
           const audioContext = await initAudioContext();
           if (audioContext.state === "running") {
             playNextChunk(audioContext);
-          } else {
-            // Fallback: if context isn't running yet, wait for state change
-            // This prevents queued chunks from being silently lost on mobile
-            let listenerRemoved = false;
-            const handleStateChange = () => {
-              if (listenerRemoved) return;
-              if (audioContext.state === "running" && !isPlayingRef.current && audioQueueRef.current.length > 0) {
-                listenerRemoved = true;
-                audioContext.removeEventListener("statechange", handleStateChange);
-                playNextChunk(audioContext);
-              }
-            };
-            audioContext.addEventListener("statechange", handleStateChange);
-            // Timeout to clean up listener if context never reaches running state
-            setTimeout(() => {
-              if (!listenerRemoved) {
-                listenerRemoved = true;
-                audioContext.removeEventListener("statechange", handleStateChange);
-                console.warn("[Audio] Timeout waiting for AudioContext to reach running state");
-              }
-            }, 5000);
           }
         }
       } catch (error) {
         console.error("Error playing audio:", error);
       }
     },
-    [initAudioContext, playNextChunk],
+    [initAudioContext],
   );
+
+  const playNextChunk = useCallback((audioContext: AudioContext) => {
+    if (audioQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      setIsAiSpeaking(false);
+      return;
+    }
+
+    isPlayingRef.current = true;
+    setIsAiSpeaking(true);
+
+    const chunk = audioQueueRef.current.shift()!;
+    const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
+    audioBuffer.copyToChannel(chunk, 0);
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    source.onended = () => playNextChunk(audioContext);
+    source.start();
+  }, []);
 
   // Stop audio capture - defined early for use in message handlers
   const stopAudioCapture = useCallback(() => {
