@@ -490,6 +490,10 @@ export default function InterviewPage() {
           break;
 
         case "interview_complete":
+          // Clear the fallback timeout if set
+          if (wsRef.current && (wsRef.current as any)._completeTimeoutId) {
+            clearTimeout((wsRef.current as any)._completeTimeoutId);
+          }
           toast({
             title: "Interview completed",
             description: "Thank you for participating!",
@@ -777,13 +781,24 @@ export default function InterviewPage() {
     stopAudioCapture();
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "end_interview" }));
+      // Set a timeout fallback in case we don't receive "interview_complete" confirmation
+      const timeoutId = setTimeout(() => {
+        toast({
+          title: "Interview completed",
+          description: "Thank you for participating!",
+        });
+        navigate(`/review/${sessionId}`);
+      }, 5000);
+      // Store timeout ID to clear it if we receive the confirmation message
+      (wsRef.current as any)._completeTimeoutId = timeoutId;
+    } else {
+      // WebSocket not open, navigate directly (session might already be completed)
+      toast({
+        title: "Interview completed",
+        description: "Thank you for participating!",
+      });
+      navigate(`/review/${sessionId}`);
     }
-    wsRef.current?.close();
-    toast({
-      title: "Interview completed",
-      description: "Thank you for participating!",
-    });
-    navigate(`/review/${sessionId}`);
   };
 
   if (isLoading) {

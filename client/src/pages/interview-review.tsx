@@ -56,8 +56,16 @@ export default function InterviewReviewPage() {
         headers,
       });
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.message || "Failed to fetch review data");
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const err = await response.json();
+          throw new Error(err.message || "Failed to fetch review data");
+        }
+        // Handle non-JSON error responses (e.g., HTML 404 pages)
+        if (response.status === 404) {
+          throw new Error("Session not found or not yet completed. Please wait a moment and try again.");
+        }
+        throw new Error(`Failed to fetch review data (${response.status})`);
       }
       return response.json();
     },
