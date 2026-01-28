@@ -1,0 +1,96 @@
+# Mobile Audio Clipping Analysis
+
+## Problem
+
+On starting or resuming an interview, the first few words spoken by Alvia are clipped — the user only begins to hear speech after the third or fourth word. This only occurs on mobile devices (Android) and resolves after a device restart.
+
+---
+
+## Existing Fixes in the Codebase
+
+The branch contains **four commits** targeting this issue:
+
+| Commit | Description |
+|--------|-------------|
+| `4393b46` | Fix audio cutoff at the beginning of interviews |
+| `f71869c` | Improve audio playback by synchronizing client and server readiness |
+| `3aa8c89` | Improve audio initialization for mobile devices to prevent clipping |
+| `eda8a97` | Connection handshake |
+
+### 1. Client-Server Handshake
+
+**Files:** `server/voice-interview.ts:1676–1701`, `client/src/pages/interview.tsx:392–399`
+
+The server will not ask OpenAI to generate Alvia's first response until the client sends an `audio_ready` message. Both sides of the handshake are guarded:
+
+- `session.updated` on the server checks `clientAudioReady`
+- The `audio_ready` handler checks `sessionConfigured`
+
+This prevents audio data from arriving before the client is prepared.
+
+### 2. AudioContext Resume
+
+**File:** `client/src/pages/interview.tsx:250–251`
+
+The code awaits `audioContext.resume()` for suspended contexts — the standard fix for the mobile browser policy requiring user interaction before audio playback.
+
+### 3. Audio Queue
+
+**File:** `client/src/pages/interview.tsx:273, 289–308`
+
+Incoming audio chunks are queued in `audioQueueRef` and played sequentially, so chunks arriving while earlier ones are playing are not dropped.
+
+---
+
+## Remaining Gaps
+
+Despite the fixes above, three gaps could explain clipping specifically on Android.
+
+### Gap 1: Silent-Buffer Priming Was Reverted
+
+Commit `3aa8c89` introduced:
+
+- A **polling loop** waiting for `audioContext.state === "running"` (50ms intervals)
+- A **silent buffer prime** (100ms of silence) to force the mobile audio pipeline to fully initialize
+- A **stabilization delay** (100ms after the silent buffer completes)
+
+However, commit `1db12b3` ("Restored to f71869c") **reverted these changes**. The current `initAudioContext` function at `interview.tsx:242–254` only creates the AudioContext, awaits `resume()`, and returns immediately.
+
+On Android, `resume()` can resolve before the audio pipeline is truly ready. Without the silent buffer prime and stabilization delay, the first real audio chunks play into a pipeline that hasn't fully warmed up, causing the clipping.
+
+### Gap 2: Race Condition When AudioContext Is Not Yet Running
+
+At `interview.tsx:275–281`, the first call to `playAudio` does:
+
+```typescript
+if (!isPlayingRef.current) {
+  const audioContext = await initAudioContext();
+  if (audioContext.state === "running") {
+    playNextChunk(audioContext);
+  }
+}
+```
+
+If `audioContext.state` is not `"running"` at that moment (possible on Android even after `resume()` resolves), the queued chunks are **never dequeued** — there is no retry or `onstatechange` listener. Subsequent `playAudio` calls see `isPlayingRef.current` is still `false`, re-enter this block, and may also find the context not running. Eventually the context transitions to running, but by then there is no trigger to start playback. The earliest chunks may be silently dropped or played so late they overlap.
+
+### Gap 3: `audio_ready` Fires Before the Audio System Is Truly Ready
+
+The client sends `audio_ready` as soon as `initAudioContext()` resolves (`interview.tsx:394–398`). Since `initAudioContext` only awaits `resume()` — which resolves prematurely on some Android devices — the server may start generating audio before the mobile audio pipeline is actually capable of playing it. The handshake is correct in concept but its "ready" signal fires too early.
+
+---
+
+## Why a Device Restart Fixes It
+
+Restarting an Android device clears the OS-level audio session state. Android's AudioFlinger service and any low-level audio hardware abstraction layers are reset, meaning the AudioContext initializes from a clean state and `resume()` behaves more reliably. Without a restart, background apps or prior audio sessions can leave the audio pipeline in a state that takes longer to fully initialize.
+
+---
+
+## Recommended Fix
+
+Re-introduce the logic from commit `3aa8c89` that was reverted by `1db12b3`:
+
+1. **Poll for running state** — after `resume()`, loop with short intervals until `audioContext.state === "running"` before proceeding.
+2. **Play a silent buffer** — create and play a short (100ms) silent `AudioBuffer` to force the mobile audio pipeline to fully initialize.
+3. **Add a stabilization delay** — wait for the silent buffer to complete plus a small additional delay (~100ms) for the audio system to settle.
+4. **Send `audio_ready` only after all three steps complete** — this ensures the server does not trigger Alvia's first response until the client can actually play audio.
+5. **Add an `onstatechange` fallback in `playAudio`** — if the context is not running when `playAudio` is first called, attach a listener that calls `playNextChunk` once the state transitions to `"running"`, preventing queued chunks from being silently lost.
