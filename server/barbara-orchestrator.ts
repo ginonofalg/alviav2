@@ -536,12 +536,8 @@ export async function generateQuestionSummary(
     `[Summary] Q${questionIndex + 1}: ${respondentEntries.length} respondent entries, ${wordCount} words`,
   );
 
-  if (wordCount < 10) {
-    console.log(
-      `[Summary] Q${questionIndex + 1}: Only ${wordCount} words from respondent (threshold: 10), returning empty summary`,
-    );
-    return createEmptySummary(questionIndex, questionText, metrics);
-  }
+  // Always summarize responses, even short ones - they can contain valuable emotional/sentiment data
+  // Short responses like frustrated one-word answers are still meaningful for analysis
 
   const transcriptFormatted = questionTranscript
     .map((e) => `[${e.speaker.toUpperCase()}]: ${e.text}`)
