@@ -1229,7 +1229,8 @@ async function handleProviderEvent(
 
   switch (event.type) {
     case "session.created":
-      console.log(`[VoiceInterview] Session created for ${sessionId}`);
+    case "conversation.created":
+      console.log(`[VoiceInterview] Session/conversation created for ${sessionId}`);
       // Don't trigger response here - wait for session.updated after configuration
       break;
 
@@ -1267,7 +1268,8 @@ async function handleProviderEvent(
       state.isBarbaraGuidanceUpdate = false;
       break;
 
-    case "response.audio.delta": {
+    case "response.audio.delta":
+    case "response.output_audio.delta": {
       const now = Date.now();
       // Update activity - AI speaking keeps session alive
       state.lastActivityAt = now;
@@ -1303,7 +1305,8 @@ async function handleProviderEvent(
       break;
     }
 
-    case "response.audio.done": {
+    case "response.audio.done":
+    case "response.output_audio.done": {
       const now = Date.now();
       // Track Alvia speaking time - accumulate duration
       if (state.metricsTracker.alviaSpeaking.currentResponseStartAt !== null) {
@@ -1323,6 +1326,7 @@ async function handleProviderEvent(
     }
 
     case "response.audio_transcript.delta":
+    case "response.output_audio_transcript.delta":
       // AI's speech transcript
       clientWs.send(
         JSON.stringify({
@@ -1333,6 +1337,7 @@ async function handleProviderEvent(
       break;
 
     case "response.audio_transcript.done":
+    case "response.output_audio_transcript.done":
       // Store the last AI prompt for resume functionality
       if (event.transcript) {
         state.lastAIPrompt = event.transcript;

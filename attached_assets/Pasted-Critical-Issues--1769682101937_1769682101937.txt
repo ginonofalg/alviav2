@@ -1,0 +1,70 @@
+Critical Issues                                                                                                  
+                                                                                                                   
+  1. Event name mismatch (most critical - breaks audio entirely)                                                   
+                                                                                                                   
+  Grok uses different event names than OpenAI for audio streaming. The handleProviderEvent switch at               
+  server/voice-interview.ts:1230 only handles OpenAI's event names:                                                
+  ┌──────────────────────┬──────────────────────────────────┬────────────────────────────────────────┐             
+  │     What it does     │ OpenAI event (currently handled) │         Grok event (unhandled)         │             
+  ├──────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤             
+  │ Audio chunks         │ response.audio.delta             │ response.output_audio.delta            │             
+  ├──────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤             
+  │ Audio done           │ response.audio.done              │ response.output_audio.done             │             
+  ├──────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤             
+  │ AI transcript chunks │ response.audio_transcript.delta  │ response.output_audio_transcript.delta │             
+  ├──────────────────────┼──────────────────────────────────┼────────────────────────────────────────┤             
+  │ AI transcript done   │ response.audio_transcript.done   │ response.output_audio_transcript.done  │             
+  └──────────────────────┴──────────────────────────────────┴────────────────────────────────────────┘             
+  Since these events fall through the switch unmatched, no audio or transcript data will be forwarded to the client
+   when using Grok. The interview will appear to connect but the respondent will hear nothing.                     
+                                                                                                                   
+  2. Invalid voice name                                                                                            
+                                                                                                                   
+  realtime-providers.ts:150 sets voice to "tina", which doesn't exist in Grok's API. The valid Grok voices are:    
+  Ara, Rex, Sal, Eve, Leo. This will likely cause a session configuration error.                                   
+                                                                                                                   
+  3. Audio format configuration                                                                                    
+                                                                                                                   
+  realtime-providers.ts:148-149 uses OpenAI's flat format:                                                         
+  { "input_audio_format": "pcm16", "output_audio_format": "pcm16" }                                                
+                                                                                                                   
+  Grok expects a nested structure:                                                                                 
+  { "audio": { "input": { "format": { "type": "audio/pcm", "rate": 24000 } }, "output": { "format": { "type":      
+  "audio/pcm", "rate": 24000 } } } }                                                                               
+                                                                                                                   
+  4. Token usage / billing model mismatch                                                                          
+                                                                                                                   
+  This is the warning you saw. Grok's Realtime API bills per minute ($0.05/min), not per token. The response.done  
+  event from Grok either has an empty usage object or uses different field names. The current code at              
+  realtime-providers.ts:173-175 detects this but silently falls back to zeros.                                     
+                                                                                                                   
+  ---                                                                                                              
+  Minor Issues                                                                                                     
+                                                                                                                   
+  5. Transcription model name                                                                                      
+                                                                                                                   
+  realtime-providers.ts:154 uses "grok-2-transcribe". The xAI voice docs don't explicitly list transcription model 
+  names — transcription may be built into the realtime pipeline. This field may be ignored or cause an error.      
+                                                                                                                   
+  6. Missing conversation.created event                                                                            
+                                                                                                                   
+  Grok sends conversation.created on connection, while the code only handles session.created at                    
+  voice-interview.ts:1231. This is informational only and unlikely to break anything, but it means the initial     
+  connection log entry won't appear.                                                                               
+                                                                                                                   
+  ---                                                                                                              
+  Summary of what to fix                                                                                           
+                                                                                                                   
+  The event name mismatch is the primary blocker — you need to either:                                             
+                                                                                                                   
+  - Option A: Add Grok event aliases to the switch statement in handleProviderEvent (e.g. handle both              
+  response.audio.delta and response.output_audio.delta)                                                            
+  - Option B: Add an event name normalization method to the RealtimeProvider interface that maps Grok event names  
+  to a canonical form before the switch                                                                            
+                                                                                                                   
+  Then fix the voice name, the audio format config structure, and decide whether to track Grok usage by minutes    
+  instead of tokens.                                                                                               
+                                                                                                                   
+  Sources:                                                                                                         
+  - https://docs.x.ai/docs/guides/voice/agent                                                                      
+  - https://docs.x.ai/docs/models
