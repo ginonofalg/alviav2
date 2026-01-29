@@ -39,7 +39,7 @@ The system organizes data hierarchically: **Workspace → Project → InterviewT
 - **Analytics Cascade Refresh**: Streamlined UX for refreshing analytics dependencies (collections, templates, projects) via a single "Refresh All" action.
 - **Data Isolation**: Enforced ownership verification across all data hierarchies (User → Workspace → Project → Template → Collection → Session) for secure multi-tenancy.
 - **Auto-Generate Template Feature**: AI-powered generation of interview templates from project metadata using GPT-5.
-- **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface to support switching between different real-time voice API providers (e.g., OpenAI, Grok).
+- **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface to support switching between different real-time voice API providers (e.g., OpenAI, Grok). Users can select the provider from a dropdown in the interview UI before starting a session.
 
 ## External Dependencies
 
@@ -47,4 +47,4 @@ The system organizes data hierarchically: **Workspace → Project → InterviewT
 - **OpenAI API**: For GPT-4o Real-time voice interviews, GPT-based interview guidance, and analytics processing.
 - **Gemini API**: For infographic generation.
 - **Replit Authentication**: OpenID Connect for user authentication.
-- **xAI Grok API**: (Planned/Configurable) for alternative real-time voice processing.
+- **xAI Grok API**: For alternative real-time voice processing (requires `XAI_API_KEY` secret).

@@ -197,8 +197,8 @@ export class GrokRealtimeProvider implements RealtimeProvider {
   }
 }
 
-export function getRealtimeProvider(): RealtimeProvider {
-  const providerType = (process.env.REALTIME_PROVIDER || "openai").toLowerCase() as RealtimeProviderType;
+export function getRealtimeProvider(override?: RealtimeProviderType | null): RealtimeProvider {
+  const providerType = (override || process.env.REALTIME_PROVIDER || "openai").toLowerCase() as RealtimeProviderType;
   
   switch (providerType) {
     case "grok": {

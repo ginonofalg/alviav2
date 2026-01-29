@@ -31,13 +31,8 @@ import {
   type RealtimeProviderType,
 } from "./realtime-providers";
 
-let activeProvider: RealtimeProvider | null = null;
-
-function getProvider(): RealtimeProvider {
-  if (!activeProvider) {
-    activeProvider = getRealtimeProvider();
-  }
-  return activeProvider;
+function getProvider(providerOverride?: RealtimeProviderType | null): RealtimeProvider {
+  return getRealtimeProvider(providerOverride);
 }
 
 interface InterviewState {
@@ -573,9 +568,21 @@ export function handleVoiceInterview(
   clientWs: WebSocket,
   req: IncomingMessage,
 ) {
-  // Extract session ID from query string: /ws/interview?sessionId=xxx
+  // Extract session ID and provider from query string: /ws/interview?sessionId=xxx&provider=openai
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const sessionId = url.searchParams.get("sessionId");
+  const providerParamRaw = url.searchParams.get("provider");
+  
+  // Validate provider parameter
+  const validProviders: RealtimeProviderType[] = ["openai", "grok"];
+  const providerParam: RealtimeProviderType | null = 
+    providerParamRaw && validProviders.includes(providerParamRaw as RealtimeProviderType) 
+      ? (providerParamRaw as RealtimeProviderType) 
+      : null;
+  
+  if (providerParamRaw && !providerParam) {
+    console.warn(`[VoiceInterview] Invalid provider "${providerParamRaw}", using default`);
+  }
 
   if (!sessionId) {
     clientWs.close(1008, "Session ID required");
@@ -648,7 +655,7 @@ export function handleVoiceInterview(
       }
     });
 
-    // Send reconnected message to client with current state
+    // Send reconnected message to client with current state (including provider for UI sync)
     clientWs.send(
       JSON.stringify({
         type: "connected",
@@ -660,6 +667,7 @@ export function handleVoiceInterview(
             ?.questionText || "",
         isResumed: true,
         persistedTranscript: existingState.fullTranscriptForPersistence,
+        provider: existingState.providerType,
       }),
     );
 
@@ -695,7 +703,7 @@ export function handleVoiceInterview(
     questions: [],
     template: null,
     providerWs: null,
-    providerType: getProvider().name,
+    providerType: providerParam || (process.env.REALTIME_PROVIDER as RealtimeProviderType) || "openai",
     clientWs: clientWs,
     isConnected: false,
     lastAIPrompt: "",
@@ -912,7 +920,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
 
   let provider;
   try {
-    provider = getProvider();
+    provider = getProvider(state.providerType);
   } catch (error: any) {
     console.error(`[VoiceInterview] Provider initialization failed:`, error.message);
     clientWs.send(
@@ -1462,7 +1470,7 @@ async function handleProviderEvent(
     }
 
     case "response.done": {
-      const provider = getProvider();
+      const provider = getProvider(state.providerType);
       const tokenUsage = provider.parseTokenUsage(event);
       if (tokenUsage) {
         state.metricsTracker.tokens.inputTokens += tokenUsage.inputTokens;
