@@ -10,6 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Form,
   FormControl,
   FormDescription,
@@ -33,6 +40,7 @@ const collectionFormSchema = z.object({
   targetResponses: z.number().min(1).optional(),
   isOpen: z.boolean().default(true),
   expiresAt: z.string().optional(),
+  voiceProvider: z.enum(["openai", "grok"]).default("openai"),
 });
 
 type CollectionFormData = z.infer<typeof collectionFormSchema>;
@@ -57,6 +65,7 @@ export default function CollectionNewPage() {
       targetResponses: 50,
       isOpen: true,
       expiresAt: "",
+      voiceProvider: "openai",
     },
   });
 
@@ -279,6 +288,31 @@ export default function CollectionNewPage() {
                         data-testid="input-collection-description"
                       />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="voiceProvider"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voice Provider</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-voice-provider">
+                          <SelectValue placeholder="Select voice provider" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="openai" data-testid="option-openai">OpenAI</SelectItem>
+                        <SelectItem value="grok" data-testid="option-grok">Grok (xAI)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription className="text-xs">
+                      The AI voice service to use for interviews in this collection
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

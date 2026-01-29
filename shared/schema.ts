@@ -130,6 +130,7 @@ export const collections = pgTable("collections", {
   description: text("description"),
   isActive: boolean("is_active").default(true),
   targetResponses: integer("target_responses"),
+  voiceProvider: text("voice_provider").default("openai"),
   createdAt: timestamp("created_at").defaultNow(),
   closedAt: timestamp("closed_at"),
   // Analytics metadata

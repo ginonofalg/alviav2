@@ -9,13 +9,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Mic,
   MicOff,
   Pause,
@@ -221,8 +214,7 @@ export default function InterviewPage() {
     open: boolean;
     type: "next" | "complete";
   }>({ open: false, type: "next" });
-  const [selectedProvider, setSelectedProvider] = useState<"openai" | "grok">("openai");
-
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -239,6 +231,7 @@ export default function InterviewPage() {
   });
 
   const session = interviewData?.session;
+  const collection = interviewData?.collection;
   const questions = interviewData?.questions;
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress =
@@ -333,7 +326,8 @@ export default function InterviewPage() {
 
     setIsConnecting(true);
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws/interview?sessionId=${sessionId}&provider=${selectedProvider}`;
+    const voiceProvider = collection?.voiceProvider || "openai";
+    const wsUrl = `${protocol}//${window.location.host}/ws/interview?sessionId=${sessionId}&provider=${voiceProvider}`;
 
     console.log("[Interview] Connecting to WebSocket:", wsUrl);
     const ws = new WebSocket(wsUrl);
@@ -382,7 +376,7 @@ export default function InterviewPage() {
         variant: "destructive",
       });
     };
-  }, [sessionId, selectedProvider, toast]);
+  }, [sessionId, collection?.voiceProvider, toast]);
 
   const handleWebSocketMessage = useCallback(
     (message: any) => {
@@ -396,9 +390,6 @@ export default function InterviewPage() {
           setTotalQuestions(message.totalQuestions || 0);
           if (message.currentQuestion) {
             setCurrentQuestionText(message.currentQuestion);
-          }
-          if (message.provider && (message.provider === "openai" || message.provider === "grok")) {
-            setSelectedProvider(message.provider);
           }
           // Pre-warm the audio context so it's ready for playback, then signal server
           // This must happen in response to user interaction (which started the interview)
@@ -972,25 +963,6 @@ export default function InterviewPage() {
 
               <div className="w-9" />
             </div>
-
-            {!isConnected && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Voice Provider:</span>
-                <Select
-                  value={selectedProvider}
-                  onValueChange={(value: "openai" | "grok") => setSelectedProvider(value)}
-                  disabled={isConnecting}
-                >
-                  <SelectTrigger className="w-32" data-testid="select-provider">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="openai" data-testid="option-openai">OpenAI</SelectItem>
-                    <SelectItem value="grok" data-testid="option-grok">Grok</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <p className="text-sm text-muted-foreground">
               {isConnecting
