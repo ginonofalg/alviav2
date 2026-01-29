@@ -1050,9 +1050,7 @@ function buildInterviewInstructions(
         .join("\n")
     : "";
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
-
-CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview in English.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
