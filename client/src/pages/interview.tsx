@@ -464,15 +464,28 @@ export default function InterviewPage() {
 
         case "user_transcript":
           // Add user transcript to entries
+          // Insert BEFORE any currently streaming AI entry since the user spoke first
           if (message.transcript) {
-            setTranscript((prev) => [
-              ...prev,
-              {
-                speaker: "respondent",
+            setTranscript((prev) => {
+              const newEntry = {
+                speaker: "respondent" as const,
                 text: message.transcript,
                 timestamp: Date.now(),
-              },
-            ]);
+              };
+              
+              // If the last entry is a streaming AI response, insert user transcript before it
+              // This ensures proper conversational order: user speaks -> AI responds
+              const lastEntry = prev[prev.length - 1];
+              if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {
+                return [
+                  ...prev.slice(0, -1),
+                  newEntry,
+                  lastEntry,
+                ];
+              }
+              
+              return [...prev, newEntry];
+            });
           }
           break;
 

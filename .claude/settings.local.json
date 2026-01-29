@@ -3,7 +3,10 @@
     "allow": [
       "WebSearch",
       "WebFetch(domain:platform.openai.com)",
-      "WebFetch(domain:docs.x.ai)"
+      "WebFetch(domain:docs.x.ai)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:community.openai.com)"
     ]
   }
 }
