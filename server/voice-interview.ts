@@ -42,6 +42,7 @@ interface InterviewState {
   template: any;
   providerWs: WebSocket | null;
   providerType: RealtimeProviderType;
+  providerInstance: RealtimeProvider; // Cached provider instance to avoid repeated allocation
   clientWs: WebSocket | null;
   isConnected: boolean;
   lastAIPrompt: string;
@@ -697,13 +698,15 @@ export function handleVoiceInterview(
 
   // Initialize interview state
   const now = Date.now();
+  const selectedProviderType = providerParam || (process.env.REALTIME_PROVIDER as RealtimeProviderType) || "openai";
   const state: InterviewState = {
     sessionId,
     currentQuestionIndex: 0,
     questions: [],
     template: null,
     providerWs: null,
-    providerType: providerParam || (process.env.REALTIME_PROVIDER as RealtimeProviderType) || "openai",
+    providerType: selectedProviderType,
+    providerInstance: getProvider(selectedProviderType), // Cache provider instance once
     clientWs: clientWs,
     isConnected: false,
     lastAIPrompt: "",
@@ -918,19 +921,8 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
-  let provider;
-  try {
-    provider = getProvider(state.providerType);
-  } catch (error: any) {
-    console.error(`[VoiceInterview] Provider initialization failed:`, error.message);
-    clientWs.send(
-      JSON.stringify({
-        type: "error",
-        message: error.message || "Voice service API key not configured",
-      }),
-    );
-    return;
-  }
+  // Use cached provider instance from state
+  const provider = state.providerInstance;
   
   console.log(
     `[VoiceInterview] Connecting to ${provider.displayName} for session: ${sessionId}`,
@@ -1005,7 +997,8 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   providerWs.on("message", (data) => {
     try {
       const event = JSON.parse(data.toString());
-      handleProviderEvent(sessionId, event, clientWs);
+      // Don't pass clientWs - handleProviderEvent looks it up from state to handle reconnections
+      handleProviderEvent(sessionId, event);
     } catch (error) {
       console.error(`[VoiceInterview] Error parsing ${provider.displayName} message:`, error);
     }
@@ -1222,10 +1215,20 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
 async function handleProviderEvent(
   sessionId: string,
   event: any,
-  clientWs: WebSocket,
 ) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
+  
+  // Get current clientWs from state (not closure) to handle reconnections correctly
+  const clientWs = state.clientWs;
+  if (!clientWs || clientWs.readyState !== WebSocket.OPEN) {
+    // Client disconnected - skip sending, but still process internal state updates
+    // Only return for events that purely send to client
+    if (["response.audio.delta", "response.output_audio.delta", 
+         "response.audio_transcript.delta", "response.output_audio_transcript.delta"].includes(event.type)) {
+      return;
+    }
+  }
 
   switch (event.type) {
     case "session.created":
@@ -1296,7 +1299,7 @@ async function handleProviderEvent(
       }
 
       // Forward audio chunks to client
-      clientWs.send(
+      clientWs?.send(
         JSON.stringify({
           type: "audio",
           delta: event.delta,
@@ -1321,14 +1324,14 @@ async function handleProviderEvent(
       state.metricsTracker.silenceTracking.lastAlviaEndAt = now;
       state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
 
-      clientWs.send(JSON.stringify({ type: "audio_done" }));
+      clientWs?.send(JSON.stringify({ type: "audio_done" }));
       break;
     }
 
     case "response.audio_transcript.delta":
     case "response.output_audio_transcript.delta":
       // AI's speech transcript
-      clientWs.send(
+      clientWs?.send(
         JSON.stringify({
           type: "ai_transcript",
           delta: event.delta,
@@ -1351,7 +1354,7 @@ async function handleProviderEvent(
         // Schedule debounced persist
         scheduleDebouncedPersist(sessionId);
       }
-      clientWs.send(
+      clientWs?.send(
         JSON.stringify({
           type: "ai_transcript_done",
           transcript: event.transcript,
@@ -1415,11 +1418,13 @@ async function handleProviderEvent(
           // Trigger Barbara analysis asynchronously (non-blocking)
           // Her guidance will apply to the NEXT turn, not this one
           // Response is automatically created by provider due to create_response: true
-          triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
+          triggerBarbaraAnalysis(sessionId).catch((error) => {
             console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
           });
         }
-        clientWs.send(
+        // Re-fetch clientWs from state in case of reconnection during async processing
+        const currentClientWs = interviewStates.get(sessionId)?.clientWs;
+        currentClientWs?.send(
           JSON.stringify({
             type: "user_transcript",
             transcript: event.transcript,
@@ -1442,7 +1447,7 @@ async function handleProviderEvent(
       recordSilenceSegment(state.metricsTracker, state, now);
       state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
 
-      clientWs.send(JSON.stringify({ type: "user_speaking_started" }));
+      clientWs?.send(JSON.stringify({ type: "user_speaking_started" }));
       break;
     }
 
@@ -1470,13 +1475,13 @@ async function handleProviderEvent(
       state.metricsTracker.silenceTracking.lastRespondentEndAt = now;
       state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
 
-      clientWs.send(JSON.stringify({ type: "user_speaking_stopped" }));
+      clientWs?.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
     }
 
     case "response.done": {
-      const provider = getProvider(state.providerType);
-      const tokenUsage = provider.parseTokenUsage(event);
+      // Use cached provider instance to avoid allocation on every response
+      const tokenUsage = state.providerInstance.parseTokenUsage(event);
       if (tokenUsage) {
         state.metricsTracker.tokens.inputTokens += tokenUsage.inputTokens;
         state.metricsTracker.tokens.outputTokens += tokenUsage.outputTokens;
@@ -1485,16 +1490,16 @@ async function handleProviderEvent(
         state.metricsTracker.tokens.inputTextTokens += tokenUsage.inputTextTokens;
         state.metricsTracker.tokens.outputTextTokens += tokenUsage.outputTextTokens;
         console.log(
-          `[Metrics] Token usage for ${sessionId} (${provider.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
+          `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
         );
       }
-      clientWs.send(JSON.stringify({ type: "response_done" }));
+      clientWs?.send(JSON.stringify({ type: "response_done" }));
       break;
     }
 
     case "error":
       console.error(`[VoiceInterview] Provider error:`, event.error);
-      clientWs.send(
+      clientWs?.send(
         JSON.stringify({
           type: "error",
           message: event.error?.message || "Voice service error",
@@ -1510,7 +1515,6 @@ const BARBARA_TIMEOUT_MS = 5000;
 
 async function triggerBarbaraAnalysis(
   sessionId: string,
-  clientWs: WebSocket,
 ): Promise<BarbaraGuidance | null> {
   const state = interviewStates.get(sessionId);
   if (!state || state.isWaitingForBarbara) return null;
@@ -1527,9 +1531,10 @@ async function triggerBarbaraAnalysis(
       state.questionMetrics.get(state.currentQuestionIndex) ||
       createEmptyMetrics(state.currentQuestionIndex);
 
-    // Wrap Barbara call with timeout
+    // Wrap Barbara call with timeout - store timeout ID to clear on success
+    let timeoutId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<BarbaraGuidance>((_, reject) => {
-      setTimeout(
+      timeoutId = setTimeout(
         () => reject(new Error("Barbara timeout")),
         BARBARA_TIMEOUT_MS,
       );
@@ -1555,6 +1560,9 @@ async function triggerBarbaraAnalysis(
     });
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
+    
+    // Clear the timeout to prevent memory leak from lingering timers
+    clearTimeout(timeoutId!);
 
     console.log(`[Barbara] Guidance for ${sessionId}:`);
     console.log(
@@ -1626,7 +1634,7 @@ async function triggerBarbaraAnalysis(
 
       // Notify client about Barbara's guidance (for debugging/transparency)
       // Also signal to highlight the Next Question button when appropriate
-      clientWs.send(
+      state.clientWs?.send(
         JSON.stringify({
           type: "barbara_guidance",
           action: guidance.action,
@@ -1787,7 +1795,7 @@ async function handleClientMessage(
 
           // Trigger Barbara analysis asynchronously (non-blocking)
           // Her guidance will apply to the NEXT turn, not this one
-          triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
+          triggerBarbaraAnalysis(sessionId).catch((error) => {
             console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
           });
 
