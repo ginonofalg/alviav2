@@ -37,6 +37,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Copy,
   ExternalLink,
   Users,
@@ -102,6 +109,7 @@ const editCollectionSchema = z.object({
   description: z.string().max(500, "Description must be 500 characters or less").optional().nullable(),
   targetResponses: z.coerce.number().min(1, "Must be at least 1").max(10000, "Maximum 10,000").optional().nullable(),
   isActive: z.boolean(),
+  voiceProvider: z.enum(["openai", "grok"]),
 });
 
 type EditCollectionForm = z.infer<typeof editCollectionSchema>;
@@ -162,6 +170,7 @@ export default function CollectionDetailPage() {
       description: "",
       targetResponses: null,
       isActive: true,
+      voiceProvider: "openai",
     },
   });
 
@@ -175,6 +184,7 @@ export default function CollectionDetailPage() {
           description: data.description || null,
           targetResponses: data.targetResponses || null,
           isActive: data.isActive,
+          voiceProvider: data.voiceProvider,
         },
       );
     },
@@ -204,6 +214,7 @@ export default function CollectionDetailPage() {
         description: collection.description || "",
         targetResponses: collection.targetResponses,
         isActive: collection.isActive ?? true,
+        voiceProvider: (collection.voiceProvider as "openai" | "grok") || "openai",
       });
       setEditDialogOpen(true);
     }
@@ -836,6 +847,34 @@ export default function CollectionDetailPage() {
                     </FormControl>
                     <FormDescription>
                       The number of completed responses you're aiming for.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="voiceProvider"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voice AI Provider</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-voice-provider">
+                          <SelectValue placeholder="Select provider" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="openai" data-testid="option-openai">OpenAI</SelectItem>
+                        <SelectItem value="grok" data-testid="option-grok">Grok (xAI)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      The AI provider used for voice interviews in this collection.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

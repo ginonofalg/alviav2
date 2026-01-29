@@ -1665,6 +1665,7 @@ export async function registerRoutes(
     description: z.string().max(500).nullable().optional(),
     targetResponses: z.number().min(1).max(10000).nullable().optional(),
     isActive: z.boolean().optional(),
+    voiceProvider: z.enum(["openai", "grok"]).optional(),
   });
 
   app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
