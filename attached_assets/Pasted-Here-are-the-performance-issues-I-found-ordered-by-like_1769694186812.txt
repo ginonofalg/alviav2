@@ -1,0 +1,108 @@
+Here are the performance issues I found, ordered by likely impact:                                                
+                                                                                                                    
+  ---                                                                                                               
+  1. getProvider() creates a new object + console.log on every response.done event                                  
+                                                                                                                    
+  voice-interview.ts:1478 — Every time the provider sends a response.done event (which happens frequently), this    
+  code runs:                                                                                                        
+                                                                                                                    
+  const provider = getProvider(state.providerType);                                                                 
+                                                                                                                    
+  And getRealtimeProvider() in realtime-providers.ts:201 creates a new class instance and calls                     
+  console.log("[RealtimeProvider] Using ... provider") every single time. During an active interview, response.done 
+  fires after every AI utterance. This means constant object allocation and console I/O in the hot path.            
+                                                                                                                    
+  Fix: Cache the provider on the InterviewState (you already store providerType — store the provider instance too)  
+  or at minimum memoize getRealtimeProvider.                                                                        
+                                                                                                                    
+  ---                                                                                                               
+  2. Stale clientWs closure in provider message handler                                                             
+                                                                                                                    
+  voice-interview.ts:1005-1008:                                                                                     
+                                                                                                                    
+  providerWs.on("message", (data) => {                                                                              
+      const event = JSON.parse(data.toString());                                                                    
+      handleProviderEvent(sessionId, event, clientWs);  // ← captured by closure                                    
+  });                                                                                                               
+                                                                                                                    
+  When a client reconnects at line 621, existingState.clientWs is updated to the new WebSocket, but the provider's  
+  message handler still holds a closure over the old clientWs. All audio data, transcripts, and control messages    
+  continue being sent to the old (closed) WebSocket. This means:                                                    
+  - Every clientWs.send() in handleProviderEvent throws/fails silently on the dead socket                           
+  - The new client gets no audio or transcripts from the provider                                                   
+  - Failed sends on closed sockets generate errors that get swallowed                                               
+                                                                                                                    
+  ---                                                                                                               
+  3. Barbara timeout promises leak                                                                                  
+                                                                                                                    
+  voice-interview.ts:1531-1536:                                                                                     
+                                                                                                                    
+  const timeoutPromise = new Promise<BarbaraGuidance>((_, reject) => {                                              
+      setTimeout(() => reject(new Error("Barbara timeout")), BARBARA_TIMEOUT_MS);                                   
+  });                                                                                                               
+  const guidance = await Promise.race([analysisPromise, timeoutPromise]);                                           
+                                                                                                                    
+  When analysisPromise wins the race, the setTimeout is never cleared. It fires 5 seconds later, rejects an         
+  already-resolved promise (harmless), but the timer and its closure remain in the event loop. Barbara is triggered 
+  after every user utterance, so these accumulate throughout the session — dozens of lingering timers holding       
+  closures over the full analysis context.                                                                          
+                                                                                                                    
+  ---                                                                                                               
+  4. Grok VAD threshold likely causing event storms                                                                 
+                                                                                                                    
+  realtime-providers.ts:157-161:                                                                                    
+                                                                                                                    
+  turn_detection: {                                                                                                 
+      type: "server_vad",                                                                                           
+      threshold: 0.3,       // quite sensitive                                                                      
+      silence_duration_ms: 800,                                                                                     
+      prefix_padding_ms: 150,                                                                                       
+  }                                                                                                                 
+                                                                                                                    
+  A threshold of 0.3 is quite low — it will trigger on ambient noise, breaths, and minor sounds. Compare to OpenAI  
+  which uses semantic_vad with eagerness: "auto". This means Grok fires more speech_started/speech_stopped events,  
+  each of which:                                                                                                    
+  - Records silence segments (pushes to unbounded allDurations array)                                               
+  - Triggers Barbara analysis on transcription                                                                      
+  - Creates more response.done events (each creating a new provider instance per issue #1)                          
+                                                                                                                    
+  Fix: Raise threshold to 0.5 or higher, and increase silence_duration_ms to 1000+.                                 
+                                                                                                                    
+  ---                                                                                                               
+  5. Unbounded arrays grow without limits                                                                           
+                                                                                                                    
+  Several arrays grow for the entire session lifetime with no caps:                                                 
+  ┌──────────────────────────────┬──────────┬───────────────────────┐                                               
+  │            Array             │ Location │      Growth rate      │                                               
+  ├──────────────────────────────┼──────────┼───────────────────────┤                                               
+  │ accumulator.allDurations     │ line 123 │ Every silence segment │                                               
+  ├──────────────────────────────┼──────────┼───────────────────────┤                                               
+  │ transcriptionLatencies       │ line 103 │ Every user utterance  │                                               
+  ├──────────────────────────────┼──────────┼───────────────────────┤                                               
+  │ responseLatencies            │ line 104 │ Every AI response     │                                               
+  ├──────────────────────────────┼──────────┼───────────────────────┤                                               
+  │ fullTranscriptForPersistence │ line 337 │ Every utterance       │                                               
+  └──────────────────────────────┴──────────┴───────────────────────┘                                               
+  With Grok's more sensitive VAD, these grow faster. For a 30-minute interview, allDurations could have hundreds to 
+  thousands of entries. Not catastrophic alone, but combined with the other issues it adds up.                      
+                                                                                                                    
+  ---                                                                                                               
+  6. cleanupSession doesn't clear pendingPersistTimeout if flushPersist throws                                      
+                                                                                                                    
+  voice-interview.ts:2286-2295: If flushPersist throws (e.g., database error), the timeout may still be pending, and
+   interviewStates.delete(sessionId) removes the state — but the timeout callback will fire later and call          
+  flushPersist(sessionId) on a deleted session (returns early harmlessly, but the timer stays alive).               
+                                                                                                                    
+  ---                                                                                                               
+  Summary of most likely causes of your slowdown                                                                    
+                                                                                                                    
+  The biggest culprits are likely #1 (new provider instance + console.log on every response event) and #4 (Grok's   
+  sensitive VAD causing many more events than OpenAI). Together, a Grok session generates significantly more events,
+   and each response.done event allocates a new provider object and writes to console. If you have the dev console  
+  open or logging to file, the console I/O alone could be significant.                                              
+                                                                                                                    
+  Quick wins:                                                                                                       
+  1. Cache the provider instance on InterviewState instead of calling getProvider() in the event handler            
+  2. Raise Grok's VAD threshold from 0.3 to 0.5                                                                     
+  3. Store a clearTimeout handle for the Barbara timeout promise                                                    
+  4. Fix the stale clientWs closure (use state.clientWs in handleProviderEvent instead of the closure parameter)
