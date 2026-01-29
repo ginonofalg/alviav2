@@ -1,0 +1,49 @@
+Here's a detailed breakdown of everything that would need to change for each option. No code is being changed — this is analysis only.
+
+Files Affected
+There are exactly 3 files with OpenAI Realtime API dependencies:
+
+File	Role
+server/voice-interview.ts	Server-side WebSocket bridge (the core)
+client/src/pages/interview.tsx	Client-side audio capture & playback
+CLAUDE.md	Documentation reference
+Option A: Grok Voice Agent API
+Since Grok follows the OpenAI Realtime API specification, this is the simpler migration.
+
+1. server/voice-interview.ts — 4 changes
+a) Connection URL (line 30-31)
+
+Current:  wss://api.openai.com/v1/realtime?model=gpt-realtime
+Change:   wss://api.x.ai/v1/realtime?model=grok-3-fast (or equivalent)
+
+b) Authentication headers (lines 916-921)
+
+Current:  Authorization: Bearer ${OPENAI_API_KEY}
+          OpenAI-Beta: realtime=v1
+Change:   Authorization: Bearer ${XAI_API_KEY}
+          Remove or replace OpenAI-Beta header (Grok may not require it)
+
+c) Session configuration (lines 962-989)
+These are the key unknowns — Grok claims OpenAI spec compatibility, but you'd need to verify:
+
+voice: "marin" — Grok has its own voice set; this value would change
+input_audio_transcription.model: "gpt-4o-mini-transcribe" — Grok uses its own built-in STT; this needs to change or be removed
+turn_detection.type: "semantic_vad" — need to confirm Grok supports semantic_vad vs only server_vad
+input_audio_noise_reduction — may not be supported
+d) Token usage parsing (lines 1475-1494)
+The response.done event includes event.response.usage with OpenAI-specific token detail fields (input_token_details.audio_tokens, etc.). Grok's usage reporting format may differ.
+
+2. client/src/pages/interview.tsx — likely no changes
+The client talks only to your server WebSocket (/ws/interview), not directly to OpenAI or Grok. The audio format (PCM16, 24kHz) is determined by the server-side session config. If Grok supports the same PCM16 format at 24kHz, the client stays unchanged.
+
+Risk: If Grok uses a different sample rate (e.g., 16kHz), you'd need to update lines 246, 300, and 564 to match.
+
+3. Environment
+New:   XAI_API_KEY (replaces or supplements OPENAI_API_KEY for voice)
+Note:  OPENAI_API_KEY is still needed for Barbara (chat completions API)
+
+4. Summary of Grok Risk Areas
+Semantic VAD: If Grok only supports server_vad, you lose the natural turn-detection behavior and need to tune threshold/silence_duration_ms manually
+Transcription model: Grok's built-in STT may not offer the same language parameter or model selection
+Event parity: While Grok claims spec compatibility, edge cases in events like conversation.item.input_audio_transcription.completed or response.audio_transcript.done may differ in structure
+Noise reduction: near_field noise reduction is an OpenAI-specific feature
