@@ -2,7 +2,7 @@
 
 ## Overview
 
-Alvia is a voice-based AI interview platform designed for qualitative research at scale. It utilizes OpenAI's GPT-4o Real-time API for natural voice conversations, automatically transcribing and analyzing responses. The platform includes features for consent management, PII redaction, cross-interview analysis, and an advanced analytics system to derive insights from interview data across multiple levels (Collection, Template, Project). It also supports an invitation system for targeted respondent recruitment and a strategic context feature for tailored analytics recommendations.
+Alvia is a voice-based AI interview platform for qualitative research at scale. It leverages OpenAI's GPT-4o Real-time API for natural voice conversations, automatically transcribing and analyzing responses. The platform features consent management, PII redaction, cross-interview analysis, and an advanced analytics system providing insights at Collection, Template, and Project levels. It also includes an invitation system for respondent recruitment and a strategic context feature for tailored analytics recommendations, aiming to transform qualitative research through AI-driven efficiency and insight generation.
 
 ## User Preferences
 
@@ -11,143 +11,40 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Tech Stack
-- **Frontend**: React 18 with TypeScript, Wouter, TanStack React Query, Radix UI (shadcn/ui), Tailwind CSS
+- **Frontend**: React 18 (TypeScript, Wouter, TanStack React Query, Radix UI, Tailwind CSS)
 - **Backend**: Express.js with WebSockets
 - **Database**: PostgreSQL with Drizzle ORM
 - **Authentication**: Replit OpenID Connect via Passport.js
-- **Voice Processing**: OpenAI GPT-4o Real-time API
+- **Voice Processing**: OpenAI GPT-4o Real-time API (with multi-provider support for future integration with Grok/xAI)
 - **Infographic Generation**: Gemini API (`gemini-3-pro-image-preview`)
 
 ### Data Model Hierarchy
-The core data model follows this hierarchy: **Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment**. This structure allows for organizing research, defining interview parameters, grouping sessions, and storing individual responses.
+The system organizes data hierarchically: **Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment**.
 
 ### Key Design Patterns
-- **Storage Abstraction**: All database operations are centralized through a `DatabaseStorage` class.
-- **Real-time Communication**: WebSocket server handles live voice interview sessions.
-- **Form Validation**: Zod schemas integrated with react-hook-form for type-safe validation.
+- **Storage Abstraction**: Centralized database operations via `DatabaseStorage`.
+- **Real-time Communication**: WebSocket server for live voice interview sessions.
+- **Form Validation**: Zod schemas integrated with react-hook-form.
 - **API Pattern**: REST endpoints with authentication middleware.
-- **Component Library**: shadcn/ui components built on Radix primitives.
-- **Lag-by-one-turn guidance**: AI guidance is applied asynchronously to the *next* response to avoid latency.
-- **Multi-Level Analytics System**: Analytics are generated at Collection, Template, and Project levels, with the Project level providing AI-powered cross-template synthesis. Template analytics preserve collection-level detail through deterministic aggregation.
-- **Strategic Context Integration**: Users can provide business context for tailored analytics recommendations.
-- **Test Harness**: A comprehensive test data seeding script facilitates testing analytics features.
-- **Aggregated Analytics Command Center**: A centralized dashboard provides cross-project strategic insights, aggregated findings, and health indicators for analytics staleness.
-- **Respondent Invitation System**: Supports single and bulk respondent invitations via unique tokens, QR codes, and tracks invitation status through the interview lifecycle.
+- **Component Library**: shadcn/ui.
+- **Lag-by-one-turn guidance**: Asynchronous AI guidance for next response.
+- **Multi-Level Analytics System**: Analytics generated at Collection, Template, and Project levels, with AI-powered cross-template synthesis at the Project level.
+- **Strategic Context Integration**: Enables tailored analytics recommendations based on user-provided business context.
+- **Aggregated Analytics Command Center**: Centralized dashboard for cross-project insights and analytics health.
+- **Respondent Invitation System**: Supports single and bulk invitations with tracking.
+- **Session Hygiene System**: Automatic cleanup of abandoned sessions using heartbeat, idle, and max age timeouts.
+- **Session Detail Page Enhancements**: Provides comprehensive tools for researchers including export, notes, flagging, and navigation.
+- **Project-Level Infographics**: Extends infographic generation to the project level, alongside collection-level support.
+- **PDF Export for Analytics**: Comprehensive PDF export for project and collection analytics with smart page breaks and consistent styling.
+- **Analytics Cascade Refresh**: Streamlined UX for refreshing analytics dependencies (collections, templates, projects) via a single "Refresh All" action.
+- **Data Isolation**: Enforced ownership verification across all data hierarchies (User → Workspace → Project → Template → Collection → Session) for secure multi-tenancy.
+- **Auto-Generate Template Feature**: AI-powered generation of interview templates from project metadata using GPT-5.
+- **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface to support switching between different real-time voice API providers (e.g., OpenAI, Grok).
 
 ## External Dependencies
 
 - **PostgreSQL Database**: Primary data store.
-- **OpenAI API**: For GPT-4o Real-time voice interviews and GPT-based interview guidance and analytics processing.
+- **OpenAI API**: For GPT-4o Real-time voice interviews, GPT-based interview guidance, and analytics processing.
 - **Gemini API**: For infographic generation.
 - **Replit Authentication**: OpenID Connect for user authentication.
-
-## Recent Changes (January 2026)
-
-### Session Hygiene System (Automatic Cleanup of Abandoned Sessions)
-Implemented a server-side watchdog system to automatically clean up abandoned interview sessions and prevent unnecessary OpenAI Realtime API costs:
-- **Heartbeat Protocol**: Client sends heartbeat every 30 seconds; server terminates after 90 seconds of no heartbeat
-- **Idle Timeout**: Sessions with no activity (audio, interactions) for 5 minutes are terminated
-- **Max Age Limit**: Sessions exceeding 1 hour are automatically terminated
-- **Graceful Warnings**: Clients receive a warning 30 seconds before termination
-- **Smart Watchdog**: Watchdog starts with first session, stops when no sessions remain
-- **Activity Tracking**: Audio, text input, pause/resume, next question, and AI responses all reset activity timers
-- **Client Handling**: Client receives session_warning and session_terminated messages with navigation to appropriate pages
-
-### Session Detail Page Enhancements
-Enhanced the individual session detail page for researchers with comprehensive session management tools:
-- **Delete Session**: Confirmation dialog before permanent deletion
-- **Export**: JSON and CSV export options for session data
-- **Respondent Info Panel**: Display consent status, email, name
-- **Copy Transcript**: One-click copy of full transcript to clipboard
-- **Share Review Link**: Generate review link for completed sessions
-- **Resume Link**: Generate resume link for incomplete sessions
-- **Researcher Notes**: Save notes with dedicated storage field (researcherNotes)
-- **Flag/Status Actions**: Add review flags (needs_review, flagged_quality, verified, excluded) and override session status
-- **Navigation**: Prev/Next session navigation scoped to collection context
-- **Quality Summary**: Display average quality score and quality flags from question summaries
-
-### Schema Changes
-Added `researcherNotes` (text) and `reviewFlags` (text array) fields to interviewSessions table to support researcher annotations separate from analytics data.
-
-### Realtime API Performance Monitoring
-Implemented comprehensive monitoring to track OpenAI Realtime API interactions for cost and performance visibility:
-- **Token Usage Tracking**: Captures input/output tokens (audio and text) from `response.done` events
-- **Latency Measurements**: Tracks transcription latency (speech end → transcript) and response latency (transcript → first audio delta)
-- **Speaking Time Metrics**: Measures Alvia speaking time, respondent speaking time, and silence periods
-- **Session Aggregates**: Calculates averages and maximums at session completion
-- **Persistence**: Stores metrics in `performanceMetrics` JSONB field on `interviewSessions` table
-- **API Endpoint**: `GET /api/sessions/:sessionId/metrics` returns session performance data (requires authentication)
-- **Termination Tracking**: Records termination reason (completed, heartbeat_timeout, idle_timeout, max_age_exceeded, client_disconnected)
-- **Silence Segment Tracking**: Captures individual silence gaps for future VAD threshold tuning:
-  - Three contexts: `post_alvia` (after AI speaks), `post_respondent` (after user speaks), `initial` (before any speech)
-  - Statistical analysis: mean, median, p90, p95, max durations computed from ALL observed segments
-  - Memory-bounded: Only 100 most recent segments stored, but stats computed from full accumulator
-  - 100ms minimum threshold filters noise/micro-pauses
-  - Question index tracking for per-question analysis
-- **Pause Duration Tracking**: Separates paused time from active silence for accurate VAD optimization analysis:
-  - `totalPauseDurationMs`: Cumulative time interview was paused (no audio streaming, no cost)
-  - `activeSilenceMs`: Silence during active streaming only (billable silence that VAD could eliminate)
-  - `activeSessionDurationMs`: Session duration minus pause time (true interview duration)
-  - Original `silenceMs` preserved for backward compatibility (includes pause time)
-  - Edge cases handled: session ends while paused, multiple pause/resume cycles
-  - Silence tracking reference points reset on resume to avoid inflated segments
-
-### Project-Level Infographics
-Extended the Infographics feature to support project-level generation alongside existing collection-level support:
-- **Collection Level**: Supports summary, themes, and findings infographic types
-- **Project Level**: Supports summary, themes, and strategic insights infographic types
-- **Type Validation**: InfographicGenerator validates type against entityLevel to prevent invalid API calls
-- **Analytics Gating**: Infographic generation is only enabled when analytics data exists for the entity
-
-### PDF Export for Analytics
-Added comprehensive PDF export functionality for project and collection analytics:
-- **AnalyticsPdfExport Component**: Located at `client/src/components/analytics/AnalyticsPdfExport.tsx`
-- **Project Analytics Export**: Includes overview, tailored recommendations, cross-template themes, strategic insights, quality issues
-- **Collection Analytics Export**: Includes executive summary, key themes, findings, question performance with all verbatims, recommendations, quality issues
-- **Text-Based PDF**: Uses jsPDF native text APIs with PdfBuilder helper class for clean, formatted output
-- **Smart Page Breaks**: Automatic page break logic that avoids splitting sections mid-content
-- **Consistent Styling**: Color palette, fonts (Helvetica), headers, bullets, numbered lists, quotes with vertical bar styling, badges, metric grids
-- **Export Button**: `data-testid="button-export-pdf"` on both project and collection analytics views
-- **File Format**: `{name}_analytics_{date}.pdf`
-- **Name Mapping**: Template IDs are mapped to names via `templateNameMap` from `templatePerformance`. Theme IDs (which AI generates as `theme_1`, `theme_2`, etc.) are mapped to actual theme names by index position in the themes array.
-
-### Analytics Cascade Refresh
-Implemented a simplified cascade refresh UX for analytics to address the tedious multi-step process of refreshing analytics in the correct dependency order:
-- **Problem Solved**: Previously, users had to manually navigate to refresh collections, then templates, then project analytics in sequence
-- **Cascade Dialog**: New `AnalyticsCascadeRefreshDialog` component shows what's stale and offers a single "Refresh All" action
-- **Dependency Detection API**: 
-  - `GET /api/projects/:projectId/analytics/dependencies` - Returns staleness status of all templates and collections
-  - `GET /api/templates/:templateId/analytics/dependencies` - Returns staleness status of collections under a template
-- **Cascade Refresh API**:
-  - `POST /api/projects/:projectId/analytics/cascade-refresh` - Refreshes stale collections → templates → project in order
-  - `POST /api/templates/:templateId/analytics/cascade-refresh` - Refreshes stale collections → template in order
-- **Smart UX**: Dialog explains what needs refreshing (collections, templates) before proceeding, with error handling for dependency fetch failures
-- **Partial Success Handling**: Continues refreshing even if individual items fail, reports errors at the end
-
-### Security: Data Isolation Fix (January 25, 2026)
-Fixed a critical security vulnerability where new users could access Templates, Collections, and Sessions belonging to other users. The system now enforces proper access control through the ownership hierarchy.
-
-**Changes Made:**
-1. **User-Filtered Queries**: Added `getTemplatesByUser()`, `getCollectionsByUser()`, and `getSessionsByUser()` methods that filter data through the User→Workspace→Project chain
-2. **Ownership Verification Helpers**: Added `verifyUserAccessToProject()`, `verifyUserAccessToTemplate()`, `verifyUserAccessToCollection()`, and `verifyUserAccessToSession()` methods to validate ownership through the hierarchy
-3. **List Endpoints**: Updated GET /api/templates, /api/collections, and /api/sessions to return only user-owned data
-4. **Individual Resource Endpoints**: Added ownership verification to all GET/PATCH/DELETE endpoints for templates, collections, and sessions
-5. **Analytics Endpoints**: Added ownership verification to all analytics endpoints (collection, template, project level)
-6. **Legacy Analytics Fix**: GET /api/analytics now requires projectId or collectionId and verifies ownership before returning data
-7. **Management Endpoints**: Added ownership verification to all project-scoped and template-scoped management endpoints
-
-**Security Model:**
-- User → Workspace (via ownerId) → Project → Template → Collection → Session
-- All authenticated endpoints verify ownership by tracing back through this hierarchy
-- Public endpoints for respondent interview flow remain intentionally unauthenticated
-
-### Auto-Generate Template Feature (January 25, 2026)
-Added AI-powered template generation that creates interview templates from project metadata using GPT-5:
-- **Generate Button**: "Generate Template" button in project detail page header (next to "New Template")
-- **AI Generation**: Uses `generateTemplateFromProject()` function in barbara-orchestrator.ts with gpt-5, low verbosity, and low reasoning
-- **API Endpoint**: `POST /api/projects/:projectId/generate-template` with ownership verification
-- **Dialog Flow**: GenerateTemplateDialog component provides generate → preview → create → redirect workflow
-- **Input Context**: Uses project description, research objectives, audience context, context type, and strategic context to generate relevant questions
-- **Preview Features**: Shows generated template name, objective, tone, and numbered question list with question types
-- **Editing**: Template name is editable before creation; full editing available in template editor after redirect
-- **Output**: Creates a new template with 5-8 AI-generated questions tailored to the project's research goals
+- **xAI Grok API**: (Planned/Configurable) for alternative real-time voice processing.

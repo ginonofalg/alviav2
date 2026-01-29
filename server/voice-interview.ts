@@ -25,17 +25,28 @@ import type {
   SilenceContext,
   SilenceStats,
 } from "@shared/schema";
+import {
+  getRealtimeProvider,
+  type RealtimeProvider,
+  type RealtimeProviderType,
+} from "./realtime-providers";
 
-// the newest OpenAI model is "gpt-realtime" for realtime voice conversations
-const OPENAI_REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+let activeProvider: RealtimeProvider | null = null;
+
+function getProvider(): RealtimeProvider {
+  if (!activeProvider) {
+    activeProvider = getRealtimeProvider();
+  }
+  return activeProvider;
+}
 
 interface InterviewState {
   sessionId: string;
   currentQuestionIndex: number;
   questions: any[];
   template: any;
-  openaiWs: WebSocket | null;
+  providerWs: WebSocket | null;
+  providerType: RealtimeProviderType;
   clientWs: WebSocket | null;
   isConnected: boolean;
   lastAIPrompt: string;
@@ -666,10 +677,10 @@ export function handleVoiceInterview(
       `[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`,
     );
     if (
-      existingState.openaiWs &&
-      existingState.openaiWs.readyState === WebSocket.OPEN
+      existingState.providerWs &&
+      existingState.providerWs.readyState === WebSocket.OPEN
     ) {
-      existingState.openaiWs.close();
+      existingState.providerWs.close();
     }
     if (existingState.pendingPersistTimeout) {
       clearTimeout(existingState.pendingPersistTimeout);
@@ -683,7 +694,8 @@ export function handleVoiceInterview(
     currentQuestionIndex: 0,
     questions: [],
     template: null,
-    openaiWs: null,
+    providerWs: null,
+    providerType: getProvider().name,
     clientWs: clientWs,
     isConnected: false,
     lastAIPrompt: "",
@@ -727,7 +739,7 @@ export function handleVoiceInterview(
   // Start watchdog if this is the first session
   startSessionWatchdog();
 
-  // Load interview data and connect to OpenAI
+  // Load interview data and connect to realtime provider
   initializeInterview(sessionId, clientWs);
 
   // Handle messages from client
@@ -881,8 +893,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       updateQuestionState(state, 0, { status: "in_progress" });
     }
 
-    // Connect to OpenAI Realtime API
-    connectToOpenAI(sessionId, clientWs);
+    // Connect to Realtime API provider
+    connectToRealtimeProvider(sessionId, clientWs);
   } catch (error) {
     console.error("[VoiceInterview] Error initializing:", error);
     clientWs.send(
@@ -894,47 +906,45 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
   }
 }
 
-function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
+function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  let provider;
+  try {
+    provider = getProvider();
+  } catch (error: any) {
+    console.error(`[VoiceInterview] Provider initialization failed:`, error.message);
     clientWs.send(
       JSON.stringify({
         type: "error",
-        message: "OpenAI API key not configured",
+        message: error.message || "Voice service API key not configured",
       }),
     );
     return;
   }
-
+  
   console.log(
-    `[VoiceInterview] Connecting to OpenAI for session: ${sessionId}`,
+    `[VoiceInterview] Connecting to ${provider.displayName} for session: ${sessionId}`,
   );
 
-  const openaiWs = new WebSocket(OPENAI_REALTIME_URL, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "OpenAI-Beta": "realtime=v1",
-    },
+  const providerWs = new WebSocket(provider.getWebSocketUrl(), {
+    headers: provider.getWebSocketHeaders(),
   });
 
-  state.openaiWs = openaiWs;
+  state.providerWs = providerWs;
+  state.providerType = provider.name;
 
-  // Track OpenAI connection count for metrics
   state.metricsTracker.openaiConnectionCount++;
 
-  openaiWs.on("open", () => {
+  providerWs.on("open", () => {
     console.log(
-      `[VoiceInterview] Connected to OpenAI for session: ${sessionId}`,
+      `[VoiceInterview] Connected to ${provider.displayName} for session: ${sessionId}`,
     );
     state.isConnected = true;
 
-    // Configure the session
     const currentQuestion = state.questions[state.currentQuestionIndex];
 
-    // Use resume instructions if restoring a session with transcript history
     let instructions: string;
     if (state.isRestoredSession && state.transcriptLog.length > 0) {
       instructions = buildResumeInstructions(state);
@@ -959,37 +969,15 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
       );
     }
 
-    openaiWs.send(
+    const sessionConfig = provider.buildSessionConfig(instructions);
+    
+    providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: {
-          modalities: ["text", "audio"],
-          instructions: instructions,
-          voice: "marin",
-          input_audio_format: "pcm16",
-          output_audio_format: "pcm16",
-          input_audio_noise_reduction: {
-            type: "near_field",
-          },
-          input_audio_transcription: {
-            model: "gpt-4o-mini-transcribe",
-            language: "en",
-          },
-          turn_detection: {
-            //type: "server_vad",
-            //threshold: 0.3,
-            //silence_duration_ms: 800,
-            //prefix_padding_ms: 150,
-            type: "semantic_vad",
-            eagerness: "auto",
-            create_response: true, // Alvia responds immediately; Barbara's guidance applies to NEXT turn
-            interrupt_response: true,
-          },
-        },
+        session: sessionConfig,
       }),
     );
 
-    // Notify client that connection is ready
     clientWs.send(
       JSON.stringify({
         type: "connected",
@@ -1001,29 +989,30 @@ function connectToOpenAI(sessionId: string, clientWs: WebSocket) {
         persistedTranscript: state.isRestoredSession
           ? state.fullTranscriptForPersistence
           : undefined,
+        provider: provider.name,
       }),
     );
   });
 
-  openaiWs.on("message", (data) => {
+  providerWs.on("message", (data) => {
     try {
       const event = JSON.parse(data.toString());
-      handleOpenAIEvent(sessionId, event, clientWs);
+      handleProviderEvent(sessionId, event, clientWs);
     } catch (error) {
-      console.error("[VoiceInterview] Error parsing OpenAI message:", error);
+      console.error(`[VoiceInterview] Error parsing ${provider.displayName} message:`, error);
     }
   });
 
-  openaiWs.on("close", () => {
+  providerWs.on("close", () => {
     console.log(
-      `[VoiceInterview] OpenAI connection closed for session: ${sessionId}`,
+      `[VoiceInterview] ${provider.displayName} connection closed for session: ${sessionId}`,
     );
     state.isConnected = false;
     clientWs.send(JSON.stringify({ type: "disconnected" }));
   });
 
-  openaiWs.on("error", (error) => {
-    console.error(`[VoiceInterview] OpenAI error for ${sessionId}:`, error);
+  providerWs.on("error", (error) => {
+    console.error(`[VoiceInterview] ${provider.displayName} error for ${sessionId}:`, error);
     clientWs.send(
       JSON.stringify({ type: "error", message: "Voice service error" }),
     );
@@ -1222,7 +1211,7 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
   return instructions;
 }
 
-async function handleOpenAIEvent(
+async function handleProviderEvent(
   sessionId: string,
   event: any,
   clientWs: WebSocket,
@@ -1245,14 +1234,14 @@ async function handleOpenAIEvent(
         // If not, the audio_ready message handler will trigger it
         if (
           state.clientAudioReady &&
-          state.openaiWs &&
-          state.openaiWs.readyState === WebSocket.OPEN
+          state.providerWs &&
+          state.providerWs.readyState === WebSocket.OPEN
         ) {
           state.isInitialSession = false; // Mark initial setup complete
           console.log(
             `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
           );
-          state.openaiWs.send(
+          state.providerWs.send(
             JSON.stringify({
               type: "response.create",
               response: {
@@ -1412,7 +1401,7 @@ async function handleOpenAIEvent(
 
           // Trigger Barbara analysis asynchronously (non-blocking)
           // Her guidance will apply to the NEXT turn, not this one
-          // Response is automatically created by OpenAI due to create_response: true
+          // Response is automatically created by provider due to create_response: true
           triggerBarbaraAnalysis(sessionId, clientWs).catch((error) => {
             console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
           });
@@ -1472,29 +1461,26 @@ async function handleOpenAIEvent(
       break;
     }
 
-    case "response.done":
-      // Capture token usage from OpenAI response
-      const usage = event.response?.usage;
-      if (usage) {
-        state.metricsTracker.tokens.inputTokens += usage.input_tokens || 0;
-        state.metricsTracker.tokens.outputTokens += usage.output_tokens || 0;
-        state.metricsTracker.tokens.inputAudioTokens +=
-          usage.input_token_details?.audio_tokens || 0;
-        state.metricsTracker.tokens.outputAudioTokens +=
-          usage.output_token_details?.audio_tokens || 0;
-        state.metricsTracker.tokens.inputTextTokens +=
-          usage.input_token_details?.text_tokens || 0;
-        state.metricsTracker.tokens.outputTextTokens +=
-          usage.output_token_details?.text_tokens || 0;
+    case "response.done": {
+      const provider = getProvider();
+      const tokenUsage = provider.parseTokenUsage(event);
+      if (tokenUsage) {
+        state.metricsTracker.tokens.inputTokens += tokenUsage.inputTokens;
+        state.metricsTracker.tokens.outputTokens += tokenUsage.outputTokens;
+        state.metricsTracker.tokens.inputAudioTokens += tokenUsage.inputAudioTokens;
+        state.metricsTracker.tokens.outputAudioTokens += tokenUsage.outputAudioTokens;
+        state.metricsTracker.tokens.inputTextTokens += tokenUsage.inputTextTokens;
+        state.metricsTracker.tokens.outputTextTokens += tokenUsage.outputTextTokens;
         console.log(
-          `[Metrics] Token usage for ${sessionId}: input=${usage.input_tokens}, output=${usage.output_tokens}`,
+          `[Metrics] Token usage for ${sessionId} (${provider.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
         );
       }
       clientWs.send(JSON.stringify({ type: "response_done" }));
       break;
+    }
 
     case "error":
-      console.error(`[VoiceInterview] OpenAI error:`, event.error);
+      console.error(`[VoiceInterview] Provider error:`, event.error);
       clientWs.send(
         JSON.stringify({
           type: "error",
@@ -1576,7 +1562,7 @@ async function triggerBarbaraAnalysis(
       }
 
       // Inject guidance by updating session instructions (system context)
-      if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+      if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
         const recommendedFollowUps =
           currentQuestion?.recommendedFollowUps ??
           state.template?.defaultRecommendedFollowUps ??
@@ -1600,7 +1586,7 @@ async function triggerBarbaraAnalysis(
         console.log(updatedInstructions);
         console.log("=".repeat(80) + "\n");
 
-        state.openaiWs.send(
+        state.providerWs.send(
           JSON.stringify({
             type: "session.update",
             session: {
@@ -1681,14 +1667,14 @@ async function handleClientMessage(
     if (
       state.isInitialSession &&
       state.sessionConfigured &&
-      state.openaiWs &&
-      state.openaiWs.readyState === WebSocket.OPEN
+      state.providerWs &&
+      state.providerWs.readyState === WebSocket.OPEN
     ) {
       state.isInitialSession = false;
       console.log(
         `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
       );
-      state.openaiWs.send(
+      state.providerWs.send(
         JSON.stringify({
           type: "response.create",
           response: {
@@ -1700,16 +1686,16 @@ async function handleClientMessage(
     return;
   }
 
-  if (!state.openaiWs) return;
+  if (!state.providerWs) return;
 
   switch (message.type) {
     case "audio":
       // Update activity timestamp on audio
       state.lastActivityAt = Date.now();
       state.terminationWarned = false;
-      // Forward audio from client to OpenAI
-      if (state.openaiWs.readyState === WebSocket.OPEN) {
-        state.openaiWs.send(
+      // Forward audio from client to provider
+      if (state.providerWs.readyState === WebSocket.OPEN) {
+        state.providerWs.send(
           JSON.stringify({
             type: "input_audio_buffer.append",
             audio: message.audio,
@@ -1721,8 +1707,8 @@ async function handleClientMessage(
     case "commit_audio":
       // Commit audio buffer - response will be created after transcription + Barbara analysis
       // With server_vad and create_response: false, the transcription handler triggers the response
-      if (state.openaiWs.readyState === WebSocket.OPEN) {
-        state.openaiWs.send(
+      if (state.providerWs.readyState === WebSocket.OPEN) {
+        state.providerWs.send(
           JSON.stringify({
             type: "input_audio_buffer.commit",
           }),
@@ -1739,8 +1725,8 @@ async function handleClientMessage(
       // Handle text input from keyboard (use async IIFE to await Barbara)
       (async () => {
         if (
-          state.openaiWs &&
-          state.openaiWs.readyState === WebSocket.OPEN &&
+          state.providerWs &&
+          state.providerWs.readyState === WebSocket.OPEN &&
           message.text
         ) {
           // Add to transcript log (both in-memory and persistence buffer)
@@ -1770,7 +1756,7 @@ async function handleClientMessage(
           scheduleDebouncedPersist(sessionId);
 
           // Add user text as a conversation item
-          state.openaiWs.send(
+          state.providerWs.send(
             JSON.stringify({
               type: "conversation.item.create",
               item: {
@@ -1794,8 +1780,8 @@ async function handleClientMessage(
 
           // For text input, we still need to manually trigger response
           // (unlike audio mode where create_response: true handles it)
-          if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
-            state.openaiWs.send(
+          if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
+            state.providerWs.send(
               JSON.stringify({
                 type: "response.create",
                 response: {
@@ -1868,7 +1854,7 @@ async function handleClientMessage(
         `[VoiceInterview] Interview resuming for session: ${sessionId}`,
       );
 
-      if (state.openaiWs && state.openaiWs.readyState === WebSocket.OPEN) {
+      if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
         const currentQuestion = state.questions[state.currentQuestionIndex];
 
         // Check the transcript to determine how to resume
@@ -1887,7 +1873,7 @@ async function handleClientMessage(
           currentQuestion?.questionText || "the question";
 
         // Let Alvia decide based on transcript context
-        state.openaiWs.send(
+        state.providerWs.send(
           JSON.stringify({
             type: "conversation.item.create",
             item: {
@@ -1914,7 +1900,7 @@ INSTRUCTIONS:
         );
 
         // Trigger AI response
-        state.openaiWs.send(
+        state.providerWs.send(
           JSON.stringify({
             type: "response.create",
             response: {
@@ -1990,9 +1976,9 @@ INSTRUCTIONS:
           },
         );
 
-        if (state.openaiWs.readyState === WebSocket.OPEN) {
+        if (state.providerWs.readyState === WebSocket.OPEN) {
           // Update session with new question context
-          state.openaiWs.send(
+          state.providerWs.send(
             JSON.stringify({
               type: "session.update",
               session: {
@@ -2058,11 +2044,11 @@ INSTRUCTIONS:
               `[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`,
             );
             if (
-              state.openaiWs &&
-              state.openaiWs.readyState === WebSocket.OPEN
+              state.providerWs &&
+              state.providerWs.readyState === WebSocket.OPEN
             ) {
               // Inject the transition instruction as a conversation item first
-              state.openaiWs.send(
+              state.providerWs.send(
                 JSON.stringify({
                   type: "conversation.item.create",
                   item: {
@@ -2078,7 +2064,7 @@ INSTRUCTIONS:
                 }),
               );
               // Then trigger the response
-              state.openaiWs.send(
+              state.providerWs.send(
                 JSON.stringify({
                   type: "response.create",
                   response: {
@@ -2287,8 +2273,8 @@ async function cleanupSession(sessionId: string, terminationReason?: string) {
     // Flush any pending persist before cleanup
     await flushPersist(sessionId);
 
-    if (state.openaiWs) {
-      state.openaiWs.close();
+    if (state.providerWs) {
+      state.providerWs.close();
     }
     if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
       state.clientWs.close();
