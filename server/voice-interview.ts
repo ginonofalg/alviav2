@@ -40,6 +40,7 @@ interface InterviewState {
   currentQuestionIndex: number;
   questions: any[];
   template: any;
+  strategicContext: string | null;
   providerWs: WebSocket | null;
   providerType: RealtimeProviderType;
   providerInstance: RealtimeProvider; // Cached provider instance to avoid repeated allocation
@@ -704,6 +705,7 @@ export function handleVoiceInterview(
     currentQuestionIndex: 0,
     questions: [],
     template: null,
+    strategicContext: null,
     providerWs: null,
     providerType: selectedProviderType,
     providerInstance: getProvider(selectedProviderType), // Cache provider instance once
@@ -817,11 +819,15 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       collection.templateId,
     );
 
+    // Load project data for strategic context
+    const project = template?.projectId ? await storage.getProject(template.projectId) : null;
+
     // Load respondent data for personalization
     const respondent = await storage.getRespondent(session.respondentId);
     state.respondentInformalName = respondent?.informalName || null;
 
     state.template = template;
+    state.strategicContext = project?.strategicContext || null;
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
 
@@ -966,6 +972,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         state.respondentInformalName,
         state.questions,
         { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+        state.strategicContext,
       );
     }
 
@@ -1032,6 +1039,7 @@ function buildInterviewInstructions(
     followUpCount: number;
     recommendedFollowUps: number | null;
   },
+  strategicContext?: string | null,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -1053,7 +1061,8 @@ function buildInterviewInstructions(
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview in English.
 
 INTERVIEW CONTEXT:
-- Objective: ${objective}
+- Objective: ${objective}${strategicContext ? `
+- Strategic Context: ${strategicContext}` : ""}
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
@@ -1595,6 +1604,7 @@ async function triggerBarbaraAnalysis(
           state.respondentInformalName,
           state.questions,
           { followUpCount: metrics.followUpCount, recommendedFollowUps },
+          state.strategicContext,
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
@@ -1993,6 +2003,7 @@ INSTRUCTIONS:
             followUpCount: newMetrics?.followUpCount ?? 0,
             recommendedFollowUps,
           },
+          state.strategicContext,
         );
 
         if (state.providerWs.readyState === WebSocket.OPEN) {
