@@ -2604,8 +2604,9 @@ Guidelines:
 - timeHintSeconds should be 30-120 based on question depth
 - recommendedFollowUps should be 1-3 based on question importance`;
 
-  const hasContent = input.description || input.objective || input.audienceContext;
-  
+  const hasContent =
+    input.description || input.objective || input.audienceContext;
+
   const userPrompt = `Generate an interview template for this research project:
 
 PROJECT NAME: ${input.projectName}
@@ -2626,10 +2627,12 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 2000,
+      max_completion_tokens: 10000,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+    } as Parameters<
+      typeof openai.chat.completions.create
+    >[0])) as ChatCompletion;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -2638,15 +2641,26 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
 
     const parsed = JSON.parse(content);
 
-    const validatedQuestions: GeneratedQuestion[] = (parsed.questions || []).map((q: any, idx: number) => ({
+    const validatedQuestions: GeneratedQuestion[] = (
+      parsed.questions || []
+    ).map((q: any, idx: number) => ({
       questionText: q.questionText || `Question ${idx + 1}`,
-      questionType: ["open", "yes_no", "scale", "numeric", "multi_select"].includes(q.questionType) 
-        ? q.questionType 
+      questionType: [
+        "open",
+        "yes_no",
+        "scale",
+        "numeric",
+        "multi_select",
+      ].includes(q.questionType)
+        ? q.questionType
         : "open",
       guidance: q.guidance || "",
-      scaleMin: q.questionType === "scale" ? (q.scaleMin || 1) : undefined,
-      scaleMax: q.questionType === "scale" ? (q.scaleMax || 10) : undefined,
-      multiSelectOptions: q.questionType === "multi_select" ? (q.multiSelectOptions || []) : undefined,
+      scaleMin: q.questionType === "scale" ? q.scaleMin || 1 : undefined,
+      scaleMax: q.questionType === "scale" ? q.scaleMax || 10 : undefined,
+      multiSelectOptions:
+        q.questionType === "multi_select"
+          ? q.multiSelectOptions || []
+          : undefined,
       timeHintSeconds: q.timeHintSeconds || 60,
       recommendedFollowUps: q.recommendedFollowUps || 2,
     }));
@@ -2654,10 +2668,15 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
     const result: GeneratedTemplate = {
       name: parsed.name || `${input.projectName} Template`,
       objective: parsed.objective || input.objective || "",
-      tone: ["professional", "friendly", "empathetic", "neutral"].includes(parsed.tone) 
-        ? parsed.tone 
+      tone: ["professional", "friendly", "empathetic", "neutral"].includes(
+        parsed.tone,
+      )
+        ? parsed.tone
         : input.tone || "professional",
-      questions: validatedQuestions.length > 0 ? validatedQuestions : getDefaultQuestions(),
+      questions:
+        validatedQuestions.length > 0
+          ? validatedQuestions
+          : getDefaultQuestions(),
     };
 
     console.log("[Barbara] Template generation complete:", {
@@ -2675,7 +2694,8 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
 function getDefaultQuestions(): GeneratedQuestion[] {
   return [
     {
-      questionText: "Can you tell me a bit about yourself and your experience with this topic?",
+      questionText:
+        "Can you tell me a bit about yourself and your experience with this topic?",
       questionType: "open",
       guidance: "Build rapport and understand background context",
       timeHintSeconds: 60,
@@ -2696,7 +2716,8 @@ function getDefaultQuestions(): GeneratedQuestion[] {
       recommendedFollowUps: 3,
     },
     {
-      questionText: "What improvements would make the biggest difference for you?",
+      questionText:
+        "What improvements would make the biggest difference for you?",
       questionType: "open",
       guidance: "Identify priorities and desired outcomes",
       timeHintSeconds: 90,
