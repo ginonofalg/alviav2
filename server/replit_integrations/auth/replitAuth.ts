@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { seedDemoProjectIfNeeded } from "../../demo-seed";
 
 const getOidcConfig = memoize(
   async () => {
@@ -74,7 +75,13 @@ export async function setupAuth(app: Express) {
   ) => {
     const user = {};
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    const claims = tokens.claims();
+    await upsertUser(claims);
+    
+    seedDemoProjectIfNeeded(claims["sub"]).catch(err => {
+      console.error("[auth] Failed to seed demo project:", err);
+    });
+    
     verified(null, user);
   };
 
