@@ -2619,6 +2619,8 @@ ${input.tone ? `PREFERRED TONE: ${input.tone}` : ""}
 ${hasContent ? `Focus questions on achieving the research objectives while keeping the target audience in mind.${input.contextType ? ` The context type is "${input.contextType}" so frame questions appropriately for ${input.contextType} research.` : ""}` : "Generate a general interview template based on the project name, suitable for exploratory research."}`;
 
   try {
+    console.log("[Barbara] Template generation API call with model:", config.model);
+    
     const response = (await openai.chat.completions.create({
       model: config.model,
       messages: [
@@ -2631,9 +2633,24 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
 
+    console.log("[Barbara] Template generation response received, finish_reason:", response.choices[0]?.finish_reason);
+    
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      throw new Error("No content in response");
+      console.warn("[Barbara] No content in response, using default template");
+      console.log("[Barbara] Response details:", JSON.stringify({
+        finishReason: response.choices[0]?.finish_reason,
+        messageRole: response.choices[0]?.message?.role,
+        refusal: response.choices[0]?.message?.refusal,
+      }));
+      
+      // Return a default template instead of throwing
+      return {
+        name: `${input.projectName} Template`,
+        objective: input.objective || "Gather insights through structured interviews",
+        tone: input.tone || "professional",
+        questions: getDefaultQuestions(),
+      };
     }
 
     const parsed = JSON.parse(content);
@@ -2668,7 +2685,15 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
     return result;
   } catch (error) {
     console.error("[Barbara] Template generation failed:", error);
-    throw new Error("Failed to generate template. Please try again.");
+    console.log("[Barbara] Returning default template due to error");
+    
+    // Return a default template instead of throwing to prevent user-facing errors
+    return {
+      name: `${input.projectName} Template`,
+      objective: input.objective || "Gather insights through structured interviews",
+      tone: input.tone || "professional",
+      questions: getDefaultQuestions(),
+    };
   }
 }
 
