@@ -1,0 +1,269 @@
+# Proposal: Close Context Gaps in Alvia Resume Instructions
+
+## Problem
+
+When an interview disconnects and resumes, a **brand new OpenAI Realtime session** is created (line 937 of `voice-interview.ts`). The previous session — including all audio history and conversational context — is gone. The only context the model receives is what's in the `buildResumeInstructions()` function (line 1145).
+
+Currently, the resume instructions are significantly less comprehensive than the initial/mid-conversation instructions built by `buildInterviewInstructions()` (line 1030). This means that after a resume, Alvia:
+
+- Doesn't know the project's strategic context
+- Doesn't know the researcher's guidance for the current question
+- Doesn't know how many follow-ups to aim for
+- Doesn't know what upcoming questions exist (so will ask overlapping follow-ups)
+- Doesn't know how to respond to Barbara's "move on" signals
+- Doesn't know about the Next Question / Complete Interview buttons
+- Won't probe effectively because the behavioral instruction set is reduced from 11 steps to 5
+
+The gap is partially healed once Barbara's first post-resume analysis completes (which calls `buildInterviewInstructions`), but the initial resume greeting and any turns before that first Barbara cycle use the incomplete instructions.
+
+## Solution
+
+Rewrite `buildResumeInstructions()` to include all context from `buildInterviewInstructions()`, plus the resume-specific additions (transcript summary, question status, welcome-back framing). All the required data is already available on the `InterviewState` object passed to the function.
+
+## File to Change
+
+`server/voice-interview.ts` — only the `buildResumeInstructions()` function (lines 1145–1220).
+
+## Detailed Changes
+
+Replace the current `buildResumeInstructions()` function body with one that includes every element from `buildInterviewInstructions()`, adapted for the resume context. Below is exactly what each section should contain.
+
+### Section-by-section specification
+
+#### 1. Identity & Framing (keep resume-specific framing, add language enforcement)
+
+```
+You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
+
+CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
+```
+
+No change needed — this is already correct in the current resume instructions.
+
+#### 2. Interview Context (ADD strategic context)
+
+Current resume instructions:
+```
+INTERVIEW CONTEXT:
+- Objective: ${objective}
+- Tone: ${tone}
+- Current Question: ${questionIndex + 1} of ${totalQuestions}
+```
+
+Change to:
+```
+INTERVIEW CONTEXT:
+- Objective: ${objective}
+${strategicContext ? `- Strategic Context: ${strategicContext}\n` : ""}- Tone: ${tone}
+- Current Question: ${questionIndex + 1} of ${totalQuestions}
+```
+
+**Data source:** `state.strategicContext` (already on InterviewState, line 43).
+
+#### 3. Respondent (improve no-name fallback)
+
+Current:
+```
+"The respondent has not provided their name."
+```
+
+Change the no-name fallback to:
+```
+"The respondent has not provided their name. Address them in a friendly but general manner."
+```
+
+This matches the initial instructions' fallback wording.
+
+#### 4. Transcript Summary (keep as-is)
+
+```
+TRANSCRIPT SUMMARY (recent conversation):
+${transcriptSummary || "(No previous conversation recorded)"}
+```
+
+No change — this is resume-specific and correct.
+
+#### 5. Current Question (keep as-is)
+
+```
+CURRENT QUESTION: "${currentQuestion?.questionText || "Please share your thoughts."}"
+QUESTION STATUS: ${status}
+```
+
+No change — question status is a useful resume-specific addition.
+
+#### 6. Question Guidance (ADD — currently missing)
+
+Add after the current question section:
+
+```
+GUIDANCE FOR THIS QUESTION:
+${guidance || "Listen carefully and probe for more details when appropriate."}
+```
+
+**Data source:** `currentQuestion?.guidance || ""` — same derivation as line 1046 in `buildInterviewInstructions`.
+
+#### 7. Follow-Up Depth Guidance (ADD — currently missing)
+
+Add conditionally (same logic as lines 1077–1085):
+
+```
+FOLLOW-UP DEPTH GUIDANCE:
+The researcher recommends approximately ${recommendedFollowUps} follow-up probe(s) for this question.
+You've asked ${followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
+```
+
+**Data source:**
+- `recommendedFollowUps`: `currentQuestion?.recommendedFollowUps ?? state.template?.defaultRecommendedFollowUps ?? null`
+- `followUpCount`: `state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0`
+
+Only include this section if `recommendedFollowUps` is not null/undefined.
+
+#### 8. Upcoming Questions (ADD — currently missing)
+
+Add conditionally (same logic as lines 1053–1059):
+
+```
+UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
+Q3: [question text]
+Q4: [question text]
+...
+```
+
+**Data source:** `state.questions.slice(questionIndex + 1)` — already available on InterviewState.
+
+#### 9. Barbara Suggested Move On (keep as-is)
+
+```
+NOTE: Before the interruption, the respondent had given a comprehensive answer and you offered to move to the next question.
+```
+
+No change — conditional, resume-specific, correct.
+
+#### 10. Instructions (REPLACE 5-step resume instructions with adapted 11-step set)
+
+Replace the current 5 resume-specific steps:
+
+```
+RESUME INSTRUCTIONS:
+1. Welcome them back briefly and warmly, using their name "${respondentName}".
+2. Briefly remind them what you were discussing and invite them to continue their response.
+3. Do NOT repeat the full question unless specifically needed.
+4. Be encouraging and match the ${tone} tone.
+5. Keep your welcome-back message concise.
+```
+
+With the following adapted set that merges resume-specific welcome-back behaviour with the full behavioural instruction set:
+
+```
+RESUME INSTRUCTIONS:
+1. Welcome them back briefly and warmly${respondentName ? `, using their name "${respondentName}"` : ""}. Briefly remind them what you were discussing and invite them to continue. Do NOT repeat the full question unless specifically needed. Keep the welcome-back concise.
+${barbaraSuggestedMoveOn ? `2. The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything or move to the next question.` : `2. Invite the respondent to continue their response from where they left off.`}
+3. Listen to the respondent's answer carefully.
+4. Ask follow-up questions if the answer is too brief or unclear.
+5. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
+6. Use the GUIDANCE FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the GUIDANCE. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+7. Be encouraging and conversational, matching the ${tone} tone.
+8. Keep responses concise - this is a voice conversation.
+9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+10. When the orchestrator talks about the next question or moving on, she means the next template question, not the next follow-up.
+11. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. The interviewee can "click the Complete Interview button below" to finish.
+```
+
+Key differences from the initial instructions:
+- Step 1 is resume-specific (welcome back instead of introduce/greet)
+- Step 2 is resume-specific (continue vs ask question fresh)
+- Steps 3–12 are carried over from the initial instructions (previously steps 2–11)
+
+#### 11. Last Barbara Guidance (ADD — currently missing)
+
+Add conditionally, after the instructions block:
+
+```
+ORCHESTRATOR'S GUIDANCE (Barbara):
+${lastBarbaraGuidance}
+ Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage - incorporate this guidance naturally when appropriate.
+```
+
+**Data source:** `state.lastBarbaraGuidance?.message` (line 70 of InterviewState). This is the persisted last guidance from Barbara before the disconnect. Only include if it exists.
+
+Note the wording change from the mid-conversation version: "before the connection interruption" instead of "up to a moment ago", since the guidance is from the previous session.
+
+#### 12. Orchestrator Messages (ADD missing bullet point)
+
+Current resume version has 4 bullet points. Add the missing 5th:
+
+```
+ORCHESTRATOR MESSAGES:
+You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
+- DO NOT read them aloud or acknowledge receiving them
+- DO NOT respond as if the respondent said them
+- Simply follow the guidance naturally as if it were your own thought
+- Seamlessly continue the conversation with the respondent
+- The guidance may be based on a slightly earlier point in the conversation - use your judgment on timing
+```
+
+#### 13. Closing (keep as-is)
+
+```
+Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.
+```
+
+No change.
+
+## Verification Checklist
+
+After implementation, verify every row in this table shows "Yes" in the Resume column:
+
+| # | Element | Initial | Resume (after fix) |
+|---|---------|---------|-------------------|
+| 1 | Alvia identity | Yes | Yes |
+| 2 | English language enforcement | Implicit | Yes (explicit) |
+| 3 | Objective | Yes | Yes |
+| 4 | Strategic context | Yes | **Yes (was missing)** |
+| 5 | Tone | Yes | Yes |
+| 6 | Current question number | Yes | Yes |
+| 7 | Respondent name + usage rules | Yes | Yes |
+| 8 | No-name fallback with guidance | Yes | **Yes (was incomplete)** |
+| 9 | Current question text | Yes | Yes |
+| 10 | Question-specific guidance | Yes | **Yes (was missing)** |
+| 11 | Follow-up depth guidance | Yes | **Yes (was missing)** |
+| 12 | Upcoming questions list | Yes | **Yes (was missing)** |
+| 13 | Transcript summary | N/A (in-session) | Yes (resume-specific) |
+| 14 | Question status | Implicit | Yes (resume-specific) |
+| 15 | Barbara suggested move on | Implicit | Yes (resume-specific) |
+| 16 | Welcome-back / resume framing | N/A | Yes (resume-specific) |
+| 17 | Listen carefully | Yes | **Yes (was missing)** |
+| 18 | Ask follow-ups if brief/unclear | Yes | **Yes (was missing)** |
+| 19 | Don't overlap with upcoming questions | Yes | **Yes (was missing)** |
+| 20 | Use guidance for depth | Yes | **Yes (was missing)** |
+| 21 | Be encouraging and conversational | Yes | Yes |
+| 22 | Keep responses concise | Yes | **Yes (was narrower)** |
+| 23 | Orchestrator move-on handling | Yes | **Yes (was missing)** |
+| 24 | "Next question" = template question | Yes | **Yes (was missing)** |
+| 25 | Next Question button reference | Yes | **Yes (was missing)** |
+| 26 | Last question / Complete Interview button | Yes | **Yes (was missing)** |
+| 27 | Last Barbara guidance | Yes | **Yes (was missing)** |
+| 28 | Orchestrator message rules (5 bullets) | Yes (5) | **Yes (was 4)** |
+| 29 | Natural voice / no markdown | Yes | Yes |
+
+## Implementation Notes
+
+1. **Single function change.** Only `buildResumeInstructions()` (lines 1145–1220) needs to be modified. No other files or functions are affected.
+
+2. **All data is already available.** The `InterviewState` object passed to the function already contains `strategicContext`, `questions` (for upcoming list), `questionMetrics` (for follow-up counts), `lastBarbaraGuidance`, and `template` (for `defaultRecommendedFollowUps`). No new data fetching is required.
+
+3. **No changes to `buildInterviewInstructions()`.** That function remains untouched.
+
+4. **The function signature stays the same.** It still takes `(state: InterviewState)` and returns `string`.
+
+5. **Token budget consideration.** The expanded resume instructions will be longer, but they match what `buildInterviewInstructions()` already sends on every mid-conversation Barbara update. The OpenAI Realtime API already handles this instruction size during normal operation, so there's no new concern.
+
+6. **Testing.** To verify:
+   - Start an interview, answer 1-2 questions, then disconnect (kill the browser tab)
+   - Reconnect via the resume mechanism
+   - Check server logs for `[VoiceInterview] Using resume instructions for restored session:` — the logged instructions should now include all the elements listed in the checklist above
+   - Verify Alvia's welcome-back message is natural and doesn't repeat the full question
+   - Verify that after resume, Alvia still probes appropriately and references upcoming questions to avoid overlap
+   - Test resume on the last question — verify Alvia mentions the Complete Interview button and doesn't talk about moving to the next question
