@@ -76,11 +76,13 @@ export async function setupAuth(app: Express) {
     const user = {};
     updateUserSession(user, tokens);
     const claims = tokens.claims();
-    await upsertUser(claims);
-    
-    seedDemoProjectIfNeeded(claims["sub"]).catch(err => {
-      console.error("[auth] Failed to seed demo project:", err);
-    });
+    if (claims) {
+      await upsertUser(claims);
+      
+      seedDemoProjectIfNeeded(claims["sub"]).catch(err => {
+        console.error("[auth] Failed to seed demo project:", err);
+      });
+    }
     
     verified(null, user);
   };
