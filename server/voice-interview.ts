@@ -1099,10 +1099,10 @@ INSTRUCTIONS:
 5. Use the GUIDANCE FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the GUIDANCE. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
 6. Be encouraging and conversational, matching the ${tone} tone.
 7. Keep responses concise - this is a voice conversation.
-8. If the ochestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-9. When the ochestrator talks about the next question or moving on, she means the next template question, not the next follow-up
+8. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+9. When the orchestrator talks about the next question or moving on, she means the next template question, not the next follow-up
 10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. The interview can "click the Complete Interview button below" to finish.`;
+11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. The respondent can "click the Complete Interview button below" to finish.`;
 
   if (barbaraGuidance) {
     instructions += `\n\ORCHESTRATOR'S GUIDANCE (Barbara):
@@ -1151,6 +1151,8 @@ function buildResumeInstructions(state: InterviewState): string {
 
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
+  const strategicContext = state.strategicContext;
+  const guidance = currentQuestion?.guidance || "";
 
   // Build transcript summary (last 10-15 entries)
   const recentTranscript = state.transcriptLog.slice(-15);
@@ -1168,14 +1170,32 @@ function buildResumeInstructions(state: InterviewState): string {
   // Build personalization context - only use name once when welcoming back
   const nameContext = respondentName
     ? `The respondent's name is "${respondentName}". Use their name once in the welcome-back greeting, then do not use it again.`
-    : "The respondent has not provided their name.";
+    : "The respondent has not provided their name. Address them in a friendly but general manner.";
+
+  // Build upcoming questions list to avoid duplicating follow-ups
+  const upcomingQuestions = state.questions
+    .slice(questionIndex + 1)
+    .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
+    .join("\n");
+
+  // Follow-up depth tracking
+  const recommendedFollowUps =
+    currentQuestion?.recommendedFollowUps ??
+    state.template?.defaultRecommendedFollowUps ??
+    null;
+  const followUpCount =
+    state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0;
+
+  // Last Barbara guidance from before disconnection
+  const lastBarbaraGuidance = state.lastBarbaraGuidance?.message;
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
 
 CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
 
 INTERVIEW CONTEXT:
-- Objective: ${objective}
+- Objective: ${objective}${strategicContext ? `
+- Strategic Context: ${strategicContext}` : ""}
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
@@ -1187,7 +1207,25 @@ ${transcriptSummary || "(No previous conversation recorded)"}
 
 CURRENT QUESTION: "${currentQuestion?.questionText || "Please share your thoughts."}"
 QUESTION STATUS: ${status}
-`;
+
+GUIDANCE FOR THIS QUESTION:
+${guidance || "Listen carefully and probe for more details when appropriate."}
+${
+  recommendedFollowUps !== null && recommendedFollowUps !== undefined
+    ? `
+FOLLOW-UP DEPTH GUIDANCE:
+The researcher recommends approximately ${recommendedFollowUps} follow-up probe${recommendedFollowUps === 1 ? "" : "s"} for this question.
+You've asked ${followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
+`
+    : ""
+}${
+    upcomingQuestions
+      ? `
+UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these - they will be covered later):
+${upcomingQuestions}
+`
+      : ""
+  }`;
 
   if (barbaraSuggestedMoveOn) {
     instructions += `
@@ -1197,15 +1235,32 @@ NOTE: Before the interruption, the respondent had given a comprehensive answer a
 
   instructions += `
 RESUME INSTRUCTIONS:
-1. Welcome them back briefly and warmly${respondentName ? `, using their name "${respondentName}"` : ""}.
+1. Welcome them back briefly and warmly${respondentName ? `, using their name "${respondentName}"` : ""}. Keep your welcome-back greeting concise.
 2. ${
     barbaraSuggestedMoveOn
-      ? "Ask if they'd like to continue where they left off or move to the next question."
-      : "Briefly remind them what you were discussing and invite them to continue their response."
+      ? "The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything or move to the next question."
+      : "Briefly remind them what you were discussing and invite them to continue their response. Do NOT repeat the full question unless specifically needed."
   }
-3. Do NOT repeat the full question unless specifically needed.
-4. Be encouraging and match the ${tone} tone.
-5. Keep your welcome-back message concise.
+3. Listen to the respondent's answer carefully.
+4. Ask follow-up questions if the answer is too brief or unclear.
+5. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
+6. Use the GUIDANCE FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the GUIDANCE. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+7. Be encouraging and conversational, matching the ${tone} tone.
+8. Keep responses concise - this is a voice conversation.
+9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+10. When the orchestrator talks about the next question or moving on, she means the next template question, not the next follow-up.
+11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. The respondent can "click the Complete Interview button below" to finish.`;
+
+  if (lastBarbaraGuidance) {
+    instructions += `
+
+ORCHESTRATOR'S GUIDANCE (Barbara):
+${lastBarbaraGuidance}
+Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage - incorporate this guidance naturally when appropriate.`;
+  }
+
+  instructions += `
 
 ORCHESTRATOR MESSAGES:
 You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
@@ -1213,6 +1268,7 @@ You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. 
 - DO NOT respond as if the respondent said them
 - Simply follow the guidance naturally as if it were your own thought
 - Seamlessly continue the conversation with the respondent
+- The guidance may be based on a slightly earlier point in the conversation - use your judgment on timing
 
 Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
 
