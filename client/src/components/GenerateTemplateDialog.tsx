@@ -77,14 +77,17 @@ export function GenerateTemplateDialog({
 }: GenerateTemplateDialogProps) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [generatedTemplate, setGeneratedTemplate] = useState<GeneratedTemplate | null>(null);
+  const [generatedTemplate, setGeneratedTemplate] =
+    useState<GeneratedTemplate | null>(null);
   const [editedName, setEditedName] = useState("");
 
   const generateMutation = useMutation({
     mutationFn: async () => {
       return await apiRequestJson<GeneratedTemplate>(
         "POST",
-        `/api/projects/${projectId}/generate-template`
+        `/api/projects/${projectId}/generate-template`,
+        undefined,
+        { timeoutMs: 240000 },
       );
     },
     onSuccess: (data) => {
@@ -103,7 +106,7 @@ export function GenerateTemplateDialog({
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!generatedTemplate) throw new Error("No template to create");
-      
+
       const templateData = {
         name: editedName || generatedTemplate.name,
         objective: generatedTemplate.objective,
@@ -125,7 +128,7 @@ export function GenerateTemplateDialog({
       return await apiRequestJson<{ id: string }>(
         "POST",
         `/api/projects/${projectId}/templates`,
-        templateData
+        templateData,
       );
     },
     onSuccess: (data) => {
@@ -133,7 +136,9 @@ export function GenerateTemplateDialog({
         title: "Template created",
         description: "Redirecting to editor...",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "templates"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", projectId, "templates"],
+      });
       onOpenChange(false);
       setLocation(`/templates/${data.id}/edit`);
     },
@@ -173,7 +178,8 @@ export function GenerateTemplateDialog({
             Generate Template with AI
           </DialogTitle>
           <DialogDescription>
-            Create an interview template based on your project's research objectives and context.
+            Create an interview template based on your project's research
+            objectives and context.
           </DialogDescription>
         </DialogHeader>
 
@@ -181,9 +187,12 @@ export function GenerateTemplateDialog({
           <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-amber-600 dark:text-amber-400">Limited project context</p>
+              <p className="font-medium text-amber-600 dark:text-amber-400">
+                Limited project context
+              </p>
               <p className="text-muted-foreground">
-                Your project has minimal metadata. Add description, research objectives, or target audience for better results.
+                Your project has minimal metadata. Add description, research
+                objectives, or target audience for better results.
               </p>
             </div>
           </div>
@@ -238,10 +247,14 @@ export function GenerateTemplateDialog({
                 <span className="text-muted-foreground">Tone:</span>
                 <Badge variant="outline">{generatedTemplate.tone}</Badge>
                 <span className="text-muted-foreground ml-2">Questions:</span>
-                <Badge variant="outline">{generatedTemplate.questions.length}</Badge>
+                <Badge variant="outline">
+                  {generatedTemplate.questions.length}
+                </Badge>
               </div>
               {generatedTemplate.objective && (
-                <p className="text-sm text-muted-foreground">{generatedTemplate.objective}</p>
+                <p className="text-sm text-muted-foreground">
+                  {generatedTemplate.objective}
+                </p>
               )}
             </div>
 
@@ -250,7 +263,8 @@ export function GenerateTemplateDialog({
               <ScrollArea className="h-[280px] rounded-md border">
                 <div className="p-3 space-y-2">
                   {generatedTemplate.questions.map((question, index) => {
-                    const Icon = questionTypeIcons[question.questionType] || MessageSquare;
+                    const Icon =
+                      questionTypeIcons[question.questionType] || MessageSquare;
                     return (
                       <div
                         key={index}
@@ -262,14 +276,19 @@ export function GenerateTemplateDialog({
                             Q{index + 1}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{question.questionText}</p>
+                            <p className="text-sm font-medium">
+                              {question.questionText}
+                            </p>
                             {question.guidance && (
                               <p className="text-xs text-muted-foreground mt-1">
                                 Guidance: {question.guidance}
                               </p>
                             )}
                           </div>
-                          <Badge variant="secondary" className="text-xs shrink-0 gap-1">
+                          <Badge
+                            variant="secondary"
+                            className="text-xs shrink-0 gap-1"
+                          >
                             <Icon className="w-3 h-3" />
                             {questionTypeLabels[question.questionType]}
                           </Badge>
@@ -290,10 +309,17 @@ export function GenerateTemplateDialog({
         <DialogFooter className="gap-2 sm:gap-0">
           {!generatedTemplate && !isGenerating && (
             <>
-              <Button variant="outline" onClick={handleClose} data-testid="button-cancel-generate">
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                data-testid="button-cancel-generate"
+              >
                 Cancel
               </Button>
-              <Button onClick={handleGenerate} data-testid="button-start-generate">
+              <Button
+                onClick={handleGenerate}
+                data-testid="button-start-generate"
+              >
                 <Sparkles className="w-4 h-4 mr-2" />
                 Generate
               </Button>
@@ -308,8 +334,8 @@ export function GenerateTemplateDialog({
 
           {generatedTemplate && !isGenerating && (
             <>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={handleGenerate}
                 disabled={isCreating}
                 data-testid="button-regenerate"
@@ -317,11 +343,15 @@ export function GenerateTemplateDialog({
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Regenerate
               </Button>
-              <Button variant="outline" onClick={handleClose} disabled={isCreating}>
+              <Button
+                variant="outline"
+                onClick={handleClose}
+                disabled={isCreating}
+              >
                 Cancel
               </Button>
-              <Button 
-                onClick={handleCreate} 
+              <Button
+                onClick={handleCreate}
                 disabled={isCreating || !editedName.trim()}
                 data-testid="button-create-template"
               >
