@@ -159,7 +159,7 @@ function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
         <div className="space-y-4">
           {entries.map((entry, index) => (
             <div
-              key={index}
+              key={`${entry.speaker}-${entry.timestamp}-${index}`}
               className={`flex gap-3 ${entry.speaker === "respondent" ? "justify-end" : ""}`}
             >
               {entry.speaker === "alvia" && (
@@ -207,7 +207,6 @@ export default function InterviewPage() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [textInput, setTextInput] = useState("");
-  const [isSendingText, setIsSendingText] = useState(false);
   const [highlightNextButton, setHighlightNextButton] = useState(false);
   const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -746,35 +745,37 @@ export default function InterviewPage() {
   };
 
   const handleSendText = () => {
-    if (
-      !textInput.trim() ||
-      !wsRef.current ||
-      wsRef.current.readyState !== WebSocket.OPEN
-    )
+    const text = textInput.trim();
+    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
       return;
 
-    setIsSendingText(true);
+    // Clear input first to prevent duplicates from queued events
+    setTextInput("");
 
-    // Add to transcript immediately
-    setTranscript((prev) => [
-      ...prev,
-      {
-        speaker: "respondent",
-        text: textInput.trim(),
+    // Add to transcript with ordering check (insert before streaming AI response)
+    setTranscript((prev) => {
+      const newEntry = {
+        speaker: "respondent" as const,
+        text,
         timestamp: Date.now(),
-      },
-    ]);
+      };
+
+      // If the last entry is a streaming AI response, insert user text before it
+      const lastEntry = prev[prev.length - 1];
+      if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {
+        return [...prev.slice(0, -1), newEntry, lastEntry];
+      }
+
+      return [...prev, newEntry];
+    });
 
     // Send to server
     wsRef.current.send(
       JSON.stringify({
         type: "text_input",
-        text: textInput.trim(),
+        text,
       }),
     );
-
-    setTextInput("");
-    setIsSendingText(false);
   };
 
   const handleTextKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1009,14 +1010,14 @@ export default function InterviewPage() {
                     ? "Type your response here..."
                     : "Connect to start typing..."
                 }
-                disabled={!isConnected || isSendingText}
+                disabled={!isConnected}
                 className="pl-10 pr-12"
                 data-testid="input-chat-text"
               />
             </div>
             <Button
               onClick={handleSendText}
-              disabled={!isConnected || !textInput.trim() || isSendingText}
+              disabled={!isConnected || !textInput.trim()}
               size="icon"
               data-testid="button-send-text"
             >
