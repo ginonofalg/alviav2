@@ -133,10 +133,9 @@ export default function LandingPage() {
                     <span className="text-primary">survey scale</span>
                   </h1>
                   <p className="text-lg text-muted-foreground max-w-xl leading-relaxed">
-                    Alvia is a voice-led hybrid survey-interview tool that
-                    captures rich, qualitative insights from respondents with
-                    the flexibility of an interviewer and the repeatability of a
-                    survey.
+                    Alvia is a powerful voice interviewer and adviser who
+                    listens, adapts, and captures the nuance that traditional
+                    surveys miss.
                   </p>
                 </div>
 
