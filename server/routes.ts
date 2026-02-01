@@ -2187,12 +2187,14 @@ export async function registerRoutes(
       
       const template = await storage.getTemplate(collection.templateId);
       const questions = await storage.getQuestionsByTemplate(collection.templateId);
+      const respondent = await storage.getRespondent(session.respondentId);
       
       res.json({
         session,
         collection,
         template,
         questions,
+        respondent,
       });
     } catch (error) {
       console.error("Error fetching interview:", error);

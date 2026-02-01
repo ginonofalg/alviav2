@@ -30,6 +30,7 @@ import type {
   Question,
   Collection,
   InterviewTemplate,
+  Respondent,
 } from "@shared/schema";
 
 interface InterviewData {
@@ -37,6 +38,7 @@ interface InterviewData {
   collection: Collection;
   template: InterviewTemplate;
   questions: Question[];
+  respondent?: Respondent;
 }
 
 interface TranscriptEntry {
@@ -205,7 +207,6 @@ export default function InterviewPage() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestionText, setCurrentQuestionText] = useState<string>("");
   const [totalQuestions, setTotalQuestions] = useState(0);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [textInput, setTextInput] = useState("");
   const [highlightNextButton, setHighlightNextButton] = useState(false);
   const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
@@ -213,6 +214,7 @@ export default function InterviewPage() {
     open: boolean;
     type: "next" | "complete";
   }>({ open: false, type: "next" });
+  const [readyPhase, setReadyPhase] = useState(true);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -232,11 +234,20 @@ export default function InterviewPage() {
   const session = interviewData?.session;
   const collection = interviewData?.collection;
   const questions = interviewData?.questions;
+  const respondent = interviewData?.respondent;
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress =
     totalQuestions > 0
       ? ((currentQuestionIndex + 1) / totalQuestions) * 100
       : 0;
+  
+  // Check if this is a resumed session (already started before)
+  // Detect via: status (in_progress/paused), currentQuestionIndex > 0, or existing questionStates
+  const isResumedSession = 
+    session?.status === "in_progress" || 
+    session?.status === "paused" ||
+    (session?.currentQuestionIndex ?? 0) > 0 ||
+    !!session?.questionStates;
 
   // Initialize audio context
   const initAudioContext = useCallback(async () => {
@@ -632,25 +643,6 @@ export default function InterviewPage() {
     }
   }, [initAudioContext, isAiSpeaking]);
 
-  const requestMicPermission = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      setHasPermission(true);
-    } catch (error) {
-      setHasPermission(false);
-      toast({
-        title: "Microphone access denied",
-        description:
-          "Please allow microphone access to participate in the interview.",
-        variant: "destructive",
-      });
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    requestMicPermission();
-  }, [requestMicPermission]);
 
   // Initialize question text from query data
   useEffect(() => {
@@ -661,6 +653,13 @@ export default function InterviewPage() {
       setTotalQuestions(questions.length);
     }
   }, [currentQuestion, questions, currentQuestionText, totalQuestions]);
+
+  // Skip ready phase for resumed sessions
+  useEffect(() => {
+    if (isResumedSession) {
+      setReadyPhase(false);
+    }
+  }, [isResumedSession]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -831,25 +830,54 @@ export default function InterviewPage() {
     );
   }
 
-  if (hasPermission === false) {
+  // Handle starting the interview from the ready screen
+  const handleStartInterview = async () => {
+    setReadyPhase(false);
+    connectWebSocket();
+    if (!isTextOnlyMode) {
+      const success = await startAudioCapture();
+      if (!success) {
+        // Mic permission denied or failed - fall back to text mode
+        setIsTextOnlyMode(true);
+        toast({
+          title: "Microphone unavailable",
+          description: "You can type your responses instead.",
+        });
+      }
+    }
+  };
+
+  // Show "Get Ready" screen before starting the interview
+  if (readyPhase && !isResumedSession) {
+    const greeting = respondent?.informalName 
+      ? `Ok ${respondent.informalName}, Alvia's ready when you are`
+      : "Alvia's ready when you are";
+    
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="p-8 space-y-6">
-            <AlertCircle className="w-16 h-16 mx-auto text-destructive" />
-            <h2 className="text-xl font-semibold">
-              Microphone Access Required
-            </h2>
-            <p className="text-muted-foreground">
-              This interview requires microphone access to capture your
-              responses. Please enable microphone permissions and refresh the
-              page.
-            </p>
+        <Card className="w-full max-w-2xl">
+          <CardContent className="p-8 space-y-8 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Mic className="w-10 h-10 text-primary" />
+            </div>
+            
+            <div className="space-y-3">
+              <h1 className="text-2xl font-serif font-medium" data-testid="text-ready-greeting">
+                {greeting}
+              </h1>
+              <p className="text-muted-foreground">
+                Find somewhere quiet and comfortable. This should take about 10-15 minutes.
+              </p>
+            </div>
+
             <Button
-              onClick={requestMicPermission}
-              data-testid="button-retry-permission"
+              size="lg"
+              className="w-full max-w-xs mx-auto"
+              onClick={handleStartInterview}
+              data-testid="button-start-interview"
             >
-              Try Again
+              Start Interview
+              <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </CardContent>
         </Card>

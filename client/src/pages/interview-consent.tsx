@@ -155,7 +155,7 @@ export default function InterviewConsentPage() {
       );
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       // Store resume token in localStorage for browser recovery
       if (data.resumeToken) {
         localStorage.setItem(
@@ -167,6 +167,16 @@ export default function InterviewConsentPage() {
           }),
         );
       }
+      
+      // Request microphone permission early (don't block on failure - text mode is available)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        // Permission denied - user can still use text mode in the interview
+        console.log("[Consent] Microphone permission not granted, text mode available");
+      }
+      
       // Navigate to welcome page for name capture before interview
       navigate(`/welcome/${data.id}`);
     },
