@@ -1,0 +1,33 @@
+ Found it. The issue is in how Alvia's speech transcription is handled — there are two different texts, and the client shows the worse one.                 
+                                                                                                                                                             
+  The two paths diverge for Alvia's transcript:                                                                                                              
+                                                                                                                                                             
+  Database (voice-interview.ts:1422-1435): When the Realtime API fires response.audio_transcript.done, the server stores event.transcript — the final,       
+  refined transcript — into liveTranscript.                                                                                                                  
+                                                                                                                                                             
+  Chat window (interview.tsx:440-477): The client builds Alvia's transcript by concatenating streaming delta chunks as they arrive (ai_transcript events,    
+  line 448). When ai_transcript_done arrives, it does include the final transcript (message.transcript at line 1440 on the server), but the client ignores it
+   — it only flips isStreaming: false (line 472) and keeps the delta-concatenated text.                                                                      
+                                                                                                                                                             
+  // line 472 — keeps the delta-built text, throws away the final transcript                                                                                 
+  { ...lastEntry, isStreaming: false }                                                                                                                       
+                                                                                                                                                             
+  The OpenAI Realtime API generates audio transcript deltas incrementally as the model speaks. The final .done transcript is a post-processed, higher-quality
+   version. The client never swaps in that better version.                                                                                                   
+                                                                                                                                                             
+  The fix is straightforward — in the ai_transcript_done handler, replace the delta-built text with the final transcript:                                    
+                                                                                                                                                             
+  case "ai_transcript_done":                                                                                                                                 
+    setTranscript((prev) => {                                                                                                                                
+      const lastEntry = prev[prev.length - 1];                                                                                                               
+      if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {                                                                             
+        return [                                                                                                                                             
+          ...prev.slice(0, -1),                                                                                                                              
+          { ...lastEntry, text: message.transcript || lastEntry.text, isStreaming: false },                                                                  
+        ];                                                                                                                                                   
+      }                                                                                                                                                      
+      return prev;                                                                                                                                           
+    });                                                                                                                                                      
+    break;                                                                                                                                                   
+                                                                                                                                                             
+  This would use the same final transcript that gets stored in liveTranscript.
