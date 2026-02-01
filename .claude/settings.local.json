@@ -6,7 +6,8 @@
       "WebFetch(domain:docs.x.ai)",
       "Bash(find:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:community.openai.com)"
+      "WebFetch(domain:community.openai.com)",
+      "Bash(grep:*)"
     ]
   }
 }

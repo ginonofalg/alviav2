@@ -142,16 +142,16 @@ function MicButton({
 }
 
 function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [entries]);
 
   return (
-    <ScrollArea className="h-64 rounded-lg border bg-card p-4" ref={scrollRef}>
+    <ScrollArea className="h-64 rounded-lg border bg-card p-4">
       {entries.length === 0 ? (
         <div className="text-center text-muted-foreground py-8">
           <Volume2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -186,6 +186,7 @@ function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
               </div>
             </div>
           ))}
+          <div ref={bottomRef} />
         </div>
       )}
     </ScrollArea>
