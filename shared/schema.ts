@@ -317,6 +317,37 @@ export const redactionMapsRelations = relations(redactionMaps, ({ one }) => ({
   }),
 }));
 
+// Invite List - emails allowed to use the platform
+export const inviteList = pgTable("invite_list", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  addedBy: varchar("added_by"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Waitlist Entries - users who authenticated but are not invited
+export const waitlistEntries = pgTable("waitlist_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  replitUserId: varchar("replit_user_id"),
+  consentNewsletter: boolean("consent_newsletter").default(false),
+  consentMarketing: boolean("consent_marketing").default(false),
+  submittedAt: timestamp("submitted_at").defaultNow(),
+});
+
+// Insert schemas for invite/waitlist
+export const insertInviteListSchema = createInsertSchema(inviteList).omit({ id: true, createdAt: true });
+export const insertWaitlistEntrySchema = createInsertSchema(waitlistEntries).omit({ id: true, submittedAt: true });
+
+// Types for invite/waitlist
+export type InviteListEntry = typeof inviteList.$inferSelect;
+export type InsertInviteListEntry = z.infer<typeof insertInviteListSchema>;
+export type WaitlistEntry = typeof waitlistEntries.$inferSelect;
+export type InsertWaitlistEntry = z.infer<typeof insertWaitlistEntrySchema>;
+
 // Insert schemas
 export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });

@@ -1,6 +1,7 @@
 import { 
   workspaces, projects, interviewTemplates, questions, collections,
   respondents, interviewSessions, segments, redactionMaps, workspaceMembers,
+  inviteList, waitlistEntries,
   type Workspace, type InsertWorkspace, type Project, type InsertProject,
   type InterviewTemplate, type InsertTemplate, type Question, type InsertQuestion,
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
@@ -13,7 +14,9 @@ import {
   type AggregatedCrossTemplateTheme, type AggregatedContextualRecommendation,
   type AggregatedConsensusPoint, type AggregatedDivergencePoint,
   type TemplateStaleness, type CollectionStaleness,
-  type RealtimePerformanceMetrics
+  type RealtimePerformanceMetrics,
+  type InviteListEntry, type InsertInviteListEntry,
+  type WaitlistEntry, type InsertWaitlistEntry
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -191,6 +194,12 @@ export interface IStorage {
   verifyUserAccessToTemplate(userId: string, templateId: string): Promise<boolean>;
   verifyUserAccessToCollection(userId: string, collectionId: string): Promise<boolean>;
   verifyUserAccessToSession(userId: string, sessionId: string): Promise<boolean>;
+  
+  // Invite List & Waitlist
+  isEmailInvited(email: string): Promise<boolean>;
+  getWaitlistEntryByEmail(email: string): Promise<WaitlistEntry | undefined>;
+  createWaitlistEntry(entry: InsertWaitlistEntry): Promise<WaitlistEntry>;
+  addToInviteList(entry: InsertInviteListEntry): Promise<InviteListEntry>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1477,6 +1486,63 @@ export class DatabaseStorage implements IStorage {
     if (!session) return false;
     
     return this.verifyUserAccessToCollection(userId, session.collectionId);
+  }
+
+  // Invite List & Waitlist
+  async isEmailInvited(email: string): Promise<boolean> {
+    // Check if invite-only mode is enabled (defaults to true if not set)
+    const inviteOnlyMode = process.env.INVITE_ONLY_MODE !== "false";
+    if (!inviteOnlyMode) {
+      return true; // Everyone is allowed when invite-only mode is disabled
+    }
+    
+    // Case-insensitive email check
+    const normalizedEmail = email.toLowerCase().trim();
+    const [entry] = await db.select()
+      .from(inviteList)
+      .where(sql`LOWER(${inviteList.email}) = ${normalizedEmail}`);
+    return !!entry;
+  }
+
+  async getWaitlistEntryByEmail(email: string): Promise<WaitlistEntry | undefined> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const [entry] = await db.select()
+      .from(waitlistEntries)
+      .where(sql`LOWER(${waitlistEntries.email}) = ${normalizedEmail}`);
+    return entry;
+  }
+
+  async createWaitlistEntry(entry: InsertWaitlistEntry): Promise<WaitlistEntry> {
+    // Normalize email before insert
+    const normalizedEntry = {
+      ...entry,
+      email: entry.email.toLowerCase().trim(),
+    };
+    const [created] = await db.insert(waitlistEntries)
+      .values(normalizedEntry)
+      .onConflictDoUpdate({
+        target: waitlistEntries.email,
+        set: {
+          firstName: normalizedEntry.firstName,
+          lastName: normalizedEntry.lastName,
+          consentNewsletter: normalizedEntry.consentNewsletter,
+          consentMarketing: normalizedEntry.consentMarketing,
+          replitUserId: normalizedEntry.replitUserId,
+        },
+      })
+      .returning();
+    return created;
+  }
+
+  async addToInviteList(entry: InsertInviteListEntry): Promise<InviteListEntry> {
+    const normalizedEntry = {
+      ...entry,
+      email: entry.email.toLowerCase().trim(),
+    };
+    const [created] = await db.insert(inviteList)
+      .values(normalizedEntry)
+      .returning();
+    return created;
   }
 }
 
