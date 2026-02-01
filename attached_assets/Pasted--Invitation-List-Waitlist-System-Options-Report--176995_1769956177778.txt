@@ -1,0 +1,168 @@
+ Invitation List & Waitlist System — Options Report                                                                                                         
+                                                                                                                                                             
+  The Problem                                                                                                                                                
+                                                                                                                                                             
+  Today, any user who authenticates via Replit OIDC is automatically granted full access. The OIDC callback in                                               
+  server/replit_integrations/auth/replitAuth.ts:72-88 calls upsertUser() unconditionally and redirects to the dashboard. There is no gate between            
+  "authenticated by Replit" and "authorized to use Alvia."                                                                                                   
+                                                                                                                                                             
+  Can this be managed in Replit without code? No. Replit's OIDC provider authenticates any Replit user — there is no built-in allowlist or approval          
+  mechanism. Code changes are required.                                                                                                                      
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Architecture Constraint                                                                                                                                    
+                                                                                                                                                             
+  The OIDC flow authenticates against Replit's servers. You cannot prevent the OIDC handshake itself. The interception must happen after the callback returns
+   the user's identity. This means any solution will:                                                                                                        
+                                                                                                                                                             
+  1. Let OIDC complete (to obtain the user's email)                                                                                                          
+  2. Check the email against an invite list                                                                                                                  
+  3. Fork the experience: invited users proceed; others see the waitlist form                                                                                
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Options                                                                                                                                                    
+                                                                                                                                                             
+  Option A: Database Tables (Recommended)                                                                                                                    
+                                                                                                                                                             
+  Add two tables to the existing PostgreSQL database:                                                                                                        
+  ┌──────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────┐                               
+  │      Table       │                                                Columns                                                │                               
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤                               
+  │ invite_list      │ id, email (unique), addedBy, createdAt                                                                │                               
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤                               
+  │ waitlist_entries │ id, email (unique), firstName, lastName, consentNewsletter, consentMarketing, replitUserId, createdAt │                               
+  └──────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────┘                               
+  Interception point: Add an isInvited flag to the user session object. After OIDC callback, check the user's email against invite_list. Store the result in 
+  the session. On the frontend, App.tsx:129 currently checks isAuthenticated — extend this to also check isInvited. Non-invited users route to a /waitlist   
+  page instead of AuthenticatedRoutes.                                                                                                                       
+                                                                                                                                                             
+  Management:                                                                                                                                                
+  - Direct SQL in Replit's database panel (INSERT INTO invite_list (email) VALUES ('user@example.com'))                                                      
+  - Or build a simple admin panel in /settings                                                                                                               
+  - Or a bulk-import API endpoint                                                                                                                            
+                                                                                                                                                             
+  Pros: Full audit trail. Waitlist entries persist in the same DB. Easy to query, export, or build admin UI later. No external dependencies. Scales to any   
+  number of invitees.                                                                                                                                        
+                                                                                                                                                             
+  Cons: Requires schema migration and code changes across ~4-5 files.                                                                                        
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Option B: Environment Variable Allowlist                                                                                                                   
+                                                                                                                                                             
+  Store invited emails as a comma-separated string in a Replit Secret:                                                                                       
+                                                                                                                                                             
+  INVITED_EMAILS=alice@example.com,bob@example.com,carol@example.com                                                                                         
+                                                                                                                                                             
+  Check process.env.INVITED_EMAILS.split(',') in the auth callback.                                                                                          
+                                                                                                                                                             
+  Management: Edit in Replit's Secrets panel (sidebar > Tools > Secrets).                                                                                    
+                                                                                                                                                             
+  Pros: Zero database changes. Fast to set up. Manageable in the Replit UI.                                                                                  
+                                                                                                                                                             
+  Cons:                                                                                                                                                      
+  - Env vars have size limits (~32KB on Replit). Practical limit of ~500-1000 emails.                                                                        
+  - Requires server restart when the list changes (Replit doesn't hot-reload env vars).                                                                      
+  - No audit trail of who was added when.                                                                                                                    
+  - Still need code + a DB table for waitlist entries (the form data needs to persist somewhere).                                                            
+  - Fragile — typos in a comma-separated string break things silently.                                                                                       
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Option C: External Sheet (Google Sheets / Airtable)                                                                                                        
+                                                                                                                                                             
+  Use Google Sheets API or Airtable API as the source of truth for invited emails.                                                                           
+                                                                                                                                                             
+  Pros: Non-technical team members can manage the list in a familiar UI. Changes are instant (no restart).                                                   
+                                                                                                                                                             
+  Cons:                                                                                                                                                      
+  - Adds an external runtime dependency — if the Sheets API is down, nobody can log in.                                                                      
+  - Requires a Google service account credential (another secret to manage).                                                                                 
+  - API rate limits could cause latency on the auth callback.                                                                                                
+  - More complex code (HTTP call + parsing in a latency-sensitive path).                                                                                     
+  - Waitlist form data still needs to go somewhere (separate Sheets tab? DB?).                                                                               
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Option D: JSON Config File                                                                                                                                 
+                                                                                                                                                             
+  Store a config/invite-list.json in the repo:                                                                                                               
+                                                                                                                                                             
+  { "emails": ["alice@example.com", "bob@example.com"] }                                                                                                     
+                                                                                                                                                             
+  Pros: Version-controlled. Easy to read.                                                                                                                    
+                                                                                                                                                             
+  Cons: Requires a code commit + deploy to update. Not practical for a growing list. Exposes email addresses in version history.                             
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Recommendation: Option A (Database Tables)                                                                                                                 
+                                                                                                                                                             
+  This is the right choice for a production launch. Here's why:                                                                                              
+                                                                                                                                                             
+  1. You already have PostgreSQL — adding two tables is trivial with Drizzle.                                                                                
+  2. Waitlist data must persist regardless of which option you pick for the invite list. Since you need the DB anyway, put both lists there.                 
+  3. No external dependencies and no size limits.                                                                                                            
+  4. Management is straightforward — INSERT/DELETE via Replit's DB panel for now, with the option to add an admin UI later.                                  
+  5. Hot updates — adding an email takes effect immediately, no restart needed.                                                                              
+                                                                                                                                                             
+  Implementation Scope                                                                                                                                       
+                                                                                                                                                             
+  The changes would touch:                                                                                                                                   
+  ┌───────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐          
+  │                     File                      │                                            Change                                             │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ shared/schema.ts                              │ Add inviteList and waitlistEntries tables                                                     │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/replit_integrations/auth/replitAuth.ts │ After OIDC callback, check email against invite_list, set session flag                        │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/routes.ts                              │ Add GET /api/auth/invite-status, POST /api/waitlist (public), optional admin endpoints        │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/storage.ts                             │ Add isEmailInvited(), createWaitlistEntry() methods                                           │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/App.tsx                            │ Fork routing: invited users → dashboard, others → waitlist page                               │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/waitlist.tsx                 │ New page: name, email (pre-filled from OIDC), newsletter checkbox, marketing checkbox, submit │          
+  ├───────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/hooks/use-auth.ts                  │ Extend to surface invite status                                                               │          
+  └───────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘          
+  Waitlist Page UX                                                                                                                                           
+                                                                                                                                                             
+  Non-invited users would see a branded page with:                                                                                                           
+  - Pre-filled email (from their Replit account)                                                                                                             
+  - First name / last name fields                                                                                                                            
+  - Checkbox: "I'd like to receive the Alvia newsletter"                                                                                                     
+  - Checkbox: "I consent to receiving marketing communications"                                                                                              
+  - Submit button → stores entry, shows confirmation message                                                                                                 
+  - No access to any authenticated routes                                                                                                                    
+                                                                                                                                                             
+  Day-to-Day Management                                                                                                                                      
+                                                                                                                                                             
+  To invite a user at launch:                                                                                                                                
+  INSERT INTO invite_list (email) VALUES ('researcher@university.edu');                                                                                      
+                                                                                                                                                             
+  To view the waitlist:                                                                                                                                      
+  SELECT * FROM waitlist_entries ORDER BY created_at DESC;                                                                                                   
+                                                                                                                                                             
+  To convert a waitlisted user to invited:                                                                                                                   
+  INSERT INTO invite_list (email)                                                                                                                            
+  SELECT email FROM waitlist_entries WHERE id = '...';                                                                                                       
+                                                                                                                                                             
+  When you're ready to open access to everyone, a single flag (INVITE_ONLY_MODE=false env var or a DB setting) disables the gate entirely.                   
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Summary                                                                                                                                                    
+  ┌────────────────────────┬────────────────┬────────────────┬───────────────────┬──────────────┐                                                            
+  │       Criterion        │  A: Database   │   B: Env Var   │ C: External Sheet │ D: JSON File │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ No code changes needed │       No       │       No       │        No         │      No      │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ Waitlist persistence   │      Yes       │    Partial     │      Partial      │      No      │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ Instant updates        │      Yes       │  No (restart)  │        Yes        │ No (deploy)  │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ Scalability            │   Unlimited    │     ~1000      │    API limits     │  Git limits  │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ External dependencies  │      None      │      None      │  Google/Airtable  │     None     │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ Audit trail            │      Yes       │       No       │      Partial      │ Git history  │                                                            
+  ├────────────────────────┼────────────────┼────────────────┼───────────────────┼──────────────┤                                                            
+  │ Management UX          │ SQL / admin UI │ Replit Secrets │    Spreadsheet    │ Code editor  │                                                            
+  └────────────────────────┴────────────────┴────────────────┴───────────────────┴──────────────┘                                                            
+  Recommendation: Option A. It's ~7 files of changes, works with your existing stack, and gives you a clean path from invite-only launch to open access. 
