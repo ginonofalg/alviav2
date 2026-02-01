@@ -32,6 +32,7 @@ import InterviewWelcomePage from "@/pages/interview-welcome";
 import InterviewPage from "@/pages/interview";
 import InterviewCompletePage from "@/pages/interview-complete";
 import InterviewReviewPage from "@/pages/interview-review";
+import InterviewResumePage from "@/pages/interview-resume";
 import ReviewTokenPage from "@/pages/review-token";
 import NotFound from "@/pages/not-found";
 
@@ -119,6 +120,7 @@ function Router() {
       <Route path="/join/:collectionId" component={InterviewConsentPage} />
       <Route path="/welcome/:sessionId" component={InterviewWelcomePage} />
       <Route path="/interview/complete" component={InterviewCompletePage} />
+      <Route path="/interview/resume/:token" component={InterviewResumePage} />
       <Route path="/interview/:sessionId" component={InterviewPage} />
       <Route path="/review/:sessionId">{(params) => {
         if (params.sessionId && params.sessionId.length === 64) {
