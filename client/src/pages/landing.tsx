@@ -150,14 +150,20 @@ export default function LandingPage() {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </a>
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    className="w-full sm:w-auto"
-                    data-testid="button-watch-demo"
+                  <a
+                    href="https://www.youtube.com/shorts/L9nMTfokgxA"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    Watch Demo
-                  </Button>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      className="w-full sm:w-auto"
+                      data-testid="button-watch-demo"
+                    >
+                      Watch Demo
+                    </Button>
+                  </a>
                 </div>
 
                 <div className="flex flex-wrap gap-6 pt-4">
