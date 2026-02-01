@@ -151,7 +151,7 @@ export default function LandingPage() {
                     </Button>
                   </a>
                   <a
-                    href="https://www.youtube.com/shorts/L9nMTfokgxA"
+                    href="https://youtube.com/shorts/L9nMTfokgxA?feature=share"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
