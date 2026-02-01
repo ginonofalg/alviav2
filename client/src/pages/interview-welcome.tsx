@@ -49,6 +49,11 @@ export default function InterviewWelcomePage() {
   });
 
   const handleContinue = () => {
+    // If neither name is provided, just navigate forward without saving
+    if (!fullName.trim() && !informalName.trim()) {
+      navigate(`/interview/${sessionId}`);
+      return;
+    }
     updateNames.mutate();
   };
 

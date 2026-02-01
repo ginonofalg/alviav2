@@ -2345,10 +2345,25 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const respondent = await storage.updateRespondent(req.params.respondentId, {
-        fullName: parseResult.data.fullName ?? undefined,
-        informalName: parseResult.data.informalName ?? undefined,
-      });
+      // Build update object, filtering out null/undefined/empty values
+      const updates: { fullName?: string; informalName?: string } = {};
+      if (parseResult.data.fullName) {
+        updates.fullName = parseResult.data.fullName;
+      }
+      if (parseResult.data.informalName) {
+        updates.informalName = parseResult.data.informalName;
+      }
+
+      // If no actual values to update, just return the current respondent
+      if (Object.keys(updates).length === 0) {
+        const existingRespondent = await storage.getRespondent(req.params.respondentId);
+        if (!existingRespondent) {
+          return res.status(404).json({ message: "Respondent not found" });
+        }
+        return res.json(existingRespondent);
+      }
+
+      const respondent = await storage.updateRespondent(req.params.respondentId, updates);
 
       if (!respondent) {
         return res.status(404).json({ message: "Respondent not found" });
