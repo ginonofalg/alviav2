@@ -323,16 +323,21 @@ export default function InterviewConsentPage() {
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">3.</span>
                 <span>
-                  Speak naturally - there are no right or wrong answers
+                  Find a quiet location and use a headset or earphones if you
+                  have them. Speak naturally. Alvia may take a moment to respond
+                  at first. Be patient, she'll adapt.
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">4.</span>
-                <span>You can pause or stop at any time</span>
+                <span>
+                  You can pause at any time. You can type your answers if you
+                  prefer.
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">5.</span>
-                <span>The interview typically takes 10-15 minutes</span>
+                <span>The interview typically takes 10-15 minutes.</span>
               </li>
             </ul>
           </div>
