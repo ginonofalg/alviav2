@@ -1,0 +1,53 @@
+When I land on the first question of a new interview, the question is immediately visible. The previous page ("Welcome to Your Interview", "Before we         
+  begin, let's get to know you a little better" hasn't warmed the user up sufficiently to know that the interview will start on the next page. Also, on the     
+   first question page, the user must Click the microphone to start the interview. I wonder if in place of the first question, there should be a message?       
+  Something like "Ok " {users name [if it's captured]}, Alvia's ready to start. Get comfortable and make sure you're somewhere quiet". What do you think?       
+  Propose an approach.                                                                                                                                          
+                                                                                                                                                                
+● Let me explore the current interview flow to understand the existing UX before proposing an approach.                                                         
+                                                                                                                                                                
+● Explore(Explore interview flow UX)                                                                                                                            
+  ⎿  Done (16 tool uses · 54.8k tokens · 1m 2s)                                                                                                                 
+                                                                                                                                                                
+● Good observation. The current flow has a gap: the welcome page captures names but doesn't set expectations about what's coming next, and then the interview   
+  page drops the user straight into the first question with a bare "Click the microphone to start" prompt. There's no moment to settle in.                      
+                                                                                                                                                                
+  Here's my proposed approach:                                                                                                                                  
+                                                                                                                                                                
+  Add a "Get Ready" state within the interview page                                                                                                             
+                                                                                                                                                                
+  Rather than adding a new route (which adds a page load and more navigation complexity), I'd add a pre-interview readiness phase inside interview.tsx itself — 
+  a screen the user sees before they click the mic, replacing the current minimal "Click the microphone to start" prompt.                                       
+                                                                                                                                                                
+  What the user would see                                                                                                                                       
+                                                                                                                                                                
+  When they land on /interview/:sessionId, instead of immediately seeing the first question text and a mic button, they'd see:                                  
+                                                                                                                                                                
+  A warm, focused readiness screen:                                                                                                                             
+  - Greeting: "Ok {informalName}, Alvia's ready when you are" (or "Ok, Alvia's ready when you are" if no name was captured)                                     
+  - A brief tip: "Find somewhere quiet and comfortable. The interview will take about {estimated duration}."                                                    
+  - A prominent "Start Interview" button (or the mic button, restyled for this context)                                                                         
+  - Once clicked, the WebSocket connects, and the UI transitions to the current interview view with the first question                                          
+                                                                                                                                                                
+  What changes                                                                                                                                                  
+                                                                                                                                                                
+  1. server/routes.ts — The existing GET /api/interview/:sessionId endpoint already returns session + respondent data. I'd ensure informalName is included in   
+  the response if it isn't already.                                                                                                                             
+  2. client/src/pages/interview.tsx — Add a readyPhase state (boolean, starts true). When readyPhase is true, render the readiness screen instead of the        
+  question/waveform UI. When the user clicks "Start Interview", set readyPhase = false and trigger the existing connectWebSocket() + startAudioCapture() flow.  
+  3. No new routes, no new pages — This keeps the URL structure clean and avoids an extra navigation step. The readiness screen is just the initial render state
+   of the interview page.                                                                                                                                       
+                                                                                                                                                                
+  Why this approach                                                                                                                                             
+                                                                                                                                                                
+  - Minimal change surface: One page, one new state variable, one new render branch                                                                             
+  - No architectural changes: The WebSocket connection still only starts when the user is ready (same as today, just with better UX framing)                    
+  - Name is already available: The interview data fetch already loads respondent info — we just need to use informalName in the readiness screen                
+  - Works for resumed sessions too: For resumed interviews, we can skip the readiness screen and go straight to the question (the user already knows what       
+  they're doing)                                                                                                                                                
+                                                                                                                                                                
+  What it doesn't change                                                                                                                                        
+                                                                                                                                                                
+  - The welcome page stays as-is (name capture is still its job)                                                                                                
+  - The mic permission request can still happen on page mount (so there's no delay when they click "Start")                                                     
+  - The first question flow on the server side is unchanged 
