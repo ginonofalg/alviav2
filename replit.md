@@ -41,6 +41,7 @@ The system organizes data hierarchically: **Workspace → Project → InterviewT
 - **Auto-Generate Template Feature**: AI-powered generation of interview templates from project metadata using GPT-5.
 - **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface to support switching between different real-time voice API providers (e.g., OpenAI, Grok). Researchers select the provider at the Collection level during creation; respondents automatically use the collection's configured provider.
 - **Demo Project Auto-Seeding**: New users automatically receive a demo project ("Alvia Demo — Your Coffee Ritual") with a pre-configured template and 6 questions on first login. Implemented via `server/demo-seed.ts` called from the auth verification callback.
+- **Invite-Only Waitlist System**: Gating mechanism for public launch. Only users with emails in the `invite_list` table can access the platform. Non-invited authenticated users see a waitlist form to submit their information (name, email, consent preferences). Controlled by `INVITE_ONLY_MODE` environment variable (defaults to true; set to "false" to disable gating). Database tables: `invite_list` (invited emails) and `waitlist_entries` (waitlist submissions). To invite users: `INSERT INTO invite_list (email) VALUES ('user@example.com');`
 
 ## External Dependencies
 
