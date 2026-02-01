@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import LandingPage from "@/pages/landing";
+import WaitlistPage from "@/pages/waitlist";
 import DashboardPage from "@/pages/dashboard";
 import ProjectsPage from "@/pages/projects";
 import NewProjectPage from "@/pages/project-new";
@@ -107,7 +108,7 @@ function LoadingScreen() {
 }
 
 function Router() {
-  const { user, isLoading, isAuthenticated } = useAuth();
+  const { user, isLoading, isAuthenticated, isInvited } = useAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -126,7 +127,11 @@ function Router() {
         return <InterviewReviewPage />;
       }}</Route>
       <Route>
-        {isAuthenticated ? <AuthenticatedRoutes /> : <LandingPage />}
+        {isAuthenticated ? (
+          isInvited ? <AuthenticatedRoutes /> : <WaitlistPage />
+        ) : (
+          <LandingPage />
+        )}
       </Route>
     </Switch>
   );
