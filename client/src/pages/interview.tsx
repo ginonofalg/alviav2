@@ -463,13 +463,13 @@ export default function InterviewPage() {
           break;
 
         case "ai_transcript_done":
-          // Mark streaming entry as complete
+          // Mark streaming entry as complete and use the final refined transcript
           setTranscript((prev) => {
             const lastEntry = prev[prev.length - 1];
             if (lastEntry && lastEntry.speaker === "alvia" && lastEntry.isStreaming) {
               return [
                 ...prev.slice(0, -1),
-                { ...lastEntry, isStreaming: false },
+                { ...lastEntry, text: message.transcript || lastEntry.text, isStreaming: false },
               ];
             }
             return prev;
