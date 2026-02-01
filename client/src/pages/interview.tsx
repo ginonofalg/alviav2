@@ -250,6 +250,9 @@ export default function InterviewPage() {
     (session?.currentQuestionIndex ?? 0) > 0 ||
     !!session?.questionStates;
 
+  // Track if we've auto-started for resumed sessions
+  const hasAutoStartedRef = useRef(false);
+
   // Initialize audio context
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
@@ -655,12 +658,21 @@ export default function InterviewPage() {
     }
   }, [currentQuestion, questions, currentQuestionText, totalQuestions]);
 
-  // Skip ready phase for resumed sessions
+  // Auto-connect WebSocket for resumed sessions (skip ready phase)
+  // Note: Audio capture is NOT started automatically due to browser autoplay policies
+  // requiring user interaction. The user can click the mic button to start audio.
   useEffect(() => {
-    if (isResumedSession) {
+    if (isResumedSession && !isLoading && !hasAutoStartedRef.current) {
+      hasAutoStartedRef.current = true;
       setReadyPhase(false);
+      // Initialize currentQuestionIndex from session data to avoid showing question 1
+      if (session?.currentQuestionIndex !== undefined && session.currentQuestionIndex !== null) {
+        setCurrentQuestionIndex(session.currentQuestionIndex);
+      }
+      connectWebSocket();
+      // Audio capture will be started when user clicks mic button (toggleListening)
     }
-  }, [isResumedSession]);
+  }, [isResumedSession, isLoading, session?.currentQuestionIndex, connectWebSocket]);
 
   // Cleanup on unmount
   useEffect(() => {
