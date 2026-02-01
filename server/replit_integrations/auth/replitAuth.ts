@@ -55,9 +55,9 @@ async function upsertUser(claims: any) {
   await authStorage.upsertUser({
     id: claims["sub"],
     email: claims["email"],
-    firstName: claims["first_name"],
-    lastName: claims["last_name"],
-    profileImageUrl: claims["profile_image_url"],
+    firstName: claims["given_name"] ?? claims["first_name"],
+    lastName: claims["family_name"] ?? claims["last_name"],
+    profileImageUrl: claims["picture"] ?? claims["profile_image_url"],
   });
 }
 

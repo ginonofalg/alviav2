@@ -31,7 +31,9 @@ import {
   type RealtimeProviderType,
 } from "./realtime-providers";
 
-function getProvider(providerOverride?: RealtimeProviderType | null): RealtimeProvider {
+function getProvider(
+  providerOverride?: RealtimeProviderType | null,
+): RealtimeProvider {
   return getRealtimeProvider(providerOverride);
 }
 
@@ -574,16 +576,19 @@ export function handleVoiceInterview(
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const sessionId = url.searchParams.get("sessionId");
   const providerParamRaw = url.searchParams.get("provider");
-  
+
   // Validate provider parameter
   const validProviders: RealtimeProviderType[] = ["openai", "grok"];
-  const providerParam: RealtimeProviderType | null = 
-    providerParamRaw && validProviders.includes(providerParamRaw as RealtimeProviderType) 
-      ? (providerParamRaw as RealtimeProviderType) 
+  const providerParam: RealtimeProviderType | null =
+    providerParamRaw &&
+    validProviders.includes(providerParamRaw as RealtimeProviderType)
+      ? (providerParamRaw as RealtimeProviderType)
       : null;
-  
+
   if (providerParamRaw && !providerParam) {
-    console.warn(`[VoiceInterview] Invalid provider "${providerParamRaw}", using default`);
+    console.warn(
+      `[VoiceInterview] Invalid provider "${providerParamRaw}", using default`,
+    );
   }
 
   if (!sessionId) {
@@ -699,7 +704,10 @@ export function handleVoiceInterview(
 
   // Initialize interview state
   const now = Date.now();
-  const selectedProviderType = providerParam || (process.env.REALTIME_PROVIDER as RealtimeProviderType) || "openai";
+  const selectedProviderType =
+    providerParam ||
+    (process.env.REALTIME_PROVIDER as RealtimeProviderType) ||
+    "openai";
   const state: InterviewState = {
     sessionId,
     currentQuestionIndex: 0,
@@ -820,7 +828,9 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     );
 
     // Load project data for strategic context
-    const project = template?.projectId ? await storage.getProject(template.projectId) : null;
+    const project = template?.projectId
+      ? await storage.getProject(template.projectId)
+      : null;
 
     // Load respondent data for personalization
     const respondent = await storage.getRespondent(session.respondentId);
@@ -929,7 +939,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
 
   // Use cached provider instance from state
   const provider = state.providerInstance;
-  
+
   console.log(
     `[VoiceInterview] Connecting to ${provider.displayName} for session: ${sessionId}`,
   );
@@ -977,7 +987,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     }
 
     const sessionConfig = provider.buildSessionConfig(instructions);
-    
+
     providerWs.send(
       JSON.stringify({
         type: "session.update",
@@ -1007,7 +1017,10 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       // Don't pass clientWs - handleProviderEvent looks it up from state to handle reconnections
       handleProviderEvent(sessionId, event);
     } catch (error) {
-      console.error(`[VoiceInterview] Error parsing ${provider.displayName} message:`, error);
+      console.error(
+        `[VoiceInterview] Error parsing ${provider.displayName} message:`,
+        error,
+      );
     }
   });
 
@@ -1020,7 +1033,10 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   });
 
   providerWs.on("error", (error) => {
-    console.error(`[VoiceInterview] ${provider.displayName} error for ${sessionId}:`, error);
+    console.error(
+      `[VoiceInterview] ${provider.displayName} error for ${sessionId}:`,
+      error,
+    );
     clientWs.send(
       JSON.stringify({ type: "error", message: "Voice service error" }),
     );
@@ -1061,8 +1077,7 @@ function buildInterviewInstructions(
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview in English.
 
 INTERVIEW CONTEXT:
-- Objective: ${objective}${strategicContext ? `
-- Strategic Context: ${strategicContext}` : ""}
+- Objective: ${objective}
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
@@ -1080,7 +1095,7 @@ ${
     ? `
 FOLLOW-UP DEPTH GUIDANCE:
 The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? "" : "s"} for this question.
-You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
+You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit.
 `
     : ""
 }${
@@ -1191,11 +1206,8 @@ function buildResumeInstructions(state: InterviewState): string {
 
   let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption.
 
-CRITICAL: Always speak in English, regardless of the respondent's name or background. This is an English-language interview.
-
 INTERVIEW CONTEXT:
-- Objective: ${objective}${strategicContext ? `
-- Strategic Context: ${strategicContext}` : ""}
+- Objective: ${objective}
 - Tone: ${tone}
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
@@ -1215,7 +1227,7 @@ ${
     ? `
 FOLLOW-UP DEPTH GUIDANCE:
 The researcher recommends approximately ${recommendedFollowUps} follow-up probe${recommendedFollowUps === 1 ? "" : "s"} for this question.
-You've asked ${followUpCount} so far. This is guidance, not a strict limit - prioritize getting a substantive answer, but be mindful of moving on once sufficient depth is reached.
+You've asked ${followUpCount} so far. This is guidance, not a strict limit.
 `
     : ""
 }${
@@ -1275,20 +1287,23 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
   return instructions;
 }
 
-async function handleProviderEvent(
-  sessionId: string,
-  event: any,
-) {
+async function handleProviderEvent(sessionId: string, event: any) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
-  
+
   // Get current clientWs from state (not closure) to handle reconnections correctly
   const clientWs = state.clientWs;
   if (!clientWs || clientWs.readyState !== WebSocket.OPEN) {
     // Client disconnected - skip sending, but still process internal state updates
     // Only return for events that purely send to client
-    if (["response.audio.delta", "response.output_audio.delta", 
-         "response.audio_transcript.delta", "response.output_audio_transcript.delta"].includes(event.type)) {
+    if (
+      [
+        "response.audio.delta",
+        "response.output_audio.delta",
+        "response.audio_transcript.delta",
+        "response.output_audio_transcript.delta",
+      ].includes(event.type)
+    ) {
       return;
     }
   }
@@ -1296,7 +1311,9 @@ async function handleProviderEvent(
   switch (event.type) {
     case "session.created":
     case "conversation.created":
-      console.log(`[VoiceInterview] Session/conversation created for ${sessionId}`);
+      console.log(
+        `[VoiceInterview] Session/conversation created for ${sessionId}`,
+      );
       // Don't trigger response here - wait for session.updated after configuration
       break;
 
@@ -1548,10 +1565,14 @@ async function handleProviderEvent(
       if (tokenUsage) {
         state.metricsTracker.tokens.inputTokens += tokenUsage.inputTokens;
         state.metricsTracker.tokens.outputTokens += tokenUsage.outputTokens;
-        state.metricsTracker.tokens.inputAudioTokens += tokenUsage.inputAudioTokens;
-        state.metricsTracker.tokens.outputAudioTokens += tokenUsage.outputAudioTokens;
-        state.metricsTracker.tokens.inputTextTokens += tokenUsage.inputTextTokens;
-        state.metricsTracker.tokens.outputTextTokens += tokenUsage.outputTextTokens;
+        state.metricsTracker.tokens.inputAudioTokens +=
+          tokenUsage.inputAudioTokens;
+        state.metricsTracker.tokens.outputAudioTokens +=
+          tokenUsage.outputAudioTokens;
+        state.metricsTracker.tokens.inputTextTokens +=
+          tokenUsage.inputTextTokens;
+        state.metricsTracker.tokens.outputTextTokens +=
+          tokenUsage.outputTextTokens;
         console.log(
           `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
         );
@@ -1623,7 +1644,7 @@ async function triggerBarbaraAnalysis(
     });
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
-    
+
     // Clear the timeout to prevent memory leak from lingering timers
     clearTimeout(timeoutId!);
 
@@ -1865,7 +1886,10 @@ async function handleClientMessage(
 
           // For text input, we still need to manually trigger response
           // (unlike audio mode where create_response: true handles it)
-          if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
+          if (
+            state.providerWs &&
+            state.providerWs.readyState === WebSocket.OPEN
+          ) {
             state.providerWs.send(
               JSON.stringify({
                 type: "response.create",
