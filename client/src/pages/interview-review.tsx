@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, SkipForward, MessageSquare, CheckCircle } from "lucide-react";
+import { Clock, SkipForward, MessageSquare, CheckCircle, MessageSquareText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { QuestionReviewCard } from "@/components/review/QuestionReviewCard";
@@ -229,6 +229,29 @@ export default function InterviewReviewPage() {
             />
           ))}
         </div>
+
+        {/* Additional Questions Section */}
+        {data?.additionalQuestionSegments && data.additionalQuestionSegments.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <MessageSquareText className="w-5 h-5 text-primary" />
+              <h2 className="text-xl font-semibold">Follow-up Questions</h2>
+            </div>
+            {data.additionalQuestionSegments.map((segment: any, index: number) => (
+              <QuestionReviewCard
+                key={segment.id}
+                questionNumber={index + 1}
+                questionText={segment.question?.questionText || "Follow-up Question"}
+                questionType="open"
+                transcript={segment.transcript}
+                summaryBullets={segment.summaryBullets}
+                comment={segmentComments[segment.id] || ""}
+                onCommentChange={(value) => handleCommentChange(segment.id, value)}
+                isAdditionalQuestion
+              />
+            ))}
+          </div>
+        )}
 
         <RatingSection ratings={ratings} onChange={handleRatingChange} />
 

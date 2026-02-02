@@ -131,6 +131,8 @@ export const collections = pgTable("collections", {
   isActive: boolean("is_active").default(true),
   targetResponses: integer("target_responses"),
   voiceProvider: text("voice_provider").default("openai"),
+  // Additional Questions configuration (0-3, default 1)
+  maxAdditionalQuestions: integer("max_additional_questions").default(1),
   createdAt: timestamp("created_at").defaultNow(),
   closedAt: timestamp("closed_at"),
   // Analytics metadata
@@ -198,6 +200,10 @@ export const interviewSessions = pgTable("interview_sessions", {
   reviewFlags: text("review_flags").array(), // Values: "needs_review", "flagged_quality", "verified", "excluded"
   // Realtime API monitoring metrics
   performanceMetrics: jsonb("performance_metrics"),
+  // Additional Questions state
+  additionalQuestions: jsonb("additional_questions"), // Type: AdditionalQuestionsData - stores generated AQs and metadata
+  additionalQuestionPhase: boolean("additional_question_phase").default(false), // True when in AQ phase (for resume support)
+  currentAdditionalQuestionIndex: integer("current_additional_question_index"), // Which AQ is currently being asked (0-based)
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -207,7 +213,10 @@ export const interviewSessions = pgTable("interview_sessions", {
 export const segments = pgTable("segments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: varchar("session_id").notNull().references(() => interviewSessions.id, { onDelete: "cascade" }),
-  questionId: varchar("question_id").notNull().references(() => questions.id),
+  questionId: varchar("question_id").references(() => questions.id), // Nullable for additional questions
+  // Additional Question fields (used when questionId is null)
+  additionalQuestionIndex: integer("additional_question_index"), // 0-based index within AQs (AQ1=0, AQ2=1, etc.)
+  additionalQuestionText: text("additional_question_text"), // The dynamically generated question text
   transcript: text("transcript"),
   audioRef: text("audio_ref"),
   startTimeMs: integer("start_time_ms"),
@@ -539,6 +548,28 @@ export type QuestionSummary = {
   qualityNotes?: string;
   // Verbatim statements for analytics (themes, sentiment, insights)
   verbatims?: VerbatimStatement[];
+  // Additional Question flag (when this summary is for an AQ, not a template question)
+  isAdditionalQuestion?: boolean;
+  additionalQuestionIndex?: number; // 0-based index within AQs (AQ1=0, AQ2=1)
+};
+
+// Additional Questions types - for dynamically generated questions at end of interview
+export type GeneratedAdditionalQuestion = {
+  questionText: string;
+  rationale: string;           // Barbara's reason for asking this question
+  questionType: "open";        // AQs are always open-ended
+  index: number;               // 0-based index within AQs
+};
+
+export type AdditionalQuestionsData = {
+  questions: GeneratedAdditionalQuestion[];
+  generatedAt: number;         // Timestamp when Barbara generated these
+  barbaraModel: string;        // Which model generated the questions
+  declinedByRespondent?: boolean; // True if respondent declined to answer AQs
+  completedCount?: number;     // How many AQs were actually answered
+  // Cross-interview context used (if applicable)
+  usedCrossInterviewContext?: boolean;
+  priorSessionCount?: number;  // How many prior sessions were considered
 };
 
 // Enhanced analytics types for collection-level insights

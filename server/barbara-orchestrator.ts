@@ -34,6 +34,7 @@ export interface BarbaraConfig {
   templateAnalytics: BarbaraUseCaseConfig;
   projectAnalytics: BarbaraUseCaseConfig;
   templateGeneration: BarbaraUseCaseConfig;
+  additionalQuestions: BarbaraUseCaseConfig;
 }
 
 // Default configuration - can be updated at runtime
@@ -68,6 +69,11 @@ const barbaraConfig: BarbaraConfig = {
     verbosity: "low",
     reasoningEffort: "low",
   },
+  additionalQuestions: {
+    model: "gpt-5-mini",
+    verbosity: "medium",
+    reasoningEffort: "medium",
+  },
 };
 
 // Getters and setters for Barbara configuration
@@ -95,6 +101,9 @@ export function updateBarbaraConfig(
   }
   if (updates.templateGeneration) {
     Object.assign(barbaraConfig.templateGeneration, updates.templateGeneration);
+  }
+  if (updates.additionalQuestions) {
+    Object.assign(barbaraConfig.additionalQuestions, updates.additionalQuestions);
   }
   return getBarbaraConfig();
 }
@@ -132,6 +141,13 @@ export function updateProjectAnalyticsConfig(
 ): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.projectAnalytics, config);
   return { ...barbaraConfig.projectAnalytics };
+}
+
+export function updateAdditionalQuestionsConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.additionalQuestions, config);
+  return { ...barbaraConfig.additionalQuestions };
 }
 
 export interface TranscriptEntry {
@@ -2731,4 +2747,243 @@ function getDefaultQuestions(): GeneratedQuestion[] {
       recommendedFollowUps: 1,
     },
   ];
+}
+
+// Additional Questions Generation - generates follow-up questions at end of interview
+export interface AdditionalQuestionsInput {
+  transcriptLog: TranscriptEntry[];
+  templateQuestions: Array<{
+    text: string;
+    guidance: string | null;
+  }>;
+  questionSummaries: QuestionSummary[];
+  projectObjective: string;
+  audienceContext: string | null;
+  tone: string | null;
+  maxQuestions: number;
+  crossInterviewContext?: {
+    enabled: boolean;
+    priorSessionSummaries?: Array<{
+      sessionId: string;
+      summaries: QuestionSummary[];
+    }>;
+  };
+}
+
+export interface GeneratedAdditionalQuestion {
+  questionText: string;
+  rationale: string;
+  questionType: "open";
+  index: number;
+}
+
+export interface AdditionalQuestionsResult {
+  questions: GeneratedAdditionalQuestion[];
+  barbaraModel: string;
+  usedCrossInterviewContext: boolean;
+  priorSessionCount: number;
+}
+
+export async function generateAdditionalQuestions(
+  input: AdditionalQuestionsInput,
+): Promise<AdditionalQuestionsResult> {
+  const config = barbaraConfig.additionalQuestions;
+  const startTime = Date.now();
+  
+  // If maxQuestions is 0, return empty immediately
+  if (input.maxQuestions <= 0) {
+    return {
+      questions: [],
+      barbaraModel: config.model,
+      usedCrossInterviewContext: false,
+      priorSessionCount: 0,
+    };
+  }
+
+  try {
+    const systemPrompt = buildAdditionalQuestionsSystemPrompt(input);
+    const userPrompt = buildAdditionalQuestionsUserPrompt(input);
+
+    const response = await openai.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 1000,
+      reasoning_effort: config.reasoningEffort,
+      verbosity: config.verbosity,
+    } as Parameters<typeof openai.chat.completions.create>[0]);
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.log("[Barbara] No content in additional questions response");
+      return {
+        questions: [],
+        barbaraModel: config.model,
+        usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
+        priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+      };
+    }
+
+    const parsed = JSON.parse(content) as {
+      questions: Array<{
+        questionText: string;
+        rationale: string;
+      }>;
+      noQuestionsNeeded?: boolean;
+      reason?: string;
+    };
+
+    // If Barbara determined no questions are needed
+    if (parsed.noQuestionsNeeded || !parsed.questions || parsed.questions.length === 0) {
+      console.log(`[Barbara] No additional questions needed: ${parsed.reason || "Coverage adequate"}`);
+      return {
+        questions: [],
+        barbaraModel: config.model,
+        usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
+        priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+      };
+    }
+
+    // Limit to maxQuestions and format the response
+    const questions: GeneratedAdditionalQuestion[] = parsed.questions
+      .slice(0, input.maxQuestions)
+      .map((q, index) => ({
+        questionText: q.questionText,
+        rationale: q.rationale,
+        questionType: "open" as const,
+        index,
+      }));
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[Barbara] Generated ${questions.length} additional questions in ${elapsed}ms`);
+
+    return {
+      questions,
+      barbaraModel: config.model,
+      usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
+      priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+    };
+  } catch (error) {
+    console.error("[Barbara] Error generating additional questions:", error);
+    // Graceful degradation - return empty array on error
+    return {
+      questions: [],
+      barbaraModel: config.model,
+      usedCrossInterviewContext: false,
+      priorSessionCount: 0,
+    };
+  }
+}
+
+function buildAdditionalQuestionsSystemPrompt(input: AdditionalQuestionsInput): string {
+  const crossInterviewSection = input.crossInterviewContext?.enabled
+    ? `
+You also have access to summaries from prior interviews under the same template. Use these to:
+- Identify themes that have emerged across multiple respondents that this respondent hasn't touched on
+- Spot gaps in coverage compared to other participants
+- Note any unique perspectives this respondent might be able to elaborate on`
+    : "";
+
+  return `You are Barbara, an expert research interview analyst. Your task is to review a completed interview and determine if there are any valuable additional questions to ask before the interview concludes.
+
+CRITICAL RULES:
+1. DO NOT repeat or rephrase any question that was already asked in the original template
+2. DO NOT ask questions that were adequately covered in the respondent's answers
+3. Only suggest questions that will provide genuinely NEW insights
+4. Questions must be open-ended and conversational in tone
+5. Maximum ${input.maxQuestions} additional question(s) - you may return fewer or zero if coverage is adequate
+
+WHEN TO SUGGEST QUESTIONS:
+- Important topics mentioned briefly but not explored in depth
+- Interesting tangents the respondent hinted at but weren't followed up
+- Gaps between the research objective and what was actually discussed
+- Contradictions or ambiguities that could benefit from clarification
+${crossInterviewSection}
+
+WHEN TO RETURN ZERO QUESTIONS:
+- The interview comprehensively covered the research objective
+- All important topics were explored to sufficient depth
+- The respondent showed fatigue or limited engagement
+- Adding more questions would not meaningfully enhance the research
+
+Respond with a JSON object containing:
+{
+  "noQuestionsNeeded": boolean, // true if no additional questions needed
+  "reason": string, // Brief explanation of your decision
+  "questions": [
+    {
+      "questionText": string, // The question to ask (conversational tone)
+      "rationale": string // Why this question adds value (for researcher reference)
+    }
+  ]
+}`;
+}
+
+function buildAdditionalQuestionsUserPrompt(input: AdditionalQuestionsInput): string {
+  // Format the template questions
+  const templateQuestionsText = input.templateQuestions
+    .map((q, i) => `Q${i + 1}: ${q.text}${q.guidance ? ` (Guidance: ${q.guidance})` : ""}`)
+    .join("\n");
+
+  // Format the question summaries
+  const summariesText = input.questionSummaries
+    .map((s) => {
+      const insights = s.keyInsights?.length > 0 
+        ? `Key insights: ${s.keyInsights.join("; ")}` 
+        : "";
+      return `Q${s.questionIndex + 1} Summary: ${s.respondentSummary}\n${insights}\nCompleteness: ${s.completenessAssessment}`;
+    })
+    .join("\n\n");
+
+  // Format transcript (condensed)
+  const transcriptText = input.transcriptLog
+    .map((t) => `[Q${t.questionIndex + 1}] ${t.speaker.toUpperCase()}: ${t.text}`)
+    .join("\n");
+
+  // Format cross-interview context if available
+  let crossInterviewText = "";
+  if (input.crossInterviewContext?.enabled && input.crossInterviewContext.priorSessionSummaries) {
+    const priorSummaries = input.crossInterviewContext.priorSessionSummaries;
+    if (priorSummaries.length > 0) {
+      crossInterviewText = `\n\n=== PRIOR INTERVIEW INSIGHTS (${priorSummaries.length} sessions) ===\n`;
+      
+      // Aggregate themes from prior sessions
+      const allInsights: string[] = [];
+      priorSummaries.forEach((session, idx) => {
+        session.summaries.forEach((s) => {
+          if (s.keyInsights) {
+            allInsights.push(...s.keyInsights.map(insight => `P${idx + 1}: ${insight}`));
+          }
+        });
+      });
+      
+      // Take top insights to avoid overwhelming context
+      const topInsights = allInsights.slice(0, 15);
+      crossInterviewText += `Key themes from prior respondents:\n${topInsights.join("\n")}`;
+    }
+  }
+
+  return `=== RESEARCH OBJECTIVE ===
+${input.projectObjective}
+
+=== AUDIENCE CONTEXT ===
+${input.audienceContext || "General audience"}
+
+=== INTERVIEW TONE ===
+${input.tone || "Professional and conversational"}
+
+=== ORIGINAL TEMPLATE QUESTIONS ===
+${templateQuestionsText}
+
+=== QUESTION SUMMARIES ===
+${summariesText}
+
+=== FULL TRANSCRIPT ===
+${transcriptText}
+${crossInterviewText}
+
+Based on this interview, identify up to ${input.maxQuestions} additional question(s) that would add genuine value, or indicate if no additional questions are needed.`;
 }

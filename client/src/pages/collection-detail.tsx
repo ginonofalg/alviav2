@@ -110,6 +110,7 @@ const editCollectionSchema = z.object({
   targetResponses: z.coerce.number().min(1, "Must be at least 1").max(10000, "Maximum 10,000").optional().nullable(),
   isActive: z.boolean(),
   voiceProvider: z.enum(["openai", "grok"]),
+  maxAdditionalQuestions: z.number().min(0).max(3).default(1),
 });
 
 type EditCollectionForm = z.infer<typeof editCollectionSchema>;
@@ -171,6 +172,7 @@ export default function CollectionDetailPage() {
       targetResponses: null,
       isActive: true,
       voiceProvider: "openai",
+      maxAdditionalQuestions: 1,
     },
   });
 
@@ -185,6 +187,7 @@ export default function CollectionDetailPage() {
           targetResponses: data.targetResponses || null,
           isActive: data.isActive,
           voiceProvider: data.voiceProvider,
+          maxAdditionalQuestions: data.maxAdditionalQuestions,
         },
       );
     },
@@ -215,6 +218,7 @@ export default function CollectionDetailPage() {
         targetResponses: collection.targetResponses,
         isActive: collection.isActive ?? true,
         voiceProvider: (collection.voiceProvider as "openai" | "grok") || "openai",
+        maxAdditionalQuestions: collection.maxAdditionalQuestions ?? 1,
       });
       setEditDialogOpen(true);
     }
@@ -875,6 +879,36 @@ export default function CollectionDetailPage() {
                     </Select>
                     <FormDescription>
                       The AI provider used for voice interviews in this collection.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="maxAdditionalQuestions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Questions</FormLabel>
+                    <Select 
+                      onValueChange={(val) => field.onChange(parseInt(val))} 
+                      value={field.value?.toString() ?? "1"}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-additional-questions">
+                          <SelectValue placeholder="Select number" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="0" data-testid="option-aq-0">0 (disabled)</SelectItem>
+                        <SelectItem value="1" data-testid="option-aq-1">1 question</SelectItem>
+                        <SelectItem value="2" data-testid="option-aq-2">2 questions</SelectItem>
+                        <SelectItem value="3" data-testid="option-aq-3">3 questions</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Barbara can ask follow-up questions at the end based on the interview.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

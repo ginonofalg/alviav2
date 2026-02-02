@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, MessageSquare } from "lucide-react";
+import { ChevronDown, MessageSquare, MessageSquareText } from "lucide-react";
 import { useState } from "react";
 
 interface QuestionReviewCardProps {
@@ -13,6 +13,7 @@ interface QuestionReviewCardProps {
   summaryBullets: string[] | null;
   comment: string;
   onCommentChange: (value: string) => void;
+  isAdditionalQuestion?: boolean;
 }
 
 export function QuestionReviewCard({
@@ -23,18 +24,28 @@ export function QuestionReviewCard({
   summaryBullets,
   comment,
   onCommentChange,
+  isAdditionalQuestion = false,
 }: QuestionReviewCardProps) {
   const [showTranscript, setShowTranscript] = useState(false);
 
   return (
-    <Card data-testid={`card-question-review-${questionNumber}`}>
+    <Card data-testid={`card-${isAdditionalQuestion ? 'aq' : 'question'}-review-${questionNumber}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <Badge variant="outline">Q{questionNumber}</Badge>
-            <Badge variant="secondary" className="text-xs">
-              {questionType}
-            </Badge>
+            {isAdditionalQuestion ? (
+              <Badge variant="secondary" className="gap-1">
+                <MessageSquareText className="w-3 h-3" />
+                AQ{questionNumber}
+              </Badge>
+            ) : (
+              <>
+                <Badge variant="outline">Q{questionNumber}</Badge>
+                <Badge variant="secondary" className="text-xs">
+                  {questionType}
+                </Badge>
+              </>
+            )}
           </div>
         </div>
         <CardTitle className="text-base font-medium mt-2">

@@ -213,9 +213,16 @@ export default function InterviewPage() {
   const [isTextOnlyMode, setIsTextOnlyMode] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    type: "next" | "complete";
+    type: "next" | "complete" | "additional_questions";
   }>({ open: false, type: "next" });
   const [readyPhase, setReadyPhase] = useState(true);
+  
+  // Additional Questions state
+  const [isInAQPhase, setIsInAQPhase] = useState(false);
+  const [aqQuestions, setAqQuestions] = useState<Array<{ questionText: string; rationale: string; index: number }>>([]);
+  const [currentAQIndex, setCurrentAQIndex] = useState(0);
+  const [aqGenerating, setAqGenerating] = useState(false);
+  const [aqMessage, setAqMessage] = useState<string | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -237,8 +244,9 @@ export default function InterviewPage() {
   const questions = interviewData?.questions;
   const respondent = interviewData?.respondent;
   const currentQuestion = questions?.[currentQuestionIndex];
-  const progress =
-    totalQuestions > 0
+  const progress = isInAQPhase
+    ? ((currentAQIndex + 1) / aqQuestions.length) * 100
+    : totalQuestions > 0
       ? ((currentQuestionIndex + 1) / totalQuestions) * 100
       : 0;
   
@@ -523,12 +531,42 @@ export default function InterviewPage() {
           if (wsRef.current && (wsRef.current as any)._completeTimeoutId) {
             clearTimeout((wsRef.current as any)._completeTimeoutId);
           }
+          setAqGenerating(false);
+          setIsInAQPhase(false);
           toast({
             title: "Interview completed",
             description: "Thank you for participating!",
           });
           // Navigate to review page instead of complete page
           navigate(`/review/${sessionId}`);
+          break;
+
+        case "additional_questions_generating":
+          setAqGenerating(true);
+          setAqMessage(message.message || "Generating additional questions...");
+          break;
+
+        case "additional_questions_ready":
+          setAqGenerating(false);
+          setIsInAQPhase(true);
+          setAqQuestions(message.questions || []);
+          setCurrentAQIndex(0);
+          setAqMessage(null);
+          toast({
+            title: `${message.questionCount} additional question${message.questionCount !== 1 ? 's' : ''} ready`,
+            description: "Let's explore a few more topics.",
+          });
+          break;
+
+        case "additional_questions_none":
+          setAqGenerating(false);
+          setAqMessage(message.message || "No additional questions needed.");
+          // Will be followed by interview_complete
+          break;
+
+        case "additional_question_started":
+          setCurrentAQIndex(message.questionIndex);
+          setCurrentQuestionText(message.questionText);
           break;
 
         case "error":
@@ -798,11 +836,45 @@ export default function InterviewPage() {
   };
 
   const handleEndInterview = (skipConfirm = false) => {
-    if (!skipConfirm && !highlightNextButton) {
+    // Check if additional questions are enabled for this collection and feature flag
+    const maxAQ = collection?.maxAdditionalQuestions ?? 1;
+    const aqFeatureEnabled = interviewData?.features?.additionalQuestionsEnabled !== false;
+    
+    if (!skipConfirm && !highlightNextButton && maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
+      // Show AQ consent dialog if additional questions are enabled
+      setConfirmDialog({ open: true, type: "additional_questions" });
+      return;
+    } else if (!skipConfirm && !highlightNextButton) {
       setConfirmDialog({ open: true, type: "complete" });
       return;
     }
     handleEndInterviewConfirmed();
+  };
+
+  const handleAcceptAdditionalQuestions = () => {
+    setConfirmDialog({ open: false, type: "complete" });
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "request_additional_questions" }));
+    }
+  };
+
+  const handleDeclineAdditionalQuestions = () => {
+    setConfirmDialog({ open: false, type: "complete" });
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "decline_additional_questions" }));
+    }
+  };
+
+  const handleNextAdditionalQuestion = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "next_additional_question" }));
+    }
+  };
+
+  const handleEndAdditionalQuestions = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "end_additional_questions" }));
+    }
   };
 
   const handleEndInterviewConfirmed = () => {
@@ -922,10 +994,17 @@ export default function InterviewPage() {
             )}
           </div>
           <div className="flex items-center gap-4">
-            <Badge variant="outline" className="gap-1">
-              Question {currentQuestionIndex + 1} of{" "}
-              {totalQuestions || questions?.length || 0}
-            </Badge>
+            {isInAQPhase ? (
+              <Badge variant="secondary" className="gap-1">
+                <MessageSquareText className="w-3 h-3" />
+                Follow-up {currentAQIndex + 1} of {aqQuestions.length}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1">
+                Question {currentQuestionIndex + 1} of{" "}
+                {totalQuestions || questions?.length || 0}
+              </Badge>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -1067,7 +1146,36 @@ export default function InterviewPage() {
           </div>
 
           <div className="flex justify-center gap-4">
-            {(totalQuestions > 0 || questions) &&
+            {isInAQPhase ? (
+              // AQ Phase buttons
+              <>
+                {currentAQIndex < aqQuestions.length - 1 ? (
+                  <Button
+                    onClick={handleNextAdditionalQuestion}
+                    disabled={!isConnected}
+                    data-testid="button-next-aq"
+                  >
+                    Next Follow-up
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleEndAdditionalQuestions}
+                    data-testid="button-complete-aq"
+                  >
+                    Complete Interview
+                    <CheckCircle2 className="w-4 h-4 ml-2" />
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={handleEndAdditionalQuestions}
+                  data-testid="button-skip-aq"
+                >
+                  Skip Remaining
+                </Button>
+              </>
+            ) : (totalQuestions > 0 || questions) &&
             currentQuestionIndex <
               (totalQuestions || questions?.length || 0) - 1 ? (
               <Button
@@ -1118,39 +1226,104 @@ export default function InterviewPage() {
             >
               <Card className="w-full max-w-md">
                 <CardContent className="pt-6 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                      <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <div className="space-y-2">
-                      <h3 className="font-semibold text-lg">
-                        {confirmDialog.type === "next"
-                          ? "Move to Next Question?"
-                          : "Complete Interview?"}
-                      </h3>
-                      <p className="text-muted-foreground text-sm">
-                        {confirmDialog.type === "next"
-                          ? "Are you sure you've fully explored this question?"
-                          : "Are you sure you're ready to finish?"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-3 pt-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelProceed}
-                      data-testid="button-cancel-proceed"
-                    >
-                      Stay Here
-                    </Button>
-                    <Button
-                      onClick={handleConfirmProceed}
-                      data-testid="button-confirm-proceed"
-                    >
-                      {confirmDialog.type === "next"
-                        ? "Yes, Next Question"
-                        : "Yes, Complete"}
-                    </Button>
+                  {confirmDialog.type === "additional_questions" ? (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                          <MessageSquareText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="font-semibold text-lg">
+                            One More Thing...
+                          </h3>
+                          <p className="text-muted-foreground text-sm">
+                            Based on your responses, we may have a few follow-up questions to explore some topics in more depth. Would you like to answer them? This is entirely optional.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-3 pt-2">
+                        <Button
+                          variant="outline"
+                          onClick={handleDeclineAdditionalQuestions}
+                          data-testid="button-decline-aq"
+                        >
+                          No, Complete Now
+                        </Button>
+                        <Button
+                          onClick={handleAcceptAdditionalQuestions}
+                          data-testid="button-accept-aq"
+                        >
+                          Yes, Continue
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="font-semibold text-lg">
+                            {confirmDialog.type === "next"
+                              ? "Move to Next Question?"
+                              : "Complete Interview?"}
+                          </h3>
+                          <p className="text-muted-foreground text-sm">
+                            {confirmDialog.type === "next"
+                              ? "Are you sure you've fully explored this question?"
+                              : "Are you sure you're ready to finish?"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-3 pt-2">
+                        <Button
+                          variant="outline"
+                          onClick={handleCancelProceed}
+                          data-testid="button-cancel-proceed"
+                        >
+                          Stay Here
+                        </Button>
+                        <Button
+                          onClick={handleConfirmProceed}
+                          data-testid="button-confirm-proceed"
+                        >
+                          {confirmDialog.type === "next"
+                            ? "Yes, Next Question"
+                            : "Yes, Complete"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* AQ Generating Overlay */}
+      <AnimatePresence>
+        {aqGenerating && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+            >
+              <Card className="w-full max-w-md">
+                <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                  <div className="text-center space-y-2">
+                    <h3 className="font-semibold text-lg">Preparing Questions</h3>
+                    <p className="text-muted-foreground text-sm">
+                      {aqMessage || "Our AI analyst is reviewing your interview..."}
+                    </p>
                   </div>
                 </CardContent>
               </Card>

@@ -6,11 +6,14 @@ import {
   createEmptyMetrics,
   generateQuestionSummary,
   detectTopicOverlap,
+  generateAdditionalQuestions,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
   type QuestionSummary,
   type TopicOverlapResult,
+  type GeneratedAdditionalQuestion,
+  type AdditionalQuestionsResult,
 } from "./barbara-orchestrator";
 import type {
   PersistedTranscriptEntry,
@@ -30,6 +33,9 @@ import {
   type RealtimeProvider,
   type RealtimeProviderType,
 } from "./realtime-providers";
+
+// Feature flag for additional questions
+const ADDITIONAL_QUESTIONS_ENABLED = process.env.ADDITIONAL_QUESTIONS_ENABLED !== "false";
 
 function getProvider(
   providerOverride?: RealtimeProviderType | null,
@@ -83,6 +89,13 @@ interface InterviewState {
   clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
   // Realtime API performance metrics
   metricsTracker: MetricsTracker;
+  // Additional questions phase state
+  isInAdditionalQuestionsPhase: boolean;
+  additionalQuestions: GeneratedAdditionalQuestion[];
+  currentAdditionalQuestionIndex: number;
+  additionalQuestionsConsent: boolean | null; // null = not yet asked, true/false = answered
+  additionalQuestionsGenerating: boolean;
+  maxAdditionalQuestions: number;
 }
 
 type TerminationReason =
@@ -754,6 +767,13 @@ export function handleVoiceInterview(
     clientDisconnectedAt: null,
     // Realtime API performance metrics
     metricsTracker: createEmptyMetricsTracker(),
+    // Additional questions phase state
+    isInAdditionalQuestionsPhase: false,
+    additionalQuestions: [],
+    currentAdditionalQuestionIndex: -1,
+    additionalQuestionsConsent: null,
+    additionalQuestionsGenerating: false,
+    maxAdditionalQuestions: 0, // Will be set from collection later
   };
   interviewStates.set(sessionId, state);
 
@@ -840,6 +860,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.strategicContext = project?.strategicContext || null;
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
+    state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
 
     // Restore persisted state if available
     const hasPersistedState =
@@ -2231,6 +2252,345 @@ INSTRUCTIONS:
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
       cleanupSession(sessionId, "completed");
       break;
+
+    case "request_additional_questions":
+      // User consented to additional questions - start Barbara analysis
+      state.lastActivityAt = Date.now();
+      state.additionalQuestionsConsent = true;
+      state.additionalQuestionsGenerating = true;
+      
+      clientWs.send(JSON.stringify({ 
+        type: "additional_questions_generating",
+        message: "Barbara is analyzing your interview to identify follow-up questions..."
+      }));
+
+      // Generate additional questions asynchronously
+      (async () => {
+        try {
+          const aqResult = await generateAdditionalQuestionsForSession(sessionId);
+          
+          if (!aqResult || aqResult.questions.length === 0) {
+            // No additional questions generated
+            state.additionalQuestionsGenerating = false;
+            clientWs.send(JSON.stringify({ 
+              type: "additional_questions_none",
+              message: "Your interview was comprehensive - no additional questions needed."
+            }));
+            
+            // Complete the interview
+            await storage.persistInterviewState(sessionId, {
+              status: "completed",
+              completedAt: new Date(),
+              additionalQuestionPhase: false,
+            });
+            clientWs.send(JSON.stringify({ type: "interview_complete" }));
+            cleanupSession(sessionId, "completed");
+          } else {
+            // Store the questions and enter AQ phase
+            state.additionalQuestions = aqResult.questions;
+            state.isInAdditionalQuestionsPhase = true;
+            state.currentAdditionalQuestionIndex = 0;
+            state.additionalQuestionsGenerating = false;
+            
+            // Persist AQ to database
+            await storage.persistInterviewState(sessionId, {
+              additionalQuestions: aqResult.questions,
+              additionalQuestionPhase: true,
+            });
+            
+            clientWs.send(JSON.stringify({ 
+              type: "additional_questions_ready",
+              questionCount: aqResult.questions.length,
+              questions: aqResult.questions.map((q, idx) => ({
+                index: idx,
+                questionText: q.questionText,
+                rationale: q.rationale,
+              })),
+            }));
+            
+            // Start the first additional question
+            await startAdditionalQuestion(sessionId, 0);
+          }
+        } catch (error) {
+          console.error(`[AQ] Error generating additional questions for ${sessionId}:`, error);
+          state.additionalQuestionsGenerating = false;
+          clientWs.send(JSON.stringify({ 
+            type: "additional_questions_none",
+            message: "Unable to generate additional questions. Your interview is complete."
+          }));
+          
+          await storage.persistInterviewState(sessionId, {
+            status: "completed",
+            completedAt: new Date(),
+          });
+          clientWs.send(JSON.stringify({ type: "interview_complete" }));
+          cleanupSession(sessionId, "completed");
+        }
+      })();
+      break;
+
+    case "decline_additional_questions":
+      // User declined additional questions - complete the interview
+      state.lastActivityAt = Date.now();
+      state.additionalQuestionsConsent = false;
+      
+      await storage.persistInterviewState(sessionId, {
+        status: "completed",
+        completedAt: new Date(),
+        additionalQuestionPhase: false,
+      });
+      clientWs.send(JSON.stringify({ type: "interview_complete" }));
+      cleanupSession(sessionId, "completed");
+      break;
+
+    case "next_additional_question":
+      // Move to next additional question or complete
+      state.lastActivityAt = Date.now();
+      
+      if (state.isInAdditionalQuestionsPhase) {
+        const nextAQIndex = state.currentAdditionalQuestionIndex + 1;
+        
+        // Generate summary for current AQ before moving on
+        const aqTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+        generateAndPersistAQSummary(
+          sessionId, 
+          state.currentAdditionalQuestionIndex,
+          aqTranscriptSnapshot
+        ).catch(() => {});
+        
+        if (nextAQIndex < state.additionalQuestions.length) {
+          await startAdditionalQuestion(sessionId, nextAQIndex);
+        } else {
+          // All additional questions complete
+          state.isInAdditionalQuestionsPhase = false;
+          
+          await storage.persistInterviewState(sessionId, {
+            status: "completed",
+            completedAt: new Date(),
+            additionalQuestionPhase: false,
+          });
+          clientWs.send(JSON.stringify({ type: "interview_complete" }));
+          cleanupSession(sessionId, "completed");
+        }
+      }
+      break;
+
+    case "end_additional_questions":
+      // User wants to end early (skip remaining AQs)
+      state.lastActivityAt = Date.now();
+      
+      if (state.isInAdditionalQuestionsPhase) {
+        // Save any pending summary
+        const currentAQTranscript = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+        generateAndPersistAQSummary(
+          sessionId,
+          state.currentAdditionalQuestionIndex,
+          currentAQTranscript
+        ).catch(() => {});
+        
+        state.isInAdditionalQuestionsPhase = false;
+        
+        await storage.persistInterviewState(sessionId, {
+          status: "completed",
+          completedAt: new Date(),
+          additionalQuestionPhase: false,
+        });
+        clientWs.send(JSON.stringify({ type: "interview_complete" }));
+        cleanupSession(sessionId, "completed");
+      }
+      break;
+  }
+}
+
+// Helper function to generate additional questions for a session
+async function generateAdditionalQuestionsForSession(
+  sessionId: string,
+): Promise<AdditionalQuestionsResult | null> {
+  const state = interviewStates.get(sessionId);
+  if (!state) {
+    console.error(`[AQ] No state found for session: ${sessionId}`);
+    return null;
+  }
+
+  // Check feature flag first
+  if (!ADDITIONAL_QUESTIONS_ENABLED) {
+    console.log(`[AQ] Additional questions feature is disabled`);
+    return { questions: [], barbaraModel: "", usedCrossInterviewContext: false, priorSessionCount: 0 };
+  }
+
+  // Don't generate if maxAdditionalQuestions is 0
+  if (state.maxAdditionalQuestions <= 0) {
+    console.log(`[AQ] Session ${sessionId} has maxAdditionalQuestions=0, skipping`);
+    return { questions: [], barbaraModel: "", usedCrossInterviewContext: false, priorSessionCount: 0 };
+  }
+
+  console.log(`[AQ] Generating up to ${state.maxAdditionalQuestions} additional questions for session: ${sessionId}`);
+
+  // Prepare the input for Barbara
+  const templateQuestions = state.questions.map((q: any) => ({
+    text: q.questionText,
+    guidance: q.guidance || null,
+  }));
+
+  const projectObjective = state.template?.objective || "Gather qualitative insights from this interview.";
+  const audienceContext = state.template?.audienceContext || null;
+  const tone = state.template?.tone || null;
+
+  // Wait for any pending summaries to complete
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const result = await generateAdditionalQuestions({
+    transcriptLog: state.transcriptLog,
+    templateQuestions,
+    questionSummaries: state.questionSummaries.filter((s): s is QuestionSummary => s != null),
+    projectObjective,
+    audienceContext,
+    tone,
+    maxQuestions: state.maxAdditionalQuestions,
+    crossInterviewContext: {
+      enabled: false, // TODO: Implement cross-interview context in future iteration
+    },
+  });
+
+  console.log(`[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`);
+  return result;
+}
+
+// Helper function to start an additional question
+async function startAdditionalQuestion(
+  sessionId: string,
+  aqIndex: number,
+): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state || !state.clientWs || !state.providerWs) {
+    console.error(`[AQ] Cannot start AQ - missing state or WebSocket for session: ${sessionId}`);
+    return;
+  }
+
+  const aq = state.additionalQuestions[aqIndex];
+  if (!aq) {
+    console.error(`[AQ] No additional question found at index ${aqIndex} for session: ${sessionId}`);
+    return;
+  }
+
+  state.currentAdditionalQuestionIndex = aqIndex;
+  console.log(`[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId}`);
+
+  // Notify client which AQ is starting
+  state.clientWs.send(JSON.stringify({
+    type: "additional_question_started",
+    questionIndex: aqIndex,
+    totalQuestions: state.additionalQuestions.length,
+    questionText: aq.questionText,
+  }));
+
+  // Update Alvia's instructions for the additional question
+  const aqInstruction = buildAQInstructions(
+    state.template,
+    aq,
+    aqIndex,
+    state.additionalQuestions.length,
+    state.respondentInformalName,
+  );
+
+  if (state.providerWs.readyState === WebSocket.OPEN) {
+    // Update session with AQ context
+    state.providerWs.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          instructions: aqInstruction,
+        },
+      }),
+    );
+
+    // Inject the question as a conversation item and trigger response
+    state.providerWs.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `[ORCHESTRATOR: This is additional question ${aqIndex + 1} of ${state.additionalQuestions.length}. Ask this question in a natural, conversational way: "${aq.questionText}"]`,
+            },
+          ],
+        },
+      }),
+    );
+
+    state.providerWs.send(
+      JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["text", "audio"],
+        },
+      }),
+    );
+  }
+}
+
+// Helper function to build Alvia instructions for additional questions
+function buildAQInstructions(
+  template: any,
+  aq: GeneratedAdditionalQuestion,
+  aqIndex: number,
+  totalAQs: number,
+  respondentName: string | null,
+): string {
+  const respondentAddress = respondentName || "the respondent";
+  
+  return `You are Alvia, a warm and professional AI interviewer. You are now in the ADDITIONAL QUESTIONS phase of the interview.
+
+CONTEXT:
+- This is additional question ${aqIndex + 1} of ${totalAQs}
+- These questions were generated by Barbara (our research analyst) based on gaps or interesting threads from the main interview
+- The respondent has consented to answer additional questions
+
+CURRENT QUESTION TO ASK:
+"${aq.questionText}"
+
+GUIDELINES:
+- Ask this question naturally, as if it's a natural extension of the conversation
+- Use a conversational, friendly tone
+- Listen actively and probe gently if ${respondentAddress} gives brief answers
+- Don't repeat questions that were already covered in the main interview
+- Keep this portion brief but thorough - aim for 1-2 follow-up probes maximum
+- Acknowledge insights with genuine interest
+
+TONE: ${template?.tone || "Professional and conversational"}
+`;
+}
+
+// Helper function to generate and persist summary for additional questions
+async function generateAndPersistAQSummary(
+  sessionId: string,
+  aqIndex: number,
+  transcriptSnapshot: TranscriptEntry[],
+): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  try {
+    // Filter transcript entries that belong to the AQ phase
+    // For now, we'll use a simple heuristic based on question indices
+    const aqEntries = transcriptSnapshot.filter(
+      (e) => e.questionIndex >= state.questions.length,
+    );
+
+    if (aqEntries.length === 0) {
+      console.log(`[AQ Summary] No transcript entries found for AQ${aqIndex + 1}`);
+      return;
+    }
+
+    console.log(`[AQ Summary] Generating summary for AQ${aqIndex + 1} with ${aqEntries.length} entries`);
+    
+    // TODO: Implement proper AQ summary generation
+    // For now, store a placeholder that can be enhanced later
+  } catch (error) {
+    console.error(`[AQ Summary] Error generating summary for AQ${aqIndex + 1}:`, error);
   }
 }
 

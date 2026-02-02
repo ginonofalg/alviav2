@@ -42,6 +42,9 @@ import {
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
+// Feature flag for additional questions
+const ADDITIONAL_QUESTIONS_ENABLED = process.env.ADDITIONAL_QUESTIONS_ENABLED !== "false";
+
 const __filename = import.meta.url ? fileURLToPath(import.meta.url) : "";
 const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
@@ -1666,6 +1669,7 @@ export async function registerRoutes(
     targetResponses: z.number().min(1).max(10000).nullable().optional(),
     isActive: z.boolean().optional(),
     voiceProvider: z.enum(["openai", "grok"]).optional(),
+    maxAdditionalQuestions: z.number().min(0).max(3).optional(),
   });
 
   app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
@@ -1710,6 +1714,7 @@ export async function registerRoutes(
   const createCollectionSchema = insertCollectionSchema.omit({ templateId: true }).extend({
     name: z.string().min(1).max(100),
     targetResponses: z.number().min(1).optional(),
+    maxAdditionalQuestions: z.number().min(0).max(3).default(1),
   });
 
   app.post("/api/templates/:templateId/collections", isAuthenticated, async (req: any, res) => {
@@ -2195,6 +2200,9 @@ export async function registerRoutes(
         template,
         questions,
         respondent,
+        features: {
+          additionalQuestionsEnabled: ADDITIONAL_QUESTIONS_ENABLED,
+        },
       });
     } catch (error) {
       console.error("Error fetching interview:", error);
@@ -2238,6 +2246,9 @@ export async function registerRoutes(
         template,
         questions,
         isResume: true,
+        features: {
+          additionalQuestionsEnabled: ADDITIONAL_QUESTIONS_ENABLED,
+        },
       });
     } catch (error) {
       console.error("Error resuming interview:", error);
@@ -2796,6 +2807,28 @@ export async function registerRoutes(
             questionText: q.questionText,
             questionType: q.questionType,
           },
+          isAdditionalQuestion: false,
+        };
+      });
+
+      // Build additional question segments if any
+      const additionalQuestions = (fullSession.additionalQuestions || []) as Array<{ question: string; reason: string }>;
+      const aqSegments = additionalQuestions.map((aq, index) => {
+        const aqIndex = questions.length + index;
+        const summary = summaryByQuestion.get(aqIndex);
+        return {
+          id: `aq-${index}`,
+          questionId: null,
+          transcript: transcriptByQuestion.get(aqIndex) || null,
+          summaryBullets: summary?.keyInsights || null,
+          respondentComment: reviewComments[`aq-${index}`] || null,
+          question: {
+            questionText: aq.question,
+            questionType: "open",
+          },
+          isAdditionalQuestion: true,
+          additionalQuestionIndex: index,
+          reason: aq.reason,
         };
       });
 
@@ -2807,6 +2840,7 @@ export async function registerRoutes(
         reviewRatings: fullSession.reviewRatings,
         reviewCompletedAt: fullSession.reviewCompletedAt,
         segments,
+        additionalQuestionSegments: aqSegments,
       };
 
       res.json(safeSession);

@@ -41,6 +41,7 @@ const collectionFormSchema = z.object({
   isOpen: z.boolean().default(true),
   expiresAt: z.string().optional(),
   voiceProvider: z.enum(["openai", "grok"]).default("openai"),
+  maxAdditionalQuestions: z.number().min(0).max(3).default(1),
 });
 
 type CollectionFormData = z.infer<typeof collectionFormSchema>;
@@ -66,6 +67,7 @@ export default function CollectionNewPage() {
       isOpen: true,
       expiresAt: "",
       voiceProvider: "openai",
+      maxAdditionalQuestions: 1,
     },
   });
 
@@ -312,6 +314,36 @@ export default function CollectionNewPage() {
                     </Select>
                     <FormDescription className="text-xs">
                       The AI voice service to use for interviews in this collection
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="maxAdditionalQuestions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Questions</FormLabel>
+                    <Select 
+                      onValueChange={(val) => field.onChange(parseInt(val))} 
+                      value={field.value?.toString() ?? "1"}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-additional-questions">
+                          <SelectValue placeholder="Select number" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="0" data-testid="option-aq-0">0 (disabled)</SelectItem>
+                        <SelectItem value="1" data-testid="option-aq-1">1 question</SelectItem>
+                        <SelectItem value="2" data-testid="option-aq-2">2 questions</SelectItem>
+                        <SelectItem value="3" data-testid="option-aq-3">3 questions</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription className="text-xs">
+                      Barbara can ask follow-up questions at the end based on the interview
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
