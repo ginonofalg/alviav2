@@ -756,23 +756,26 @@ export default function SessionDetailPage() {
                 const templateSummaries = Array.isArray(session.questionSummaries) 
                   ? (session.questionSummaries as QuestionSummary[]) 
                   : [];
-                const additionalQuestionsData = session.additionalQuestions as { 
-                  questions?: Array<{ 
-                    questionText: string; 
-                    rationale?: string;
-                    summaryBullets?: string[];
-                    respondentSummary?: string;
-                  }>;
-                  generatedAt?: string;
-                } | null;
+                
+                // additional_questions is stored as an array directly in the database
+                type AQData = { 
+                  index?: number;
+                  questionText: string; 
+                  rationale?: string;
+                  summaryBullets?: string[];
+                  respondentSummary?: string;
+                };
+                const additionalQuestionsArray = Array.isArray(session.additionalQuestions) 
+                  ? (session.additionalQuestions as AQData[])
+                  : null;
 
                 // Check if any AQ summaries are already in questionSummaries
                 const hasAQInSummaries = templateSummaries.some(s => s.isAdditionalQuestion);
 
                 // For legacy sessions: synthesize AQ summaries from additionalQuestions data
                 let allSummaries = [...templateSummaries];
-                if (!hasAQInSummaries && additionalQuestionsData?.questions) {
-                  additionalQuestionsData.questions.forEach((aq, i) => {
+                if (!hasAQInSummaries && additionalQuestionsArray && additionalQuestionsArray.length > 0) {
+                  additionalQuestionsArray.forEach((aq, i) => {
                     if (aq.respondentSummary) {
                       allSummaries.push({
                         questionIndex: templateSummaries.length + i,
@@ -784,11 +787,9 @@ export default function SessionDetailPage() {
                         wordCount: 0,
                         turnCount: 0,
                         activeTimeMs: 0,
-                        timestamp: additionalQuestionsData.generatedAt 
-                          ? new Date(additionalQuestionsData.generatedAt).getTime() 
-                          : Date.now(),
+                        timestamp: Date.now(),
                         isAdditionalQuestion: true,
-                        additionalQuestionIndex: i,
+                        additionalQuestionIndex: aq.index ?? i,
                       });
                     }
                   });
