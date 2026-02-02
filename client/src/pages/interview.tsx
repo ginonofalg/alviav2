@@ -843,7 +843,8 @@ export default function InterviewPage() {
     const maxAQ = collection?.maxAdditionalQuestions ?? 1;
     const aqFeatureEnabled = interviewData?.features?.additionalQuestionsEnabled !== false;
     
-    if (!skipConfirm && !highlightNextButton && maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
+    // Always show AQ consent dialog when AQs are enabled, regardless of highlightNextButton state
+    if (!skipConfirm && maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
       // Show AQ consent dialog if additional questions are enabled
       setConfirmDialog({ open: true, type: "additional_questions" });
       return;
