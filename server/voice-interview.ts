@@ -96,6 +96,8 @@ interface InterviewState {
   additionalQuestionsConsent: boolean | null; // null = not yet asked, true/false = answered
   additionalQuestionsGenerating: boolean;
   maxAdditionalQuestions: number;
+  // Track pending summary generation promises to await before completion
+  pendingSummaryPromises: Map<number, Promise<void>>;
 }
 
 type TerminationReason =
@@ -774,6 +776,7 @@ export function handleVoiceInterview(
     additionalQuestionsConsent: null,
     additionalQuestionsGenerating: false,
     maxAdditionalQuestions: 0, // Will be set from collection later
+    pendingSummaryPromises: new Map(),
   };
   interviewStates.set(sessionId, state);
 
@@ -2259,6 +2262,23 @@ INSTRUCTIONS:
       state.additionalQuestionsConsent = true;
       state.additionalQuestionsGenerating = true;
       
+      // First, trigger summary generation for the final question (current question)
+      // Capture transcript snapshot BEFORE AQ generation
+      const finalQuestionTranscriptSnapshot = [
+        ...state.fullTranscriptForPersistence,
+      ] as TranscriptEntry[];
+      
+      // Start summary generation for final question and track the promise
+      const finalQuestionIdx = state.currentQuestionIndex;
+      const summaryPromise = generateAndPersistSummary(
+        sessionId,
+        finalQuestionIdx,
+        finalQuestionTranscriptSnapshot,
+      ).catch((err) => {
+        console.error(`[AQ] Error generating final question summary:`, err);
+      });
+      state.pendingSummaryPromises.set(finalQuestionIdx, summaryPromise);
+      
       clientWs.send(JSON.stringify({ 
         type: "additional_questions_generating",
         message: "Barbara is analyzing your interview to identify follow-up questions..."
@@ -2276,6 +2296,9 @@ INSTRUCTIONS:
               type: "additional_questions_none",
               message: "Your interview was comprehensive - no additional questions needed."
             }));
+            
+            // Await pending summaries before completing
+            await awaitPendingSummaries(sessionId);
             
             // Complete the interview
             await storage.persistInterviewState(sessionId, {
@@ -2319,6 +2342,9 @@ INSTRUCTIONS:
             message: "Unable to generate additional questions. Your interview is complete."
           }));
           
+          // Await pending summaries before completing
+          await awaitPendingSummaries(sessionId);
+          
           await storage.persistInterviewState(sessionId, {
             status: "completed",
             completedAt: new Date(),
@@ -2334,6 +2360,9 @@ INSTRUCTIONS:
       state.lastActivityAt = Date.now();
       state.additionalQuestionsConsent = false;
       
+      // Await pending summaries before completing
+      await awaitPendingSummaries(sessionId);
+      
       await storage.persistInterviewState(sessionId, {
         status: "completed",
         completedAt: new Date(),
@@ -2348,21 +2377,21 @@ INSTRUCTIONS:
       state.lastActivityAt = Date.now();
       
       if (state.isInAdditionalQuestionsPhase) {
-        const nextAQIndex = state.currentAdditionalQuestionIndex + 1;
+        const currentAQIdx = state.currentAdditionalQuestionIndex;
+        const nextAQIndex = currentAQIdx + 1;
         
-        // Generate summary for current AQ before moving on
+        // Save transcript for current AQ before moving on
         const aqTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-        generateAndPersistAQSummary(
-          sessionId, 
-          state.currentAdditionalQuestionIndex,
-          aqTranscriptSnapshot
-        ).catch(() => {});
+        await persistAQTranscript(sessionId, currentAQIdx, aqTranscriptSnapshot);
         
         if (nextAQIndex < state.additionalQuestions.length) {
           await startAdditionalQuestion(sessionId, nextAQIndex);
         } else {
           // All additional questions complete
           state.isInAdditionalQuestionsPhase = false;
+          
+          // Await any pending summaries before completing
+          await awaitPendingSummaries(sessionId);
           
           await storage.persistInterviewState(sessionId, {
             status: "completed",
@@ -2380,15 +2409,14 @@ INSTRUCTIONS:
       state.lastActivityAt = Date.now();
       
       if (state.isInAdditionalQuestionsPhase) {
-        // Save any pending summary
+        // Save transcript for current AQ before ending
         const currentAQTranscript = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-        generateAndPersistAQSummary(
-          sessionId,
-          state.currentAdditionalQuestionIndex,
-          currentAQTranscript
-        ).catch(() => {});
+        await persistAQTranscript(sessionId, state.currentAdditionalQuestionIndex, currentAQTranscript);
         
         state.isInAdditionalQuestionsPhase = false;
+        
+        // Await any pending summaries before completing
+        await awaitPendingSummaries(sessionId);
         
         await storage.persistInterviewState(sessionId, {
           status: "completed",
@@ -2474,7 +2502,9 @@ async function startAdditionalQuestion(
   }
 
   state.currentAdditionalQuestionIndex = aqIndex;
-  console.log(`[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId}`);
+  // Set currentQuestionIndex to questions.length + aqIndex so transcript entries are properly tagged
+  state.currentQuestionIndex = state.questions.length + aqIndex;
+  console.log(`[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId} (questionIndex: ${state.currentQuestionIndex})`);
 
   // Notify client which AQ is starting
   state.clientWs.send(JSON.stringify({
@@ -2564,8 +2594,26 @@ TONE: ${template?.tone || "Professional and conversational"}
 `;
 }
 
-// Helper function to generate and persist summary for additional questions
-async function generateAndPersistAQSummary(
+// Helper function to await all pending summary promises before interview completion
+async function awaitPendingSummaries(sessionId: string): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state || state.pendingSummaryPromises.size === 0) return;
+  
+  console.log(`[Summary] Awaiting ${state.pendingSummaryPromises.size} pending summaries for session: ${sessionId}`);
+  
+  try {
+    await Promise.all(state.pendingSummaryPromises.values());
+    console.log(`[Summary] All pending summaries completed for session: ${sessionId}`);
+  } catch (error) {
+    console.error(`[Summary] Error awaiting pending summaries:`, error);
+  }
+  
+  // Clear the map after all promises resolve
+  state.pendingSummaryPromises.clear();
+}
+
+// Helper function to persist transcript for additional questions
+async function persistAQTranscript(
   sessionId: string,
   aqIndex: number,
   transcriptSnapshot: TranscriptEntry[],
@@ -2574,23 +2622,44 @@ async function generateAndPersistAQSummary(
   if (!state) return;
 
   try {
-    // Filter transcript entries that belong to the AQ phase
-    // For now, we'll use a simple heuristic based on question indices
+    // Calculate the questionIndex for this AQ
+    const aqQuestionIndex = state.questions.length + aqIndex;
+    
+    // Filter transcript entries for this specific AQ
     const aqEntries = transcriptSnapshot.filter(
-      (e) => e.questionIndex >= state.questions.length,
+      (e) => e.questionIndex === aqQuestionIndex,
     );
 
     if (aqEntries.length === 0) {
-      console.log(`[AQ Summary] No transcript entries found for AQ${aqIndex + 1}`);
+      console.log(`[AQ Transcript] No transcript entries found for AQ${aqIndex + 1}`);
       return;
     }
 
-    console.log(`[AQ Summary] Generating summary for AQ${aqIndex + 1} with ${aqEntries.length} entries`);
+    // Format transcript as string
+    const transcriptText = aqEntries
+      .map((e) => {
+        const speaker = e.speaker === "alvia" ? "Alvia" : "You";
+        return `${speaker}: ${e.text}`;
+      })
+      .join("\n\n");
+
+    console.log(`[AQ Transcript] Storing transcript for AQ${aqIndex + 1} with ${aqEntries.length} entries`);
     
-    // TODO: Implement proper AQ summary generation
-    // For now, store a placeholder that can be enhanced later
+    // Update the additionalQuestions array with the transcript
+    const updatedAQs = [...state.additionalQuestions];
+    if (updatedAQs[aqIndex]) {
+      (updatedAQs[aqIndex] as any).transcript = transcriptText;
+    }
+    state.additionalQuestions = updatedAQs as typeof state.additionalQuestions;
+    
+    // Persist to database
+    await storage.persistInterviewState(sessionId, {
+      additionalQuestions: updatedAQs,
+    });
+    
+    console.log(`[AQ Transcript] Successfully stored transcript for AQ${aqIndex + 1}`);
   } catch (error) {
-    console.error(`[AQ Summary] Error generating summary for AQ${aqIndex + 1}:`, error);
+    console.error(`[AQ Transcript] Error storing transcript for AQ${aqIndex + 1}:`, error);
   }
 }
 

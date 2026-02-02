@@ -2812,23 +2812,31 @@ export async function registerRoutes(
       });
 
       // Build additional question segments if any
-      const additionalQuestions = (fullSession.additionalQuestions || []) as Array<{ question: string; reason: string }>;
+      // AQ data structure uses questionText and rationale fields
+      const additionalQuestions = (fullSession.additionalQuestions || []) as Array<{ 
+        questionText: string; 
+        rationale: string;
+        transcript?: string;
+        summaryBullets?: string[];
+      }>;
       const aqSegments = additionalQuestions.map((aq, index) => {
         const aqIndex = questions.length + index;
         const summary = summaryByQuestion.get(aqIndex);
+        // Use transcript from AQ data if available, otherwise fall back to transcriptByQuestion
+        const aqTranscript = aq.transcript || transcriptByQuestion.get(aqIndex) || null;
         return {
           id: `aq-${index}`,
           questionId: null,
-          transcript: transcriptByQuestion.get(aqIndex) || null,
-          summaryBullets: summary?.keyInsights || null,
+          transcript: aqTranscript,
+          summaryBullets: aq.summaryBullets || summary?.keyInsights || null,
           respondentComment: reviewComments[`aq-${index}`] || null,
           question: {
-            questionText: aq.question,
+            questionText: aq.questionText,
             questionType: "open",
           },
           isAdditionalQuestion: true,
           additionalQuestionIndex: index,
-          reason: aq.reason,
+          rationale: aq.rationale,
         };
       });
 
