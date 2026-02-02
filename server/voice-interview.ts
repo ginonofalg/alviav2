@@ -3212,6 +3212,17 @@ async function terminateSession(
     );
   }
 
+  // Wait for any in-flight summary promises to complete before cleanup
+  // This prevents data loss if watchdog terminates during AQ generation
+  try {
+    await awaitPendingSummaries(sessionId);
+  } catch (error) {
+    console.error(
+      `[SessionWatchdog] Error awaiting pending summaries for ${sessionId}:`,
+      error,
+    );
+  }
+
   // Update session status to indicate it was terminated
   try {
     await storage.persistInterviewState(sessionId, {
