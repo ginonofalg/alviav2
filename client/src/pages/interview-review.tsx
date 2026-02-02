@@ -70,6 +70,8 @@ export default function InterviewReviewPage() {
       return response.json();
     },
     enabled: !!sessionId,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   useEffect(() => {

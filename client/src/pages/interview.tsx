@@ -226,6 +226,7 @@ export default function InterviewPage() {
   const [currentAQIndex, setCurrentAQIndex] = useState(0);
   const [aqGenerating, setAqGenerating] = useState(false);
   const [aqMessage, setAqMessage] = useState<string | null>(null);
+  const [isCompletingAQ, setIsCompletingAQ] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -536,6 +537,7 @@ export default function InterviewPage() {
           }
           setAqGenerating(false);
           setIsInAQPhase(false);
+          setIsCompletingAQ(false);
           toast({
             title: "Interview completed",
             description: "Thank you for participating!",
@@ -877,6 +879,7 @@ export default function InterviewPage() {
 
   const handleEndAdditionalQuestions = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setIsCompletingAQ(true);
       wsRef.current.send(JSON.stringify({ type: "end_additional_questions" }));
     }
   };
@@ -1327,6 +1330,36 @@ export default function InterviewPage() {
                     <h3 className="font-semibold text-lg">Preparing Questions</h3>
                     <p className="text-muted-foreground text-sm">
                       {aqMessage || "Our AI analyst is reviewing your interview..."}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* AQ Completing Overlay */}
+      <AnimatePresence>
+        {isCompletingAQ && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+            >
+              <Card className="w-full max-w-md">
+                <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                  <div className="text-center space-y-2">
+                    <h3 className="font-semibold text-lg">Wrapping Up</h3>
+                    <p className="text-muted-foreground text-sm">
+                      Barbara is finishing up her notes...
                     </p>
                   </div>
                 </CardContent>
