@@ -1,0 +1,126 @@
+Review of Additional Questions Feature - Issues Found                                                                                              
+                                                                                                                                                     
+  1. CRITICAL: Review comment persistence mangles AQ comment IDs                                                                                     
+                                                                                                                                                     
+  File: server/routes.ts:2890                                                                                                                        
+                                                                                                                                                     
+  The review submission endpoint strips q- from segment IDs:                                                                                         
+  const indexStr = segmentId.replace("q-", "");                                                                                                      
+  AQ segments have IDs like aq-0, aq-1. The replace("q-", "") call turns aq-0 into a-0 instead of preserving it. When the review page later reads    
+  back reviewComments["aq-0"], it finds nothing because the stored key is a-0. AQ review comments are silently lost.                                 
+                                                                                                                                                     
+  ---                                                                                                                                                
+  2. CRITICAL: No AQ state restoration on session resume                                                                                             
+                                                                                                                                                     
+  File: server/voice-interview.ts:868-945                                                                                                            
+                                                                                                                                                     
+  The resume/restore logic restores transcript, Barbara guidance, question states, and summaries, but does not restore any AQ fields:                
+  - additionalQuestions                                                                                                                              
+  - additionalQuestionPhase                                                                                                                          
+  - currentAdditionalQuestionIndex                                                                                                                   
+  - isInAdditionalQuestionsPhase                                                                                                                     
+                                                                                                                                                     
+  If a respondent's connection drops during the AQ phase and they try to resume, all AQ progress is lost. Worse, currentQuestionIndex will be        
+  restored to the synthetic value (questions.length + aqIndex), but since state.questions[syntheticIndex] is undefined, the session will be in a     
+  broken state.                                                                                                                                      
+                                                                                                                                                     
+  ---                                                                                                                                                
+  3. HIGH: currentQuestionIndex corruption via periodic persist                                                                                      
+                                                                                                                                                     
+  File: server/voice-interview.ts:395-401                                                                                                            
+                                                                                                                                                     
+  The debounced persist (every 2 seconds) writes currentQuestionIndex to the database. During the AQ phase, startAdditionalQuestion() sets this to   
+  state.questions.length + aqIndex (a synthetic value beyond the template question array). This synthetic value gets persisted to the DB. If the     
+  session later tries to resume (or any code reads currentQuestionIndex and indexes into state.questions), it will get undefined.                    
+                                                                                                                                                     
+  ---                                                                                                                                                
+  4. HIGH: end_interview handler fires-and-forgets final summary                                                                                     
+                                                                                                                                                     
+  File: server/voice-interview.ts:2243-2256                                                                                                          
+                                                                                                                                                     
+  The end_interview handler (the non-AQ completion path) triggers generateAndPersistSummary with a fire-and-forget .catch(), then immediately marks  
+  the session as completed and calls cleanupSession. The summary generation may not finish before the session state is deleted from memory. The AQ   
+  path correctly uses pendingSummaryPromises + awaitPendingSummaries(), but this original path does not.                                             
+                                                                                                                                                     
+  ---                                                                                                                                                
+  5. HIGH: request_additional_questions async IIFE has no WebSocket safety                                                                           
+                                                                                                                                                     
+  File: server/voice-interview.ts:2285-2355                                                                                                          
+                                                                                                                                                     
+  The AQ generation runs in an async IIFE that captures clientWs from the outer scope. If the client disconnects while Barbara is generating         
+  questions, the IIFE will still try to clientWs.send() on a closed WebSocket, which will throw. The catch block at line 2337 handles the error, but 
+  the error paths also call clientWs.send() (line 2340), creating a cascading error. Additionally, cleanupSession could be called by the watchdog    
+  while this IIFE is still running, removing the state from the map and causing subsequent interviewStates.get(sessionId) calls within the IIFE to   
+  return undefined.                                                                                                                                  
+                                                                                                                                                     
+  ---                                                                                                                                                
+  6. MEDIUM: Watchdog doesn't account for AQ generation phase                                                                                        
+                                                                                                                                                     
+  File: server/voice-interview.ts:2981                                                                                                               
+                                                                                                                                                     
+  The watchdog terminates sessions after 5 minutes of inactivity based on state.lastActivityAt. When the user requests AQ, lastActivityAt is updated 
+  (line 2261). Barbara's AQ generation typically takes 10-30 seconds, not 5 minutes, so this is unlikely to fire in practice. However, if the OpenAI 
+  API is slow or retrying, the idle timeout has no awareness that the system is actively working. A defensive check for                              
+  state.additionalQuestionsGenerating would be appropriate.                                                                                          
+                                                                                                                                                     
+  ---                                                                                                                                                
+  7. MEDIUM: next_question handler silently completes on last question without AQ                                                                    
+                                                                                                                                                     
+  File: server/voice-interview.ts:2225-2233                                                                                                          
+                                                                                                                                                     
+  When the server's next_question handler is called on the last question (currentQuestionIndex >= questions.length - 1), it directly completes the   
+  interview, bypassing AQ entirely. The client UI prevents this by showing "Complete Interview" instead of "Next Question" on the last question.     
+  However, this server-side path exists and could be triggered by a race condition (e.g., the server-side highlight mechanism triggering a           
+  next_question while the client has already transitioned to the complete button).                                                                   
+                                                                                                                                                     
+  ---                                                                                                                                                
+  8. MEDIUM: Export endpoint doesn't include AQ data                                                                                                 
+                                                                                                                                                     
+  File: server/routes.ts:2051-2121                                                                                                                   
+                                                                                                                                                     
+  The /api/sessions/:id/export endpoint exports session data but doesn't include additionalQuestions or their transcripts/summaries. Researchers     
+  exporting data will miss any insights from the AQ phase.                                                                                           
+                                                                                                                                                     
+  ---                                                                                                                                                
+  9. LOW: generateAndPersistSummary called for final question in AQ path may race                                                                    
+                                                                                                                                                     
+  File: server/voice-interview.ts:2270-2279                                                                                                          
+                                                                                                                                                     
+  In the request_additional_questions handler, generateAndPersistSummary is called for the final template question, and its promise is tracked in    
+  pendingSummaryPromises. Simultaneously, the AQ generation starts. If AQ generation completes before the final question's summary (unlikely but     
+  possible), the interview could enter AQ phase while the summary is still being written. The code handles this correctly via                        
+  pendingSummaryPromises.set(finalQuestionIdx, summaryPromise), but there's a subtle issue: generateAndPersistSummary checks if                      
+  (state.questionSummaries[questionIndex]) to skip duplicates. If the debounced persist from a prior next_question handler already started a summary 
+  for this question index, you could have two concurrent summary generations for the same question.                                                  
+                                                                                                                                                     
+  ---                                                                                                                                                
+  10. LOW: Missing DB migration                                                                                                                      
+                                                                                                                                                     
+  The schema adds new columns (maxAdditionalQuestions, additionalQuestions, additionalQuestionPhase, currentAdditionalQuestionIndex,                 
+  additionalQuestionIndex, additionalQuestionText) but these require npm run db:push to apply. If the code is deployed without running the migration,
+   all AQ-related DB operations will fail with column-not-found errors. This is an operational concern rather than a code bug.                       
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Summary by severity                                                                                                                                
+  ┌─────┬──────────┬──────────────────────────────────────────────────────────────────┐                                                              
+  │  #  │ Severity │                              Issue                               │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 1   │ CRITICAL │ Review comments for AQ segments are mangled by replace("q-", "") │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 2   │ CRITICAL │ No AQ state restoration on resume - broken session state         │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 3   │ HIGH     │ Synthetic currentQuestionIndex persisted to DB during AQ phase   │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 4   │ HIGH     │ end_interview doesn't await final summary before cleanup         │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 5   │ HIGH     │ Async AQ IIFE sends to closed WebSocket if client disconnects    │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 6   │ MEDIUM   │ Watchdog doesn't check additionalQuestionsGenerating flag        │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 7   │ MEDIUM   │ Server next_question on last question bypasses AQ flow           │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 8   │ MEDIUM   │ Export endpoint omits AQ data                                    │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 9   │ LOW      │ Potential duplicate summary generation race                      │                                                              
+  ├─────┼──────────┼──────────────────────────────────────────────────────────────────┤                                                              
+  │ 10  │ LOW      │ DB migration must be applied for new columns                     │  
