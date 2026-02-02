@@ -167,16 +167,20 @@ export default function InterviewConsentPage() {
           }),
         );
       }
-      
+
       // Request microphone permission early (don't block on failure - text mode is available)
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        stream.getTracks().forEach((track) => track.stop());
       } catch (e) {
         // Permission denied - user can still use text mode in the interview
-        console.log("[Consent] Microphone permission not granted, text mode available");
+        console.log(
+          "[Consent] Microphone permission not granted, text mode available",
+        );
       }
-      
+
       // Navigate to welcome page for name capture before interview
       navigate(`/welcome/${data.id}`);
     },
@@ -319,7 +323,7 @@ export default function InterviewConsentPage() {
                 <span className="text-primary mt-0.5">1.</span>
                 <span>
                   You'll have a voice conversation with Alvia, our AI
-                  interviewer
+                  interviewer.
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -327,15 +331,16 @@ export default function InterviewConsentPage() {
                 <span>
                   There are a number of set questions which Alvia will explore
                   with follow-up questions; you decide when to move to the next
-                  one
+                  one.
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-primary mt-0.5">3.</span>
                 <span>
-                  Find a quiet location and use a headset or earphones if you
-                  have them. Speak naturally. Alvia may take a moment to respond
-                  at first. Be patient, she'll adapt.
+                  Make sure you've got a good Internet connection. Find a quiet
+                  location and use a headset or earphones if you have them.
+                  Speak naturally. Alvia may take a moment to respond at first.
+                  Be patient, she'll adapt.
                 </span>
               </li>
               <li className="flex items-start gap-2">
