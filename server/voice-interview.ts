@@ -2862,16 +2862,25 @@ async function generateAndPersistAQSummary(
         `${aqEntries.length} for this AQ, ${respondentEntries.length} respondent entries, ${wordCount} words`,
     );
 
-    // Build minimal metrics for summary generation
-    const aqMetrics: QuestionMetrics = {
-      questionIndex: aqQuestionIndex,
-      turnCount: respondentEntries.length,
-      wordCount,
-      activeTimeMs: 0,
-      followUpCount: 0,
-      startedAt: Date.now(),
-      recommendedFollowUps: 0,
-    };
+    // Look up existing metrics from state (accumulated during AQ speech)
+    // Fall back to building minimal metrics if not found
+    const existingMetrics = state.questionMetrics.get(aqQuestionIndex);
+    const aqMetrics: QuestionMetrics = existingMetrics
+      ? {
+          ...existingMetrics,
+          // Override word/turn counts from transcript in case metrics are stale
+          wordCount,
+          turnCount: respondentEntries.length,
+        }
+      : {
+          questionIndex: aqQuestionIndex,
+          turnCount: respondentEntries.length,
+          wordCount,
+          activeTimeMs: 0,
+          followUpCount: 0,
+          startedAt: Date.now(),
+          recommendedFollowUps: 0,
+        };
 
     // Generate summary using the existing function
     const summary = await generateQuestionSummary(
@@ -2883,11 +2892,24 @@ async function generateAndPersistAQSummary(
       state.template?.objective || "",
     );
 
-    // Store summary bullets in the AQ object
+    // Store full summary data in the AQ object (not just bullets)
     const updatedAQs = [...state.additionalQuestions];
     if (updatedAQs[aqIndex]) {
-      (updatedAQs[aqIndex] as any).summaryBullets = summary.keyInsights;
-      (updatedAQs[aqIndex] as any).respondentSummary = summary.respondentSummary;
+      const aqObj = updatedAQs[aqIndex] as any;
+      // Core summary fields
+      aqObj.summaryBullets = summary.keyInsights;
+      aqObj.respondentSummary = summary.respondentSummary;
+      aqObj.completenessAssessment = summary.completenessAssessment;
+      // Metrics
+      aqObj.wordCount = summary.wordCount;
+      aqObj.turnCount = summary.turnCount;
+      aqObj.activeTimeMs = summary.activeTimeMs;
+      // Quality assessment
+      aqObj.qualityScore = summary.qualityScore;
+      aqObj.qualityFlags = summary.qualityFlags;
+      aqObj.qualityNotes = summary.qualityNotes;
+      // Verbatims
+      aqObj.verbatims = summary.verbatims;
     }
     state.additionalQuestions = updatedAQs as typeof state.additionalQuestions;
 

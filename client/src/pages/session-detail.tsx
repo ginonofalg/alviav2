@@ -758,12 +758,30 @@ export default function SessionDetailPage() {
                   : [];
                 
                 // additional_questions is stored as an array directly in the database
+                // Now includes enriched fields: metrics, quality scores, verbatims
+                type VerbatimData = {
+                  quote: string;
+                  context: string;
+                  sentiment?: "positive" | "negative" | "neutral" | "mixed";
+                  themeTag?: string;
+                };
                 type AQData = { 
                   index?: number;
                   questionText: string; 
                   rationale?: string;
                   summaryBullets?: string[];
                   respondentSummary?: string;
+                  completenessAssessment?: string;
+                  // Metrics (enriched)
+                  wordCount?: number;
+                  turnCount?: number;
+                  activeTimeMs?: number;
+                  // Quality assessment (enriched)
+                  qualityScore?: number;
+                  qualityFlags?: ("incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement")[];
+                  qualityNotes?: string;
+                  // Verbatims (enriched)
+                  verbatims?: VerbatimData[];
                 };
                 const additionalQuestionsArray = Array.isArray(session.additionalQuestions) 
                   ? (session.additionalQuestions as AQData[])
@@ -773,6 +791,7 @@ export default function SessionDetailPage() {
                 const hasAQInSummaries = templateSummaries.some(s => s.isAdditionalQuestion);
 
                 // For legacy sessions: synthesize AQ summaries from additionalQuestions data
+                // Uses enriched fields when available, falls back to zeros for older data
                 let allSummaries = [...templateSummaries];
                 if (!hasAQInSummaries && additionalQuestionsArray && additionalQuestionsArray.length > 0) {
                   additionalQuestionsArray.forEach((aq, i) => {
@@ -782,14 +801,20 @@ export default function SessionDetailPage() {
                         questionText: aq.questionText,
                         respondentSummary: aq.respondentSummary,
                         keyInsights: aq.summaryBullets || [],
-                        completenessAssessment: "",
+                        completenessAssessment: aq.completenessAssessment || "",
                         relevantToFutureQuestions: [],
-                        wordCount: 0,
-                        turnCount: 0,
-                        activeTimeMs: 0,
+                        wordCount: aq.wordCount ?? 0,
+                        turnCount: aq.turnCount ?? 0,
+                        activeTimeMs: aq.activeTimeMs ?? 0,
                         timestamp: Date.now(),
                         isAdditionalQuestion: true,
                         additionalQuestionIndex: aq.index ?? i,
+                        // Quality assessment
+                        qualityScore: aq.qualityScore,
+                        qualityFlags: aq.qualityFlags,
+                        qualityNotes: aq.qualityNotes,
+                        // Verbatims
+                        verbatims: aq.verbatims,
                       });
                     }
                   });
@@ -847,6 +872,50 @@ export default function SessionDetailPage() {
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      )}
+
+                      {summary.verbatims && summary.verbatims.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-primary" />
+                            Verbatims
+                          </h4>
+                          <div className="space-y-3">
+                            {summary.verbatims.map((verbatim, i) => (
+                              <div key={i} className="border-l-2 border-primary/30 pl-3 py-1 space-y-1">
+                                <p className="text-sm italic text-muted-foreground">
+                                  "{verbatim.quote}"
+                                </p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {verbatim.sentiment && (
+                                    <Badge 
+                                      variant="secondary" 
+                                      className={`text-xs ${
+                                        verbatim.sentiment === 'positive' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                        verbatim.sentiment === 'negative' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                        verbatim.sentiment === 'mixed' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                        ''
+                                      }`}
+                                      data-testid={`badge-sentiment-${i}`}
+                                    >
+                                      {verbatim.sentiment}
+                                    </Badge>
+                                  )}
+                                  {verbatim.themeTag && (
+                                    <Badge variant="outline" className="text-xs" data-testid={`badge-theme-${i}`}>
+                                      {verbatim.themeTag}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {verbatim.context && (
+                                  <p className="text-xs text-muted-foreground/70">
+                                    {verbatim.context}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
