@@ -2195,6 +2195,19 @@ export async function registerRoutes(
       const questions = await storage.getQuestionsByTemplate(collection.templateId);
       const respondent = await storage.getRespondent(session.respondentId);
       
+      // Include AQ state if session is in AQ phase
+      const aqState = session.additionalQuestionPhase && session.additionalQuestions
+        ? {
+            isInAQPhase: true,
+            aqQuestions: (session.additionalQuestions as any[]).map((q: any, idx: number) => ({
+              index: idx,
+              questionText: q.questionText,
+              rationale: q.rationale,
+            })),
+            currentAQIndex: session.currentAdditionalQuestionIndex ?? 0,
+          }
+        : undefined;
+      
       res.json({
         session,
         collection,
@@ -2204,6 +2217,7 @@ export async function registerRoutes(
         features: {
           additionalQuestionsEnabled: ADDITIONAL_QUESTIONS_ENABLED,
         },
+        aqState,
       });
     } catch (error) {
       console.error("Error fetching interview:", error);

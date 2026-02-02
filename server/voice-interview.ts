@@ -1046,6 +1046,49 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       }),
     );
 
+    // Check if we're resuming an AQ session and need to restore AQ state
+    if (state.isInAdditionalQuestionsPhase && state.additionalQuestions.length > 0) {
+      const aqIndex = state.currentAdditionalQuestionIndex;
+      const aq = state.additionalQuestions[aqIndex];
+      
+      if (aq) {
+        // Update provider with AQ-specific instructions
+        const aqInstructions = buildAQInstructions(
+          state.template,
+          aq,
+          aqIndex,
+          state.additionalQuestions.length,
+          state.respondentInformalName,
+        );
+        const aqSessionConfig = provider.buildSessionConfig(aqInstructions);
+        providerWs.send(JSON.stringify({
+          type: "session.update",
+          session: aqSessionConfig,
+        }));
+        
+        console.log(`[VoiceInterview] Restored AQ phase for session ${sessionId}: AQ ${aqIndex + 1}/${state.additionalQuestions.length}`);
+        
+        // Send AQ state to client
+        clientWs.send(JSON.stringify({
+          type: "additional_questions_ready",
+          questionCount: state.additionalQuestions.length,
+          questions: state.additionalQuestions.map((q, idx) => ({
+            index: idx,
+            questionText: q.questionText,
+            rationale: q.rationale,
+          })),
+        }));
+        
+        clientWs.send(JSON.stringify({
+          type: "additional_question_started",
+          questionIndex: aqIndex,
+          questionText: aq.questionText,
+          rationale: aq.rationale,
+          totalAQs: state.additionalQuestions.length,
+        }));
+      }
+    }
+
     clientWs.send(
       JSON.stringify({
         type: "connected",
@@ -1058,6 +1101,14 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           ? state.fullTranscriptForPersistence
           : undefined,
         provider: provider.name,
+        // Include AQ state for reconnecting clients
+        isInAQPhase: state.isInAdditionalQuestionsPhase,
+        aqQuestions: state.isInAdditionalQuestionsPhase ? state.additionalQuestions.map((q, idx) => ({
+          index: idx,
+          questionText: q.questionText,
+          rationale: q.rationale,
+        })) : undefined,
+        currentAQIndex: state.isInAdditionalQuestionsPhase ? state.currentAdditionalQuestionIndex : undefined,
       }),
     );
   });
@@ -2250,13 +2301,28 @@ INSTRUCTIONS:
           }),
         );
       } else {
-        // Update session status to completed before sending message
-        await storage.persistInterviewState(sessionId, {
-          status: "completed",
-          completedAt: new Date(),
-        });
-        clientWs.send(JSON.stringify({ type: "interview_complete" }));
-        cleanupSession(sessionId, "completed");
+        // On last question - check if AQs are enabled and should be offered
+        // Instead of bypassing AQ entirely, prompt the client to show the consent dialog
+        const shouldOfferAQ = ADDITIONAL_QUESTIONS_ENABLED && 
+          state.maxAdditionalQuestions > 0 && 
+          !state.additionalQuestionsConsent && 
+          !state.isInAdditionalQuestionsPhase;
+        
+        if (shouldOfferAQ) {
+          // Send message to prompt AQ consent dialog on the client
+          clientWs.send(JSON.stringify({ 
+            type: "prompt_additional_questions_consent",
+            message: "Please confirm whether you'd like additional questions."
+          }));
+        } else {
+          // AQs disabled or already handled - complete the interview
+          await storage.persistInterviewState(sessionId, {
+            status: "completed",
+            completedAt: new Date(),
+          });
+          clientWs.send(JSON.stringify({ type: "interview_complete" }));
+          cleanupSession(sessionId, "completed");
+        }
       }
       break;
 
@@ -2318,6 +2384,22 @@ INSTRUCTIONS:
         message: "Barbara is analyzing your interview to identify follow-up questions..."
       }));
 
+      // Pause the provider during AQ generation to prevent stale responses
+      // Send a session update with "waiting" instructions
+      if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
+        const waitingInstructions = `You are currently paused while we prepare follow-up questions. 
+If the respondent speaks, politely acknowledge and let them know you'll be with them shortly. 
+Say something like: "Just a moment while we prepare some follow-up questions for you."
+Do not attempt to answer any questions or continue the interview.`;
+        
+        const waitingSessionConfig = state.providerInstance.buildSessionConfig(waitingInstructions);
+        state.providerWs.send(JSON.stringify({
+          type: "session.update",
+          session: waitingSessionConfig,
+        }));
+        console.log(`[AQ] Sent waiting instructions to provider for session: ${sessionId}`);
+      }
+
       // Generate additional questions asynchronously
       // Use a safe send helper to prevent errors on closed WebSocket
       const safeSend = (data: object) => {
@@ -2355,6 +2437,10 @@ INSTRUCTIONS:
             
             // Await pending summaries before completing
             await awaitPendingSummaries(sessionId);
+            
+            // Add a 3-second delay so the user can see the "no additional questions" message
+            // before navigating to the review page
+            await new Promise((resolve) => setTimeout(resolve, 3000));
             
             // Complete the interview
             await storage.persistInterviewState(sessionId, {
@@ -2538,7 +2624,7 @@ async function generateAdditionalQuestionsForSession(
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   const result = await generateAdditionalQuestions({
-    transcriptLog: state.transcriptLog,
+    transcriptLog: state.fullTranscriptForPersistence,
     templateQuestions,
     questionSummaries: state.questionSummaries.filter((s): s is QuestionSummary => s != null),
     projectObjective,

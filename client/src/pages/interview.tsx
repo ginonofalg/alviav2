@@ -42,6 +42,11 @@ interface InterviewData {
   features?: {
     additionalQuestionsEnabled?: boolean;
   };
+  aqState?: {
+    isInAQPhase: boolean;
+    aqQuestions: Array<{ questionText: string; rationale: string; index: number }>;
+    currentAQIndex: number;
+  };
 }
 
 interface TranscriptEntry {
@@ -265,6 +270,15 @@ export default function InterviewPage() {
   // Track if we've auto-started for resumed sessions
   const hasAutoStartedRef = useRef(false);
 
+  // Restore AQ state from initial API response (for page refresh during AQ phase)
+  useEffect(() => {
+    if (interviewData?.aqState?.isInAQPhase) {
+      setIsInAQPhase(true);
+      setAqQuestions(interviewData.aqState.aqQuestions);
+      setCurrentAQIndex(interviewData.aqState.currentAQIndex);
+    }
+  }, [interviewData?.aqState]);
+
   // Initialize audio context
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
@@ -439,6 +453,14 @@ export default function InterviewPage() {
               }));
             setTranscript(restoredEntries);
           }
+          // Restore AQ state on reconnect if in AQ phase
+          if (message.isInAQPhase && message.aqQuestions) {
+            setIsInAQPhase(true);
+            setAqQuestions(message.aqQuestions);
+            if (typeof message.currentAQIndex === 'number') {
+              setCurrentAQIndex(message.currentAQIndex);
+            }
+          }
           break;
 
         case "audio":
@@ -564,14 +586,27 @@ export default function InterviewPage() {
           break;
 
         case "additional_questions_none":
-          setAqGenerating(false);
+          // Keep aqGenerating=true to maintain the overlay, but update the message
+          // to show completion state. The interview_complete will arrive after a delay.
           setAqMessage(message.message || "No additional questions needed.");
-          // Will be followed by interview_complete
           break;
 
         case "additional_question_started":
           setCurrentAQIndex(message.questionIndex);
           setCurrentQuestionText(message.questionText);
+          break;
+
+        case "prompt_additional_questions_consent":
+          // Server is prompting us to show the AQ consent dialog
+          // This handles the race condition where next_question arrives on the last question
+          const maxAQ = collection?.maxAdditionalQuestions ?? 1;
+          const aqFeatureEnabled = interviewData?.features?.additionalQuestionsEnabled !== false;
+          if (maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
+            setConfirmDialog({ open: true, type: "additional_questions" });
+          } else {
+            // AQs not applicable, complete normally
+            handleEndInterviewConfirmed();
+          }
           break;
 
         case "error":
@@ -1325,13 +1360,27 @@ export default function InterviewPage() {
             >
               <Card className="w-full max-w-md">
                 <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
-                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                  <div className="text-center space-y-2">
-                    <h3 className="font-semibold text-lg">Preparing Questions</h3>
-                    <p className="text-muted-foreground text-sm">
-                      {aqMessage || "Our AI analyst is reviewing your interview..."}
-                    </p>
-                  </div>
+                  {aqMessage?.includes("comprehensive") || aqMessage?.includes("no additional") ? (
+                    <>
+                      <CheckCircle2 className="w-12 h-12 text-green-500" />
+                      <div className="text-center space-y-2">
+                        <h3 className="font-semibold text-lg">Interview Complete</h3>
+                        <p className="text-muted-foreground text-sm">
+                          {aqMessage}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                      <div className="text-center space-y-2">
+                        <h3 className="font-semibold text-lg">Preparing Questions</h3>
+                        <p className="text-muted-foreground text-sm">
+                          {aqMessage || "Our AI analyst is reviewing your interview..."}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
