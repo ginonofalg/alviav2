@@ -1,0 +1,102 @@
+Analysis: Additional Questions Missing Content                                                                                                                                                
+                                                                                                                                                                                                
+  The Problem                                                                                                                                                                                   
+                                                                                                                                                                                                
+  When Barbara generates summaries for additional questions (AQs), several data fields are either hardcoded to zero or omitted entirely. Regular template questions get full summaries with     
+  verbatims, quality scores, timing, etc. AQs do not.                                                                                                                                           
+                                                                                                                                                                                                
+  Three Layers of the Problem                                                                                                                                                                   
+                                                                                                                                                                                                
+  Layer 1: No metrics tracking during AQ responses (voice-interview.ts:2644-2719)                                                                                                               
+                                                                                                                                                                                                
+  When an AQ starts via startAdditionalQuestion(), the function sets state.currentQuestionIndex correctly (line 2662), but never initializes a metrics entry in state.questionMetrics. The      
+  speech timing code at line 1644-1648 does call createEmptyMetrics() as a fallback, so activeTimeMs should actually accumulate during AQ speech. However, generateAndPersistAQSummary() at line
+   2866-2874 ignores the existing metrics map entirely and builds a fresh minimal metrics object with activeTimeMs: 0, followUpCount: 0, and recommendedFollowUps: 0.                           
+                                                                                                                                                                                                
+  Layer 2: Summary data not fully propagated (voice-interview.ts:2886-2892)                                                                                                                     
+                                                                                                                                                                                                
+  After generateQuestionSummary() returns a full QuestionSummary (which does include verbatims, qualityFlags, qualityScore, qualityNotes from Barbara's LLM response at                         
+  barbara-orchestrator.ts:759-769), only two fields are copied back to the AQ object:                                                                                                           
+  - summaryBullets = summary.keyInsights                                                                                                                                                        
+  - respondentSummary = summary.respondentSummary                                                                                                                                               
+                                                                                                                                                                                                
+  The verbatims, quality data, completeness assessment, and word/turn counts are silently discarded from the additionalQuestions JSONB. They are stored in questionSummaries, but see Layer 3.  
+                                                                                                                                                                                                
+  Layer 3: Legacy display fallback uses hardcoded zeros (session-detail.tsx:777-796)                                                                                                            
+                                                                                                                                                                                                
+  For sessions where AQ summaries aren't found in questionSummaries (legacy data), the client synthesizes minimal summary objects with wordCount: 0, turnCount: 0, activeTimeMs: 0, and no      
+  verbatims, qualityFlags, qualityScore, or completenessAssessment.                                                                                                                             
+                                                                                                                                                                                                
+  Also notable: the session detail page never renders verbatims at all — there's no UI for verbatim statements anywhere in session-detail.tsx (grep confirmed zero matches for "verbatims").    
+                                                                                                                                                                                                
+  ---                                                                                                                                                                                           
+  Proposed Fix (4 changes)                                                                                                                                                                      
+                                                                                                                                                                                                
+  1. Use actual metrics from state.questionMetrics in AQ summary generation                                                                                                                     
+                                                                                                                                                                                                
+  In voice-interview.ts, generateAndPersistAQSummary() at line 2866 — instead of building a fresh metrics object with hardcoded zeros, look up the existing metrics from                        
+  state.questionMetrics.get(aqQuestionIndex). The speech timing code already accumulates activeTimeMs into that map during AQ responses. Fall back to the current minimal-build only if no entry
+   exists.                                                                                                                                                                                      
+                                                                                                                                                                                                
+  // Replace lines 2866-2874                                                                                                                                                                    
+  const existingMetrics = state.questionMetrics.get(aqQuestionIndex);                                                                                                                           
+  const aqMetrics: QuestionMetrics = existingMetrics || {                                                                                                                                       
+    questionIndex: aqQuestionIndex,                                                                                                                                                             
+    turnCount: respondentEntries.length,                                                                                                                                                        
+    wordCount,                                                                                                                                                                                  
+    activeTimeMs: 0,                                                                                                                                                                            
+    followUpCount: 0,                                                                                                                                                                           
+    startedAt: Date.now(),                                                                                                                                                                      
+    recommendedFollowUps: 0,                                                                                                                                                                    
+  };                                                                                                                                                                                            
+  // Override word/turn counts from transcript in case metrics are stale                                                                                                                        
+  aqMetrics.wordCount = wordCount;                                                                                                                                                              
+  aqMetrics.turnCount = respondentEntries.length;                                                                                                                                               
+                                                                                                                                                                                                
+  2. Propagate full summary fields to the additionalQuestions JSONB                                                                                                                             
+                                                                                                                                                                                                
+  In voice-interview.ts lines 2886-2892, copy verbatims, quality data, and counts alongside the existing summaryBullets and respondentSummary:                                                  
+                                                                                                                                                                                                
+  (updatedAQs[aqIndex] as any).summaryBullets = summary.keyInsights;                                                                                                                            
+  (updatedAQs[aqIndex] as any).respondentSummary = summary.respondentSummary;                                                                                                                   
+  (updatedAQs[aqIndex] as any).wordCount = summary.wordCount;                                                                                                                                   
+  (updatedAQs[aqIndex] as any).turnCount = summary.turnCount;                                                                                                                                   
+  (updatedAQs[aqIndex] as any).activeTimeMs = summary.activeTimeMs;                                                                                                                             
+  (updatedAQs[aqIndex] as any).verbatims = summary.verbatims;                                                                                                                                   
+  (updatedAQs[aqIndex] as any).qualityScore = summary.qualityScore;                                                                                                                             
+  (updatedAQs[aqIndex] as any).qualityFlags = summary.qualityFlags;                                                                                                                             
+  (updatedAQs[aqIndex] as any).qualityNotes = summary.qualityNotes;                                                                                                                             
+  (updatedAQs[aqIndex] as any).completenessAssessment = summary.completenessAssessment;                                                                                                         
+                                                                                                                                                                                                
+  3. Fix the legacy fallback in session-detail.tsx to use stored AQ fields                                                                                                                      
+                                                                                                                                                                                                
+  Update the legacy synthesis at lines 777-796 to read wordCount, turnCount, verbatims, qualityScore, qualityFlags, qualityNotes, and completenessAssessment from the AQ data instead of        
+  hardcoding zeros. Also update the AQData type at line 761 to include these fields.                                                                                                            
+                                                                                                                                                                                                
+  4. Add verbatim display to session detail UI                                                                                                                                                  
+                                                                                                                                                                                                
+  The session detail page currently has no rendering for summary.verbatims even for regular questions. Add a verbatims section to the question summary card (after the Key Insights section)    
+  that displays each VerbatimStatement with its quote text, sentiment badge, and optional theme tag.                                                                                            
+                                                                                                                                                                                                
+  ---                                                                                                                                                                                           
+  Impact Summary                                                                                                                                                                                
+  ┌────────────────────────┬──────────────┬────────────────────────────────┐                                                                                                                    
+  │         Field          │ Current (AQ) │           After Fix            │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ wordCount              │ Always 0     │ Calculated from transcript     │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ turnCount              │ Always 0     │ Count of respondent entries    │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ activeTimeMs           │ Always 0     │ Accumulated from speech timing │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ verbatims              │ Missing      │ Extracted by Barbara           │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ qualityScore           │ Missing      │ AI-rated 0-100                 │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ qualityFlags           │ Missing      │ Quality indicators             │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ qualityNotes           │ Missing      │ Quality explanation            │                                                                                                                    
+  ├────────────────────────┼──────────────┼────────────────────────────────┤                                                                                                                    
+  │ completenessAssessment │ Empty string │ AI assessment text             │                                                                                                                    
+  └────────────────────────┴──────────────┴────────────────────────────────┘                                                                                                                    
+  Changes 1-3 are backend/data fixes. Change 4 is a UI enhancement that benefits both regular and additional questions. All four are independent and could be implemented incrementally.
