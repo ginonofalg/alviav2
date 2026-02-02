@@ -70,9 +70,9 @@ const barbaraConfig: BarbaraConfig = {
     reasoningEffort: "low",
   },
   additionalQuestions: {
-    model: "gpt-5-mini",
-    verbosity: "medium",
-    reasoningEffort: "medium",
+    model: "gpt-5",
+    verbosity: "low",
+    reasoningEffort: "low",
   },
 };
 
@@ -103,7 +103,10 @@ export function updateBarbaraConfig(
     Object.assign(barbaraConfig.templateGeneration, updates.templateGeneration);
   }
   if (updates.additionalQuestions) {
-    Object.assign(barbaraConfig.additionalQuestions, updates.additionalQuestions);
+    Object.assign(
+      barbaraConfig.additionalQuestions,
+      updates.additionalQuestions,
+    );
   }
   return getBarbaraConfig();
 }
@@ -2789,7 +2792,7 @@ export async function generateAdditionalQuestions(
 ): Promise<AdditionalQuestionsResult> {
   const config = barbaraConfig.additionalQuestions;
   const startTime = Date.now();
-  
+
   // If maxQuestions is 0, return empty immediately
   if (input.maxQuestions <= 0) {
     return {
@@ -2811,7 +2814,7 @@ export async function generateAdditionalQuestions(
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_object" },
-      max_completion_tokens: 1000,
+      max_completion_tokens: 20000,
       reasoning_effort: config.reasoningEffort,
       verbosity: config.verbosity,
     } as Parameters<typeof openai.chat.completions.create>[0]);
@@ -2822,8 +2825,10 @@ export async function generateAdditionalQuestions(
       return {
         questions: [],
         barbaraModel: config.model,
-        usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
-        priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+        usedCrossInterviewContext:
+          input.crossInterviewContext?.enabled ?? false,
+        priorSessionCount:
+          input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
       };
     }
 
@@ -2837,13 +2842,21 @@ export async function generateAdditionalQuestions(
     };
 
     // If Barbara determined no questions are needed
-    if (parsed.noQuestionsNeeded || !parsed.questions || parsed.questions.length === 0) {
-      console.log(`[Barbara] No additional questions needed: ${parsed.reason || "Coverage adequate"}`);
+    if (
+      parsed.noQuestionsNeeded ||
+      !parsed.questions ||
+      parsed.questions.length === 0
+    ) {
+      console.log(
+        `[Barbara] No additional questions needed: ${parsed.reason || "Coverage adequate"}`,
+      );
       return {
         questions: [],
         barbaraModel: config.model,
-        usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
-        priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+        usedCrossInterviewContext:
+          input.crossInterviewContext?.enabled ?? false,
+        priorSessionCount:
+          input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
       };
     }
 
@@ -2858,13 +2871,16 @@ export async function generateAdditionalQuestions(
       }));
 
     const elapsed = Date.now() - startTime;
-    console.log(`[Barbara] Generated ${questions.length} additional questions in ${elapsed}ms`);
+    console.log(
+      `[Barbara] Generated ${questions.length} additional questions in ${elapsed}ms`,
+    );
 
     return {
       questions,
       barbaraModel: config.model,
       usedCrossInterviewContext: input.crossInterviewContext?.enabled ?? false,
-      priorSessionCount: input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
+      priorSessionCount:
+        input.crossInterviewContext?.priorSessionSummaries?.length ?? 0,
     };
   } catch (error) {
     console.error("[Barbara] Error generating additional questions:", error);
@@ -2878,7 +2894,9 @@ export async function generateAdditionalQuestions(
   }
 }
 
-function buildAdditionalQuestionsSystemPrompt(input: AdditionalQuestionsInput): string {
+function buildAdditionalQuestionsSystemPrompt(
+  input: AdditionalQuestionsInput,
+): string {
   const crossInterviewSection = input.crossInterviewContext?.enabled
     ? `
 You also have access to summaries from prior interviews under the same template. Use these to:
@@ -2922,44 +2940,57 @@ Respond with a JSON object containing:
 }`;
 }
 
-function buildAdditionalQuestionsUserPrompt(input: AdditionalQuestionsInput): string {
+function buildAdditionalQuestionsUserPrompt(
+  input: AdditionalQuestionsInput,
+): string {
   // Format the template questions
   const templateQuestionsText = input.templateQuestions
-    .map((q, i) => `Q${i + 1}: ${q.text}${q.guidance ? ` (Guidance: ${q.guidance})` : ""}`)
+    .map(
+      (q, i) =>
+        `Q${i + 1}: ${q.text}${q.guidance ? ` (Guidance: ${q.guidance})` : ""}`,
+    )
     .join("\n");
 
   // Format the question summaries
   const summariesText = input.questionSummaries
     .map((s) => {
-      const insights = s.keyInsights?.length > 0 
-        ? `Key insights: ${s.keyInsights.join("; ")}` 
-        : "";
+      const insights =
+        s.keyInsights?.length > 0
+          ? `Key insights: ${s.keyInsights.join("; ")}`
+          : "";
       return `Q${s.questionIndex + 1} Summary: ${s.respondentSummary}\n${insights}\nCompleteness: ${s.completenessAssessment}`;
     })
     .join("\n\n");
 
   // Format transcript (condensed)
   const transcriptText = input.transcriptLog
-    .map((t) => `[Q${t.questionIndex + 1}] ${t.speaker.toUpperCase()}: ${t.text}`)
+    .map(
+      (t) => `[Q${t.questionIndex + 1}] ${t.speaker.toUpperCase()}: ${t.text}`,
+    )
     .join("\n");
 
   // Format cross-interview context if available
   let crossInterviewText = "";
-  if (input.crossInterviewContext?.enabled && input.crossInterviewContext.priorSessionSummaries) {
+  if (
+    input.crossInterviewContext?.enabled &&
+    input.crossInterviewContext.priorSessionSummaries
+  ) {
     const priorSummaries = input.crossInterviewContext.priorSessionSummaries;
     if (priorSummaries.length > 0) {
       crossInterviewText = `\n\n=== PRIOR INTERVIEW INSIGHTS (${priorSummaries.length} sessions) ===\n`;
-      
+
       // Aggregate themes from prior sessions
       const allInsights: string[] = [];
       priorSummaries.forEach((session, idx) => {
         session.summaries.forEach((s) => {
           if (s.keyInsights) {
-            allInsights.push(...s.keyInsights.map(insight => `P${idx + 1}: ${insight}`));
+            allInsights.push(
+              ...s.keyInsights.map((insight) => `P${idx + 1}: ${insight}`),
+            );
           }
         });
       });
-      
+
       // Take top insights to avoid overwhelming context
       const topInsights = allInsights.slice(0, 15);
       crossInterviewText += `Key themes from prior respondents:\n${topInsights.join("\n")}`;
