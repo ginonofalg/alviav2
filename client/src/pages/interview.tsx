@@ -39,6 +39,9 @@ interface InterviewData {
   template: InterviewTemplate;
   questions: Question[];
   respondent?: Respondent;
+  features?: {
+    additionalQuestionsEnabled?: boolean;
+  };
 }
 
 interface TranscriptEntry {
