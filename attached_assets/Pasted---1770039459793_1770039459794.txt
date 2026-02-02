@@ -1,0 +1,196 @@
+---                                                                                                                                                
+  Additional Questions (AQ) Feature Review                                                                                                           
+                                                                                                                                                     
+  CRITICAL: No Graceful Transition When Barbara Has No AQs                                                                                           
+                                                                                                                                                     
+  This is the specific scenario you asked about. When the user accepts AQs but Barbara decides none are needed, the UX is broken:                    
+                                                                                                                                                     
+  1. User clicks "Yes, Continue" on the AQ consent dialog                                                                                            
+  2. Client shows the "Preparing Questions" spinner overlay (aqGenerating = true)                                                                    
+  3. Server generates questions → Barbara returns zero                                                                                               
+  4. Server sends additional_questions_none (message: "Your interview was comprehensive...")                                                         
+  5. Server immediately sends interview_complete                                                                                                     
+  6. Client receives additional_questions_none → sets aqGenerating = false (spinner vanishes) and sets aqMessage                                     
+  7. Client receives interview_complete → navigates to /review/:sessionId                                                                            
+                                                                                                                                                     
+  The problem: The user never sees the "no additional questions" message. The spinner disappears and the page navigates away in the same render      
+  cycle. The aqMessage state is set but never displayed anywhere — the generating overlay is the only place it shows, and that overlay is dismissed  
+  by aqGenerating = false on the same message. There's no delay or transitional screen.                                                              
+                                                                                                                                                     
+  Location: server/voice-interview.ts:2348-2366 (sends both messages back-to-back) and client/src/pages/interview.tsx:566-570 (sets state that's     
+  never rendered).                                                                                                                                   
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 2: next_question on Last Template Question Bypasses AQ Entirely                                                                              
+                                                                                                                                                     
+  server/voice-interview.ts:2252-2259 — The server's next_question handler has an else branch that fires when currentQuestionIndex >=                
+  questions.length - 1. It directly completes the interview without any AQ consideration:                                                            
+                                                                                                                                                     
+  } else {                                                                                                                                           
+    await storage.persistInterviewState(sessionId, {                                                                                                 
+      status: "completed",                                                                                                                           
+      completedAt: new Date(),                                                                                                                       
+    });                                                                                                                                              
+    clientWs.send(JSON.stringify({ type: "interview_complete" }));                                                                                   
+    cleanupSession(sessionId, "completed");                                                                                                          
+  }                                                                                                                                                  
+                                                                                                                                                     
+  The client normally guards against this by showing "Complete Interview" instead of "Next Question" on the last question. But the server has no     
+  guard — any next_question message arriving when on the last question will bypass AQs and complete the interview. This could happen via a stale     
+  client state or race condition where the client hasn't yet received question_changed for the last question.                                        
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 3: Provider WebSocket Active During AQ Generation Wait                                                                                       
+                                                                                                                                                     
+  When the user accepts AQs (request_additional_questions), the server starts an async IIFE to generate questions but does not pause or update the   
+  provider WebSocket. During the 10-30+ seconds of generation:                                                                                       
+                                                                                                                                                     
+  - Alvia still has the last template question's instructions                                                                                        
+  - The microphone is still active and feeding audio to the provider                                                                                 
+  - If the respondent speaks, Alvia will respond as if still on the last template question                                                           
+  - This could produce confusing responses during the wait period                                                                                    
+                                                                                                                                                     
+  Location: server/voice-interview.ts:2293-2335 — no session.update or mute sent to the provider before starting generation.                         
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 4: Resumed AQ Session Doesn't Restore Provider Instructions                                                                                  
+                                                                                                                                                     
+  When a session resumes in AQ phase, the server correctly restores state (server/voice-interview.ts:947-962):                                       
+                                                                                                                                                     
+  state.additionalQuestions = aqData;                                                                                                                
+  state.isInAdditionalQuestionsPhase = true;                                                                                                         
+  state.additionalQuestionsConsent = true;                                                                                                           
+  state.currentAdditionalQuestionIndex = session.currentAdditionalQuestionIndex ?? 0;                                                                
+                                                                                                                                                     
+  But startAdditionalQuestion is never called during resume. The provider WebSocket connects with the standard template question instructions (from  
+  initializeInterview), not the AQ-specific instructions. Alvia would ask the wrong question or behave as if still on a template question.           
+                                                                                                                                                     
+  Additionally, the client doesn't receive additional_questions_ready or additional_question_started messages on resume, so the client UI shows the  
+  regular template question view instead of the AQ UI.                                                                                               
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 5: Client Reconnect During AQ Phase Loses AQ UI State                                                                                        
+                                                                                                                                                     
+  If the client disconnects and reconnects (page refresh, network hiccup) during AQ phase:                                                           
+                                                                                                                                                     
+  - The /api/interview/:sessionId endpoint returns session/template/questions data but does not include AQ phase state (current AQ index, AQ         
+  questions list, whether in AQ phase)                                                                                                               
+  - Client React state resets — isInAQPhase, aqQuestions, currentAQIndex all go back to defaults                                                     
+  - The client shows the last template question UI                                                                                                   
+  - The server has AQ state but no mechanism to push it to the reconnected client                                                                    
+                                                                                                                                                     
+  Location: server/routes.ts:2195-2212 — the interview data response doesn't include AQ state fields.                                                
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 6: Truncated Transcript Used for AQ Generation                                                                                               
+                                                                                                                                                     
+  server/voice-interview.ts:2537:                                                                                                                    
+                                                                                                                                                     
+  transcriptLog: state.transcriptLog,                                                                                                                
+                                                                                                                                                     
+  This uses state.transcriptLog which is the in-memory truncated version (limited for memory management), instead of                                 
+  state.fullTranscriptForPersistence which has the complete transcript. For long interviews, Barbara only sees recent exchanges when deciding what   
+  follow-up questions to ask, potentially generating questions about topics already covered earlier in the session.                                  
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 7: No Timeout or Cancel for AQ Generation                                                                                                    
+                                                                                                                                                     
+  The generateAdditionalQuestions call to GPT-5 has no explicit timeout. If the API hangs:                                                           
+                                                                                                                                                     
+  - The user sees the "Preparing Questions" spinner indefinitely                                                                                     
+  - There's no cancel button on the overlay                                                                                                          
+  - The only exit is the watchdog idle timeout at 5 minutes — a very long wait                                                                       
+  - aqGenerating is never set to false unless the server sends a response                                                                            
+                                                                                                                                                     
+  Location: client/src/pages/interview.tsx:1299-1316 — the overlay has no cancel/timeout mechanism.                                                  
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 8: Redundant "Skip Remaining" Button on Last AQ                                                                                              
+                                                                                                                                                     
+  client/src/pages/interview.tsx:1168-1183 — When the user is on the last additional question:                                                       
+                                                                                                                                                     
+  <Button onClick={handleEndAdditionalQuestions}>                                                                                                    
+    Complete Interview                                                                                                                               
+  </Button>                                                                                                                                          
+  <Button variant="outline" onClick={handleEndAdditionalQuestions}>                                                                                  
+    Skip Remaining                                                                                                                                   
+  </Button>                                                                                                                                          
+                                                                                                                                                     
+  Both buttons call the exact same handler. "Skip Remaining" makes no sense when there's nothing left to skip. This button should be hidden when     
+  currentAQIndex >= aqQuestions.length - 1.                                                                                                          
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 9: pendingSummaryPromises Race in request_additional_questions                                                                               
+                                                                                                                                                     
+  In the request_additional_questions handler, the final question summary is started and tracked (line 2312):                                        
+                                                                                                                                                     
+  state.pendingSummaryPromises.set(finalQuestionIdx, summaryPromise);                                                                                
+                                                                                                                                                     
+  But the .catch() on line 2308 returns void, so the stored promise resolves to undefined on error rather than rejecting. This means                 
+  awaitPendingSummaries will see it as "completed" even on failure. The summary data would be missing but the interview would still complete. This is
+   likely intentional (graceful degradation), but the error is silently swallowed.                                                                   
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 10: flushPersist During AQ Phase Caps currentQuestionIndex                                                                                   
+                                                                                                                                                     
+  server/voice-interview.ts:396-398 correctly caps the persisted index:                                                                              
+                                                                                                                                                     
+  const persistableQuestionIndex = state.isInAdditionalQuestionsPhase                                                                                
+    ? templateQuestionCount - 1                                                                                                                      
+    : state.currentQuestionIndex;                                                                                                                    
+                                                                                                                                                     
+  However, if a session is restored from this capped value, and the AQ phase restore fails or is incomplete, the session would appear to be on the   
+  last template question — potentially re-asking it instead of resuming the AQ.                                                                      
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 11: as any Type Divergence in AQ Data                                                                                                        
+                                                                                                                                                     
+  Throughout the AQ code, properties are added via as any casts:                                                                                     
+                                                                                                                                                     
+  (updatedAQs[aqIndex] as any).transcript = transcriptText;                                                                                          
+  (updatedAQs[aqIndex] as any).summaryBullets = summary.keyInsights;                                                                                 
+  (updatedAQs[aqIndex] as any).respondentSummary = summary.respondentSummary;                                                                        
+                                                                                                                                                     
+  The GeneratedAdditionalQuestion type doesn't include transcript, summaryBullets, or respondentSummary. The runtime shape diverges from the         
+  TypeScript type, which means any code consuming AQ data from the database has to know about these undeclared fields.                               
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Issue 12: Feature Flag Duplication                                                                                                                 
+                                                                                                                                                     
+  ADDITIONAL_QUESTIONS_ENABLED is defined identically in both:                                                                                       
+  - server/voice-interview.ts:37                                                                                                                     
+  - server/routes.ts:45                                                                                                                              
+                                                                                                                                                     
+  These could drift if one is changed without the other.                                                                                             
+                                                                                                                                                     
+  ---                                                                                                                                                
+  Summary by Severity                                                                                                                                
+  ┌─────┬─────────────────────────────────────────────────┬─────────────┐                                                                            
+  │  #  │                      Issue                      │  Severity   │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 1   │ No graceful UX when Barbara returns zero AQs    │ High        │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 2   │ next_question on last question bypasses AQ      │ Medium-High │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 3   │ Provider WS active during AQ generation         │ Medium-High │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 4   │ Resume in AQ phase doesn't restore instructions │ Medium-High │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 5   │ Client reconnect loses AQ UI state              │ Medium      │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 6   │ Truncated transcript for AQ generation          │ Medium      │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 7   │ No timeout/cancel for AQ generation spinner     │ Medium      │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 8   │ Redundant "Skip Remaining" on last AQ           │ Low         │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 9   │ Silent summary failure in AQ flow               │ Low         │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 10  │ Capped index on restore could cause re-ask      │ Low         │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 11  │ as any type divergence                          │ Low         │                                                                            
+  ├─────┼─────────────────────────────────────────────────┼─────────────┤                                                                            
+  │ 12  │ Duplicated feature flag                         │ Low         │                                                                            
+  └─────┴─────────────────────────────────────────────────┴─────────────┘                                                                            
+  Issues 1-5 are the ones most likely to cause real user-facing problems. Issue 1 is the direct answer to your question about the "no AQs" path — the
+   user currently gets no message before being navigated away.     
