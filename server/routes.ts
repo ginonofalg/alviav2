@@ -2091,6 +2091,7 @@ export async function registerRoutes(
         questionSummaries: session.questionSummaries,
         transcript: session.liveTranscript,
         questions: questions.map(q => ({ text: q.questionText, type: q.questionType })),
+        additionalQuestions: session.additionalQuestions || null,
       };
 
       if (format === "csv") {
@@ -2882,13 +2883,19 @@ export async function registerRoutes(
       const { ratings, segmentComments, closingComments, skipped } = parseResult.data;
 
       // Convert segment comments to reviewComments format (questionIndex -> comment)
+      // Regular questions use "q-{index}" format, AQ segments use "aq-{index}" format
       let reviewComments: Record<string, string> | null = null;
       if (segmentComments && !skipped) {
         reviewComments = {};
         for (const { segmentId, comment } of segmentComments) {
-          // segmentId is in format "q-{index}"
-          const indexStr = segmentId.replace("q-", "");
-          reviewComments[indexStr] = comment;
+          if (segmentId.startsWith("aq-")) {
+            // Preserve AQ segment IDs as-is (e.g., "aq-0" -> "aq-0")
+            reviewComments[segmentId] = comment;
+          } else {
+            // Regular questions: strip "q-" prefix (e.g., "q-0" -> "0")
+            const indexStr = segmentId.replace("q-", "");
+            reviewComments[indexStr] = comment;
+          }
         }
       }
 

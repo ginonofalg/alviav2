@@ -31,6 +31,7 @@ export interface InterviewStatePatch {
   performanceMetrics?: RealtimePerformanceMetrics;
   additionalQuestions?: unknown;
   additionalQuestionPhase?: boolean;
+  currentAdditionalQuestionIndex?: number;
 }
 
 export interface EnrichedSession extends InterviewSession {
@@ -646,6 +647,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.additionalQuestionPhase !== undefined) {
       updateData.additionalQuestionPhase = patch.additionalQuestionPhase;
+    }
+    if (patch.currentAdditionalQuestionIndex !== undefined) {
+      updateData.currentAdditionalQuestionIndex = patch.currentAdditionalQuestionIndex;
     }
 
     if (Object.keys(updateData).length === 0) {

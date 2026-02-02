@@ -391,13 +391,25 @@ async function flushPersist(sessionId: string): Promise<void> {
     .map((s, idx) => (s ? { ...s, questionIndex: idx } : null))
     .filter((s): s is QuestionSummary => s !== null);
 
+  // During AQ phase, currentQuestionIndex is a synthetic value (questions.length + aqIndex).
+  // We must persist the actual template question index (capped at last question) to avoid
+  // corruption on restore. AQ state is tracked separately via additionalQuestionPhase + currentAdditionalQuestionIndex.
+  const templateQuestionCount = state.questions.length;
+  const persistableQuestionIndex = state.isInAdditionalQuestionsPhase
+    ? templateQuestionCount - 1 // Cap to last template question during AQ phase
+    : state.currentQuestionIndex;
+
   // Use fullTranscriptForPersistence to avoid data loss from in-memory truncation
   const patch: InterviewStatePatch = {
     liveTranscript: state.fullTranscriptForPersistence,
     lastBarbaraGuidance: state.lastBarbaraGuidance,
     questionStates: state.questionStates,
     questionSummaries: normalizedSummaries,
-    currentQuestionIndex: state.currentQuestionIndex,
+    currentQuestionIndex: persistableQuestionIndex,
+    // Also persist AQ state for proper restoration
+    additionalQuestionPhase: state.isInAdditionalQuestionsPhase,
+    additionalQuestions: state.additionalQuestions.length > 0 ? state.additionalQuestions : undefined,
+    currentAdditionalQuestionIndex: state.isInAdditionalQuestionsPhase ? state.currentAdditionalQuestionIndex : undefined,
   };
 
   try {
@@ -933,6 +945,21 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
         console.log(
           `[VoiceInterview] Restored ${validCount} question summaries (from ${rawSummaries.length} entries)`,
         );
+      }
+
+      // Restore Additional Questions (AQ) state if session was in AQ phase
+      if (session.additionalQuestionPhase && session.additionalQuestions) {
+        const aqData = session.additionalQuestions as GeneratedAdditionalQuestion[];
+        if (Array.isArray(aqData) && aqData.length > 0) {
+          state.additionalQuestions = aqData;
+          state.isInAdditionalQuestionsPhase = true;
+          state.additionalQuestionsConsent = true; // They must have consented to be in AQ phase
+          state.currentAdditionalQuestionIndex = session.currentAdditionalQuestionIndex ?? 0;
+          
+          console.log(
+            `[VoiceInterview] Restored AQ state: phase=true, aqIndex=${state.currentAdditionalQuestionIndex}/${aqData.length} questions`,
+          );
+        }
       }
 
       console.log(
@@ -2233,20 +2260,26 @@ INSTRUCTIONS:
       }
       break;
 
-    case "end_interview":
+    case "end_interview": {
       state.lastActivityAt = Date.now();
-      // Trigger summarization for final question in background before cleanup
+      // Trigger summarization for final question and await it before cleanup
       // Capture transcript snapshot for the final question
-      const finalTranscriptSnapshot = [
+      const endFinalTranscriptSnapshot = [
         ...state.fullTranscriptForPersistence,
       ] as TranscriptEntry[];
-      generateAndPersistSummary(
+      const endFinalQuestionIdx = state.currentQuestionIndex;
+      
+      // Track the summary promise and await it before completing
+      const endSummaryPromise = generateAndPersistSummary(
         sessionId,
-        state.currentQuestionIndex,
-        finalTranscriptSnapshot,
-      ).catch(() => {
-        // Error already logged in generateAndPersistSummary
-      });
+        endFinalQuestionIdx,
+        endFinalTranscriptSnapshot,
+      );
+      state.pendingSummaryPromises.set(endFinalQuestionIdx, endSummaryPromise);
+      
+      // Await all pending summaries (including the final one)
+      await awaitPendingSummaries(sessionId);
+      
       // Update session status to completed
       await storage.persistInterviewState(sessionId, {
         status: "completed",
@@ -2255,6 +2288,7 @@ INSTRUCTIONS:
       clientWs.send(JSON.stringify({ type: "interview_complete" }));
       cleanupSession(sessionId, "completed");
       break;
+    }
 
     case "request_additional_questions":
       // User consented to additional questions - start Barbara analysis
@@ -2285,17 +2319,39 @@ INSTRUCTIONS:
       }));
 
       // Generate additional questions asynchronously
+      // Use a safe send helper to prevent errors on closed WebSocket
+      const safeSend = (data: object) => {
+        try {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(JSON.stringify(data));
+            return true;
+          }
+          console.log(`[AQ] WebSocket not open (state: ${clientWs.readyState}), skipping send for ${sessionId}`);
+          return false;
+        } catch (err) {
+          console.error(`[AQ] Error sending to WebSocket for ${sessionId}:`, err);
+          return false;
+        }
+      };
+      
       (async () => {
         try {
           const aqResult = await generateAdditionalQuestionsForSession(sessionId);
           
+          // Check if session still exists (could have been cleaned up by watchdog)
+          const currentState = interviewStates.get(sessionId);
+          if (!currentState) {
+            console.log(`[AQ] Session ${sessionId} no longer exists, aborting AQ flow`);
+            return;
+          }
+          
           if (!aqResult || aqResult.questions.length === 0) {
             // No additional questions generated
-            state.additionalQuestionsGenerating = false;
-            clientWs.send(JSON.stringify({ 
+            currentState.additionalQuestionsGenerating = false;
+            safeSend({ 
               type: "additional_questions_none",
               message: "Your interview was comprehensive - no additional questions needed."
-            }));
+            });
             
             // Await pending summaries before completing
             await awaitPendingSummaries(sessionId);
@@ -2306,14 +2362,14 @@ INSTRUCTIONS:
               completedAt: new Date(),
               additionalQuestionPhase: false,
             });
-            clientWs.send(JSON.stringify({ type: "interview_complete" }));
+            safeSend({ type: "interview_complete" });
             cleanupSession(sessionId, "completed");
           } else {
             // Store the questions and enter AQ phase
-            state.additionalQuestions = aqResult.questions;
-            state.isInAdditionalQuestionsPhase = true;
-            state.currentAdditionalQuestionIndex = 0;
-            state.additionalQuestionsGenerating = false;
+            currentState.additionalQuestions = aqResult.questions;
+            currentState.isInAdditionalQuestionsPhase = true;
+            currentState.currentAdditionalQuestionIndex = 0;
+            currentState.additionalQuestionsGenerating = false;
             
             // Persist AQ to database
             await storage.persistInterviewState(sessionId, {
@@ -2321,7 +2377,7 @@ INSTRUCTIONS:
               additionalQuestionPhase: true,
             });
             
-            clientWs.send(JSON.stringify({ 
+            safeSend({ 
               type: "additional_questions_ready",
               questionCount: aqResult.questions.length,
               questions: aqResult.questions.map((q, idx) => ({
@@ -2329,18 +2385,24 @@ INSTRUCTIONS:
                 questionText: q.questionText,
                 rationale: q.rationale,
               })),
-            }));
+            });
             
             // Start the first additional question
             await startAdditionalQuestion(sessionId, 0);
           }
         } catch (error) {
           console.error(`[AQ] Error generating additional questions for ${sessionId}:`, error);
-          state.additionalQuestionsGenerating = false;
-          clientWs.send(JSON.stringify({ 
+          
+          // Check if session still exists
+          const currentState = interviewStates.get(sessionId);
+          if (currentState) {
+            currentState.additionalQuestionsGenerating = false;
+          }
+          
+          safeSend({ 
             type: "additional_questions_none",
             message: "Unable to generate additional questions. Your interview is complete."
-          }));
+          });
           
           // Await pending summaries before completing
           await awaitPendingSummaries(sessionId);
@@ -2349,7 +2411,7 @@ INSTRUCTIONS:
             status: "completed",
             completedAt: new Date(),
           });
-          clientWs.send(JSON.stringify({ type: "interview_complete" }));
+          safeSend({ type: "interview_complete" });
           cleanupSession(sessionId, "completed");
         }
       })();
