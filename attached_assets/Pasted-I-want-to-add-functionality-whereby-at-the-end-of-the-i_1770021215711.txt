@@ -1,0 +1,261 @@
+I want to add functionality whereby, at the end of the interview, when the user clicks the Complete Interview button, a pop-up asks whether the user       
+  is happy to answer a small number of additional questions. This should give Barbara the opportunity to review the ENTIRE transcript, compare it to the     
+   Original Template Questions (which should not be repeated), compare it to the meeting Objective, and decide if there are any Additional Questions to      
+  ask the Interviewee before the interview concludes. The current Complete Interview button text should probably change to Additional Questions, with        
+  Complete Interview only appearing after the additional questions have been asked. The number of additional questions should be configurable in the         
+  Collections settings, both when adding a new collection, or editing one. The default number of additional questions should be 1; maximum 3; minimum 0      
+  additional questions. It will take a moment for Barbara to review the transcript, original questions and objectives, so include a visual so the            
+  interviewee is kept informed of what's happening. If the interviewee doesn't want to answer additional questions, they go straight to the Review Your      
+  Interview page. All transcripts and summaries for the Additional Questions should be stored alongside the templated questions, and appear as               
+  Additional Questions in the Review Your Interview page (e.g. AQ1, AQ2). Review this proposal, critique it and identify any potential problems. Devise      
+  a plan for implementing it that I can pass to Replit for review.                                                                                           
+                                                                                                                                                             
+● I'll explore the relevant parts of the codebase to understand the current interview flow, data model, and Barbara's capabilities before critiquing your    
+  proposal.                                                                                                                                                  
+                                                                                                                                                             
+● 3 Explore agents finished (ctrl+o to expand)                                                                                                               
+   ├─ Explore interview completion flow · 13 tool uses · 48.2k tokens                                                                                        
+   │  ⎿  Done                                                                                                                                                
+   ├─ Explore Barbara orchestrator capabilities · 32 tool uses · 65.4k tokens                                                                                
+   │  ⎿  Done                                                                                                                                                
+   └─ Explore collection settings and schema · 16 tool uses · 62.8k tokens                                                                                   
+      ⎿  Done                                                                                                                                                
+                                                                                                                                                             
+● Now I have a thorough understanding of the codebase. Let me provide my analysis.                                                                           
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Critique & Problem Analysis                                                                                                                                
+                                                                                                                                                             
+  What's Good About the Proposal                                                                                                                             
+                                                                                                                                                             
+  - Opt-in consent respects the interviewee's time and autonomy                                                                                              
+  - Loading indicator acknowledges the latency honestly                                                                                                      
+  - Per-collection configuration gives researchers flexibility                                                                                               
+  - Storing alongside templated questions keeps data unified                                                                                                 
+  - AQ labeling (AQ1, AQ2) provides clear differentiation                                                                                                    
+                                                                                                                                                             
+  Critical Problems Identified                                                                                                                               
+                                                                                                                                                             
+  1. Voice Session Lifecycle (High Risk)                                                                                                                     
+                                                                                                                                                             
+  The current "Complete Interview" flow sends end_interview over WebSocket, which triggers session cleanup and closes the Realtime API connection            
+  (voice-interview.ts:2212-2233). You can't reopen an OpenAI Realtime session cheaply. The entire additional questions flow must happen before end_interview 
+  is sent — meaning the voice connection stays alive while Barbara thinks and the consent dialog is shown. This fundamentally changes the completion flow.   
+                                                                                                                                                             
+  2. Barbara Latency (High Risk)                                                                                                                             
+                                                                                                                                                             
+  Barbara needs to review the full transcript, all template questions, and the project objective to generate meaningful non-repetitive questions. This is a  
+  heavier task than real-time guidance (analyzeWithBarbara uses gpt-5-mini with minimal reasoning). For quality additional questions, you likely need a      
+  stronger model/higher reasoning effort. Expect 10-30 seconds. The loading visual is essential, but the voice connection is sitting idle during this time — 
+  OpenAI/Grok Realtime connections have inactivity timeouts.                                                                                                 
+                                                                                                                                                             
+  3. Segment Storage Mismatch (Medium Risk)                                                                                                                  
+                                                                                                                                                             
+  Segments currently link to questionId (a template question in the questions table — schema.ts:209). Additional questions are dynamically generated and have
+   no entry in the questions table. The review API (routes.ts:2762-2810) maps segments to template questions by index. You need a parallel storage path —    
+  either nullable questionId with an additionalQuestionText field, or a JSONB field on the session.                                                          
+                                                                                                                                                             
+  4. currentQuestionIndex Ambiguity (Medium Risk)                                                                                                            
+                                                                                                                                                             
+  The interview tracks position via currentQuestionIndex (schema.ts:173), which maps directly to the template questions array. Additional questions would    
+  need indices beyond questions.length - 1. Every piece of code that uses this index to look up template questions needs to handle the case where the index  
+  exceeds the template length. This includes: transcript entries, question summaries, Barbara's analysis context, and the persistence layer.                 
+                                                                                                                                                             
+  5. Button Text Logic is Misleading (Low-Medium Risk)                                                                                                       
+                                                                                                                                                             
+  Changing "Complete Interview" to "Additional Questions" before knowing whether Barbara has questions to ask is premature. If Barbara determines no         
+  additional questions are needed (or the collection has maxAdditionalQuestions: 0), the user sees a misleadingly named button. Better approach: keep        
+  "Complete Interview" as the button, then show the consent dialog which either presents Barbara's questions or proceeds straight to completion.             
+                                                                                                                                                             
+  6. Race Condition with Final Summary (Medium Risk)                                                                                                         
+                                                                                                                                                             
+  The final question's generateAndPersistSummary() runs asynchronously in the background (voice-interview.ts:2216-2225). Barbara needs the complete          
+  transcript including the final question's content to generate quality additional questions. You may need to either: (a) await the final summary before     
+  calling Barbara, or (b) pass the raw transcript directly (which Barbara already receives).                                                                 
+                                                                                                                                                             
+  7. Resume Token Handling (Low-Medium Risk)                                                                                                                 
+                                                                                                                                                             
+  If the interview crashes during the additional questions phase, the resume system (resume-token.ts) needs to know the session is in an "additional         
+  questions" state. Currently the session status goes straight from in_progress to completed. You need an intermediate state or a flag to track the AQ phase.
+                                                                                                                                                             
+  8. Analytics Aggregation Gap (Low Risk)                                                                                                                    
+                                                                                                                                                             
+  Collection analytics (generateCrossInterviewAnalysis) aggregate by template question index. Additional questions are ad-hoc per session — different        
+  respondents get different AQs. They can't be aggregated in the standard question performance metrics. They'd need separate treatment as supplementary      
+  findings.                                                                                                                                                  
+                                                                                                                                                             
+  9. 0 Additional Questions Config (Low Risk)                                                                                                                
+                                                                                                                                                             
+  When maxAdditionalQuestions = 0, the entire flow must be bypassed. The current "Complete Interview" behavior should remain unchanged. This needs clean     
+  conditional logic.                                                                                                                                         
+                                                                                                                                                             
+  10. Voice Provider Abstraction (Low Risk)                                                                                                                  
+                                                                                                                                                             
+  Both OpenAI and Grok providers (realtime-providers.ts) need to support keeping the session alive during the Barbara analysis pause. The system prompt      
+  update mechanism (used for injecting Barbara's guidance) would be repurposed to inject AQ instructions into Alvia's prompt.                                
+                                                                                                                                                             
+  ---                                                                                                                                                        
+  Implementation Plan                                                                                                                                        
+                                                                                                                                                             
+  Phase 1: Schema & Configuration                                                                                                                            
+                                                                                                                                                             
+  1a. Database schema changes (shared/schema.ts)                                                                                                             
+  - Add maxAdditionalQuestions integer field to collections table (default: 1, range 0-3)                                                                    
+  - Add additionalQuestions JSONB field to interviewSessions table — stores the generated AQ texts and their metadata                                        
+  - Add additionalQuestionPhase boolean field to interviewSessions (default: false) — tracks whether session is in AQ phase for resume support               
+                                                                                                                                                             
+  1b. Collection form updates                                                                                                                                
+  - client/src/pages/collection-new.tsx: Add "Additional Questions" number input (0-3, default 1) with helper text explaining the feature                    
+  - client/src/pages/collection-detail.tsx: Add same field to edit form                                                                                      
+  - server/routes.ts: Update collection create/update validation schemas to include maxAdditionalQuestions                                                   
+                                                                                                                                                             
+  Phase 2: Barbara — New Question Generation Function                                                                                                        
+                                                                                                                                                             
+  2a. New function in server/barbara-orchestrator.ts                                                                                                         
+  - Create generateAdditionalQuestions(params) function                                                                                                      
+  - Parameters: full transcript, template questions (with summaries), project objective, audience context, tone, maxQuestions count                          
+  - System prompt: "You are a research interview expert. Review this completed interview transcript. Given the original questions and the research objective,
+   identify up to N areas that were not adequately covered or that emerged organically and deserve deeper exploration. Do NOT repeat or rephrase any question
+   already asked. Return questions as structured JSON."                                                                                                      
+  - Output: Array<{ questionText: string, rationale: string, questionType: "open" }>                                                                         
+  - May return fewer questions than max (including 0) if Barbara determines coverage is adequate                                                             
+  - Add new use case config: additionalQuestions with configurable model/verbosity/reasoning                                                                 
+  - Set a 30-second timeout with graceful degradation (if timeout, return empty array → proceed to completion)                                               
+                                                                                                                                                             
+  2b. Add Barbara config endpoint                                                                                                                            
+  - Add PATCH /api/barbara/config/additionalQuestions for runtime configuration                                                                              
+                                                                                                                                                             
+  Phase 3: WebSocket Protocol Extension                                                                                                                      
+                                                                                                                                                             
+  3a. New message types in server/voice-interview.ts                                                                                                         
+                                                                                                                                                             
+  Client → Server:                                                                                                                                           
+  - request_additional_questions — User clicked "Complete Interview" and consented to AQs                                                                    
+  - decline_additional_questions — User declined the AQ prompt                                                                                               
+  - end_additional_questions — All AQs answered, finalize interview                                                                                          
+                                                                                                                                                             
+  Server → Client:                                                                                                                                           
+  - additional_questions_generating — Barbara is thinking (triggers loading UI)                                                                              
+  - additional_questions_ready — Barbara generated questions (includes question array)                                                                       
+  - additional_questions_none — Barbara determined no additional questions needed                                                                            
+  - additional_question_started — AQ N has begun (Alvia is asking it)                                                                                        
+                                                                                                                                                             
+  3b. Server-side AQ flow in voice-interview.ts                                                                                                              
+                                                                                                                                                             
+  When request_additional_questions is received:                                                                                                             
+  1. Do NOT send end_interview — keep voice session alive                                                                                                    
+  2. Generate final question summary (await it, unlike current fire-and-forget)                                                                              
+  3. Fetch collection's maxAdditionalQuestions setting                                                                                                       
+  4. If 0 or collection not configured: send additional_questions_none, then proceed with normal completion                                                  
+  5. Call generateAdditionalQuestions() with full context                                                                                                    
+  6. If Barbara returns 0 questions: send additional_questions_none, proceed to completion                                                                   
+  7. If Barbara returns questions: store them in session state, send additional_questions_ready                                                              
+  8. Update Alvia's system prompt to ask the first AQ                                                                                                        
+  9. Track AQ progress with new state fields: isInAdditionalQuestions, additionalQuestionsList, currentAdditionalQuestionIndex                               
+  10. For each AQ completion: generate summary, advance to next AQ or finish                                                                                 
+  11. On final AQ or end_additional_questions: persist all AQ data, send interview_complete, cleanup                                                         
+                                                                                                                                                             
+  3c. Transcript and summary storage for AQs                                                                                                                 
+  - AQ transcript entries use questionIndex values starting at templateQuestions.length (e.g., if template has 5 questions, AQ1 = index 5, AQ2 = index 6)    
+  - AQ summaries stored in questionSummaries array at those same indices                                                                                     
+  - Store generated AQ metadata in session's additionalQuestions JSONB field: { questions: [{ text, rationale, questionIndex }], generatedAt, barbaraModel } 
+                                                                                                                                                             
+  Phase 4: Client UI — Interview Page                                                                                                                        
+                                                                                                                                                             
+  4a. Consent dialog (client/src/pages/interview.tsx)                                                                                                        
+  - When user clicks "Complete Interview" (keep this button name unchanged):                                                                                 
+    - If collection has maxAdditionalQuestions > 0: show consent dialog                                                                                      
+        - Title: "Before you go..."                                                                                                                          
+      - Body: "Would you like to answer a few additional questions? Our AI has identified some areas that could benefit from your perspective. This is       
+  completely optional."                                                                                                                                      
+      - Two buttons: "No thanks, finish up" / "Sure, I'm happy to"                                                                                           
+    - If collection has maxAdditionalQuestions === 0: proceed with current flow unchanged                                                                    
+                                                                                                                                                             
+  4b. Loading state                                                                                                                                          
+  - After user consents: show an animated overlay/modal                                                                                                      
+  - Visual: pulsing brain/sparkle animation with text stages:                                                                                                
+    - "Reviewing your responses..." (0-5s)                                                                                                                   
+    - "Identifying areas to explore..." (5-15s)                                                                                                              
+    - "Preparing your questions..." (15s+)                                                                                                                   
+  - Timeout at 30s: auto-dismiss with "No additional questions needed" and proceed to completion                                                             
+                                                                                                                                                             
+  4c. AQ interview phase                                                                                                                                     
+  - If Barbara returns questions: dismiss loading, show brief "We have N more questions for you" message                                                     
+  - AQ progress indicator distinct from main questions (e.g., "Additional Question 1 of 2")                                                                  
+  - After all AQs answered: "Complete Interview" button reappears (this time it truly ends the interview)                                                    
+  - If Barbara returns 0 questions: show brief "Thank you, no additional questions needed" and proceed to completion                                         
+                                                                                                                                                             
+  4d. Decline flow                                                                                                                                           
+  - Send decline_additional_questions to server                                                                                                              
+  - Server proceeds with normal end_interview completion flow                                                                                                
+  - Navigate to review page                                                                                                                                  
+                                                                                                                                                             
+  Phase 5: Client UI — Review Page                                                                                                                           
+                                                                                                                                                             
+  5a. Review API extension (server/routes.ts)                                                                                                                
+  - Modify GET /api/sessions/:id/review to include additional questions                                                                                      
+  - After mapping template questions to segments, append AQ segments                                                                                         
+  - AQ segments source their question text from session's additionalQuestions JSONB (not from template)                                                      
+  - Each AQ segment labeled with isAdditionalQuestion: true flag                                                                                             
+                                                                                                                                                             
+  5b. Review page display (client/src/pages/interview-review.tsx)                                                                                            
+  - After template question cards, add a divider: "Additional Questions"                                                                                     
+  - Render AQ cards with QuestionReviewCard using labels "AQ1", "AQ2", "AQ3" instead of "Q6", "Q7"                                                           
+  - Same functionality: transcript toggle, summary bullets, comment field                                                                                    
+  - If no AQs were asked, section is hidden                                                                                                                  
+                                                                                                                                                             
+  Phase 6: Session Detail Page (Researcher View)                                                                                                             
+                                                                                                                                                             
+  6a. Session detail (client/src/pages/session-detail.tsx)                                                                                                   
+  - Display AQ segments in a separate "Additional Questions" section                                                                                         
+  - Show Barbara's rationale for each AQ (from additionalQuestions JSONB)                                                                                    
+  - Researcher can see why Barbara asked each question                                                                                                       
+                                                                                                                                                             
+  Phase 7: Edge Cases & Robustness                                                                                                                           
+                                                                                                                                                             
+  - Resume support: If session crashes during AQ phase, additionalQuestionPhase: true flag tells the resume flow to restore AQ state. The generated questions
+   are already persisted in additionalQuestions JSONB, so Barbara doesn't need to regenerate them.                                                           
+  - Voice connection keepalive: Send periodic silence/keepalive during Barbara's analysis to prevent Realtime API timeout                                    
+  - Graceful degradation: Any failure in the AQ flow (Barbara error, timeout, WebSocket drop) should fall back to normal completion — never block the        
+  interviewee from finishing                                                                                                                                 
+  - Analytics: AQ responses are excluded from standard question performance metrics but included in overall theme analysis and cross-interview findings. Add 
+  a note in collection analytics that sessions may include additional questions.                                                                             
+                                                                                                                                                             
+  Files to Modify                                                                                                                                            
+  ┌────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐          
+  │                  File                  │                                               Changes                                                │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ shared/schema.ts                       │ Add maxAdditionalQuestions to collections, additionalQuestions + additionalQuestionPhase to sessions │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/barbara-orchestrator.ts         │ New generateAdditionalQuestions() function + config                                                  │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/voice-interview.ts              │ AQ WebSocket flow, state management, transcript/summary handling                                     │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/routes.ts                       │ Collection CRUD validation, review API extension                                                     │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ server/storage.ts                      │ Any new query methods if needed                                                                      │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/interview.tsx         │ Consent dialog, loading state, AQ phase UI                                                           │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/interview-review.tsx  │ AQ section in review                                                                                 │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/collection-new.tsx    │ maxAdditionalQuestions form field                                                                    │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/collection-detail.tsx │ maxAdditionalQuestions edit field                                                                    │          
+  ├────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤          
+  │ client/src/pages/session-detail.tsx    │ AQ display for researchers                                                                           │          
+  └────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘          
+  Recommended Implementation Order                                                                                                                           
+                                                                                                                                                             
+  1. Schema changes + migration (Phase 1a)                                                                                                                   
+  2. Collection form UI (Phase 1b) — lets you test config independently                                                                                      
+  3. Barbara function (Phase 2) — can test in isolation with mock data                                                                                       
+  4. WebSocket protocol + server flow (Phase 3) — the core complexity                                                                                        
+  5. Interview page UI (Phase 4) — connect to the server flow                                                                                                
+  6. Review page (Phase 5) + session detail (Phase 6)                                                                                                        
+  7. Edge cases and polish (Phase 7)                                                                                                                         
+                                                                                                                                                             
+  Risk Mitigation                                                                                                                                            
+                                                                                                                                                             
+  The highest risk is Phase 3 — keeping the voice session alive during Barbara's analysis while managing state transitions correctly. I'd recommend adding a 
+  feature flag (e.g., ADDITIONAL_QUESTIONS_ENABLED env var) so the feature can be disabled quickly if issues arise in production without rolling back code.
