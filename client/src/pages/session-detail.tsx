@@ -751,14 +751,61 @@ export default function SessionDetailPage() {
             </TabsList>
 
             <TabsContent value="summary" className="space-y-4">
-              {Array.isArray(session.questionSummaries) && session.questionSummaries.length > 0 ? (
-                (session.questionSummaries as QuestionSummary[]).map((summary: QuestionSummary, index: number) => (
+              {(() => {
+                // Build the full summaries list including AQs from legacy data
+                const templateSummaries = Array.isArray(session.questionSummaries) 
+                  ? (session.questionSummaries as QuestionSummary[]) 
+                  : [];
+                const additionalQuestionsData = session.additionalQuestions as { 
+                  questions?: Array<{ 
+                    questionText: string; 
+                    rationale?: string;
+                    summaryBullets?: string[];
+                    respondentSummary?: string;
+                  }>;
+                  generatedAt?: string;
+                } | null;
+
+                // Check if any AQ summaries are already in questionSummaries
+                const hasAQInSummaries = templateSummaries.some(s => s.isAdditionalQuestion);
+
+                // For legacy sessions: synthesize AQ summaries from additionalQuestions data
+                let allSummaries = [...templateSummaries];
+                if (!hasAQInSummaries && additionalQuestionsData?.questions) {
+                  additionalQuestionsData.questions.forEach((aq, i) => {
+                    if (aq.respondentSummary) {
+                      allSummaries.push({
+                        questionIndex: templateSummaries.length + i,
+                        questionText: aq.questionText,
+                        respondentSummary: aq.respondentSummary,
+                        keyInsights: aq.summaryBullets || [],
+                        completenessAssessment: "",
+                        relevantToFutureQuestions: [],
+                        wordCount: 0,
+                        turnCount: 0,
+                        activeTimeMs: 0,
+                        timestamp: additionalQuestionsData.generatedAt 
+                          ? new Date(additionalQuestionsData.generatedAt).getTime() 
+                          : Date.now(),
+                        isAdditionalQuestion: true,
+                        additionalQuestionIndex: i,
+                      });
+                    }
+                  });
+                }
+
+                return allSummaries.length > 0 ? (
+                  allSummaries.map((summary: QuestionSummary, index: number) => (
                   <Card key={index} className="mb-4" data-testid={`card-summary-${index}`}>
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">Q{summary.questionIndex + 1}</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {summary.isAdditionalQuestion 
+                                ? `AQ${(summary.additionalQuestionIndex ?? 0) + 1}` 
+                                : `Q${summary.questionIndex + 1}`}
+                            </Badge>
                             <span className="text-xs text-muted-foreground">
                               {summary.turnCount} turns, {summary.wordCount} words
                             </span>
@@ -830,7 +877,8 @@ export default function SessionDetailPage() {
                     </p>
                   </CardContent>
                 </Card>
-              )}
+              );
+              })()}
             </TabsContent>
 
             <TabsContent value="transcript">

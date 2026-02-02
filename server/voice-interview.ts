@@ -2891,13 +2891,34 @@ async function generateAndPersistAQSummary(
     }
     state.additionalQuestions = updatedAQs as typeof state.additionalQuestions;
 
+    // Also store in questionSummaries so it appears on the session detail page
+    const aqSummary: QuestionSummary = {
+      ...summary,
+      isAdditionalQuestion: true,
+      additionalQuestionIndex: aqIndex,
+    };
+
+    // Ensure array is properly sized to avoid sparse array issues
+    while (state.questionSummaries.length <= aqQuestionIndex) {
+      state.questionSummaries.push(null as unknown as QuestionSummary);
+    }
+    state.questionSummaries[aqQuestionIndex] = aqSummary;
+
     console.log(
       `[AQ Summary] Summary completed for AQ${aqIndex + 1}: "${summary.respondentSummary?.substring(0, 100) || ""}..."`,
     );
 
-    // Persist to database
+    // Normalize summaries for persistence: filter out undefined/null entries
+    const normalizedSummaries = state.questionSummaries
+      .map((s, idx) => (s ? { ...s, questionIndex: idx } : null))
+      .filter((s): s is QuestionSummary => s !== null);
+
+    // Persist BOTH additionalQuestions and questionSummaries
     await storage.persistInterviewState(sessionId, {
       additionalQuestions: updatedAQs,
+      questionSummaries: normalizedSummaries,
+      lastBarbaraGuidance: state.lastBarbaraGuidance,
+      questionStates: state.questionStates,
     });
     console.log(`[AQ Summary] Summary persisted for AQ${aqIndex + 1}`);
   } catch (error) {
