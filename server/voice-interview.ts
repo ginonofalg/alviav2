@@ -97,7 +97,7 @@ interface InterviewState {
   additionalQuestionsGenerating: boolean;
   maxAdditionalQuestions: number;
   // Track pending summary generation promises to await before completion
-  pendingSummaryPromises: Map<number, Promise<void>>;
+  pendingSummaryPromises: Map<number | string, Promise<void>>;
 }
 
 type TerminationReason =
@@ -2384,6 +2384,10 @@ INSTRUCTIONS:
         const aqTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
         await persistAQTranscript(sessionId, currentAQIdx, aqTranscriptSnapshot);
         
+        // Generate summary for current AQ (runs async, tracked for completion)
+        const aqSummaryPromise = generateAndPersistAQSummary(sessionId, currentAQIdx, aqTranscriptSnapshot);
+        state.pendingSummaryPromises.set(`aq-${currentAQIdx}`, aqSummaryPromise);
+        
         if (nextAQIndex < state.additionalQuestions.length) {
           await startAdditionalQuestion(sessionId, nextAQIndex);
         } else {
@@ -2412,6 +2416,10 @@ INSTRUCTIONS:
         // Save transcript for current AQ before ending
         const currentAQTranscript = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
         await persistAQTranscript(sessionId, state.currentAdditionalQuestionIndex, currentAQTranscript);
+        
+        // Generate summary for current AQ (tracked for completion)
+        const endAQSummaryPromise = generateAndPersistAQSummary(sessionId, state.currentAdditionalQuestionIndex, currentAQTranscript);
+        state.pendingSummaryPromises.set(`aq-${state.currentAdditionalQuestionIndex}`, endAQSummaryPromise);
         
         state.isInAdditionalQuestionsPhase = false;
         
@@ -2660,6 +2668,96 @@ async function persistAQTranscript(
     console.log(`[AQ Transcript] Successfully stored transcript for AQ${aqIndex + 1}`);
   } catch (error) {
     console.error(`[AQ Transcript] Error storing transcript for AQ${aqIndex + 1}:`, error);
+  }
+}
+
+// Helper function to generate and persist summary for additional questions
+async function generateAndPersistAQSummary(
+  sessionId: string,
+  aqIndex: number,
+  transcriptSnapshot: TranscriptEntry[],
+): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  const aq = state.additionalQuestions[aqIndex];
+  if (!aq) {
+    console.log(`[AQ Summary] No AQ found at index ${aqIndex}`);
+    return;
+  }
+
+  // Check if summary already exists for this AQ
+  if ((aq as any).summaryBullets && (aq as any).summaryBullets.length > 0) {
+    console.log(`[AQ Summary] Summary already exists for AQ${aqIndex + 1}, skipping`);
+    return;
+  }
+
+  try {
+    // Calculate the questionIndex for this AQ (offset by template question count)
+    const aqQuestionIndex = state.questions.length + aqIndex;
+
+    // Filter transcript entries for this specific AQ
+    const aqEntries = transcriptSnapshot.filter(
+      (e) => e.questionIndex === aqQuestionIndex,
+    );
+
+    // Count respondent entries and words
+    const respondentEntries = aqEntries.filter((e) => e.speaker === "respondent");
+    const wordCount = respondentEntries.reduce(
+      (sum, e) => sum + (e.text?.split(/\s+/).length || 0),
+      0,
+    );
+
+    console.log(
+      `[AQ Summary] Generating summary for AQ${aqIndex + 1} (session: ${sessionId}), ` +
+        `transcript snapshot: ${transcriptSnapshot.length} total entries, ` +
+        `${aqEntries.length} for this AQ, ${respondentEntries.length} respondent entries, ${wordCount} words`,
+    );
+
+    // Build minimal metrics for summary generation
+    const aqMetrics: QuestionMetrics = {
+      questionIndex: aqQuestionIndex,
+      turnCount: respondentEntries.length,
+      wordCount,
+      activeTimeMs: 0,
+      followUpCount: 0,
+      startedAt: Date.now(),
+      recommendedFollowUps: 0,
+    };
+
+    // Generate summary using the existing function
+    const summary = await generateQuestionSummary(
+      aqQuestionIndex,
+      aq.questionText,
+      aq.rationale || "", // Use rationale as guidance
+      transcriptSnapshot,
+      aqMetrics,
+      state.template?.objective || "",
+    );
+
+    // Store summary bullets in the AQ object
+    const updatedAQs = [...state.additionalQuestions];
+    if (updatedAQs[aqIndex]) {
+      (updatedAQs[aqIndex] as any).summaryBullets = summary.keyInsights;
+      (updatedAQs[aqIndex] as any).respondentSummary = summary.respondentSummary;
+    }
+    state.additionalQuestions = updatedAQs as typeof state.additionalQuestions;
+
+    console.log(
+      `[AQ Summary] Summary completed for AQ${aqIndex + 1}: "${summary.respondentSummary?.substring(0, 100) || ""}..."`,
+    );
+
+    // Persist to database
+    await storage.persistInterviewState(sessionId, {
+      additionalQuestions: updatedAQs,
+    });
+    console.log(`[AQ Summary] Summary persisted for AQ${aqIndex + 1}`);
+  } catch (error) {
+    console.error(
+      `[AQ Summary] Failed to generate summary for AQ${aqIndex + 1}:`,
+      error,
+    );
+    // Fail silently - doesn't affect interview progress
   }
 }
 
