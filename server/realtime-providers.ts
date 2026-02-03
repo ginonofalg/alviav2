@@ -153,6 +153,7 @@ export class GrokRealtimeProvider implements RealtimeProvider {
       output_audio_format: "pcm16",
       input_audio_transcription: {
         model: "whisper-large-v3",
+        language: "en",
       },
       turn_detection: {
         type: "server_vad",
