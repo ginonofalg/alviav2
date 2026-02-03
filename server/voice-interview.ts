@@ -27,7 +27,15 @@ import type {
   SilenceSegment,
   SilenceContext,
   SilenceStats,
+  TranscriptionQualitySignals,
 } from "@shared/schema";
+import {
+  createEmptyQualitySignals,
+  updateQualitySignals,
+  calculateQualityScore,
+  createQualityMetrics,
+  getQualityFlags,
+} from "./transcription-quality";
 import {
   getRealtimeProvider,
   type RealtimeProvider,
@@ -89,6 +97,8 @@ interface InterviewState {
   clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
   // Realtime API performance metrics
   metricsTracker: MetricsTracker;
+  // Transcription quality tracking (noisy environment detection)
+  transcriptionQualitySignals: TranscriptionQualitySignals;
   // Additional questions phase state
   isInAdditionalQuestionsPhase: boolean;
   additionalQuestions: GeneratedAdditionalQuestion[];
@@ -360,6 +370,58 @@ function addTranscriptEntry(
   if (state.transcriptLog.length > MAX_TRANSCRIPT_IN_MEMORY) {
     state.transcriptLog = state.transcriptLog.slice(-MAX_TRANSCRIPT_IN_MEMORY);
   }
+}
+
+function detectQuestionRepeat(state: InterviewState, questionIndex: number): boolean {
+  const recentAlviaUtterances = state.transcriptLog
+    .filter((e) => e.speaker === "alvia" && e.questionIndex === questionIndex)
+    .slice(-4);
+
+  if (recentAlviaUtterances.length < 2) return false;
+
+  const getKeywords = (text: string): Set<string> => {
+    const stopWords = new Set([
+      "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+      "have", "has", "had", "do", "does", "did", "will", "would", "could",
+      "should", "may", "might", "must", "shall", "can", "to", "of", "in",
+      "for", "on", "with", "at", "by", "from", "as", "into", "through",
+      "during", "before", "after", "above", "below", "between", "under",
+      "and", "but", "if", "or", "because", "until", "while", "although",
+      "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
+      "us", "them", "my", "your", "his", "its", "our", "their", "this",
+      "that", "these", "those", "what", "which", "who", "whom", "whose",
+      "so", "just", "now", "then", "here", "there", "when", "where", "why",
+      "how", "all", "each", "every", "both", "few", "more", "most", "other",
+      "some", "such", "no", "not", "only", "same", "than", "too", "very",
+      "please", "thank", "thanks", "sorry", "okay", "ok", "yes", "yeah",
+    ]);
+    return new Set(
+      text
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !stopWords.has(w))
+    );
+  };
+
+  const jaccardSimilarity = (a: Set<string>, b: Set<string>): number => {
+    if (a.size === 0 && b.size === 0) return 0;
+    const intersection = new Set([...a].filter((x) => b.has(x)));
+    const union = new Set([...a, ...b]);
+    return intersection.size / union.size;
+  };
+
+  for (let i = 0; i < recentAlviaUtterances.length - 1; i++) {
+    for (let j = i + 1; j < recentAlviaUtterances.length; j++) {
+      const kw1 = getKeywords(recentAlviaUtterances[i].text);
+      const kw2 = getKeywords(recentAlviaUtterances[j].text);
+      if (jaccardSimilarity(kw1, kw2) > 0.6) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function scheduleDebouncedPersist(sessionId: string): void {
@@ -781,6 +843,8 @@ export function handleVoiceInterview(
     clientDisconnectedAt: null,
     // Realtime API performance metrics
     metricsTracker: createEmptyMetricsTracker(),
+    // Transcription quality tracking (noisy environment detection)
+    transcriptionQualitySignals: createEmptyQualitySignals(),
     // Additional questions phase state
     isInAdditionalQuestionsPhase: false,
     additionalQuestions: [],
@@ -1568,6 +1632,48 @@ async function handleProviderEvent(sessionId: string, event: any) {
           const correctQuestionIndex =
             state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
 
+          // Transcription quality detection (noisy environment handling)
+          const wasQuestionRepeated = detectQuestionRepeat(state, correctQuestionIndex);
+          const qualityResult = updateQualitySignals(
+            state.transcriptionQualitySignals,
+            event.transcript,
+            wasQuestionRepeated
+          );
+          state.transcriptionQualitySignals = qualityResult.signals;
+
+          if (qualityResult.detectedIssues.length > 0) {
+            console.log(
+              `[TranscriptionQuality] Session ${sessionId}: ${qualityResult.detectedIssues.join(", ")}`
+            );
+          }
+
+          // Trigger environment check if quality signals indicate issues (once per 15 utterances)
+          if (
+            qualityResult.shouldTriggerEnvironmentCheck &&
+            !state.transcriptionQualitySignals.environmentCheckTriggered
+          ) {
+            state.transcriptionQualitySignals.environmentCheckTriggered = true;
+            state.transcriptionQualitySignals.environmentCheckTriggeredAt = Date.now();
+            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck = 0;
+
+            console.log(
+              `[TranscriptionQuality] Triggering environment check for session ${sessionId}`
+            );
+
+            // Send quality warning to client
+            const currentClientWs = interviewStates.get(sessionId)?.clientWs;
+            currentClientWs?.send(
+              JSON.stringify({
+                type: "transcription_quality_warning",
+                issues: qualityResult.detectedIssues,
+                qualityScore: calculateQualityScore(state.transcriptionQualitySignals),
+              })
+            );
+
+            // Inject environment check guidance for Alvia
+            injectEnvironmentCheckGuidance(state, sessionId);
+          }
+
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
@@ -1698,6 +1804,56 @@ async function handleProviderEvent(sessionId: string, event: any) {
 // Reduced timeout since Barbara analysis is now non-blocking (lag-by-one-turn architecture)
 // Barbara has more time to analyze since her guidance applies to the NEXT turn
 const BARBARA_TIMEOUT_MS = 5000;
+
+function injectEnvironmentCheckGuidance(
+  state: InterviewState,
+  sessionId: string
+): void {
+  const guidanceMessage = `AUDIO QUALITY CONCERN: You are having difficulty hearing the respondent clearly due to background noise or audio quality issues. 
+Politely say something like: "I'm sorry, I'm having a little trouble hearing you clearly. Would you be able to move somewhere quieter, or speak a bit closer to your microphone?" 
+Then continue the interview naturally once they acknowledge.`;
+
+  const environmentGuidance: BarbaraGuidance = {
+    action: "suggest_environment_check",
+    message: guidanceMessage,
+    confidence: 0.95,
+    reasoning: "Transcription quality signals indicate noisy environment or poor audio",
+  };
+
+  state.barbaraGuidanceQueue.push(environmentGuidance);
+
+  state.lastBarbaraGuidance = {
+    ...environmentGuidance,
+    timestamp: Date.now(),
+    questionIndex: state.currentQuestionIndex,
+  } as PersistedBarbaraGuidance;
+
+  if (state.providerWs?.readyState === WebSocket.OPEN) {
+    const basePrompt = state.lastAIPrompt || "";
+    const updatedPrompt = `${basePrompt}\n\n${guidanceMessage}`;
+
+    state.providerWs.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          instructions: updatedPrompt,
+        },
+      })
+    );
+
+    console.log(
+      `[TranscriptionQuality] Injected environment check guidance for session ${sessionId}`
+    );
+  }
+
+  const currentClientWs = interviewStates.get(sessionId)?.clientWs;
+  currentClientWs?.send(
+    JSON.stringify({
+      type: "barbara_guidance",
+      guidance: environmentGuidance,
+    })
+  );
+}
 
 async function triggerBarbaraAnalysis(
   sessionId: string,
@@ -2202,6 +2358,31 @@ INSTRUCTIONS:
           // Handle overlap detection and response asynchronously
           (async () => {
             let transitionInstruction = `The respondent has clicked Next Question - the previous question is now COMPLETE. Do NOT ask follow-ups about it. Simply give a brief acknowledgment (one or two words like "Great" or "Thank you") and then ask this question aloud: "${nextQuestion?.questionText}"`;
+
+            // Add confirmation checkpoint if transcription quality is low
+            const qualityScore = calculateQualityScore(
+              state.transcriptionQualitySignals
+            );
+            if (qualityScore < 70 && state.transcriptionQualitySignals.totalRespondentUtterances > 3) {
+              const previousQuestion = state.questions[previousIndex];
+              const recentRespondentText = state.transcriptLog
+                .filter(
+                  (e) =>
+                    e.questionIndex === previousIndex &&
+                    e.speaker === "respondent"
+                )
+                .slice(-3)
+                .map((e) => e.text)
+                .join(" ");
+
+              if (recentRespondentText.length > 20) {
+                const briefSummary = recentRespondentText.slice(0, 150);
+                transitionInstruction = `The respondent has clicked Next Question. IMPORTANT: Before moving on, briefly confirm what you heard since audio quality may have been unclear. Say something like: "Before we continue - I want to make sure I understood you correctly. It sounds like you said [paraphrase key points from: "${briefSummary}..."]. Is that right?" Then, once confirmed, ask the next question: "${nextQuestion?.questionText}"`;
+                console.log(
+                  `[TranscriptionQuality] Adding confirmation checkpoint for Q${previousIndex + 1} (score: ${qualityScore})`
+                );
+              }
+            }
 
             // Gather context for overlap detection
             const completedSummaries = state.questionSummaries.filter(
@@ -3081,9 +3262,24 @@ function finalizeAndPersistMetrics(
     silenceSegments: `${silenceSegments.length} stored / ${totalSilenceCount} total observed`,
   });
 
+  // Build transcription quality metrics from current signals
+  const transcriptionQualityMetrics = createQualityMetrics(state.transcriptionQualitySignals);
+
+  console.log(`[TranscriptionQuality] Final metrics for ${sessionId}:`, {
+    score: transcriptionQualityMetrics.qualityScore,
+    flags: transcriptionQualityMetrics.flagsDetected,
+    signals: {
+      shortUtteranceStreak: state.transcriptionQualitySignals.shortUtteranceStreak,
+      foreignLanguageCount: state.transcriptionQualitySignals.foreignLanguageCount,
+      questionRepeatCount: state.transcriptionQualitySignals.questionRepeatCount,
+      incoherentPhraseCount: state.transcriptionQualitySignals.incoherentPhraseCount,
+      totalUtterances: state.transcriptionQualitySignals.totalRespondentUtterances,
+    },
+  });
+
   // Persist metrics to database
   storage
-    .persistInterviewState(sessionId, { performanceMetrics })
+    .persistInterviewState(sessionId, { performanceMetrics, transcriptionQualityMetrics })
     .catch((error) => {
       console.error(
         `[Metrics] Failed to persist metrics for ${sessionId}:`,

@@ -200,6 +200,8 @@ export const interviewSessions = pgTable("interview_sessions", {
   reviewFlags: text("review_flags").array(), // Values: "needs_review", "flagged_quality", "verified", "excluded"
   // Realtime API monitoring metrics
   performanceMetrics: jsonb("performance_metrics"),
+  // Transcription quality metrics (for noisy environment detection)
+  transcriptionQualityMetrics: jsonb("transcription_quality_metrics"),
   // Additional Questions state
   additionalQuestions: jsonb("additional_questions"), // Type: AdditionalQuestionsData - stores generated AQs and metadata
   additionalQuestionPhase: boolean("additional_question_phase").default(false), // True when in AQ phase (for resume support)
@@ -432,7 +434,7 @@ export type PersistedTranscriptEntry = {
 };
 
 export type PersistedBarbaraGuidance = {
-  action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none";
+  action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "suggest_environment_check" | "confirm_understanding" | "none";
   message: string;
   confidence: number;
   timestamp: number;
@@ -452,6 +454,31 @@ export type PersistedQuestionState = {
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
 
 export type SessionReviewFlag = "needs_review" | "flagged_quality" | "verified" | "excluded";
+
+// Transcription quality tracking types (for noisy environment detection)
+export type TranscriptionQualityFlag =
+  | "garbled_audio"
+  | "environment_noise"
+  | "repeated_clarification"
+  | "foreign_language_hallucination";
+
+export type TranscriptionQualitySignals = {
+  shortUtteranceStreak: number;
+  foreignLanguageCount: number;
+  questionRepeatCount: number;
+  incoherentPhraseCount: number;
+  totalRespondentUtterances: number;
+  environmentCheckTriggered: boolean;
+  environmentCheckTriggeredAt: number | null;
+  utterancesSinceEnvironmentCheck: number;
+};
+
+export type TranscriptionQualityMetrics = {
+  signals: TranscriptionQualitySignals;
+  qualityScore: number;  // 0-100
+  flagsDetected: TranscriptionQualityFlag[];
+  environmentCheckCount: number;
+};
 
 // Realtime API Performance Metrics
 export type TokenUsage = {

@@ -233,6 +233,11 @@ export default function InterviewPage() {
   const [aqMessage, setAqMessage] = useState<string | null>(null);
   const [isCompletingAQ, setIsCompletingAQ] = useState(false);
   
+  // Transcription quality state (noisy environment detection)
+  const [transcriptionQualityScore, setTranscriptionQualityScore] = useState(100);
+  const [transcriptionQualityWarning, setTranscriptionQualityWarning] = useState<string | null>(null);
+  const [showQualitySwitchPrompt, setShowQualitySwitchPrompt] = useState(false);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -627,6 +632,21 @@ export default function InterviewPage() {
           console.log("[Interview] Barbara guidance:", message);
           if (message.highlightNextQuestion) {
             setHighlightNextButton(true);
+          }
+          break;
+
+        case "transcription_quality_warning":
+          // Noisy environment detected - show quality warning
+          console.log("[Interview] Transcription quality warning:", message);
+          setTranscriptionQualityScore(message.qualityScore ?? 50);
+          if (message.issues && message.issues.length > 0) {
+            setTranscriptionQualityWarning(
+              "Having trouble hearing clearly. Consider switching to text input."
+            );
+            setShowQualitySwitchPrompt(true);
+          } else if ((message.qualityScore ?? 100) >= 80) {
+            setTranscriptionQualityWarning(null);
+            setShowQualitySwitchPrompt(false);
           }
           break;
 
@@ -1158,6 +1178,58 @@ export default function InterviewPage() {
           </div>
 
           <TranscriptPanel entries={transcript} />
+
+          {/* Transcription quality warning - appears when noisy environment detected */}
+          <AnimatePresence>
+            {showQualitySwitchPrompt && !isTextOnlyMode && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <Card className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/30">
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                        <p className="text-sm text-amber-800 dark:text-amber-200">
+                          {transcriptionQualityWarning || "Having trouble hearing clearly."}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (isListening) {
+                              toggleListening();
+                            }
+                            setIsTextOnlyMode(true);
+                            setShowQualitySwitchPrompt(false);
+                          }}
+                          className="gap-1 border-amber-500/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                          data-testid="button-switch-to-text"
+                        >
+                          <Keyboard className="w-4 h-4" />
+                          Switch to text
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowQualitySwitchPrompt(false)}
+                          className="text-amber-600 dark:text-amber-400"
+                          data-testid="button-dismiss-quality-warning"
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Chat input for keyboard users */}
           <div className="flex gap-2">

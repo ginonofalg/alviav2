@@ -56,7 +56,7 @@ import {
   Eye,
   AlertCircle
 } from "lucide-react";
-import type { InterviewSession, Segment, Question, QuestionSummary, Respondent, SessionReviewFlag } from "@shared/schema";
+import type { InterviewSession, Segment, Question, QuestionSummary, Respondent, SessionReviewFlag, TranscriptionQualityMetrics } from "@shared/schema";
 import { format, formatDuration, intervalToDuration } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -320,6 +320,96 @@ function QualityScoreSummary({ summaries }: { summaries: QuestionSummary[] }) {
                 </Badge>
               ))}
             </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TranscriptionQualityCard({ metrics }: { metrics: TranscriptionQualityMetrics | null | undefined }) {
+  if (!metrics) return null;
+
+  const { qualityScore, flagsDetected, signals, environmentCheckCount } = metrics;
+
+  const flagLabels: Record<string, string> = {
+    garbled_audio: "Garbled Audio",
+    environment_noise: "Environment Noise",
+    repeated_clarification: "Repeated Clarifications",
+    foreign_language_hallucination: "Language Detection Issues",
+  };
+
+  return (
+    <Card data-testid="card-transcription-quality">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-primary" />
+          Transcription Quality
+        </CardTitle>
+        <CardDescription>
+          Audio quality metrics from the interview
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Overall Score</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${
+              qualityScore >= 80 ? "bg-green-500" : 
+              qualityScore >= 60 ? "bg-yellow-500" : "bg-red-500"
+            }`} />
+            <span className="font-medium">{qualityScore}%</span>
+          </div>
+        </div>
+
+        {flagsDetected && flagsDetected.length > 0 && (
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-muted-foreground">Issues Detected</span>
+            <div className="flex flex-wrap gap-2">
+              {flagsDetected.map((flag) => (
+                <Badge key={flag} variant="outline" className="text-xs">
+                  {flagLabels[flag] || flag.replace(/_/g, " ")}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {signals && (
+          <div className="space-y-2 pt-2 border-t">
+            <span className="text-xs font-medium text-muted-foreground">Signal Details</span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {signals.totalRespondentUtterances > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Utterances</span>
+                  <span>{signals.totalRespondentUtterances}</span>
+                </div>
+              )}
+              {signals.foreignLanguageCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Language Issues</span>
+                  <span className="text-yellow-600">{signals.foreignLanguageCount}</span>
+                </div>
+              )}
+              {signals.incoherentPhraseCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Unclear Phrases</span>
+                  <span className="text-yellow-600">{signals.incoherentPhraseCount}</span>
+                </div>
+              )}
+              {signals.questionRepeatCount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Repeat Requests</span>
+                  <span className="text-yellow-600">{signals.questionRepeatCount}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {environmentCheckCount > 0 && (
+          <div className="text-xs text-muted-foreground pt-2 border-t">
+            Environment check was triggered during this interview
           </div>
         )}
       </CardContent>
@@ -1052,6 +1142,7 @@ export default function SessionDetailPage() {
         <div className="space-y-6">
           <RespondentInfoPanel respondent={session.respondent || null} />
           <QualityScoreSummary summaries={(session.questionSummaries as QuestionSummary[]) || []} />
+          <TranscriptionQualityCard metrics={session.transcriptionQualityMetrics as TranscriptionQualityMetrics | null} />
           
           {/* Researcher Notes */}
           <Card data-testid="card-researcher-notes">

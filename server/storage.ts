@@ -14,7 +14,7 @@ import {
   type AggregatedCrossTemplateTheme, type AggregatedContextualRecommendation,
   type AggregatedConsensusPoint, type AggregatedDivergencePoint,
   type TemplateStaleness, type CollectionStaleness,
-  type RealtimePerformanceMetrics,
+  type RealtimePerformanceMetrics, type TranscriptionQualityMetrics,
   type InviteListEntry, type InsertInviteListEntry,
   type WaitlistEntry, type InsertWaitlistEntry
 } from "@shared/schema";
@@ -29,6 +29,7 @@ export interface InterviewStatePatch {
   pausedAt?: Date | null;
   completedAt?: Date | null;
   performanceMetrics?: RealtimePerformanceMetrics;
+  transcriptionQualityMetrics?: TranscriptionQualityMetrics;
   additionalQuestions?: unknown;
   additionalQuestionPhase?: boolean;
   currentAdditionalQuestionIndex?: number;
@@ -641,6 +642,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.performanceMetrics !== undefined) {
       updateData.performanceMetrics = patch.performanceMetrics;
+    }
+    if (patch.transcriptionQualityMetrics !== undefined) {
+      updateData.transcriptionQualityMetrics = patch.transcriptionQualityMetrics;
     }
     if (patch.additionalQuestions !== undefined) {
       updateData.additionalQuestions = patch.additionalQuestions;

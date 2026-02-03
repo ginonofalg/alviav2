@@ -176,6 +176,8 @@ export interface BarbaraGuidance {
     | "probe_followup"
     | "suggest_next_question"
     | "time_reminder"
+    | "suggest_environment_check"
+    | "confirm_understanding"
     | "none";
   message: string;
   confidence: number;
@@ -267,7 +269,7 @@ Your responsibilities:
 
 You must respond with a JSON object containing:
 {
-  "action": "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "none",
+  "action": "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "suggest_environment_check" | "confirm_understanding" | "none",
   "message": "A brief, natural instruction for Alvia (max 100 words)",
   "confidence": 0.0-1.0,
   "reasoning": "Brief explanation of your decision"
@@ -278,6 +280,8 @@ Action meanings:
 - "probe_followup": The answer lacks depth - suggest a specific follow-up probe for when the opportunity arises.
 - "suggest_next_question": The answer appears complete or appears to be reaching a conclusion - Alvia should offer to move on when there's a natural pause
 - "time_reminder": The response is running long - suggest moving the next question gracefully
+- "suggest_environment_check": Audio quality appears poor (fragmented responses, unclear transcription) - Alvia should politely ask the respondent to move to a quieter location or speak closer to the microphone
+- "confirm_understanding": Quality signals suggest potential transcription issues - before moving on, Alvia should briefly summarize what she heard and confirm it's correct
 - "none": No intervention needed - let the conversation flow naturally
 
 Be conservative - only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Phrase guidance flexibly since the conversation may have progressed by the time Alvia uses it.
