@@ -1,0 +1,186 @@
+Plan: Connection Resilience Improvements for Voice Interviews                                                                                                         
+                                                                                                                                                                       
+ Problem Summary                                                                                                                                                       
+                                                                                                                                                                       
+ During unstable connections, transcripts show garbled/repetitive output ("I, I, I, I" and "we we we we..." 52 times). Two distinct issues identified:                 
+                                                                                                                                                                       
+ 1. "conversation_already_has_active_response" - Multiple response.create calls sent without tracking active responses (API error)                                     
+ 2. Garbled respondent transcripts - STT (Whisper) outputting repeated words due to corrupted/duplicated audio input                                                   
+                                                                                                                                                                       
+ The Barbara timeouts are less critical since the "lag-by-one-turn" architecture means guidance applies to the NEXT turn.                                              
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Critical Files to Modify                                                                                                                                              
+                                                                                                                                                                       
+ - server/voice-interview.ts (response tracking, error handling)                                                                                                       
+ - server/transcription-quality.ts (repeated word detection)                                                                                                           
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Implementation Plan                                                                                                                                                   
+                                                                                                                                                                       
+ Phase 1: Active Response Tracking (HIGH PRIORITY)                                                                                                                     
+                                                                                                                                                                       
+ Goal: Prevent "conversation_already_has_active_response" errors                                                                                                       
+                                                                                                                                                                       
+ 1.1 Add response state tracking to InterviewState (line ~54-111)                                                                                                      
+ // Add to InterviewState interface:                                                                                                                                   
+ responseInProgress: boolean;           // Flag to prevent concurrent creates                                                                                          
+ lastResponseDoneAt: number | null;     // Timestamp of last response.done                                                                                             
+                                                                                                                                                                       
+ 1.2 Create response guard helper                                                                                                                                      
+ function canCreateResponse(state: InterviewState): boolean {                                                                                                          
+   return !state.responseInProgress;                                                                                                                                   
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ 1.3 Guard response.create callsites (6 locations: lines 1504, 2043, 2153, 2272, 2462, 2893)                                                                           
+                                                                                                                                                                       
+ Before each response.create:                                                                                                                                          
+ if (!canCreateResponse(state)) {                                                                                                                                      
+   console.log('[Response] Skipping - response already in progress');                                                                                                  
+   return;                                                                                                                                                             
+ }                                                                                                                                                                     
+ state.responseInProgress = true;                                                                                                                                      
+                                                                                                                                                                       
+ 1.4 Track response completion (in response.done handler)                                                                                                              
+ state.responseInProgress = false;                                                                                                                                     
+ state.lastResponseDoneAt = Date.now();                                                                                                                                
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 2: Specific Error Handling (HIGH PRIORITY)                                                                                                                      
+                                                                                                                                                                       
+ Goal: Recover gracefully from known error states                                                                                                                      
+                                                                                                                                                                       
+ 2.1 Add specific error handlers (line ~1792-1800)                                                                                                                     
+ case "error":                                                                                                                                                         
+   const errorCode = event.error?.code;                                                                                                                                
+                                                                                                                                                                       
+   if (errorCode === 'conversation_already_has_active_response') {                                                                                                     
+     // Don't propagate to client - mark as waiting and let current response finish                                                                                    
+     console.warn(`[VoiceInterview] Response already in progress, will retry after completion`);                                                                       
+     state.responseInProgress = true;  // Sync state                                                                                                                   
+     return;  // Don't send error to client                                                                                                                            
+   }                                                                                                                                                                   
+                                                                                                                                                                       
+   // Generic error - propagate to client                                                                                                                              
+   console.error(`[VoiceInterview] Provider error:`, event.error);                                                                                                     
+   clientWs?.send(...);                                                                                                                                                
+   break;                                                                                                                                                              
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 3: Repeated Word Detection (HIGH PRIORITY)                                                                                                                      
+                                                                                                                                                                       
+ Goal: Detect and flag garbled transcripts with repeated words                                                                                                         
+                                                                                                                                                                       
+ 3.1 Add repeated word detection to transcription-quality.ts                                                                                                           
+ interface RepeatedWordDetectionResult {                                                                                                                               
+   detected: boolean;                                                                                                                                                  
+   confidence: number;                                                                                                                                                 
+   repeatedWord: string | null;                                                                                                                                        
+   repeatCount: number;                                                                                                                                                
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ export function detectRepeatedWords(text: string): RepeatedWordDetectionResult {                                                                                      
+   const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);                                                                                            
+   if (words.length < 4) return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };                                                                
+                                                                                                                                                                       
+   // Count consecutive identical words                                                                                                                                
+   let maxRepeat = 1;                                                                                                                                                  
+   let currentRepeat = 1;                                                                                                                                              
+   let repeatedWord: string | null = null;                                                                                                                             
+                                                                                                                                                                       
+   for (let i = 1; i < words.length; i++) {                                                                                                                            
+     if (words[i] === words[i - 1]) {                                                                                                                                  
+       currentRepeat++;                                                                                                                                                
+       if (currentRepeat > maxRepeat) {                                                                                                                                
+         maxRepeat = currentRepeat;                                                                                                                                    
+         repeatedWord = words[i];                                                                                                                                      
+       }                                                                                                                                                               
+     } else {                                                                                                                                                          
+       currentRepeat = 1;                                                                                                                                              
+     }                                                                                                                                                                 
+   }                                                                                                                                                                   
+                                                                                                                                                                       
+   // 4+ consecutive identical words is almost certainly a glitch                                                                                                      
+   if (maxRepeat >= 4) {                                                                                                                                               
+     return {                                                                                                                                                          
+       detected: true,                                                                                                                                                 
+       confidence: Math.min(1.0, 0.5 + (maxRepeat - 4) * 0.1),                                                                                                         
+       repeatedWord,                                                                                                                                                   
+       repeatCount: maxRepeat,                                                                                                                                         
+     };                                                                                                                                                                
+   }                                                                                                                                                                   
+                                                                                                                                                                       
+   return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };                                                                                      
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ 3.2 Integrate into updateQualitySignals                                                                                                                               
+ - Add repeatedWordCount to TranscriptionQualitySignals                                                                                                                
+ - Check for repeated words in each transcription                                                                                                                      
+ - Trigger quality warning when detected                                                                                                                               
+                                                                                                                                                                       
+ 3.3 Add "repeated_word_glitch" flag to TranscriptionQualityFlag enum                                                                                                  
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 4: Transcript Sanitization (MEDIUM PRIORITY)                                                                                                                    
+                                                                                                                                                                       
+ Goal: Clean up obviously glitched transcripts before storing                                                                                                          
+                                                                                                                                                                       
+ 4.1 Add sanitization function                                                                                                                                         
+ export function sanitizeGlitchedTranscript(text: string): string {                                                                                                    
+   // Collapse 4+ consecutive identical words to 2 (natural emphasis)                                                                                                  
+   return text.replace(/\b(\w+)(\s+\1){3,}\b/gi, '$1 $1');                                                                                                             
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ 4.2 Apply sanitization before storing (in transcription handler ~line 1677)                                                                                           
+ const sanitizedTranscript = sanitizeGlitchedTranscript(event.transcript);                                                                                             
+ addTranscriptEntry(state, {                                                                                                                                           
+   speaker: "respondent",                                                                                                                                              
+   text: sanitizedTranscript,  // Use sanitized version                                                                                                                
+   timestamp: Date.now(),                                                                                                                                              
+   questionIndex: correctQuestionIndex,                                                                                                                                
+ });                                                                                                                                                                   
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 5: Connection State Guards (LOW PRIORITY - PARTIAL)                                                                                                             
+                                                                                                                                                                       
+ Goal: Ensure consistent readyState checks                                                                                                                             
+                                                                                                                                                                       
+ Note: Many places already check providerWs.readyState === WebSocket.OPEN. Only add guards where missing.                                                              
+                                                                                                                                                                       
+ 5.1 Audit remaining send locations without guards                                                                                                                     
+ - Line 2123-2136 (conversation.item.create) - missing check                                                                                                           
+ - Line 2151-2159 (response.create) - missing check                                                                                                                    
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Verification Plan                                                                                                                                                     
+                                                                                                                                                                       
+ 1. Unit tests: Add tests for detectRepeatedWords and sanitizeGlitchedTranscript                                                                                       
+ 2. Manual testing: Conduct interviews with network throttling (Chrome DevTools)                                                                                       
+ 3. Log monitoring: Watch for "conversation_already_has_active_response" errors                                                                                        
+ 4. Transcript review: Verify sanitization removes obvious glitches                                                                                                    
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Priority Order                                                                                                                                                        
+                                                                                                                                                                       
+ 1. Phase 1 (Response Tracking) - Prevents API errors                                                                                                                  
+ 2. Phase 2 (Error Handling) - Graceful recovery                                                                                                                       
+ 3. Phase 3 (Repeated Word Detection) - Catches glitched transcripts                                                                                                   
+ 4. Phase 4 (Transcript Sanitization) - Cleans up stored data                                                                                                          
+ 5. Phase 5 (Connection Guards) - Defense in depth (partial)                                                                                                           
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Files Modified                                                                                                                                                        
+ ┌─────────────────────────────────┬─────────────────────────────────────────────────┐                                                                                 
+ │              File               │                     Changes                     │                                                                                 
+ ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                                                 
+ │ server/voice-interview.ts       │ Response tracking, error handling, sanitization │                                                                                 
+ ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                                                 
+ │ server/transcription-quality.ts │ Repeated word detection                         │                                                                                 
+ ├─────────────────────────────────┼─────────────────────────────────────────────────┤                                                                                 
+ │ shared/schema.ts                │ Add repeatedWordCount to signals, new flag      │                                                                                 
+ └─────────────────────────────────┴─────────────────────────────────────────────────┘                                                                                 
+ ---                                                                                                                                                                   
+ What We're NOT Changing                                                                                                                                               
+                                                                                                                                                                       
+ - Barbara timeout (5s) - Intentionally reduced due to "lag-by-one-turn" architecture where guidance applies to NEXT turn                                              
+ - Audio packet deduplication - The repeated words are from STT output, not duplicate packets at our layer   

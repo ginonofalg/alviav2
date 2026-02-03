@@ -460,13 +460,15 @@ export type TranscriptionQualityFlag =
   | "garbled_audio"
   | "environment_noise"
   | "repeated_clarification"
-  | "foreign_language_hallucination";
+  | "foreign_language_hallucination"
+  | "repeated_word_glitch";
 
 export type TranscriptionQualitySignals = {
   shortUtteranceStreak: number;
   foreignLanguageCount: number;
   questionRepeatCount: number;
   incoherentPhraseCount: number;
+  repeatedWordGlitchCount: number;
   totalRespondentUtterances: number;
   environmentCheckTriggered: boolean;
   environmentCheckTriggeredAt: number | null;

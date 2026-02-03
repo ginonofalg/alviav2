@@ -35,6 +35,7 @@ import {
   calculateQualityScore,
   createQualityMetrics,
   getQualityFlags,
+  sanitizeGlitchedTranscript,
 } from "./transcription-quality";
 import {
   getRealtimeProvider,
@@ -108,6 +109,10 @@ interface InterviewState {
   maxAdditionalQuestions: number;
   // Track pending summary generation promises to await before completion
   pendingSummaryPromises: Map<number | string, Promise<void>>;
+  // Response state tracking - prevents concurrent response.create calls
+  responseInProgress: boolean;
+  responseStartedAt: number | null; // When current response.create was sent
+  lastResponseDoneAt: number | null;
 }
 
 type TerminationReason =
@@ -115,6 +120,26 @@ type TerminationReason =
   | "idle_timeout"
   | "max_age_exceeded"
   | "client_disconnected";
+
+// Response state tracking helper - prevents concurrent response.create calls
+// Includes timeout-based reset to prevent deadlock if response.done never arrives
+const RESPONSE_TIMEOUT_MS = 30000; // 30 seconds max for any response
+function canCreateResponse(state: InterviewState): boolean {
+  if (!state.responseInProgress) {
+    return true;
+  }
+  // Check if current response has been pending too long (covers first response hanging)
+  if (state.responseStartedAt) {
+    const timeSinceResponseStarted = Date.now() - state.responseStartedAt;
+    if (timeSinceResponseStarted > RESPONSE_TIMEOUT_MS) {
+      console.warn(`[Response] Resetting stale responseInProgress (${timeSinceResponseStarted}ms since response.create)`);
+      state.responseInProgress = false;
+      state.responseStartedAt = null;
+      return true;
+    }
+  }
+  return false;
+}
 
 // Realtime API metrics tracking during session
 interface MetricsTracker {
@@ -853,6 +878,10 @@ export function handleVoiceInterview(
     additionalQuestionsGenerating: false,
     maxAdditionalQuestions: 0, // Will be set from collection later
     pendingSummaryPromises: new Map(),
+    // Response state tracking - prevents concurrent response.create calls
+    responseInProgress: false,
+    responseStartedAt: null,
+    lastResponseDoneAt: null,
   };
   interviewStates.set(sessionId, state);
 
@@ -1195,6 +1224,12 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       `[VoiceInterview] ${provider.displayName} connection closed for session: ${sessionId}`,
     );
     state.isConnected = false;
+    // Reset responseInProgress on disconnect to prevent deadlock
+    if (state.responseInProgress) {
+      console.log(`[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`);
+      state.responseInProgress = false;
+      state.responseStartedAt = null;
+    }
     clientWs.send(JSON.stringify({ type: "disconnected" }));
   });
 
@@ -1496,17 +1531,23 @@ async function handleProviderEvent(sessionId: string, event: any) {
           state.providerWs.readyState === WebSocket.OPEN
         ) {
           state.isInitialSession = false; // Mark initial setup complete
-          console.log(
-            `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
-          );
-          state.providerWs.send(
-            JSON.stringify({
-              type: "response.create",
-              response: {
-                modalities: ["text", "audio"],
-              },
-            }),
-          );
+          if (!canCreateResponse(state)) {
+            console.log(`[Response] Skipping initial response - response already in progress for ${sessionId}`);
+          } else {
+            state.responseInProgress = true;
+            state.responseStartedAt = Date.now();
+            console.log(
+              `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
+            );
+            state.providerWs.send(
+              JSON.stringify({
+                type: "response.create",
+                response: {
+                  modalities: ["text", "audio"],
+                },
+              }),
+            );
+          }
         } else {
           console.log(
             `[VoiceInterview] Session configured, waiting for client audio_ready for ${sessionId}`,
@@ -1674,10 +1715,13 @@ async function handleProviderEvent(sessionId: string, event: any) {
             injectEnvironmentCheckGuidance(state, sessionId);
           }
 
+          // Sanitize transcript to remove connection glitches (e.g., "we we we we...")
+          const sanitizedTranscript = sanitizeGlitchedTranscript(event.transcript);
+
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
-            text: event.transcript,
+            text: sanitizedTranscript,
             timestamp: Date.now(),
             questionIndex: correctQuestionIndex,
           });
@@ -1689,7 +1733,7 @@ async function handleProviderEvent(sessionId: string, event: any) {
           const metrics =
             state.questionMetrics.get(state.currentQuestionIndex) ||
             createEmptyMetrics(state.currentQuestionIndex);
-          metrics.wordCount += event.transcript
+          metrics.wordCount += sanitizedTranscript
             .split(/\s+/)
             .filter((w: string) => w.length > 0).length;
           metrics.turnCount++;
@@ -1768,6 +1812,11 @@ async function handleProviderEvent(sessionId: string, event: any) {
     }
 
     case "response.done": {
+      // Reset response tracking state - allows next response.create
+      state.responseInProgress = false;
+      state.responseStartedAt = null;
+      state.lastResponseDoneAt = Date.now();
+
       // Use cached provider instance to avoid allocation on every response
       const tokenUsage = state.providerInstance.parseTokenUsage(event);
       if (tokenUsage) {
@@ -1789,15 +1838,31 @@ async function handleProviderEvent(sessionId: string, event: any) {
       break;
     }
 
-    case "error":
+    case "error": {
+      const errorCode = event.error?.code;
+      const errorMessage = event.error?.message || "Voice service error";
+
+      // Handle specific recoverable errors gracefully
+      if (errorCode === "conversation_already_has_active_response") {
+        // This error means we tried to create a response while one was in progress
+        // Log but don't change responseInProgress - the active response will finish and trigger response.done
+        console.warn(
+          `[VoiceInterview] Response already in progress for ${sessionId}, waiting for response.done`,
+        );
+        // Don't send error to client - this is recoverable
+        break;
+      }
+
+      // Generic error - log and propagate to client
       console.error(`[VoiceInterview] Provider error:`, event.error);
       clientWs?.send(
         JSON.stringify({
           type: "error",
-          message: event.error?.message || "Voice service error",
+          message: errorMessage,
         }),
       );
       break;
+    }
   }
 }
 
@@ -2035,17 +2100,23 @@ async function handleClientMessage(
       state.providerWs.readyState === WebSocket.OPEN
     ) {
       state.isInitialSession = false;
-      console.log(
-        `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
-      );
-      state.providerWs.send(
-        JSON.stringify({
-          type: "response.create",
-          response: {
-            modalities: ["text", "audio"],
-          },
-        }),
-      );
+      if (!canCreateResponse(state)) {
+        console.log(`[Response] Skipping initial response (audio_ready) - response already in progress for ${sessionId}`);
+      } else {
+        state.responseInProgress = true;
+        state.responseStartedAt = Date.now();
+        console.log(
+          `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
+        );
+        state.providerWs.send(
+          JSON.stringify({
+            type: "response.create",
+            response: {
+              modalities: ["text", "audio"],
+            },
+          }),
+        );
+      }
     }
     return;
   }
@@ -2093,10 +2164,13 @@ async function handleClientMessage(
           state.providerWs.readyState === WebSocket.OPEN &&
           message.text
         ) {
+          // Sanitize transcript to remove connection glitches (e.g., "we we we we...")
+          const sanitizedText = sanitizeGlitchedTranscript(message.text);
+
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
-            text: message.text,
+            text: sanitizedText,
             timestamp: Date.now(),
             questionIndex: state.currentQuestionIndex,
           });
@@ -2105,7 +2179,7 @@ async function handleClientMessage(
           const metrics =
             state.questionMetrics.get(state.currentQuestionIndex) ||
             createEmptyMetrics(state.currentQuestionIndex);
-          metrics.wordCount += message.text
+          metrics.wordCount += sanitizedText
             .split(/\s+/)
             .filter((w: string) => w.length > 0).length;
           metrics.turnCount++;
@@ -2148,14 +2222,20 @@ async function handleClientMessage(
             state.providerWs &&
             state.providerWs.readyState === WebSocket.OPEN
           ) {
-            state.providerWs.send(
-              JSON.stringify({
-                type: "response.create",
-                response: {
-                  modalities: ["text", "audio"],
-                },
-              }),
-            );
+            if (!canCreateResponse(state)) {
+              console.log(`[Response] Skipping text input response - response already in progress for ${sessionId}`);
+            } else {
+              state.responseInProgress = true;
+              state.responseStartedAt = Date.now();
+              state.providerWs.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    modalities: ["text", "audio"],
+                  },
+                }),
+              );
+            }
           }
         }
       })();
@@ -2267,14 +2347,20 @@ INSTRUCTIONS:
         );
 
         // Trigger AI response
-        state.providerWs.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              modalities: ["text", "audio"],
-            },
-          }),
-        );
+        if (!canCreateResponse(state)) {
+          console.log(`[Response] Skipping resume response - response already in progress for ${sessionId}`);
+        } else {
+          state.responseInProgress = true;
+          state.responseStartedAt = Date.now();
+          state.providerWs.send(
+            JSON.stringify({
+              type: "response.create",
+              response: {
+                modalities: ["text", "audio"],
+              },
+            }),
+          );
+        }
       }
       break;
     }
@@ -2457,14 +2543,20 @@ INSTRUCTIONS:
                 }),
               );
               // Then trigger the response
-              state.providerWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
-                  },
-                }),
-              );
+              if (!canCreateResponse(state)) {
+                console.log(`[Response] Skipping topic overlap response - response already in progress for ${sessionId}`);
+              } else {
+                state.responseInProgress = true;
+                state.responseStartedAt = Date.now();
+                state.providerWs.send(
+                  JSON.stringify({
+                    type: "response.create",
+                    response: {
+                      modalities: ["text", "audio"],
+                    },
+                  }),
+                );
+              }
             } else {
               console.warn(
                 "[TopicOverlap] WebSocket closed before sending transition instruction",
@@ -2888,14 +2980,20 @@ async function startAdditionalQuestion(
       }),
     );
 
-    state.providerWs.send(
-      JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["text", "audio"],
-        },
-      }),
-    );
+    if (!canCreateResponse(state)) {
+      console.log(`[Response] Skipping additional question response - response already in progress for ${sessionId}`);
+    } else {
+      state.responseInProgress = true;
+      state.responseStartedAt = Date.now();
+      state.providerWs.send(
+        JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+          },
+        }),
+      );
+    }
   }
 }
 

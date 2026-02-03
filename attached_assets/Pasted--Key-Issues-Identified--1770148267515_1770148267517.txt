@@ -1,0 +1,208 @@
+ Key Issues Identified                                                                                                                                                
+                                                                                                                                                                       
+  1. No Response State Tracking (Critical)                                                                                                                             
+  The code has 9+ places that call response.create but no mechanism to prevent concurrent calls. When connection is unstable, multiple response requests can fire      
+  simultaneously, causing the "conversation_already_has_active_response" error.                                                                                        
+                                                                                                                                                                       
+  2. Barbara Timeout Too Aggressive                                                                                                                                    
+  The 5-second timeout (line 1806) is too tight for API latency variations. The logs show repeated timeouts when the API is under load.                                
+                                                                                                                                                                       
+  3. No Duplicate Detection                                                                                                                                            
+  When WebSocket reconnects, there's no deduplication - audio packets and transcriptions can be processed multiple times, causing the repetitive "I, I, I, I" output.  
+                                                                                                                                                                       
+  4. Generic Error Handling                                                                                                                                            
+  The specific "conversation_already_has_active_response" error is just logged and forwarded to the client instead of being handled gracefully.                        
+                                                                                                                                                                       
+  Proposed Solution                                                                                                                                                    
+                                                                                                                                                                       
+  I've created a 5-phase plan in the plan file that addresses these issues in priority order:                                                                          
+                                                                                                                                                                       
+  1. Active Response Tracking - Add state to track in-progress responses and queue new requests                                                                        
+  2. Specific Error Handling - Recover gracefully from known error states                                                                                              
+  3. Barbara Timeout Improvements - Increase timeout and add retry logic                                                                                               
+  4. Duplicate Detection - Track processed transcriptions/audio commits                                                                                                
+  5. Connection State Guards - Safe send helpers with readyState checks                                                                                                
+                                                                                                                                                                       
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Ready to code?                                                                                                                                                        
+                                                                                                                                                                       
+ Here is Claude's plan:                                                                                                                                                
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Plan: Connection Resilience Improvements for Voice Interviews                                                                                                         
+                                                                                                                                                                       
+ Problem Summary                                                                                                                                                       
+                                                                                                                                                                       
+ During unstable connections, Alvia produces garbled/repetitive output ("I, I, I, I" and "we we we we we..."). The root causes identified from logs and code analysis: 
+                                                                                                                                                                       
+ 1. "conversation_already_has_active_response" - Multiple response.create calls sent without tracking active responses                                                 
+ 2. Barbara analysis timeouts - 5-second timeout too aggressive for API latency                                                                                        
+ 3. No duplicate detection - Audio packets/messages replayed on reconnect                                                                                              
+ 4. No error recovery - Specific errors logged but not handled                                                                                                         
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Critical Files to Modify                                                                                                                                              
+                                                                                                                                                                       
+ - server/voice-interview.ts (lines 54-111, 1792-1800, 2043-2508)                                                                                                      
+ - server/barbara-orchestrator.ts (lines 1806, timeout handling)                                                                                                       
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Implementation Plan                                                                                                                                                   
+                                                                                                                                                                       
+ Phase 1: Active Response Tracking (HIGH PRIORITY)                                                                                                                     
+                                                                                                                                                                       
+ Goal: Prevent "conversation_already_has_active_response" errors                                                                                                       
+                                                                                                                                                                       
+ 1.1 Add response state tracking to InterviewState (line ~54-111)                                                                                                      
+ // Add to InterviewState interface:                                                                                                                                   
+ activeResponseId: string | null;       // Current response in progress                                                                                                
+ responseCreatePending: boolean;        // Flag to prevent concurrent creates                                                                                          
+ lastResponseCreateAt: number;          // Timestamp for debouncing                                                                                                    
+ responseQueue: Array<{type: string, payload: any}>; // Queued response requests                                                                                       
+                                                                                                                                                                       
+ 1.2 Create response management helper functions                                                                                                                       
+ - canCreateResponse(state) - Check if safe to create new response                                                                                                     
+ - queueResponseCreate(state, payload) - Queue if response in progress                                                                                                 
+ - processResponseQueue(state) - Process queue on response.done                                                                                                        
+                                                                                                                                                                       
+ 1.3 Guard all response.create callsites (9 locations)                                                                                                                 
+ Add guards at lines: 1504, 2043, 2153, 2272, 2462, 2893, and others                                                                                                   
+                                                                                                                                                                       
+ Before each response.create:                                                                                                                                          
+ if (!canCreateResponse(state)) {                                                                                                                                      
+   queueResponseCreate(state, responsePayload);                                                                                                                        
+   return;                                                                                                                                                             
+ }                                                                                                                                                                     
+ state.responseCreatePending = true;                                                                                                                                   
+ state.lastResponseCreateAt = Date.now();                                                                                                                              
+                                                                                                                                                                       
+ 1.4 Track response completion (line ~1653)                                                                                                                            
+ On response.done event:                                                                                                                                               
+ state.activeResponseId = null;                                                                                                                                        
+ state.responseCreatePending = false;                                                                                                                                  
+ processResponseQueue(state);  // Handle any queued requests                                                                                                           
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 2: Specific Error Handling (HIGH PRIORITY)                                                                                                                      
+                                                                                                                                                                       
+ Goal: Recover gracefully from known error states                                                                                                                      
+                                                                                                                                                                       
+ 2.1 Add specific error handlers (line ~1792-1800)                                                                                                                     
+ case "error":                                                                                                                                                         
+   const errorCode = event.error?.code;                                                                                                                                
+                                                                                                                                                                       
+   if (errorCode === 'conversation_already_has_active_response') {                                                                                                     
+     // Don't propagate to client - will retry on response.done                                                                                                        
+     console.warn(`[VoiceInterview] Response already in progress, queuing...`);                                                                                        
+     state.responseCreatePending = true;  // Wait for current response                                                                                                 
+     return;  // Don't send error to client                                                                                                                            
+   }                                                                                                                                                                   
+                                                                                                                                                                       
+   if (errorCode === 'invalid_session') {                                                                                                                              
+     // Attempt to reconnect provider                                                                                                                                  
+     await reconnectProvider(state);                                                                                                                                   
+     return;                                                                                                                                                           
+   }                                                                                                                                                                   
+                                                                                                                                                                       
+   // Generic error - propagate to client                                                                                                                              
+   console.error(`[VoiceInterview] Provider error:`, event.error);                                                                                                     
+   clientWs?.send(...);                                                                                                                                                
+   break;                                                                                                                                                              
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 3: Barbara Timeout Improvements (MEDIUM PRIORITY)                                                                                                               
+                                                                                                                                                                       
+ Goal: Reduce timeout-induced failures during high latency                                                                                                             
+                                                                                                                                                                       
+ 3.1 Increase live interview timeout (line 1806)                                                                                                                       
+ // Change from 5000ms to configurable with higher default                                                                                                             
+ const BARBARA_TIMEOUT_MS = parseInt(process.env.BARBARA_TIMEOUT_MS || '15000');                                                                                       
+                                                                                                                                                                       
+ 3.2 Add retry with backoff for analysis failures (line ~1709-1711)                                                                                                    
+ async function triggerBarbaraAnalysisWithRetry(sessionId: string, maxRetries = 2) {                                                                                   
+   for (let attempt = 0; attempt <= maxRetries; attempt++) {                                                                                                           
+     try {                                                                                                                                                             
+       return await triggerBarbaraAnalysis(sessionId);                                                                                                                 
+     } catch (error) {                                                                                                                                                 
+       if (attempt < maxRetries) {                                                                                                                                     
+         await sleep(1000 * (attempt + 1));  // 1s, 2s backoff                                                                                                         
+         continue;                                                                                                                                                     
+       }                                                                                                                                                               
+       console.error(`[Barbara] Analysis failed after ${maxRetries} retries`);                                                                                         
+     }                                                                                                                                                                 
+   }                                                                                                                                                                   
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ 3.3 Add graceful timeout handling in barbara-orchestrator.ts                                                                                                          
+ Return cached/stale guidance instead of empty when timeout occurs                                                                                                     
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 4: Duplicate Detection (MEDIUM PRIORITY)                                                                                                                        
+                                                                                                                                                                       
+ Goal: Prevent duplicate audio/messages during reconnection                                                                                                            
+                                                                                                                                                                       
+ 4.1 Add message sequence tracking                                                                                                                                     
+ // Add to InterviewState:                                                                                                                                             
+ lastAudioCommitId: string | null;                                                                                                                                     
+ processedTranscriptionIds: Set<string>;                                                                                                                               
+                                                                                                                                                                       
+ 4.2 Guard audio buffer commits (line ~2075)                                                                                                                           
+ case "commit_audio":                                                                                                                                                  
+   const commitId = message.commitId || crypto.randomUUID();                                                                                                           
+   if (state.lastAudioCommitId === commitId) {                                                                                                                         
+     console.log('[Audio] Duplicate commit detected, skipping');                                                                                                       
+     return;                                                                                                                                                           
+   }                                                                                                                                                                   
+   state.lastAudioCommitId = commitId;                                                                                                                                 
+   // Continue with commit...                                                                                                                                          
+                                                                                                                                                                       
+ 4.3 Guard transcription processing (line ~1611)                                                                                                                       
+ const transcriptionId = event.event_id;                                                                                                                               
+ if (state.processedTranscriptionIds.has(transcriptionId)) {                                                                                                           
+   console.log('[Transcription] Duplicate detected, skipping');                                                                                                        
+   return;                                                                                                                                                             
+ }                                                                                                                                                                     
+ state.processedTranscriptionIds.add(transcriptionId);                                                                                                                 
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Phase 5: Connection State Guards (LOW PRIORITY)                                                                                                                       
+                                                                                                                                                                       
+ Goal: Ensure WebSocket ready before sending                                                                                                                           
+                                                                                                                                                                       
+ 5.1 Create safe send helper                                                                                                                                           
+ function safeSendToProvider(state: InterviewState, message: object): boolean {                                                                                        
+   if (!state.providerWs || state.providerWs.readyState !== WebSocket.OPEN) {                                                                                          
+     console.warn('[Provider] Not ready, message dropped:', message.type);                                                                                             
+     return false;                                                                                                                                                     
+   }                                                                                                                                                                   
+   state.providerWs.send(JSON.stringify(message));                                                                                                                     
+   return true;                                                                                                                                                        
+ }                                                                                                                                                                     
+                                                                                                                                                                       
+ 5.2 Replace direct sends with safe helper                                                                                                                             
+ At lines: 2151-2159, 2270-2277, 2460-2467, and others                                                                                                                 
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Verification Plan                                                                                                                                                     
+                                                                                                                                                                       
+ 1. Unit testing: Add tests for response queue logic                                                                                                                   
+ 2. Connection simulation: Test with simulated packet loss/latency                                                                                                     
+ 3. Manual testing: Conduct interviews with intentional network throttling                                                                                             
+ 4. Log monitoring: Watch for "conversation_already_has_active_response" and timeout errors                                                                            
+ 5. Transcript review: Verify no duplicate/garbled text in transcripts                                                                                                 
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Priority Order                                                                                                                                                        
+                                                                                                                                                                       
+ 1. Phase 1 (Active Response Tracking) - Addresses the primary error                                                                                                   
+ 2. Phase 2 (Error Handling) - Graceful recovery                                                                                                                       
+ 3. Phase 3 (Barbara Timeouts) - Reduces timeout frequency                                                                                                             
+ 4. Phase 4 (Duplicate Detection) - Prevents garbled transcripts                                                                                                       
+ 5. Phase 5 (Connection Guards) - Defense in depth                                                                                                                     
+                                                                                                                                                                       
+ ---                                                                                                                                                                   
+ Estimated Scope                                                                                                                                                       
+                                                                                                                                                                       
+ - Files modified: 2 (voice-interview.ts, barbara-orchestrator.ts)                                                                                                     
+ - Lines added: ~150-200                                                                                                                                               
+ - Lines modified: ~50                                                                                                                                                 
+ - Risk level: Medium (core voice interview logic) 

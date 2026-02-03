@@ -6,6 +6,7 @@ export function createEmptyQualitySignals(): TranscriptionQualitySignals {
     foreignLanguageCount: 0,
     questionRepeatCount: 0,
     incoherentPhraseCount: 0,
+    repeatedWordGlitchCount: 0,
     totalRespondentUtterances: 0,
     environmentCheckTriggered: false,
     environmentCheckTriggeredAt: null,
@@ -69,6 +70,58 @@ interface IncoherenceDetectionResult {
   isIncoherent: boolean;
   confidence: number;
   reason: string;
+}
+
+// Detects repeated word glitches caused by connection issues (e.g., "we we we we we...")
+export interface RepeatedWordDetectionResult {
+  detected: boolean;
+  confidence: number;
+  repeatedWord: string | null;
+  repeatCount: number;
+}
+
+// Strips punctuation from a word for comparison (handles "we," "we." "we!" etc.)
+function normalizeWord(word: string): string {
+  return word.replace(/[^\w'-]/g, '').toLowerCase();
+}
+
+export function detectRepeatedWords(text: string): RepeatedWordDetectionResult {
+  // Split on whitespace and normalize each word (strip punctuation for comparison)
+  const rawWords = text.split(/\s+/).filter(w => w.length > 0);
+  const words = rawWords.map(normalizeWord).filter(w => w.length > 0);
+  
+  if (words.length < 4) {
+    return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };
+  }
+
+  // Count consecutive identical words (after normalization)
+  let maxRepeat = 1;
+  let currentRepeat = 1;
+  let repeatedWord: string | null = null;
+
+  for (let i = 1; i < words.length; i++) {
+    if (words[i] === words[i - 1]) {
+      currentRepeat++;
+      if (currentRepeat > maxRepeat) {
+        maxRepeat = currentRepeat;
+        repeatedWord = words[i];
+      }
+    } else {
+      currentRepeat = 1;
+    }
+  }
+
+  // 4+ consecutive identical words is almost certainly a connection glitch
+  if (maxRepeat >= 4) {
+    return {
+      detected: true,
+      confidence: Math.min(1.0, 0.5 + (maxRepeat - 4) * 0.1),
+      repeatedWord,
+      repeatCount: maxRepeat,
+    };
+  }
+
+  return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };
 }
 
 export function detectIncoherentPhrase(text: string): IncoherenceDetectionResult {
@@ -141,6 +194,13 @@ export function updateQualitySignals(
   if (incoherenceResult.isIncoherent && incoherenceResult.confidence >= 0.5) {
     signals.incoherentPhraseCount++;
     detectedIssues.push(`Incoherent: ${incoherenceResult.reason}`);
+  }
+
+  // Detect repeated word glitches (connection issues causing "we we we we...")
+  const repeatedWordResult = detectRepeatedWords(transcriptText);
+  if (repeatedWordResult.detected) {
+    signals.repeatedWordGlitchCount++;
+    detectedIssues.push(`Repeated word glitch: "${repeatedWordResult.repeatedWord}" x${repeatedWordResult.repeatCount}`);
   }
 
   const words = transcriptText.trim().split(/\s+/).filter(w => w.length > 0);
@@ -225,7 +285,26 @@ export function getQualityFlags(signals: TranscriptionQualitySignals): Transcrip
     flags.push("environment_noise");
   }
 
+  if (signals.repeatedWordGlitchCount > 0) {
+    flags.push("repeated_word_glitch");
+  }
+
   return flags;
+}
+
+// Sanitizes glitched transcripts by collapsing 4+ consecutive identical words to 2
+// This preserves natural emphasis ("yes yes") while removing obvious glitches ("we we we we we...")
+// Handles both space-separated ("we we we we") and punctuation-separated ("we, we, we, we") patterns
+export function sanitizeGlitchedTranscript(text: string): string {
+  // First pass: Handle space-separated repeats (e.g., "we we we we we")
+  // Match a word followed by 3+ whitespace-separated repetitions (total 4+)
+  let result = text.replace(/\b(\w+)((?:\s+\1){3,})\b/gi, '$1 $1');
+  
+  // Second pass: Handle punctuation-separated repeats (e.g., "we, we, we, we" or "I. I. I. I.")
+  // Match word + punctuation patterns repeated 4+ times
+  result = result.replace(/\b(\w+)([,.\-;:!?]?\s+\1){3,}\b/gi, '$1 $1');
+  
+  return result;
 }
 
 export function createQualityMetrics(signals: TranscriptionQualitySignals): TranscriptionQualityMetrics {
