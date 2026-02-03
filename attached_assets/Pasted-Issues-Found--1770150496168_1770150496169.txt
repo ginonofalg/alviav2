@@ -1,0 +1,35 @@
+Issues Found                                                                                                                                                         
+                                                                                                                                                                       
+  1. Quality score doesn't penalize repeated word glitches (Bug)                                                                                                       
+                                                                                                                                                                       
+  In calculateQualityScore() (lines 249-267), repeatedWordGlitchCount is tracked but never penalized:                                                                  
+                                                                                                                                                                       
+  // These are penalized:                                                                                                                                              
+  foreignLanguageCount, incoherentPhraseCount, questionRepeatCount, shortUtteranceStreak                                                                               
+                                                                                                                                                                       
+  // This is NOT penalized:                                                                                                                                            
+  repeatedWordGlitchCount  // ← Missing from score calculation                                                                                                         
+                                                                                                                                                                       
+  Fix needed: Add penalty in calculateQualityScore:                                                                                                                    
+  // Add penalty for repeated word glitches (connection issues)                                                                                                        
+  const repeatedWordPenalty = Math.min(signals.repeatedWordGlitchCount * 15, 45);                                                                                      
+  score -= repeatedWordPenalty;                                                                                                                                        
+                                                                                                                                                                       
+  2. Sanitization regex has subtle redundancy (Minor)                                                                                                                  
+                                                                                                                                                                       
+  Line 305's second pass regex:                                                                                                                                        
+  /\b(\w+)([,.\-;:!?]?\s+\1){3,}\b/gi                                                                                                                                  
+                                                                                                                                                                       
+  The ? makes punctuation optional, so after the first pass already handles space-only patterns, the second pass might partially re-match. Not a bug, but could be     
+  simplified to require punctuation: [,.\-;:!?]\s+ instead of [,.\-;:!?]?\s+.                                                                                          
+                                                                                                                                                                       
+  3. shouldTriggerCheck doesn't include repeated word glitches (Design Decision)                                                                                       
+                                                                                                                                                                       
+  The environment check trigger (lines 232-247) doesn't factor in repeatedWordGlitchCount. This might be intentional since repeated words indicate connection issues,  
+  not environmental noise. Worth confirming the intended behavior.                                                                                                     
+                                                                                                                                                                       
+  ---                                                                                                                                                                  
+  Overall Assessment                                                                                                                                                   
+                                                                                                                                                                       
+  The implementation is solid and addresses the core issues. The main fix needed is adding repeatedWordGlitchCount to the quality score calculation. The response      
+  tracking logic looks correct and the sanitization will clean up garbled transcripts effectively.
