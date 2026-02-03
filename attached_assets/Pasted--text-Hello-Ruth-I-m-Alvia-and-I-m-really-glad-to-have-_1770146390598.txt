@@ -1,0 +1,884 @@
+[
+  {
+    "text": "Hello Ruth, I'm Alvia, and I’m really glad to have this conversation with you today. The purpose of this interview is to gather insights that will help Coodes improve client retention and recall, without adding complexity or cost, by refining communication, service delivery, and follow-up.\n\nSo, to begin: When you think about your experience with Coodes, how clearly do you remember it? Very clearly, quite clearly, vaguely, or very little?",
+    "speaker": "alvia",
+    "timestamp": 1770143371058,
+    "questionIndex": 0
+  },
+  {
+    "text": "Quite clearly.",
+    "speaker": "respondent",
+    "timestamp": 1770143397853,
+    "questionIndex": 0
+  },
+  {
+    "text": "Thank you for sharing that. Could you tell me a bit more about what stands out most to you from that experience? That will help us understand how it’s stayed with you.",
+    "speaker": "alvia",
+    "timestamp": 1770143398975,
+    "questionIndex": 0
+  },
+  {
+    "text": "They were responsive and knowledgeable.",
+    "speaker": "respondent",
+    "timestamp": 1770143413056,
+    "questionIndex": 0
+  },
+  {
+    "text": "Thank you for sharing that. It sounds like responsiveness and knowledge really stood out. Was there anything else about the experience that made it memorable, or anything that’s less clear?",
+    "speaker": "alvia",
+    "timestamp": 1770143414706,
+    "questionIndex": 0
+  },
+  {
+    "text": "I felt incapable hands.",
+    "speaker": "respondent",
+    "timestamp": 1770143427067,
+    "questionIndex": 0
+  },
+  {
+    "text": "Thank you for sharing that. It sounds like you had a good feeling of trust in their capabilities. Is there anything else you remember that really stood out, or shall we move on to the next question?",
+    "speaker": "alvia",
+    "timestamp": 1770143428688,
+    "questionIndex": 0
+  },
+  {
+    "text": "Move on.",
+    "speaker": "respondent",
+    "timestamp": 1770143438041,
+    "questionIndex": 0
+  },
+  {
+    "text": "Great, you can go ahead and click the Next Question button below, and we’ll move on to the next topic.",
+    "speaker": "alvia",
+    "timestamp": 1770143438924,
+    "questionIndex": 0
+  },
+  {
+    "text": "Thank you for sharing that—it's helpful to know you felt the team was responsive and knowledgeable, and that you were in capable hands. Now, what type of legal matter did you originally work with us on, and who did you work closely with?",
+    "speaker": "alvia",
+    "timestamp": 1770143447948,
+    "questionIndex": 1
+  },
+  {
+    "text": "a pay and a commercial matter.",
+    "speaker": "respondent",
+    "timestamp": 1770143464831,
+    "questionIndex": 1
+  },
+  {
+    "text": "Thank you for that. Could you share a bit more about the commercial matter—what kind of issue it was—and who you worked closely with on the team?",
+    "speaker": "alvia",
+    "timestamp": 1770143465965,
+    "questionIndex": 1
+  },
+  {
+    "text": "I don't want to share the commercial matter, but it was Abby, as in Abigail.",
+    "speaker": "respondent",
+    "timestamp": 1770143484641,
+    "questionIndex": 1
+  },
+  {
+    "text": "That's absolutely fine. I appreciate you sharing that it was Abigail. We can focus on that. Could you tell me a bit more about how you worked with Abigail specifically?",
+    "speaker": "alvia",
+    "timestamp": 1770143486208,
+    "questionIndex": 1
+  },
+  {
+    "text": "It was, her name is Abby, by the way, and she took control of the situation and then...",
+    "speaker": "respondent",
+    "timestamp": 1770143503649,
+    "questionIndex": 1
+  },
+  {
+    "text": "One of her people.",
+    "speaker": "respondent",
+    "timestamp": 1770143507072,
+    "questionIndex": 1
+  },
+  {
+    "text": "helped me to see it through to the end.",
+    "speaker": "respondent",
+    "timestamp": 1770143514167,
+    "questionIndex": 1
+  },
+  {
+    "text": "Thank you for sharing that. So, it sounds like Abby and her team member guided you through the process. Just to confirm, was there a specific type of commercial matter, like a payment dispute, contract issue, or employment-related matter? That’ll help clarify.",
+    "speaker": "alvia",
+    "timestamp": 1770143516543,
+    "questionIndex": 1
+  },
+  {
+    "text": "It was a payment dispute and a contract issue.",
+    "speaker": "respondent",
+    "timestamp": 1770143536180,
+    "questionIndex": 1
+  },
+  {
+    "text": "Got it, a payment dispute and a contract issue. Thank you for clarifying. And who did you work closely with on the team besides Abby?",
+    "speaker": "alvia",
+    "timestamp": 1770143537629,
+    "questionIndex": 1
+  },
+  {
+    "text": "I can't remember, it may have been Lucy.",
+    "speaker": "respondent",
+    "timestamp": 1770143548237,
+    "questionIndex": 1
+  },
+  {
+    "text": "That's okay, it’s helpful to know that it might have been Lucy. Thank you for sharing that. Is there anything else you'd like to add, or shall we move on to the next question?",
+    "speaker": "alvia",
+    "timestamp": 1770143549568,
+    "questionIndex": 1
+  },
+  {
+    "text": "Next question.",
+    "speaker": "respondent",
+    "timestamp": 1770143561489,
+    "questionIndex": 1
+  },
+  {
+    "text": "Thank you. You can go ahead and click the Next Question button below, and we’ll move forward from there.",
+    "speaker": "alvia",
+    "timestamp": 1770143562539,
+    "questionIndex": 2
+  },
+  {
+    "text": "It's great to hear that responsiveness and communication stood out, along with the expertise you mentioned. What aspects of working with Coodes worked particularly well for you?",
+    "speaker": "alvia",
+    "timestamp": 1770143572299,
+    "questionIndex": 3
+  },
+  {
+    "text": "I think it was that, their responsiveness and their communication.",
+    "speaker": "respondent",
+    "timestamp": 1770143590190,
+    "questionIndex": 3
+  },
+  {
+    "text": "That's really helpful to hear. Could you share a specific example of a moment when their responsiveness or communication made a difference for you?",
+    "speaker": "alvia",
+    "timestamp": 1770143591301,
+    "questionIndex": 3
+  },
+  {
+    "text": "Because it was quite an emotional situation, and I think it was the understanding and empathy that stood out.",
+    "speaker": "respondent",
+    "timestamp": 1770143610947,
+    "questionIndex": 3
+  },
+  {
+    "text": "That's really valuable feedback. It sounds like their empathy made a big difference during that emotional situation. Thank you for sharing that. How would you rate your experience overall?",
+    "speaker": "alvia",
+    "timestamp": 1770143612462,
+    "questionIndex": 3
+  },
+  {
+    "text": "I'd say it was a night.",
+    "speaker": "respondent",
+    "timestamp": 1770143624994,
+    "questionIndex": 3
+  },
+  {
+    "text": "Thank you for that answer. Now, you can click the Next Question button below whenever you’re ready, and we’ll move on to the next topic.",
+    "speaker": "alvia",
+    "timestamp": 1770143626997,
+    "questionIndex": 3
+  },
+  {
+    "text": "It’s helpful to hear that responsiveness and communication stood out, especially during an emotional time. Were there any moments that felt harder, slower, or more frustrating than you expected?",
+    "speaker": "alvia",
+    "timestamp": 1770143634876,
+    "questionIndex": 4
+  },
+  {
+    "text": "I guess it was probably the from the other side, not from coast.",
+    "speaker": "respondent",
+    "timestamp": 1770143654415,
+    "questionIndex": 4
+  },
+  {
+    "text": "I see, so it sounds like the challenges came more from the other side rather than from Coodes. Could you share a bit more about what specifically was frustrating on that side? That might help us understand the full picture.",
+    "speaker": "alvia",
+    "timestamp": 1770143655966,
+    "questionIndex": 4
+  },
+  {
+    "text": "It was the",
+    "speaker": "respondent",
+    "timestamp": 1770143688187,
+    "questionIndex": 4
+  },
+  {
+    "text": "It was at the time that she took.",
+    "speaker": "respondent",
+    "timestamp": 1770143691916,
+    "questionIndex": 4
+  },
+  {
+    "text": "Thank you for sharing that. When you say it was the timing that felt challenging, can you describe a specific moment or step where the timing felt off? That way we can get a clearer picture.",
+    "speaker": "alvia",
+    "timestamp": 1770143693450,
+    "questionIndex": 4
+  },
+  {
+    "text": "There was at the time that I had to wait for the other side.",
+    "speaker": "respondent",
+    "timestamp": 1770143707002,
+    "questionIndex": 4
+  },
+  {
+    "text": "I understand. So the delay in receiving responses or actions from the other side was what made things feel slower or more frustrating. Could you share a bit more about how that affected the overall process for you? That will help us pinpoint what might be improved.",
+    "speaker": "alvia",
+    "timestamp": 1770143708836,
+    "questionIndex": 4
+  },
+  {
+    "text": "No, I can't really late.",
+    "speaker": "respondent",
+    "timestamp": 1770143724612,
+    "questionIndex": 4
+  },
+  {
+    "text": "That's completely fine. Thank you for sharing what you have so far. If you'd prefer, we can move on to the next question. Let me know if you'd like to proceed.",
+    "speaker": "alvia",
+    "timestamp": 1770143726405,
+    "questionIndex": 4
+  },
+  {
+    "text": "I appreciate you mentioning the timing and communication issues. That helps put things in context. Now, during your matter, how clear did you feel about what was happening next? Very clear, mostly clear, sometimes unclear, or often unclear?",
+    "speaker": "alvia",
+    "timestamp": 1770143741802,
+    "questionIndex": 5
+  },
+  {
+    "text": "M-mas meuk.",
+    "speaker": "respondent",
+    "timestamp": 1770143756001,
+    "questionIndex": 5
+  },
+  {
+    "text": "Thanks for sharing that. Could you tell me a bit more about where it felt mostly clear, and where it might have felt unclear or less certain? That way we can pinpoint where the gaps were.",
+    "speaker": "alvia",
+    "timestamp": 1770143756408,
+    "questionIndex": 5
+  },
+  {
+    "text": "it was because of the timing issue waytaking from the other side, so I didn't know the.",
+    "speaker": "respondent",
+    "timestamp": 1770143779859,
+    "questionIndex": 5
+  },
+  {
+    "text": "the full process of what we got got to go over through.",
+    "speaker": "respondent",
+    "timestamp": 1770143782871,
+    "questionIndex": 5
+  },
+  {
+    "text": "Maybe that could have been explained a little bit more.",
+    "speaker": "respondent",
+    "timestamp": 1770143788881,
+    "questionIndex": 5
+  },
+  {
+    "text": "Thank you for that. So, it sounds like the clarity could have been improved around the timing and the process from the other side. Can you give an example of a next step or decision that felt unclear?",
+    "speaker": "alvia",
+    "timestamp": 1770143790707,
+    "questionIndex": 5
+  },
+  {
+    "text": "I can't remember.",
+    "speaker": "respondent",
+    "timestamp": 1770143803647,
+    "questionIndex": 5
+  },
+  {
+    "text": "That's completely understandable. It’s okay if you can’t recall a specific example right now. Thank you for sharing what you have. We can pause here and move on when you're ready.",
+    "speaker": "alvia",
+    "timestamp": 1770143806054,
+    "questionIndex": 5
+  },
+  {
+    "text": "It’s helpful to hear that you’ve thought about the proactive management and the explanation of the process. Now, how confident did you feel that your matter was being proactively managed? Was it very confident, fairly confident, not very confident, or not confident at all?",
+    "speaker": "alvia",
+    "timestamp": 1770143822278,
+    "questionIndex": 6
+  },
+  {
+    "text": "Can I click on the",
+    "speaker": "respondent",
+    "timestamp": 1770143837002,
+    "questionIndex": 6
+  },
+  {
+    "text": "Thank you for sharing that. Could you tell me a bit more about what contributed to that feeling—for example, were there specific updates or actions that influenced your confidence?",
+    "speaker": "alvia",
+    "timestamp": 1770143838687,
+    "questionIndex": 6
+  },
+  {
+    "text": "It's just to say that there was a moment in time I was also updated by one of the lawyers.",
+    "speaker": "respondent",
+    "timestamp": 1770143853206,
+    "questionIndex": 6
+  },
+  {
+    "text": "I see, so it was good to receive those updates from the lawyer. That definitely helps build confidence. Would you say that you felt fairly confident overall?",
+    "speaker": "alvia",
+    "timestamp": 1770143855333,
+    "questionIndex": 6
+  },
+  {
+    "text": "Yes, yes.",
+    "speaker": "respondent",
+    "timestamp": 1770143863688,
+    "questionIndex": 6
+  },
+  {
+    "text": "Thank you for that answer. Now, you can go ahead and click the Next Question button below when you're ready, and we'll move on to the next topic.",
+    "speaker": "alvia",
+    "timestamp": 1770143865320,
+    "questionIndex": 6
+  },
+  {
+    "text": "It’s great that you’ve highlighted the responsiveness and communication clarity. Are there any other thoughts you'd like to add? Now, how would you rate the quality of communication from your legal team? Excellent, Good, Acceptable, or Poor?",
+    "speaker": "alvia",
+    "timestamp": 1770143875428,
+    "questionIndex": 7
+  },
+  {
+    "text": "Good, good.",
+    "speaker": "respondent",
+    "timestamp": 1770143887268,
+    "questionIndex": 7
+  },
+  {
+    "text": "Thank you. You mentioned good quality communication. Could you tell me a bit more about what made it good, or if there’s anything specific that stood out?",
+    "speaker": "alvia",
+    "timestamp": 1770143889102,
+    "questionIndex": 7
+  },
+  {
+    "text": "I think it's whatever has already been said. As soon as there was an update to be given to me, it was given.",
+    "speaker": "respondent",
+    "timestamp": 1770143906626,
+    "questionIndex": 7
+  },
+  {
+    "text": "That’s good to hear. It sounds like receiving updates promptly made a positive difference. Would you say that covered most of your needs, or is there anything else you’d like to add?",
+    "speaker": "alvia",
+    "timestamp": 1770143907467,
+    "questionIndex": 7
+  },
+  {
+    "text": "No, no, no.",
+    "speaker": "respondent",
+    "timestamp": 1770143916015,
+    "questionIndex": 7
+  },
+  {
+    "text": "Alright, thank you for clarifying. If you’re ready, you can click the Next Question button below, and we’ll move on to the next topic.",
+    "speaker": "alvia",
+    "timestamp": 1770143918023,
+    "questionIndex": 7
+  },
+  {
+    "text": "That’s a really important point about feeling listened to, both personally and commercially. Did you feel listened to and understood—not just legally, but in those personal or commercial aspects? Yes, consistently, most of the time, occasionally, or no?",
+    "speaker": "alvia",
+    "timestamp": 1770143927372,
+    "questionIndex": 8
+  },
+  {
+    "text": "Yes, consistency is true, right.",
+    "speaker": "respondent",
+    "timestamp": 1770143944415,
+    "questionIndex": 8
+  },
+  {
+    "text": "That's good to hear. Thank you for sharing that. Is there anything else you'd like to add, or shall we move on to the next question?",
+    "speaker": "alvia",
+    "timestamp": 1770143945780,
+    "questionIndex": 8
+  },
+  {
+    "text": "Maisaisons",
+    "speaker": "respondent",
+    "timestamp": 1770143955383,
+    "questionIndex": 8
+  },
+  {
+    "text": "Thank you. Now, looking back, how would you rate the value you received for the fees paid? Very good value, reasonable value, poor value, or not sure?",
+    "speaker": "alvia",
+    "timestamp": 1770143958060,
+    "questionIndex": 9
+  },
+  {
+    "text": "Rea-reasonable.",
+    "speaker": "respondent",
+    "timestamp": 1770143967110,
+    "questionIndex": 9
+  },
+  {
+    "text": "Thank you for that. Could you share a bit more about what made you feel the value was reasonable, or if there were any specific aspects that influenced that?",
+    "speaker": "alvia",
+    "timestamp": 1770143968914,
+    "questionIndex": 9
+  },
+  {
+    "text": "I have the thinking that any loyalty is respect.",
+    "speaker": "respondent",
+    "timestamp": 1770143979111,
+    "questionIndex": 9
+  },
+  {
+    "text": "I appreciate you sharing that. It sounds like the cost felt aligned with the level of service. Thank you for that insight. Is there anything else you'd like to add, or shall we move on?",
+    "speaker": "alvia",
+    "timestamp": 1770143981366,
+    "questionIndex": 9
+  },
+  {
+    "text": "That’s a helpful connection—trust and confidence seem to have been built through their responsiveness and communication. Was there anything else that helped you trust them during your matter? And on the flip side, did anything reduce your confidence or trust, even slightly?",
+    "speaker": "alvia",
+    "timestamp": 1770144005761,
+    "questionIndex": 10
+  },
+  {
+    "text": "No, no, no, no, I, I, I, I, I...",
+    "speaker": "respondent",
+    "timestamp": 1770144021119,
+    "questionIndex": 10
+  },
+  {
+    "text": "That's okay, thank you for letting me know. We can move on if you're ready. Just let me know.",
+    "speaker": "alvia",
+    "timestamp": 1770144022479,
+    "questionIndex": 10
+  },
+  {
+    "text": "It’s helpful to hear about the follow-up and post-case communication. Now, since working with Coodes, have you needed legal support again? Yes or no?",
+    "speaker": "alvia",
+    "timestamp": 1770144036273,
+    "questionIndex": 11
+  },
+  {
+    "text": "Mhm.",
+    "speaker": "respondent",
+    "timestamp": 1770144045028,
+    "questionIndex": 11
+  },
+  {
+    "text": "No, no, no!",
+    "speaker": "respondent",
+    "timestamp": 1770144045640,
+    "questionIndex": 11
+  },
+  {
+    "text": "Thank you for letting me know. Just to confirm, that means you haven’t needed legal support again since then. If that’s correct, we can move on—just let me know.",
+    "speaker": "alvia",
+    "timestamp": 1770144047781,
+    "questionIndex": 11
+  },
+  {
+    "text": "Yes, and then the name is",
+    "speaker": "respondent",
+    "timestamp": 1770144062471,
+    "questionIndex": 11
+  },
+  {
+    "text": "I understand. So just to confirm, it sounds like you haven’t needed legal support again since then. Thank you for clarifying. If that’s all, we can move forward to the next question whenever you’re ready.",
+    "speaker": "alvia",
+    "timestamp": 1770144065309,
+    "questionIndex": 11
+  },
+  {
+    "text": "ChatGPT, the name is code, not code.",
+    "speaker": "respondent",
+    "timestamp": 1770144080216,
+    "questionIndex": 11
+  },
+  {
+    "text": "I see, thank you for clarifying. We'll take that into account. If you need a moment or have more details to add, feel free to let me know. Otherwise, whenever you're ready, we can move on.",
+    "speaker": "alvia",
+    "timestamp": 1770144082597,
+    "questionIndex": 11
+  },
+  {
+    "text": "Thank you for sharing that. It sounds like follow-up and communication played a role. Now, if you didn’t return to Coodes at that time, what influenced that decision? Was it any of these: I didn’t think of Coodes at the time, the relationship had gone quiet, I used another firm, the issue felt too small or different, cost concerns, or other?",
+    "speaker": "alvia",
+    "timestamp": 1770144097642,
+    "questionIndex": 12
+  },
+  {
+    "text": "Atatataata",
+    "speaker": "respondent",
+    "timestamp": 1770144117538,
+    "questionIndex": 12
+  },
+  {
+    "text": "Thank you for sharing that. It sounds like you used another firm. Could you tell me a bit more about what led to that decision? That will help us understand the full picture.",
+    "speaker": "alvia",
+    "timestamp": 1770144119306,
+    "questionIndex": 12
+  },
+  {
+    "text": "This is",
+    "speaker": "respondent",
+    "timestamp": 1770144130379,
+    "questionIndex": 12
+  },
+  {
+    "text": "OK.",
+    "speaker": "respondent",
+    "timestamp": 1770144131272,
+    "questionIndex": 12
+  },
+  {
+    "text": "That's okay, take your time. If you'd like to share more details later, we can always come back to it. For now, let me know if you'd like to move on to the next question.",
+    "speaker": "alvia",
+    "timestamp": 1770144133333,
+    "questionIndex": 12
+  },
+  {
+    "text": "Just a second.",
+    "speaker": "respondent",
+    "timestamp": 1770144143187,
+    "questionIndex": 12
+  },
+  {
+    "text": "I didn't need a lawyer.",
+    "speaker": "respondent",
+    "timestamp": 1770144145584,
+    "questionIndex": 12
+  },
+  {
+    "text": "I didn't use this as anyone else.",
+    "speaker": "respondent",
+    "timestamp": 1770144146947,
+    "questionIndex": 12
+  },
+  {
+    "text": "Thanks for clarifying that. It’s helpful to know. If you'd like, we can move on to the next question whenever you're ready.",
+    "speaker": "alvia",
+    "timestamp": 1770144148548,
+    "questionIndex": 12
+  },
+  {
+    "text": "I appreciate you mentioning the delays caused by third parties. That connection is important. So, was there a specific point where contact or momentum seemed to drop off? Yes or no? If yes, when was it, and why do you think it occurred?",
+    "speaker": "alvia",
+    "timestamp": 1770144161042,
+    "questionIndex": 13
+  },
+  {
+    "text": "Yes, that was I can't remember when it was, it was so quiet because it was",
+    "speaker": "respondent",
+    "timestamp": 1770144181362,
+    "questionIndex": 13
+  },
+  {
+    "text": "The document mentions a few",
+    "speaker": "respondent",
+    "timestamp": 1770144185932,
+    "questionIndex": 13
+  },
+  {
+    "text": "Thank you for letting me know. It sounds like it was related to communication slowing down at a certain point. Could you recall roughly how long that quiet period lasted, or if it followed a particular event?",
+    "speaker": "alvia",
+    "timestamp": 1770144190185,
+    "questionIndex": 13
+  },
+  {
+    "text": "It was a beautiful",
+    "speaker": "respondent",
+    "timestamp": 1770144201091,
+    "questionIndex": 13
+  },
+  {
+    "text": "I appreciate you sharing that it was a few months. That gives us a clearer sense of the timeline. Thank you for that. If there's anything else you'd like to add, feel free to let me know.",
+    "speaker": "alvia",
+    "timestamp": 1770144203541,
+    "questionIndex": 13
+  },
+  {
+    "text": "That’s a helpful connection—thinking about likely return and what services might have been assumed. What would need to change for you to consider using Coodes again in the future? And are there services or types of legal support you assumed they didn’t offer, but might actually be useful?",
+    "speaker": "alvia",
+    "timestamp": 1770144220857,
+    "questionIndex": 14
+  },
+  {
+    "text": "Hi, hi, hi, no, no, no, no, no.",
+    "speaker": "respondent",
+    "timestamp": 1770144236466,
+    "questionIndex": 14
+  },
+  {
+    "text": "And I would use them in future.",
+    "speaker": "respondent",
+    "timestamp": 1770144240836,
+    "questionIndex": 14
+  },
+  {
+    "text": "Thank you for sharing that. It’s helpful to know your perspective. If you think of anything specific that would make you consider them in the future, feel free to share. For now, we can move on if you're ready.",
+    "speaker": "alvia",
+    "timestamp": 1770144243609,
+    "questionIndex": 14
+  },
+  {
+    "text": "I think, maybe, translated.",
+    "speaker": "respondent",
+    "timestamp": 1770144256507,
+    "questionIndex": 14
+  },
+  {
+    "text": "Take your time, and it's completely fine to gather your thoughts. When you're",
+    "speaker": "alvia",
+    "timestamp": 1770144257686,
+    "questionIndex": 14
+  },
+  {
+    "text": "Cocostrate.",
+    "speaker": "respondent",
+    "timestamp": 1770144260082,
+    "questionIndex": 14
+  },
+  {
+    "text": "That's okay. Whenever you're ready, we can explore that further, or move on to the next question. Just let me know how you'd like to proceed.",
+    "speaker": "alvia",
+    "timestamp": 1770144262135,
+    "questionIndex": 14
+  },
+  {
+    "text": "I, I, I, I, I think, I think, may, may be, be, be, be, be, be, be, be, be, be, be, be, to, to understand, right, right, would, would, would, would, would talk.",
+    "speaker": "respondent",
+    "timestamp": 1770144276494,
+    "questionIndex": 14
+  },
+  {
+    "text": "That's completely understandable. It can take a moment to gather your thoughts. Whenever you're ready, we can either revisit that topic or move forward—just let me know what works best for you.",
+    "speaker": "alvia",
+    "timestamp": 1770144278567,
+    "questionIndex": 14
+  },
+  {
+    "text": "No, no, no, what what type of set that that to do you want? I think that maybe there the cost.",
+    "speaker": "respondent",
+    "timestamp": 1770144292595,
+    "questionIndex": 14
+  },
+  {
+    "text": "Right, right, right, it is.",
+    "speaker": "respondent",
+    "timestamp": 1770144293744,
+    "questionIndex": 14
+  },
+  {
+    "text": "kototototototototototototototot",
+    "speaker": "respondent",
+    "timestamp": 1770144295124,
+    "questionIndex": 14
+  },
+  {
+    "text": "That’s alright—I appreciate your honesty. If you'd like, we can take a moment, or we can move on to the next question whenever you're ready. Just let me know how you'd like to proceed.",
+    "speaker": "alvia",
+    "timestamp": 1770144297167,
+    "questionIndex": 14
+  },
+  {
+    "text": "I'm not changing time.",
+    "speaker": "respondent",
+    "timestamp": 1770144320459,
+    "questionIndex": 14
+  },
+  {
+    "text": "I am the one who",
+    "speaker": "respondent",
+    "timestamp": 1770144322269,
+    "questionIndex": 14
+  },
+  {
+    "text": "It’s perfectly fine—take your time. We can pause here, and whenever you're ready, we can come back to it or move forward, whichever you prefer.",
+    "speaker": "alvia",
+    "timestamp": 1770144324346,
+    "questionIndex": 14
+  },
+  {
+    "text": "I am not clear that the",
+    "speaker": "respondent",
+    "timestamp": 1770144336149,
+    "questionIndex": 14
+  },
+  {
+    "text": "No, no, no, no.",
+    "speaker": "respondent",
+    "timestamp": 1770144337179,
+    "questionIndex": 14
+  },
+  {
+    "text": "That's completely fine. It’s okay if you're not ready to elaborate right now. Whenever you feel more comfortable, we can revisit this, or we can move forward—just let me know what works best for you.",
+    "speaker": "alvia",
+    "timestamp": 1770144340431,
+    "questionIndex": 14
+  },
+  {
+    "text": "I dont think you have understood me",
+    "speaker": "respondent",
+    "timestamp": 1770144353993,
+    "questionIndex": 14
+  },
+  {
+    "text": "I'm sorry if I misunderstood. Could you clarify a bit more about what you'd like to focus on? I'm here to help.",
+    "speaker": "alvia",
+    "timestamp": 1770144356914,
+    "questionIndex": 14
+  },
+  {
+    "text": "I think they would benefit from having clearer cost and rate cards",
+    "speaker": "respondent",
+    "timestamp": 1770144375564,
+    "questionIndex": 14
+  },
+  {
+    "text": "Thank you for sharing that. It sounds like clearer cost and rate information would make a difference for you. That’s useful feedback. Thank you for that. Now, what would need to change for you to consider using Coodes again in the future?",
+    "speaker": "alvia",
+    "timestamp": 1770144379612,
+    "questionIndex": 14
+  },
+  {
+    "text": "I'm going to be",
+    "speaker": "respondent",
+    "timestamp": 1770144394038,
+    "questionIndex": 14
+  },
+  {
+    "text": "That makes sense. So having clearer information about fees and rates could really make a difference. Thank you for sharing that. Now, are there any specific services you assumed they didn’t offer, but might actually be useful?",
+    "speaker": "alvia",
+    "timestamp": 1770144397712,
+    "questionIndex": 14
+  },
+  {
+    "text": "That's completely fine. If you're not sure right now, that's okay. We can always revisit that later. Let’s move on to the next question whenever you're ready.",
+    "speaker": "alvia",
+    "timestamp": 1770144412143,
+    "questionIndex": 14
+  },
+  {
+    "text": "That’s a helpful connection—it sounds like follow-up and the format of updates matter to you. Now, how would you prefer a firm like Coodes to stay in touch after a matter has concluded? For example, occasional helpful updates, relevant insights or guidance, a light personal check-in, or only when you get in touch?",
+    "speaker": "alvia",
+    "timestamp": 1770144420474,
+    "questionIndex": 15
+  },
+  {
+    "text": "La la la la popuse sus",
+    "speaker": "respondent",
+    "timestamp": 1770144439666,
+    "questionIndex": 15
+  },
+  {
+    "text": "Got it, it sounds like a light personal check-in could be helpful. Could you share a bit more about how often you'd like that? Just so we can get a clear picture.",
+    "speaker": "alvia",
+    "timestamp": 1770144442565,
+    "questionIndex": 15
+  },
+  {
+    "text": "we we we want to say say say yeah",
+    "speaker": "respondent",
+    "timestamp": 1770144450888,
+    "questionIndex": 15
+  },
+  {
+    "text": "Thanks for confirming that. So, it sounds like you'd prefer a light personal check-in occasionally. That’s helpful to know. Thank you for sharing that. If you're ready, we can move on to the next question.",
+    "speaker": "alvia",
+    "timestamp": 1770144454229,
+    "questionIndex": 15
+  },
+  {
+    "text": "Thanks for highlighting the importance of responsiveness, communication, and also the need for clearer pricing and process details. That connection is really helpful. Now, what’s one thing Coodes should definitely keep doing? And what’s one thing they should stop, change, or rethink? Finally, is there anything else you'd like us to know?",
+    "speaker": "alvia",
+    "timestamp": 1770144469322,
+    "questionIndex": 16
+  },
+  {
+    "text": "I think this should",
+    "speaker": "respondent",
+    "timestamp": 1770144487118,
+    "questionIndex": 16
+  },
+  {
+    "text": "Ma ma me.",
+    "speaker": "respondent",
+    "timestamp": 1770144490081,
+    "questionIndex": 16
+  },
+  {
+    "text": "And...",
+    "speaker": "respondent",
+    "timestamp": 1770144490595,
+    "questionIndex": 16
+  },
+  {
+    "text": "Right, right, right, right.",
+    "speaker": "respondent",
+    "timestamp": 1770144492035,
+    "questionIndex": 16
+  },
+  {
+    "text": "That's all right, take your time. If you're ready, you could share more about what Coodes should definitely keep doing, or we can explore any other thoughts you have. You’re doing great.",
+    "speaker": "alvia",
+    "timestamp": 1770144494924,
+    "questionIndex": 16
+  },
+  {
+    "text": "Friendly and informal - keep doing.  Have easier opening hours",
+    "speaker": "respondent",
+    "timestamp": 1770144525750,
+    "questionIndex": 16
+  },
+  {
+    "text": "Thank you for that feedback. It sounds like keeping the friendly and informal approach is important, and making opening hours easier could be something to consider. Is there anything else you'd like to add?",
+    "speaker": "alvia",
+    "timestamp": 1770144529257,
+    "questionIndex": 16
+  },
+  {
+    "text": "No, no, no, no, no.",
+    "speaker": "respondent",
+    "timestamp": 1770144538868,
+    "questionIndex": 16
+  },
+  {
+    "text": "No problem at all. Thank you for sharing your thoughts so far. If anything else comes to mind later, feel free to let me know.",
+    "speaker": "alvia",
+    "timestamp": 1770144541598,
+    "questionIndex": 16
+  },
+  {
+    "text": "Of course. When things went quiet or you were waiting on the other side, what’s the lightest touch way you’d have liked us to keep you reassured—how often, and by what channel, like a quick email, text, or call?",
+    "speaker": "alvia",
+    "timestamp": 1770144579534,
+    "questionIndex": 17
+  },
+  {
+    "text": "we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we we",
+    "speaker": "respondent",
+    "timestamp": 1770144591588,
+    "questionIndex": 17
+  },
+  {
+    "text": "I hear you. It sounds like you might be leaning toward quick email updates. Would that be the lightest touch that would work for you?",
+    "speaker": "alvia",
+    "timestamp": 1770144593676,
+    "questionIndex": 17
+  },
+  {
+    "text": "Yes, yes, yes, yes, yes.",
+    "speaker": "respondent",
+    "timestamp": 1770144600440,
+    "questionIndex": 17
+  },
+  {
+    "text": "Thank you for confirming that. A quick email update sounds like it could be a good solution. Now that gives us a clear idea of what might work best. Thank you for sharing that.",
+    "speaker": "alvia",
+    "timestamp": 1770144603372,
+    "questionIndex": 17
+  }
+]
