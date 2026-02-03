@@ -1632,9 +1632,16 @@ export async function generateTemplateAnalytics(
   }
 
   const themeMap = new Map<string, ThemeAggregation>();
+  
+  // Build a map from theme IDs to theme names for resolving relatedThemes in key findings
+  const themeIdToNameMap = new Map<string, string>();
 
   for (const c of collectionsWithAnalytics) {
     for (const theme of c.analytics!.themes) {
+      // Map theme ID to its human-readable name
+      if (theme.id && theme.theme) {
+        themeIdToNameMap.set(theme.id, theme.theme);
+      }
       const existing = themeMap.get(theme.theme) || {
         totalMentions: 0,
         collectionSources: [],
@@ -1728,10 +1735,15 @@ export async function generateTemplateAnalytics(
     .slice(0, 20); // Allow more themes now that we're preserving detail
 
   // Aggregate key findings with source collection attribution
+  // Resolve theme IDs to human-readable theme names
   const keyFindings: KeyFindingWithSource[] = collectionsWithAnalytics
     .flatMap((c) =>
       (c.analytics!.keyFindings || []).map((f) => ({
         ...f,
+        // Resolve theme IDs to actual theme names
+        relatedThemes: (f.relatedThemes || []).map(
+          (themeId) => themeIdToNameMap.get(themeId) || themeId
+        ),
         sourceCollectionId: c.collection.id,
         sourceCollectionName: c.collection.name,
       })),
