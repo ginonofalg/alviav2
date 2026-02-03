@@ -263,6 +263,10 @@ export function calculateQualityScore(signals: TranscriptionQualitySignals): num
     score -= (signals.shortUtteranceStreak - 2) * 5;
   }
 
+  // Penalty for repeated word glitches (connection issues causing garbled transcription)
+  const repeatedWordPenalty = Math.min(signals.repeatedWordGlitchCount * 15, 45);
+  score -= repeatedWordPenalty;
+
   return Math.max(0, Math.min(100, score));
 }
 
@@ -301,8 +305,8 @@ export function sanitizeGlitchedTranscript(text: string): string {
   let result = text.replace(/\b(\w+)((?:\s+\1){3,})\b/gi, '$1 $1');
   
   // Second pass: Handle punctuation-separated repeats (e.g., "we, we, we, we" or "I. I. I. I.")
-  // Match word + punctuation patterns repeated 4+ times
-  result = result.replace(/\b(\w+)([,.\-;:!?]?\s+\1){3,}\b/gi, '$1 $1');
+  // Match word + punctuation patterns repeated 4+ times (requires punctuation to avoid re-matching first pass)
+  result = result.replace(/\b(\w+)([,.\-;:!?]\s+\1){3,}\b/gi, '$1 $1');
   
   return result;
 }
