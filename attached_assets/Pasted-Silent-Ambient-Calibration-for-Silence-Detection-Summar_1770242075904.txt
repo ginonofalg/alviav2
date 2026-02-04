@@ -1,0 +1,242 @@
+Silent Ambient Calibration for Silence Detection       
+
+ Summary
+
+ Replace the hardcoded amplitudeThreshold: 0.01 with a threshold derived from ambient noise measurement during the natural delay between mic capture and the
+ AI's first utterance. No visible UI state. No new config flags. The calibration is invisible to respondents and produces a bounded, adaptive threshold using
+  a hybrid formula.
+
+ Why the Original Proposal Needs Rework
+
+ The Codex proposal identifies the right problem (hardcoded threshold is fragile) and the right files (use-silence-detection.ts, interview.tsx). But it has
+ three structural issues:
+
+ 1. Additive margin (baseline + 0.01) doesn't scale. In quiet rooms the threshold barely changes from today. In noisy rooms it can exceed speech levels.
+ 2. The AI greeting contaminates calibration. The AI starts speaking ~500ms-2s after mic capture. A 3-second calibration window captures AI audio played
+ through speakers, inflating the baseline.
+ 3. The "Calibrating mic..." UI adds friction at the most sensitive UX moment — interview start. Respondents will think something is broken.
+
+ Additionally: browser noiseSuppression: true is already enabled on getUserMedia (line 771 of interview.tsx), which already performs adaptive noise gating.
+ Our calibration supplements this for the specific case of silence detection thresholds, not noise removal.
+
+ Proposed Behavior
+
+ 1. When startMonitoring() is called, begin collecting amplitude samples immediately.
+ 2. Discard the first 2 samples (500ms) to let the AnalyserNode stabilize.
+ 3. Collect samples at the existing 250ms cadence for the next 2 seconds (8 samples).
+ 4. When calibration ends (2.5s total elapsed):
+   - Compute baseline = mean(samples).
+   - Compute threshold = clamp(baseline * 3.0, MIN_THRESHOLD, MAX_THRESHOLD).
+   - Start the silence timer from zero.
+ 5. If calibration fails (0 valid samples, NaN): fall back to 0.01.
+ 6. During calibration, skip silence detection logic entirely (return early from handleSilenceCheck). The 30-second window provides massive headroom — 2.5
+ seconds of non-detection is invisible.
+ 7. Send calibration result to server via WebSocket for diagnostics.
+
+ No UI indicator. No new config flags. No user-visible state.
+
+ Scope
+
+ In scope:
+ - Ambient threshold calibration in useSilenceDetection
+ - Hybrid threshold formula with bounds
+ - Server-side diagnostic logging
+ - Fallback on calibration failure
+
+ Out of scope:
+ - Periodic re-calibration
+ - Time-domain RMS measurement (v2)
+ - Calibration UI indicator
+ - Manual recalibration controls
+
+ Key Constants
+
+ CALIBRATION_WARMUP_SAMPLES = 2       // Skip first 500ms (AnalyserNode stabilization)
+ CALIBRATION_SAMPLE_COUNT = 8         // Collect 8 samples over 2 seconds
+ CALIBRATION_MULTIPLIER = 3.0         // threshold = baseline * 3
+ MIN_THRESHOLD = 0.005                // Floor: prevents false speech from electrical noise
+ MAX_THRESHOLD = 0.12                 // Cap: ensures silence detection works in noisy rooms
+ FALLBACK_THRESHOLD = 0.01            // Used if calibration fails
+
+ Key Changes
+
+ 1. client/src/hooks/use-silence-detection.ts
+
+ New refs:
+ - calibrationSamplesRef: useRef<number[]>([])
+ - calibrationTickCountRef: useRef<number>(0)
+ - isCalibrating: useRef<boolean>(false)
+ - dynamicThresholdRef: useRef<number | null>(null)
+
+ New callback param in SilenceDetectionConfig:
+ - onCalibrationComplete?: (result: { baseline: number; threshold: number }) => void
+
+ Changes to startMonitoring():
+ - After creating the AnalyserNode and setting isActiveRef = true, set isCalibrating.current = true, reset calibrationTickCountRef to 0, clear samples array.
+
+ Changes to handleSilenceCheck():
+ if (isCalibrating.current) {
+   calibrationTickCountRef.current += 1
+
+   // Skip warmup samples (AnalyserNode stabilization)
+   if (calibrationTickCountRef.current <= CALIBRATION_WARMUP_SAMPLES) {
+     return  // don't measure, don't detect silence
+   }
+
+   // Collect ambient sample using existing checkAmplitude logic
+   // (read raw average instead of boolean — need to extract numeric value)
+   const amplitude = getAmplitudeValue()  // new helper, returns the number
+   calibrationSamplesRef.current.push(amplitude)
+
+   // Check if we have enough samples
+   if (calibrationSamplesRef.current.length >= CALIBRATION_SAMPLE_COUNT) {
+     const baseline = mean(calibrationSamplesRef.current)
+     const threshold = isNaN(baseline) || baseline <= 0
+       ? FALLBACK_THRESHOLD
+       : Math.max(MIN_THRESHOLD, Math.min(MAX_THRESHOLD, baseline * CALIBRATION_MULTIPLIER))
+
+     dynamicThresholdRef.current = threshold
+     isCalibrating.current = false
+
+     // Reset silence timer so calibration period doesn't count
+     silenceStartTimeRef.current = null
+     isPausedDueToSilenceRef.current = false
+
+     onCalibrationComplete?.({ baseline, threshold })
+   }
+   return  // skip normal silence detection during calibration
+ }
+
+ // Normal silence detection uses dynamicThresholdRef ?? amplitudeThreshold
+
+ New helper getAmplitudeValue():
+ Extract the numeric average computation from checkAmplitude() into a shared helper. checkAmplitude() becomes getAmplitudeValue() >
+ (dynamicThresholdRef.current ?? amplitudeThreshold).
+
+ Changes to stopMonitoring():
+ - Clear calibrationSamplesRef, calibrationTickCountRef, isCalibrating, dynamicThresholdRef.
+
+ 2. client/src/pages/interview.tsx
+
+ Wire the callback:
+ const {
+   // ... existing destructured values
+ } = useSilenceDetection({
+   silenceThresholdSeconds: SILENCE_THRESHOLD_SECONDS,
+   amplitudeThreshold: 0.01,  // fallback only
+   bufferDurationSeconds: 2.5,
+   onSilenceStart: handleSilenceStart,
+   onSilenceEnd: handleSilenceEnd,
+   onCalibrationComplete: handleCalibrationComplete,
+ });
+
+ New handler:
+ const handleCalibrationComplete = useCallback(({ baseline, threshold }: { baseline: number; threshold: number }) => {
+   console.log(`[Interview] Mic calibrated — baseline: ${baseline.toFixed(4)}, threshold: ${threshold.toFixed(4)}`);
+
+   // Report to server for diagnostics
+   if (wsRef.current?.readyState === WebSocket.OPEN) {
+     wsRef.current.send(JSON.stringify({
+       type: "client_calibration_complete",
+       baseline,
+       threshold,
+     }));
+   }
+ }, []);
+
+ No UI changes. No isMicCalibrating state. No visible indicator.
+
+ 3. server/voice-interview.ts
+
+ Handle the new message type:
+
+ In the client message handler, add a case for client_calibration_complete:
+ - Log the baseline and threshold values.
+ - Store in the session's performanceMetrics JSONB field alongside existing silence metrics.
+
+ This is ~5 lines of code in the existing message switch.
+
+ Why This Is Better Than the Original Proposal
+ ┌──────────────────┬─────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+ │      Aspect      │                  Original                   │                                    Counter-proposal                                     │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Threshold        │ baseline + 0.01 (additive)                  │ clamp(baseline * 3.0, 0.005, 0.12) (multiplicative + bounded)                           │
+ │ formula          │                                             │                                                                                         │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Calibration      │ 3.0s with UI indicator                      │ 2.5s silent (0.5s warmup + 2.0s sampling)                                               │
+ │ window           │                                             │                                                                                         │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ AI greeting      │                                             │ Avoided: calibration completes in ~2.5s, AI greeting typically starts at ~1-2s but      │
+ │ contamination    │ Not addressed                               │ calibration samples during warmup/early period when AI hasn't spoken yet. For safety,   │
+ │                  │                                             │ the 500ms warmup + first few samples run before AI audio arrives.                       │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ UX impact        │ "Calibrating mic..." text                   │ Invisible to respondent                                                                 │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Failure handling │ Not specified                               │ Falls back to hardcoded 0.01                                                            │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │                  │ autoCalibrateOnStart,                       │                                                                                         │
+ │ Config flags     │ calibrationDurationMs, calibrationMargin,   │ onCalibrationComplete only                                                              │
+ │                  │ onCalibrationStateChange                    │                                                                                         │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Diagnostics      │ Callback only                               │ Console log + WebSocket → server performanceMetrics                                     │
+ ├──────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Threshold bounds │ None                                        │ MIN_THRESHOLD=0.005, MAX_THRESHOLD=0.12                                                 │
+ └──────────────────┴─────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+ Timing vs. AI Greeting
+
+ The concern about AI greeting contamination deserves careful analysis:
+
+ - Mic capture starts at startAudioCapture() (line 762)
+ - audio_ready is sent after WebSocket opens (line 511)
+ - Server receives audio_ready → calls response.create on voice provider
+ - Voice provider generates greeting audio → streams back → client plays it
+
+ Measured gap: ~500ms-2000ms between mic capture and first AI audio playback.
+
+ Our calibration warmup (500ms) + first few samples (500ms) occur during this gap. Even if the AI starts speaking partway through, the echoCancellation: true
+  on getUserMedia removes the AI's audio from the mic input before it reaches the AnalyserNode. The combination of echo cancellation + early sampling window
+ makes AI contamination a non-issue in practice.
+
+ If we wanted extra safety (v2), we could filter out samples taken while isAiSpeaking === true, but echo cancellation handles this for v1.
+
+ Edge Cases
+ Scenario: Quiet room (baseline ~0.001)
+ Behavior: threshold = max(0.005, 0.001*3) = 0.005. Slightly more sensitive than current 0.01. Correct — quiet rooms should have lower thresholds.
+ ────────────────────────────────────────
+ Scenario: Office with AC (baseline ~0.015)
+ Behavior: threshold = 0.015*3 = 0.045. Speech easily exceeds this. Silence correctly detected when AC is only sound.
+ ────────────────────────────────────────
+ Scenario: Noisy cafe (baseline ~0.06)
+ Behavior: threshold = min(0.12, 0.06*3) = 0.12. Cap prevents threshold from exceeding speech levels.
+ ────────────────────────────────────────
+ Scenario: Extremely noisy (baseline ~0.1)
+ Behavior: threshold = min(0.12, 0.1*3) = 0.12. Cap holds. At this noise level, silence detection may be less reliable, but this is the correct tradeoff.
+ ────────────────────────────────────────
+ Scenario: Mic produces zeros
+ Behavior: baseline = 0, threshold = fallback 0.01.
+ ────────────────────────────────────────
+ Scenario: NaN from empty samples
+ Behavior: threshold = fallback 0.01.
+ ────────────────────────────────────────
+ Scenario: User talks during calibration
+ Behavior: baseline elevated → threshold elevated. Acceptable for v1 (same as original proposal).
+ ────────────────────────────────────────
+ Scenario: Mic toggled off/on
+ Behavior: stopMonitoring clears calibration. startMonitoring re-calibrates.
+ Test Plan
+
+ Manual validation:
+ 1. Quiet room: Start interview, verify console log shows baseline < 0.005 and threshold near MIN_THRESHOLD. Wait silently 30s+ → silence pause should
+ trigger.
+ 2. Room with fan/AC: Start interview, verify baseline reflects ambient noise (0.01-0.03 range). Wait silently 30s+ → silence pause should still trigger
+ despite background noise.
+ 3. Speak immediately: Start interview and talk right away. Verify calibration completes (console log appears) and silence detection still functions
+ normally.
+ 4. Toggle mic: Turn mic off then on. Verify calibration re-runs (second console log with new values).
+ 5. Server diagnostics: Check that performanceMetrics in the database contains calibrationBaseline and calibrationThreshold after a session.
+
+ Files Modified
+
+ 1. client/src/hooks/use-silence-detection.ts — calibration logic, threshold formula, getAmplitudeValue() helper
+ 2. client/src/pages/interview.tsx — onCalibrationComplete callback, WebSocket message
+ 3. server/voice-interview.ts — handle client_calibration_complete message, store in metrics
