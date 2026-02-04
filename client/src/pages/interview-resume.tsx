@@ -26,10 +26,18 @@ export default function InterviewResumePage() {
 
         const data = await response.json();
         
-        // API returns session object, not sessionId directly
-        const sessionId = data.session?.id || data.sessionId;
-        if (sessionId) {
-          setLocation(`/interview/${sessionId}?resume=true`);
+        // API returns session object and collection info
+        const sessionId = data.session?.id;
+        const collectionId = data.session?.collectionId || data.collection?.id;
+        
+        if (sessionId && collectionId) {
+          // Store resume info in localStorage so the consent page will show the choice
+          localStorage.setItem(
+            `alvia_resume_${collectionId}`,
+            JSON.stringify({ token, sessionId })
+          );
+          // Redirect to consent page which will show resume/start-fresh choice
+          setLocation(`/interview/consent/${collectionId}`);
         } else {
           setError("Could not find session to resume");
         }
