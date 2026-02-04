@@ -1565,12 +1565,22 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
         state.sessionConfigured = true;
         // Check if client audio is ready - if so, trigger the initial response
         // If not, the audio_ready message handler will trigger it
+        // BUT: For restored sessions, skip auto-trigger - wait for resume_interview from client
         if (
           state.clientAudioReady &&
           state.providerWs &&
           state.providerWs.readyState === WebSocket.OPEN
         ) {
           state.isInitialSession = false; // Mark initial setup complete
+          
+          // Skip auto-trigger for restored sessions - user must click mic to trigger resume
+          if (state.isRestoredSession) {
+            console.log(
+              `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
+            );
+            break;
+          }
+          
           if (!canCreateResponse(state)) {
             console.log(`[Response] Skipping initial response - response already in progress for ${sessionId}`);
           } else {
@@ -2133,12 +2143,22 @@ async function handleClientMessage(
     console.log(`[VoiceInterview] Client audio ready for ${sessionId}`);
     state.clientAudioReady = true;
     // Check if session is already configured - if so, trigger the initial response
+    // BUT: For restored/resumed sessions, do NOT auto-trigger - wait for resume_interview from client
     if (
       state.isInitialSession &&
       state.sessionConfigured &&
       state.providerWs &&
       state.providerWs.readyState === WebSocket.OPEN
     ) {
+      // Skip auto-trigger for restored sessions - user must click mic to trigger resume
+      if (state.isRestoredSession) {
+        console.log(
+          `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
+        );
+        state.isInitialSession = false;
+        return;
+      }
+      
       state.isInitialSession = false;
       if (!canCreateResponse(state)) {
         console.log(`[Response] Skipping initial response (audio_ready) - response already in progress for ${sessionId}`);
