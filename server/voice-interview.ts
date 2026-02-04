@@ -115,6 +115,16 @@ interface InterviewState {
   responseInProgress: boolean;
   responseStartedAt: number | null; // When current response.create was sent
   lastResponseDoneAt: number | null;
+  // Client-side performance metrics (e.g., calibration data)
+  performanceMetrics?: {
+    calibration?: {
+      baseline: number;
+      threshold: number;
+      sampleCount: number;
+      variance: number;
+      timestamp: number;
+    };
+  };
 }
 
 type TerminationReason =
