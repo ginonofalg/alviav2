@@ -835,59 +835,19 @@ export default function InterviewPage() {
     }
   }, [currentQuestion, questions, currentQuestionText, totalQuestions]);
 
-  // Track if we've sent the resume message for auto-resume
-  const hasAutoResumedRef = useRef(false);
-
-  // Auto-connect WebSocket for resumed sessions (skip ready phase)
-  // Note: Audio capture is NOT started automatically due to browser autoplay policies
-  // requiring user interaction. The user can click the mic button to start audio.
+  // For resumed sessions, initialize currentQuestionIndex from session data
+  // but keep readyPhase true so user sees "Continue Interview" screen
   useEffect(() => {
     if (isResumedSession && !isLoading && !hasAutoStartedRef.current) {
       hasAutoStartedRef.current = true;
-      setReadyPhase(false);
       // Initialize currentQuestionIndex from session data to avoid showing question 1
       if (session?.currentQuestionIndex !== undefined && session.currentQuestionIndex !== null) {
         setCurrentQuestionIndex(session.currentQuestionIndex);
       }
-      connectWebSocket();
-      // Audio capture will be started when user clicks mic button (toggleListening)
+      // Keep readyPhase true - user will click "Continue Interview" which provides
+      // the user gesture needed for audio context to work
     }
-  }, [isResumedSession, isLoading, session?.currentQuestionIndex, connectWebSocket]);
-
-  // Auto-send audio_ready and resume_interview once WebSocket is connected for resumed sessions
-  // This triggers Alvia to welcome the user back automatically with voice
-  useEffect(() => {
-    async function autoResumeWithAudio() {
-      if (
-        isResumedSession &&
-        isConnected &&
-        !hasAutoResumedRef.current &&
-        wsRef.current?.readyState === WebSocket.OPEN
-      ) {
-        hasAutoResumedRef.current = true;
-        console.log("[Interview] Auto-resuming session with audio");
-        
-        // Initialize audio context so Alvia's voice can play
-        try {
-          await initAudioContext();
-          console.log("[Interview] Audio context ready for resume");
-        } catch (err) {
-          console.error("[Interview] Failed to init audio context for resume:", err);
-        }
-        
-        // Send audio_ready so server can send Alvia's audio
-        wsRef.current.send(JSON.stringify({ type: "audio_ready" }));
-        
-        // Send resume_interview to trigger Alvia's welcome back message
-        wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
-        
-        // Set paused to false since we're auto-resuming
-        setIsPaused(false);
-      }
-    }
-    
-    autoResumeWithAudio();
-  }, [isResumedSession, isConnected, initAudioContext]);
+  }, [isResumedSession, isLoading, session?.currentQuestionIndex]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1094,9 +1054,18 @@ export default function InterviewPage() {
     );
   }
 
+  // Track if we need to send resume_interview after connection for resumed sessions
+  const pendingResumeRef = useRef(false);
+
   // Handle starting the interview from the ready screen
   const handleStartInterview = async () => {
     setReadyPhase(false);
+    
+    // For resumed sessions, mark that we need to send resume_interview after connection
+    if (isResumedSession) {
+      pendingResumeRef.current = true;
+    }
+    
     connectWebSocket();
     if (!isTextOnlyMode) {
       const success = await startAudioCapture();
@@ -1110,6 +1079,19 @@ export default function InterviewPage() {
       }
     }
   };
+
+  // Send resume_interview after connection is established for resumed sessions
+  useEffect(() => {
+    if (
+      pendingResumeRef.current &&
+      isConnected &&
+      wsRef.current?.readyState === WebSocket.OPEN
+    ) {
+      pendingResumeRef.current = false;
+      console.log("[Interview] Sending resume_interview for resumed session");
+      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+    }
+  }, [isConnected]);
 
   // Show "Get Ready" screen before starting the interview
   if (readyPhase && !isResumedSession) {
@@ -1141,6 +1123,44 @@ export default function InterviewPage() {
               data-testid="button-start-interview"
             >
               Start Interview
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show "Welcome Back" screen for resumed sessions (requires user click for audio)
+  if (readyPhase && isResumedSession) {
+    const greeting = respondent?.informalName 
+      ? `Welcome back, ${respondent.informalName}!`
+      : "Welcome back!";
+    
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardContent className="p-8 space-y-8 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Mic className="w-10 h-10 text-primary" />
+            </div>
+            
+            <div className="space-y-3">
+              <h1 className="text-2xl font-serif font-medium" data-testid="text-resume-greeting">
+                {greeting}
+              </h1>
+              <p className="text-muted-foreground">
+                Ready to continue your interview? Alvia will pick up right where you left off.
+              </p>
+            </div>
+
+            <Button
+              size="lg"
+              className="w-full max-w-xs mx-auto"
+              onClick={handleStartInterview}
+              data-testid="button-continue-interview"
+            >
+              Continue Interview
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </CardContent>
