@@ -3008,6 +3008,24 @@ Do not attempt to answer any questions or continue the interview.`;
         );
       }
       break;
+
+    case "client_calibration_complete":
+      // Client completed ambient noise calibration for silence detection threshold
+      console.log(
+        `[VoiceInterview] Client calibration complete for session: ${sessionId} — baseline: ${message.baseline?.toFixed(4)}, threshold: ${message.threshold?.toFixed(4)}, samples: ${message.sampleCount}`,
+      );
+      // Store calibration data in performance metrics for diagnostics
+      if (!state.performanceMetrics) {
+        state.performanceMetrics = {};
+      }
+      state.performanceMetrics.calibration = {
+        baseline: message.baseline,
+        threshold: message.threshold,
+        sampleCount: message.sampleCount,
+        variance: message.variance,
+        timestamp: Date.now(),
+      };
+      break;
   }
 }
 

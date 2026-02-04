@@ -268,6 +268,25 @@ export default function InterviewPage() {
     }
   }, []);
 
+  const handleCalibrationComplete = useCallback(({ baseline, threshold, sampleCount, variance }: { 
+    baseline: number; 
+    threshold: number; 
+    sampleCount: number;
+    variance: number;
+  }) => {
+    console.log(`[Interview] Mic calibrated — baseline: ${baseline.toFixed(4)}, threshold: ${threshold.toFixed(4)}, samples: ${sampleCount}`);
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "client_calibration_complete",
+        baseline,
+        threshold,
+        sampleCount,
+        variance,
+      }));
+    }
+  }, []);
+
   const handleSilenceEnd = useCallback((bufferedAudio: Int16Array | null) => {
     console.log("[Interview] Speech resumed - sending buffered audio first");
     setSilencePauseActive(false);
@@ -303,6 +322,7 @@ export default function InterviewPage() {
     bufferDurationSeconds: 2.5,
     onSilenceStart: handleSilenceStart,
     onSilenceEnd: handleSilenceEnd,
+    onCalibrationComplete: handleCalibrationComplete,
   });
 
   const { data: interviewData, isLoading } = useQuery<InterviewData>({
