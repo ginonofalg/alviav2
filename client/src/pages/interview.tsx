@@ -466,6 +466,8 @@ export default function InterviewPage() {
       setIsConnected(false);
       setIsConnecting(false);
       setIsListening(false);
+      // Reset hasSentResumeRef so reconnection can properly resume
+      hasSentResumeRef.current = false;
       // Stop heartbeat on disconnect
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
@@ -853,10 +855,13 @@ export default function InterviewPage() {
       if (session?.currentQuestionIndex !== undefined && session.currentQuestionIndex !== null) {
         setCurrentQuestionIndex(session.currentQuestionIndex);
       }
+      // Initialize isPaused state from session status so button shows correct icon
+      // Explicitly set both true/false to handle reconnection scenarios
+      setIsPaused(session?.status === "paused");
       connectWebSocket();
       // Audio capture will be started when user clicks mic button (toggleListening)
     }
-  }, [isResumedSession, isLoading, session?.currentQuestionIndex, connectWebSocket]);
+  }, [isResumedSession, isLoading, session?.currentQuestionIndex, session?.status, connectWebSocket]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -899,8 +904,9 @@ export default function InterviewPage() {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
       }
-    } else if (isListening || (isTextOnlyMode && isConnected)) {
+    } else if (isListening || (isTextOnlyMode && isConnected && (!isResumedSession || hasSentResumeRef.current))) {
       // Pause - send pause message
+      // Note: For text-only resumed sessions, only enter pause branch if we've already started (hasSentResumeRef.current)
       setIsPaused(true);
       setIsListening(false);
       stopAudioCapture();
@@ -914,7 +920,7 @@ export default function InterviewPage() {
         setIsListening(true);
         await startAudioCapture();
       }
-      // For resumed sessions, send resume_interview to trigger Alvia's welcome message
+      // For resumed sessions (voice or text-only), send resume_interview to trigger Alvia's welcome message
       if (isResumedSession && !hasSentResumeRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
         hasSentResumeRef.current = true;
         console.log("[Interview] Sending resume_interview for resumed session");
