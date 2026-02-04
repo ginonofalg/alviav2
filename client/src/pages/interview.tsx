@@ -22,7 +22,9 @@ import {
   Keyboard,
   MessageSquareText,
   ArrowRight,
+  Clock,
 } from "lucide-react";
+import { useSilenceDetection } from "@/hooks/use-silence-detection";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import type {
@@ -238,6 +240,9 @@ export default function InterviewPage() {
   const [transcriptionQualityWarning, setTranscriptionQualityWarning] = useState<string | null>(null);
   const [showQualitySwitchPrompt, setShowQualitySwitchPrompt] = useState(false);
   
+  // Silence detection state - pauses audio streaming after 30s of silence to save resources
+  const [silencePauseActive, setSilencePauseActive] = useState(false);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -247,6 +252,58 @@ export default function InterviewPage() {
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const HEARTBEAT_INTERVAL_MS = 30_000; // Send heartbeat every 30 seconds
+  const SILENCE_THRESHOLD_SECONDS = 30; // Pause audio streaming after 30 seconds of silence
+
+  // Silence detection - pauses audio streaming to save resources during extended silence
+  const handleSilenceStart = useCallback(() => {
+    console.log("[Interview] Extended silence detected - pausing audio streaming");
+    setSilencePauseActive(true);
+    
+    // Notify server that client is pausing due to silence
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ 
+        type: "client_silence_detected",
+        durationSeconds: SILENCE_THRESHOLD_SECONDS,
+      }));
+    }
+  }, []);
+
+  const handleSilenceEnd = useCallback((bufferedAudio: Int16Array | null) => {
+    console.log("[Interview] Speech resumed - sending buffered audio first");
+    setSilencePauseActive(false);
+    
+    // Send buffered audio to server first to capture the beginning of speech
+    if (wsRef.current?.readyState === WebSocket.OPEN && bufferedAudio && bufferedAudio.length > 0) {
+      // Convert Int16Array to base64
+      const uint8Array = new Uint8Array(bufferedAudio.buffer);
+      let binary = "";
+      for (let i = 0; i < uint8Array.length; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      const base64Audio = btoa(binary);
+      
+      // Send buffered audio with flag indicating it's pre-captured
+      wsRef.current.send(JSON.stringify({
+        type: "client_resuming_audio",
+        bufferedAudio: base64Audio,
+      }));
+    }
+  }, []);
+
+  const {
+    isPausedDueToSilence,
+    secondsOfSilence,
+    startMonitoring: startSilenceMonitoring,
+    stopMonitoring: stopSilenceMonitoring,
+    addToBuffer: addAudioToSilenceBuffer,
+    resetSilenceTimer,
+  } = useSilenceDetection({
+    silenceThresholdSeconds: SILENCE_THRESHOLD_SECONDS,
+    amplitudeThreshold: 0.01,
+    bufferDurationSeconds: 2.5,
+    onSilenceStart: handleSilenceStart,
+    onSilenceEnd: handleSilenceEnd,
+  });
 
   const { data: interviewData, isLoading } = useQuery<InterviewData>({
     queryKey: ["/api/interview", sessionId],
@@ -355,6 +412,10 @@ export default function InterviewPage() {
 
   // Stop audio capture - defined early for use in message handlers
   const stopAudioCapture = useCallback(() => {
+    // Stop silence monitoring
+    stopSilenceMonitoring();
+    setSilencePauseActive(false);
+    
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current = null;
@@ -363,7 +424,7 @@ export default function InterviewPage() {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
-  }, []);
+  }, [stopSilenceMonitoring]);
 
   // Connect to WebSocket
   const connectWebSocket = useCallback(() => {
@@ -685,6 +746,12 @@ export default function InterviewPage() {
     [playAudio, toast, navigate, stopAudioCapture, initAudioContext],
   );
 
+  // Track silence pause state in a ref for use in audio processor callback
+  const silencePauseActiveRef = useRef(false);
+  useEffect(() => {
+    silencePauseActiveRef.current = silencePauseActive;
+  }, [silencePauseActive]);
+
   // Start audio capture
   const startAudioCapture = useCallback(async () => {
     try {
@@ -699,6 +766,9 @@ export default function InterviewPage() {
         },
       });
       mediaStreamRef.current = stream;
+
+      // Start silence monitoring to detect extended periods of silence
+      startSilenceMonitoring(audioContext, stream);
 
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -716,6 +786,15 @@ export default function InterviewPage() {
         for (let i = 0; i < inputData.length; i++) {
           const s = Math.max(-1, Math.min(1, inputData[i]));
           int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+
+        // Always add to buffer for silence detection resumption
+        addAudioToSilenceBuffer(int16Array);
+
+        // Skip sending audio if silence pause is active
+        // The silence detection hook will send buffered audio when speech resumes
+        if (silencePauseActiveRef.current) {
+          return;
         }
 
         // Convert to base64
@@ -743,7 +822,7 @@ export default function InterviewPage() {
       console.error("[Interview] Error starting audio capture:", error);
       return false;
     }
-  }, [initAudioContext, isAiSpeaking]);
+  }, [initAudioContext, isAiSpeaking, startSilenceMonitoring, addAudioToSilenceBuffer]);
 
 
   // Initialize question text from query data
@@ -1115,9 +1194,24 @@ export default function InterviewPage() {
 
           <div className="flex flex-col items-center gap-6">
             <WaveformVisualizer
-              isActive={isListening}
+              isActive={isListening && !silencePauseActive}
               isAiSpeaking={isAiSpeaking}
             />
+
+            <AnimatePresence>
+              {silencePauseActive && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center gap-2 text-muted-foreground text-sm"
+                  data-testid="status-silence-pause"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Waiting for you to speak...</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div className="flex items-center gap-4">
               <Button

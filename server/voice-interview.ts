@@ -2856,6 +2856,39 @@ Do not attempt to answer any questions or continue the interview.`;
         cleanupSession(sessionId, "completed");
       }
       break;
+
+    case "client_silence_detected":
+      // Client detected extended silence (30+ seconds) and paused audio streaming
+      // This is informational - the client handles the pause/resume logic
+      // The server just notes this for metrics and keeps the session active
+      console.log(
+        `[VoiceInterview] Client silence detected for session: ${sessionId} (${message.durationSeconds}s)`,
+      );
+      // Keep session alive but note the silence state
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
+      break;
+
+    case "client_resuming_audio":
+      // Client detected speech after silence and is sending buffered audio
+      // The buffered audio contains the first moments of speech (captured during silence)
+      // to avoid losing audio due to the delay between speech detection and resumption
+      console.log(
+        `[VoiceInterview] Client resuming audio with buffer for session: ${sessionId}`,
+      );
+      state.lastActivityAt = Date.now();
+      state.terminationWarned = false;
+      
+      // Forward the buffered audio to the provider first
+      if (message.bufferedAudio && state.providerWs?.readyState === WebSocket.OPEN) {
+        state.providerWs.send(
+          JSON.stringify({
+            type: "input_audio_buffer.append",
+            audio: message.bufferedAudio,
+          }),
+        );
+      }
+      break;
   }
 }
 
