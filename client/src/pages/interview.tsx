@@ -998,10 +998,10 @@ export default function InterviewPage() {
     // Check if additional questions are enabled for this collection and feature flag
     const maxAQ = collection?.maxAdditionalQuestions ?? 1;
     const aqFeatureEnabled = interviewData?.features?.additionalQuestionsEnabled !== false;
+    const isOnFinalQuestion = currentQuestionIndex >= (questions?.length ?? 1) - 1;
     
-    // Always show AQ consent dialog when AQs are enabled, regardless of highlightNextButton state
-    if (!skipConfirm && maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
-      // Show AQ consent dialog if additional questions are enabled
+    // Only show AQ consent dialog when on the final question AND AQs are enabled
+    if (!skipConfirm && isOnFinalQuestion && maxAQ > 0 && aqFeatureEnabled && !isInAQPhase) {
       setConfirmDialog({ open: true, type: "additional_questions" });
       return;
     } else if (!skipConfirm && !highlightNextButton) {
