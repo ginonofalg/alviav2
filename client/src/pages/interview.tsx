@@ -678,9 +678,10 @@ export default function InterviewPage() {
           break;
 
         case "additional_questions_none":
-          // Keep aqGenerating=true to maintain the overlay, but update the message
-          // to show completion state. The interview_complete will arrive after a delay.
-          setAqMessage(message.message || "No additional questions needed.");
+          // Transition to the "completing" overlay which shows "Barbara is finishing up her notes..."
+          // This provides visual feedback that the app is still processing (server is awaiting summaries)
+          setAqGenerating(false);
+          setIsCompletingAQ(true);
           break;
 
         case "additional_question_started":
