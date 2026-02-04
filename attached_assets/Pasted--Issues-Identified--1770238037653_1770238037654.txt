@@ -1,0 +1,41 @@
+ Issues Identified
+                                                                                                                                                          
+  1. Text-only mode bug for resumed sessions (interview.tsx:902)
+                                                                                                                                                          
+  For resumed sessions in text-only mode, clicking the mic button triggers the PAUSE action instead of starting the interview. The condition isListening 
+  || (isTextOnlyMode && isConnected) evaluates to true even when the resumed session hasn't been activated yet.
+
+  // Line 902: This condition is too broad for text-only resumed sessions
+  } else if (isListening || (isTextOnlyMode && isConnected)) {
+    // PAUSE branch - but text-only resumed sessions incorrectly enter here
+
+  2. hasSentResumeRef not reset on WebSocket disconnect (interview.tsx)
+
+  If the WebSocket disconnects and reconnects during an active (non-paused) interview:
+  - hasSentResumeRef stays true from the initial resume
+  - After reconnection, if isPaused was false, clicking mic falls to the else branch
+  - Since hasSentResumeRef.current is still true, resume_interview is NOT sent
+  - The AI may not know to respond even though audio capture restarts
+
+  3. isPaused not reset in WebSocket onclose (interview.tsx:464-470)
+
+  When the WebSocket closes, isPaused is not reset:
+  ws.onclose = () => {
+    setIsConnected(false);
+    setIsConnecting(false);
+    setIsListening(false);
+    // isPaused not reset - can lead to inconsistent state
+  };
+
+  4. Visual state mismatch for paused sessions
+
+  When resuming a session that was previously paused (server status = "paused"), the client isPaused state is initialized to false, so the mic button
+  shows "mic off" instead of "play" (paused) icon, even though the session was paused.
+
+  The Good News
+
+  The core pause/resume flow for voice mode on fresh and initially-resumed sessions appears to work correctly. The recent changes properly prevent the AI
+  from auto-speaking on resume by:
+  - Setting isListening = false when message.isResumed is true
+  - Server skipping auto-trigger for isRestoredSession
+  - Requiring user to click mic to send resume_interview
