@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import type { IncomingMessage } from "http";
+import { randomUUID } from "crypto";
 import { storage, type InterviewStatePatch } from "./storage";
 import {
   analyzeWithBarbara,
@@ -54,6 +55,7 @@ function getProvider(
 
 interface InterviewState {
   sessionId: string;
+  connectionId: string; // Unique ID per state instance - prevents stale event processing from orphaned connections
   currentQuestionIndex: number;
   questions: any[];
   template: any;
@@ -710,25 +712,46 @@ export function handleVoiceInterview(
     return;
   }
 
-  // Check for concurrent tab - reject if session already has an active connection
+  // Check for concurrent tab - reject if session already has an active or transitioning connection
+  // CRITICAL: Also check CLOSING state to prevent race condition where new connection arrives
+  // before old WebSocket 'close' event fires, leading to state overwrite and metric corruption
   const existingState = interviewStates.get(sessionId);
-  if (
-    existingState &&
-    existingState.clientWs &&
-    existingState.clientWs.readyState === WebSocket.OPEN
-  ) {
-    console.log(
-      `[VoiceInterview] Rejecting concurrent connection for session: ${sessionId}`,
-    );
-    clientWs.send(
-      JSON.stringify({
-        type: "error",
-        code: "SESSION_ACTIVE_ELSEWHERE",
-        message: "This interview is already active in another tab or window",
-      }),
-    );
-    clientWs.close(1008, "Session active elsewhere");
-    return;
+  if (existingState && existingState.clientWs) {
+    const wsState = existingState.clientWs.readyState;
+    
+    if (wsState === WebSocket.OPEN) {
+      console.log(
+        `[VoiceInterview] Rejecting concurrent connection for session: ${sessionId} (existing WS is OPEN)`,
+      );
+      clientWs.send(
+        JSON.stringify({
+          type: "error",
+          code: "SESSION_ACTIVE_ELSEWHERE",
+          message: "This interview is already active in another tab or window",
+        }),
+      );
+      clientWs.close(1008, "Session active elsewhere");
+      return;
+    }
+    
+    if (wsState === WebSocket.CLOSING || wsState === WebSocket.CONNECTING) {
+      // Race condition prevention: old connection still transitioning
+      // Reject and ask client to retry after brief delay
+      console.log(
+        `[VoiceInterview] Rejecting connection during state transition for session: ${sessionId} ` +
+        `(existing WS state: ${wsState === WebSocket.CLOSING ? 'CLOSING' : 'CONNECTING'}, ` +
+        `clientDisconnectedAt: ${existingState.clientDisconnectedAt})`
+      );
+      clientWs.send(
+        JSON.stringify({
+          type: "error",
+          code: "SESSION_TRANSITIONING",
+          message: "Session is transitioning. Please wait a moment and try again.",
+        }),
+      );
+      clientWs.close(1013, "Session transitioning"); // 1013 = Try Again Later
+      return;
+    }
   }
 
   // Check if we're reconnecting to a disconnected session (within heartbeat timeout window)
@@ -818,12 +841,14 @@ export function handleVoiceInterview(
 
   // Initialize interview state
   const now = Date.now();
+  const connectionId = randomUUID(); // Unique ID for this state instance
   const selectedProviderType =
     providerParam ||
     (process.env.REALTIME_PROVIDER as RealtimeProviderType) ||
     "openai";
   const state: InterviewState = {
     sessionId,
+    connectionId,
     currentQuestionIndex: 0,
     questions: [],
     template: null,
@@ -1206,11 +1231,14 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     );
   });
 
+  // Capture connectionId in closure to detect stale events from orphaned connections
+  const capturedConnectionId = state.connectionId;
+  
   providerWs.on("message", (data) => {
     try {
       const event = JSON.parse(data.toString());
-      // Don't pass clientWs - handleProviderEvent looks it up from state to handle reconnections
-      handleProviderEvent(sessionId, event);
+      // Pass connectionId to detect and ignore events from orphaned connections
+      handleProviderEvent(sessionId, capturedConnectionId, event);
     } catch (error) {
       console.error(
         `[VoiceInterview] Error parsing ${provider.displayName} message:`,
@@ -1488,9 +1516,21 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
   return instructions;
 }
 
-async function handleProviderEvent(sessionId: string, event: any) {
+async function handleProviderEvent(sessionId: string, connectionId: string, event: any) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
+
+  // CRITICAL: Stale connection guard - ignore events from orphaned provider connections
+  // This prevents race conditions where an old providerWs (still closing) sends events
+  // that corrupt the new state's timing/metrics
+  if (state.connectionId !== connectionId) {
+    console.warn(
+      `[VoiceInterview] Ignoring stale event from orphaned connection. ` +
+      `Event: ${event.type}, staleConnectionId: ${connectionId.slice(0, 8)}, ` +
+      `currentConnectionId: ${state.connectionId.slice(0, 8)}, session: ${sessionId}`
+    );
+    return;
+  }
 
   // Get current clientWs from state (not closure) to handle reconnections correctly
   const clientWs = state.clientWs;
