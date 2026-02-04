@@ -1,4 +1,8 @@
-import type { TranscriptionQualitySignals, TranscriptionQualityFlag, TranscriptionQualityMetrics } from "@shared/schema";
+import type {
+  TranscriptionQualitySignals,
+  TranscriptionQualityFlag,
+  TranscriptionQualityMetrics,
+} from "@shared/schema";
 
 export function createEmptyQualitySignals(): TranscriptionQualitySignals {
   return {
@@ -34,11 +38,31 @@ const NON_LATIN_SCRIPT_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
 ];
 
 const ROMANCE_LANGUAGE_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-  { name: "Spanish", pattern: /\b(es un|conoce|digo|esto|pero|muy|tengo|hace|está|qué|cómo|también|porque|bueno|entonces|nada|todo|ahora|siempre|nunca)\b/i },
-  { name: "French", pattern: /\b(c'est|je suis|qu'est|très|avec|pour|dans|mais|donc|alors|aussi|bien|même|plus|rien|tout)\b/i },
-  { name: "German", pattern: /\b(ich bin|das ist|sehr|nicht|auch|oder|aber|wenn|weil|dann|noch|schon|immer|heute)\b/i },
-  { name: "Portuguese", pattern: /\b(é um|está|tenho|fazer|porque|também|agora|então|muito|bom|isso|aqui|onde)\b/i },
-  { name: "Italian", pattern: /\b(è un|sono|fare|perché|anche|adesso|molto|bene|questo|dove|come|quando|sempre)\b/i },
+  {
+    name: "Spanish",
+    pattern:
+      /\b(es un|conoce|digo|esto|pero|muy|tengo|hace|está|qué|cómo|también|porque|bueno|entonces|nada|todo|ahora|siempre|nunca)\b/i,
+  },
+  {
+    name: "French",
+    pattern:
+      /\b(c'est|je suis|qu'est|très|avec|pour|dans|mais|donc|alors|aussi|bien|même|plus|rien|tout)\b/i,
+  },
+  {
+    name: "German",
+    pattern:
+      /\b(ich bin|das ist|sehr|nicht|auch|oder|aber|wenn|weil|dann|noch|schon|immer|heute)\b/i,
+  },
+  {
+    name: "Portuguese",
+    pattern:
+      /\b(é um|está|tenho|fazer|porque|também|agora|então|muito|bom|isso|aqui|onde)\b/i,
+  },
+  {
+    name: "Italian",
+    pattern:
+      /\b(è un|sono|fare|perché|anche|adesso|molto|bene|questo|dove|come|quando|sempre)\b/i,
+  },
 ];
 
 export function detectNonEnglish(text: string): NonEnglishDetectionResult {
@@ -82,16 +106,21 @@ export interface RepeatedWordDetectionResult {
 
 // Strips punctuation from a word for comparison (handles "we," "we." "we!" etc.)
 function normalizeWord(word: string): string {
-  return word.replace(/[^\w'-]/g, '').toLowerCase();
+  return word.replace(/[^\w'-]/g, "").toLowerCase();
 }
 
 export function detectRepeatedWords(text: string): RepeatedWordDetectionResult {
   // Split on whitespace and normalize each word (strip punctuation for comparison)
-  const rawWords = text.split(/\s+/).filter(w => w.length > 0);
-  const words = rawWords.map(normalizeWord).filter(w => w.length > 0);
-  
+  const rawWords = text.split(/\s+/).filter((w) => w.length > 0);
+  const words = rawWords.map(normalizeWord).filter((w) => w.length > 0);
+
   if (words.length < 4) {
-    return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };
+    return {
+      detected: false,
+      confidence: 0,
+      repeatedWord: null,
+      repeatCount: 0,
+    };
   }
 
   // Count consecutive identical words (after normalization)
@@ -124,27 +153,43 @@ export function detectRepeatedWords(text: string): RepeatedWordDetectionResult {
   return { detected: false, confidence: 0, repeatedWord: null, repeatCount: 0 };
 }
 
-export function detectIncoherentPhrase(text: string): IncoherenceDetectionResult {
+export function detectIncoherentPhrase(
+  text: string,
+): IncoherenceDetectionResult {
   const trimmed = text.trim();
-  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
 
   if (words.length === 0) {
     return { isIncoherent: true, confidence: 1.0, reason: "Empty utterance" };
   }
 
-  const concatenatedWordPattern = /\b(thisis|ofthe|inthe|onthe|tothe|forthe|andthe|butthe|withthe|fromthe|atthe|bythe)\b/i;
+  const concatenatedWordPattern =
+    /\b(thisis|ofthe|inthe|onthe|tothe|forthe|andthe|butthe|withthe|fromthe|atthe|bythe)\b/i;
   if (concatenatedWordPattern.test(trimmed)) {
-    return { isIncoherent: true, confidence: 0.9, reason: "Concatenated words detected" };
+    return {
+      isIncoherent: true,
+      confidence: 0.9,
+      reason: "Concatenated words detected",
+    };
   }
 
   const repeatedCharsPattern = /(.)\1{4,}/;
   if (repeatedCharsPattern.test(trimmed)) {
-    return { isIncoherent: true, confidence: 0.8, reason: "Repeated characters" };
+    return {
+      isIncoherent: true,
+      confidence: 0.8,
+      reason: "Repeated characters",
+    };
   }
 
-  const standaloneArticlePattern = /^(the|a|an|of|in|to|for|and|but|or|is|at|by|this|that)\.?$/i;
+  const standaloneArticlePattern =
+    /^(the|a|an|of|in|to|for|and|but|or|is|at|by|this|that)\.?$/i;
   if (standaloneArticlePattern.test(trimmed)) {
-    return { isIncoherent: true, confidence: 0.7, reason: "Standalone article/preposition" };
+    return {
+      isIncoherent: true,
+      confidence: 0.7,
+      reason: "Standalone article/preposition",
+    };
   }
 
   const nonsensePhrasePatterns = [
@@ -155,13 +200,22 @@ export function detectIncoherentPhrase(text: string): IncoherenceDetectionResult
   ];
   for (const pattern of nonsensePhrasePatterns) {
     if (pattern.test(trimmed)) {
-      return { isIncoherent: true, confidence: 0.6, reason: "Known nonsense pattern" };
+      return {
+        isIncoherent: true,
+        confidence: 0.6,
+        reason: "Known nonsense pattern",
+      };
     }
   }
 
-  const incompleteEndPattern = /\b(the|a|an|of|in|to|for|and|but|with|from|at|by|this|that|is|are|was|were)$/i;
+  const incompleteEndPattern =
+    /\b(the|a|an|of|in|to|for|and|but|with|from|at|by|this|that|is|are|was|were)$/i;
   if (incompleteEndPattern.test(trimmed) && words.length <= 3) {
-    return { isIncoherent: true, confidence: 0.5, reason: "Abrupt incomplete ending" };
+    return {
+      isIncoherent: true,
+      confidence: 0.5,
+      reason: "Abrupt incomplete ending",
+    };
   }
 
   return { isIncoherent: false, confidence: 0, reason: "" };
@@ -176,7 +230,7 @@ interface QualityUpdateResult {
 export function updateQualitySignals(
   currentSignals: TranscriptionQualitySignals,
   transcriptText: string,
-  wasQuestionRepeated: boolean
+  wasQuestionRepeated: boolean,
 ): QualityUpdateResult {
   const signals = { ...currentSignals };
   const detectedIssues: string[] = [];
@@ -187,7 +241,9 @@ export function updateQualitySignals(
   const nonEnglishResult = detectNonEnglish(transcriptText);
   if (nonEnglishResult.detected) {
     signals.foreignLanguageCount++;
-    detectedIssues.push(`Foreign language: ${nonEnglishResult.detectedPatterns.join(", ")}`);
+    detectedIssues.push(
+      `Foreign language: ${nonEnglishResult.detectedPatterns.join(", ")}`,
+    );
   }
 
   const incoherenceResult = detectIncoherentPhrase(transcriptText);
@@ -200,14 +256,21 @@ export function updateQualitySignals(
   const repeatedWordResult = detectRepeatedWords(transcriptText);
   if (repeatedWordResult.detected) {
     signals.repeatedWordGlitchCount++;
-    detectedIssues.push(`Repeated word glitch: "${repeatedWordResult.repeatedWord}" x${repeatedWordResult.repeatCount}`);
+    detectedIssues.push(
+      `Repeated word glitch: "${repeatedWordResult.repeatedWord}" x${repeatedWordResult.repeatCount}`,
+    );
   }
 
-  const words = transcriptText.trim().split(/\s+/).filter(w => w.length > 0);
+  const words = transcriptText
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
   if (words.length < 3) {
     signals.shortUtteranceStreak++;
     if (signals.shortUtteranceStreak >= 3) {
-      detectedIssues.push(`Short utterance streak: ${signals.shortUtteranceStreak}`);
+      detectedIssues.push(
+        `Short utterance streak: ${signals.shortUtteranceStreak}`,
+      );
     }
   } else {
     signals.shortUtteranceStreak = 0;
@@ -216,7 +279,9 @@ export function updateQualitySignals(
   if (wasQuestionRepeated) {
     signals.questionRepeatCount++;
     if (signals.questionRepeatCount >= 3) {
-      detectedIssues.push(`Question repeated ${signals.questionRepeatCount} times`);
+      detectedIssues.push(
+        `Question repeated ${signals.questionRepeatCount} times`,
+      );
     }
   }
 
@@ -230,11 +295,14 @@ export function updateQualitySignals(
 }
 
 function shouldTriggerCheck(signals: TranscriptionQualitySignals): boolean {
-  if (signals.environmentCheckTriggered && signals.utterancesSinceEnvironmentCheck < 15) {
+  if (
+    signals.environmentCheckTriggered &&
+    signals.utterancesSinceEnvironmentCheck < 15
+  ) {
     return false;
   }
 
-  if (signals.foreignLanguageCount >= 1) {
+  if (signals.foreignLanguageCount >= 2) {
     return true;
   }
 
@@ -246,7 +314,9 @@ function shouldTriggerCheck(signals: TranscriptionQualitySignals): boolean {
   return weakSignalCount >= 2;
 }
 
-export function calculateQualityScore(signals: TranscriptionQualitySignals): number {
+export function calculateQualityScore(
+  signals: TranscriptionQualitySignals,
+): number {
   let score = 100;
 
   const foreignPenalty = Math.min(signals.foreignLanguageCount * 30, 60);
@@ -264,13 +334,18 @@ export function calculateQualityScore(signals: TranscriptionQualitySignals): num
   }
 
   // Penalty for repeated word glitches (connection issues causing garbled transcription)
-  const repeatedWordPenalty = Math.min(signals.repeatedWordGlitchCount * 15, 45);
+  const repeatedWordPenalty = Math.min(
+    signals.repeatedWordGlitchCount * 15,
+    45,
+  );
   score -= repeatedWordPenalty;
 
   return Math.max(0, Math.min(100, score));
 }
 
-export function getQualityFlags(signals: TranscriptionQualitySignals): TranscriptionQualityFlag[] {
+export function getQualityFlags(
+  signals: TranscriptionQualitySignals,
+): TranscriptionQualityFlag[] {
   const flags: TranscriptionQualityFlag[] = [];
 
   if (signals.foreignLanguageCount > 0) {
@@ -302,16 +377,18 @@ export function getQualityFlags(signals: TranscriptionQualitySignals): Transcrip
 export function sanitizeGlitchedTranscript(text: string): string {
   // First pass: Handle space-separated repeats (e.g., "we we we we we")
   // Match a word followed by 3+ whitespace-separated repetitions (total 4+)
-  let result = text.replace(/\b(\w+)((?:\s+\1){3,})\b/gi, '$1 $1');
-  
+  let result = text.replace(/\b(\w+)((?:\s+\1){3,})\b/gi, "$1 $1");
+
   // Second pass: Handle punctuation-separated repeats (e.g., "we, we, we, we" or "I. I. I. I.")
   // Match word + punctuation patterns repeated 4+ times (requires punctuation to avoid re-matching first pass)
-  result = result.replace(/\b(\w+)([,.\-;:!?]\s+\1){3,}\b/gi, '$1 $1');
-  
+  result = result.replace(/\b(\w+)([,.\-;:!?]\s+\1){3,}\b/gi, "$1 $1");
+
   return result;
 }
 
-export function createQualityMetrics(signals: TranscriptionQualitySignals): TranscriptionQualityMetrics {
+export function createQualityMetrics(
+  signals: TranscriptionQualitySignals,
+): TranscriptionQualityMetrics {
   return {
     signals,
     qualityScore: calculateQualityScore(signals),
