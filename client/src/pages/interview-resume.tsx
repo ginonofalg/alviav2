@@ -37,7 +37,7 @@ export default function InterviewResumePage() {
             JSON.stringify({ token, sessionId })
           );
           // Redirect to consent page which will show resume/start-fresh choice
-          setLocation(`/interview/consent/${collectionId}`);
+          setLocation(`/join/${collectionId}`);
         } else {
           setError("Could not find session to resume");
         }
