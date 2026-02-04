@@ -143,6 +143,31 @@ function canCreateResponse(state: InterviewState): boolean {
   return false;
 }
 
+// Defensive WebSocket send helper - safely sends messages with readyState check and error handling
+// Prevents crashes from stale closure WebSockets that may have closed between event and handler
+function safeSend(ws: WebSocket | null, message: string | object, context?: string): boolean {
+  if (!ws) {
+    return false;
+  }
+  if (ws.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+  try {
+    const data = typeof message === 'string' ? message : JSON.stringify(message);
+    ws.send(data);
+    return true;
+  } catch (error) {
+    console.warn(`[safeSend] Failed to send${context ? ` (${context})` : ''}: ${error}`);
+    return false;
+  }
+}
+
+// Helper to check if a connectionId matches the current state - centralized stale guard
+function isCurrentConnection(sessionId: string, connectionId: string): boolean {
+  const state = interviewStates.get(sessionId);
+  return state !== null && state !== undefined && state.connectionId === connectionId;
+}
+
 // Realtime API metrics tracking during session
 interface MetricsTracker {
   // Token usage (accumulated from response.done events)
@@ -747,6 +772,7 @@ export function handleVoiceInterview(
           type: "error",
           code: "SESSION_TRANSITIONING",
           message: "Session is transitioning. Please wait a moment and try again.",
+          retryAfterMs: 1000, // Suggest 1 second retry delay
         }),
       );
       clientWs.close(1013, "Session transitioning"); // 1013 = Try Again Later
@@ -828,11 +854,19 @@ export function handleVoiceInterview(
     console.log(
       `[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`,
     );
+    // Close orphaned providerWs
     if (
       existingState.providerWs &&
       existingState.providerWs.readyState === WebSocket.OPEN
     ) {
       existingState.providerWs.close();
+    }
+    // Close orphaned clientWs to prevent dangling connections
+    if (
+      existingState.clientWs &&
+      existingState.clientWs.readyState === WebSocket.OPEN
+    ) {
+      existingState.clientWs.close(1001, "Session replaced");
     }
     if (existingState.pendingPersistTimeout) {
       clearTimeout(existingState.pendingPersistTimeout);
@@ -1251,14 +1285,28 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     console.log(
       `[VoiceInterview] ${provider.displayName} connection closed for session: ${sessionId}`,
     );
-    state.isConnected = false;
-    // Reset responseInProgress on disconnect to prevent deadlock
-    if (state.responseInProgress) {
-      console.log(`[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`);
-      state.responseInProgress = false;
-      state.responseStartedAt = null;
+    
+    // Guard against stale closure - only update current state
+    if (!isCurrentConnection(sessionId, capturedConnectionId)) {
+      console.log(
+        `[VoiceInterview] Ignoring close event from orphaned provider connection for ${sessionId}`
+      );
+      return;
     }
-    clientWs.send(JSON.stringify({ type: "disconnected" }));
+    
+    // Get current state (closure 'state' may reference orphaned object)
+    const currentState = interviewStates.get(sessionId);
+    if (currentState) {
+      currentState.isConnected = false;
+      // Reset responseInProgress on disconnect to prevent deadlock
+      if (currentState.responseInProgress) {
+        console.log(`[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`);
+        currentState.responseInProgress = false;
+        currentState.responseStartedAt = null;
+      }
+      // Use safeSend with current clientWs from state (not stale closure)
+      safeSend(currentState.clientWs, { type: "disconnected" }, `providerWs close ${sessionId}`);
+    }
   });
 
   providerWs.on("error", (error) => {
@@ -1266,9 +1314,20 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       `[VoiceInterview] ${provider.displayName} error for ${sessionId}:`,
       error,
     );
-    clientWs.send(
-      JSON.stringify({ type: "error", message: "Voice service error" }),
-    );
+    
+    // Guard against stale closure - only notify current client
+    if (!isCurrentConnection(sessionId, capturedConnectionId)) {
+      console.log(
+        `[VoiceInterview] Ignoring error event from orphaned provider connection for ${sessionId}`
+      );
+      return;
+    }
+    
+    // Get current clientWs from state (not stale closure)
+    const currentState = interviewStates.get(sessionId);
+    if (currentState) {
+      safeSend(currentState.clientWs, { type: "error", message: "Voice service error" }, `providerWs error ${sessionId}`);
+    }
   });
 }
 
