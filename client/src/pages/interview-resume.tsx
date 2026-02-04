@@ -26,8 +26,10 @@ export default function InterviewResumePage() {
 
         const data = await response.json();
         
-        if (data.sessionId) {
-          setLocation(`/interview/${data.sessionId}?resume=true`);
+        // API returns session object, not sessionId directly
+        const sessionId = data.session?.id || data.sessionId;
+        if (sessionId) {
+          setLocation(`/interview/${sessionId}?resume=true`);
         } else {
           setError("Could not find session to resume");
         }
