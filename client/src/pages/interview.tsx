@@ -491,7 +491,11 @@ export default function InterviewPage() {
           console.log("[Interview] Session connected:", message);
           setIsConnected(true);
           setIsConnecting(false);
-          setIsListening(true);
+          // Only set isListening true if NOT a resumed session
+          // For resumed sessions, audio capture hasn't started yet - user needs to click mic
+          if (!message.isResumed) {
+            setIsListening(true);
+          }
           setCurrentQuestionIndex(message.questionIndex || 0);
           setTotalQuestions(message.totalQuestions || 0);
           if (message.currentQuestion) {
