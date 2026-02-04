@@ -835,6 +835,9 @@ export default function InterviewPage() {
     }
   }, [currentQuestion, questions, currentQuestionText, totalQuestions]);
 
+  // Track if we've sent the resume message for auto-resume
+  const hasAutoResumedRef = useRef(false);
+
   // Auto-connect WebSocket for resumed sessions (skip ready phase)
   // Note: Audio capture is NOT started automatically due to browser autoplay policies
   // requiring user interaction. The user can click the mic button to start audio.
@@ -850,6 +853,23 @@ export default function InterviewPage() {
       // Audio capture will be started when user clicks mic button (toggleListening)
     }
   }, [isResumedSession, isLoading, session?.currentQuestionIndex, connectWebSocket]);
+
+  // Auto-send resume_interview message once WebSocket is connected for resumed sessions
+  // This triggers Alvia to welcome the user back automatically
+  useEffect(() => {
+    if (
+      isResumedSession &&
+      isConnected &&
+      !hasAutoResumedRef.current &&
+      wsRef.current?.readyState === WebSocket.OPEN
+    ) {
+      hasAutoResumedRef.current = true;
+      console.log("[Interview] Auto-sending resume_interview for resumed session");
+      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+      // Set paused to false since we're auto-resuming
+      setIsPaused(false);
+    }
+  }, [isResumedSession, isConnected]);
 
   // Cleanup on unmount
   useEffect(() => {
