@@ -854,22 +854,40 @@ export default function InterviewPage() {
     }
   }, [isResumedSession, isLoading, session?.currentQuestionIndex, connectWebSocket]);
 
-  // Auto-send resume_interview message once WebSocket is connected for resumed sessions
-  // This triggers Alvia to welcome the user back automatically
+  // Auto-send audio_ready and resume_interview once WebSocket is connected for resumed sessions
+  // This triggers Alvia to welcome the user back automatically with voice
   useEffect(() => {
-    if (
-      isResumedSession &&
-      isConnected &&
-      !hasAutoResumedRef.current &&
-      wsRef.current?.readyState === WebSocket.OPEN
-    ) {
-      hasAutoResumedRef.current = true;
-      console.log("[Interview] Auto-sending resume_interview for resumed session");
-      wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
-      // Set paused to false since we're auto-resuming
-      setIsPaused(false);
+    async function autoResumeWithAudio() {
+      if (
+        isResumedSession &&
+        isConnected &&
+        !hasAutoResumedRef.current &&
+        wsRef.current?.readyState === WebSocket.OPEN
+      ) {
+        hasAutoResumedRef.current = true;
+        console.log("[Interview] Auto-resuming session with audio");
+        
+        // Initialize audio context so Alvia's voice can play
+        try {
+          await initAudioContext();
+          console.log("[Interview] Audio context ready for resume");
+        } catch (err) {
+          console.error("[Interview] Failed to init audio context for resume:", err);
+        }
+        
+        // Send audio_ready so server can send Alvia's audio
+        wsRef.current.send(JSON.stringify({ type: "audio_ready" }));
+        
+        // Send resume_interview to trigger Alvia's welcome back message
+        wsRef.current.send(JSON.stringify({ type: "resume_interview" }));
+        
+        // Set paused to false since we're auto-resuming
+        setIsPaused(false);
+      }
     }
-  }, [isResumedSession, isConnected]);
+    
+    autoResumeWithAudio();
+  }, [isResumedSession, isConnected, initAudioContext]);
 
   // Cleanup on unmount
   useEffect(() => {
