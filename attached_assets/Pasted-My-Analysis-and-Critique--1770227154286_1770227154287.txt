@@ -1,0 +1,61 @@
+My Analysis and Critique                                                                                                                                                                                                                                                    
+   
+  Replit's diagnosis is directionally correct but incomplete. Here's what I found:                                                                                                                                                                                            
+                  
+  The Actual Race Condition
+
+  Looking at lines 714-732 and 735-746:
+
+  1. Check 1 (line 718): readyState === WebSocket.OPEN → reject concurrent tab
+  2. Check 2 (line 735): clientDisconnectedAt !== null → reconnection case, reuse state
+  3. Fallthrough: Create entirely new state
+
+  The gap Replit identified is real: when clientWs is in CLOSING state (readyState=2), both checks fail:
+  - Not OPEN (it's CLOSING)
+  - clientDisconnectedAt is still null (close event hasn't fired yet)
+
+  What Replit Missed
+
+  The issue is worse than described. Look at what happens after the cleanup (lines 804-817):
+
+  1. Old providerWs is closed IF it's OPEN - but if it's CONNECTING, it's ignored entirely
+  2. A brand new state is created (lines 825-885)
+  3. The Map is overwritten: interviewStates.set(sessionId, state) (line 886)
+  4. initializeInterview is called (line 892) which creates a NEW providerWs connection (line 1091)
+
+  The critical insight: Now there are potentially two active OpenAI connections for the same sessionId:
+  - providerWs_A (old): transitioning to CLOSING, but events may still be in Node's event queue
+  - providerWs_B (new): CONNECTING → OPEN
+
+  Why Speaking Time Is Zero
+
+  Both connections' event handlers call handleProviderEvent(sessionId, event) at line 1213, which looks up state from the Map (line 1492). Since the Map was overwritten, both connections' events modify the SAME new state.
+
+  The speaking time tracking breaks because:
+
+  providerWs_B: speech_started → sets speakingStartTime = 1234
+  providerWs_A: speech_stopped (stale) → uses 1234, calculates elapsed, CLEARS speakingStartTime = null
+  providerWs_B: speech_stopped → speakingStartTime is null → NO TIME ACCUMULATED
+
+  Or:
+  providerWs_A: speech_stopped (before B's speech_started) → speakingStartTime null → no accumulation
+  providerWs_B: speech_started → sets speakingStartTime
+  providerWs_B: speech_stopped → correctly accumulates
+  ...but repeat with interleaving and eventually corruption
+
+  The 13 transcriptions still arrive because handleProviderEvent processes them regardless of which connection sends them. But the timing state gets corrupted by interleaved events.
+
+  Replit's Fix Suggestions Need Refinement
+
+  Replit suggested:
+  "Check for CLOSING state too" or "Always reuse existing state"
+
+  These help but aren't complete. The fix needs to:
+
+  1. Reject connections when clientWs is in CLOSING or CONNECTING state (not just OPEN)
+  2. Add a connection identity guard - handleProviderEvent should verify the event comes from the CURRENT state.providerWs, not a stale connection
+  3. Ensure old providerWs is fully closed before creating new one - or track connection generation to filter stale events
+
+  Would you like me to implement the fix? I'd approach it by:
+  1. Expanding the concurrent tab check to include WebSocket.CLOSING and WebSocket.CONNECTING states
+  2. Adding a connectionId to state that's checked in handleProviderEvent to ignore events from orphaned connections
