@@ -1,0 +1,69 @@
+All four core fixes from the proposal are fully implemented and generally exceed the spec quality. Here's the breakdown:                                                                                                                                            
+                                                                                                                                                                                                                                                                      
+  ---                                                                                                                                                                                                                                                                 
+  What Was Done Well                                                                                                                                                                                                                                                  
+  ┌──────────────────────────────────────────────────────┬────────┬──────────────────────────────────────────────────────────────────────────────────────────────────┐                                                                                                
+  │                         Fix                          │ Status │                                              Notes                                               │                                                                                                
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤                                                                                                
+  │ stopAudioCapture() on WS close                       │ Done   │ Also nulls onaudioprocess before disconnect() — prevents final queued callbacks                  │                                                                                                
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Defensive cleanup in startAudioCapture               │ Done   │ Cleans orphaned processors/streams before creating new ones, with logging                        │
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Server-side audio gating (isPaused + awaitingResume) │ Done   │ Activity timestamp wisely moved after the gate check so leaked audio doesn't keep sessions alive │
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ isAiSpeakingRef ref pattern                          │ Done   │ Correctly removed isAiSpeaking from useCallback deps                                             │
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ All diagnostic logging (6 items)                     │ Done   │ sendBeacon, lifecycle events, heartbeat delay, server close codes, rate-limited endpoint         │
+  ├──────────────────────────────────────────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Auto-reconnect with exponential backoff              │ Bonus  │ Token system, jitter, concurrent-tab detection, connection ID guards                             │
+  └──────────────────────────────────────────────────────┴────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ---
+  Outstanding Issues
+
+  1. client_resuming_audio bypasses audio gate — Medium severity
+
+  server/voice-interview.ts:3406-3428 — The regular audio case correctly gates on state.isPaused || state.awaitingResume (line 2583), but the client_resuming_audio handler forwards buffered audio directly to the provider without this check:
+
+  case "client_resuming_audio":
+      // Forwards buffered audio with NO isPaused/awaitingResume check
+      state.providerWs.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: message.bufferedAudio,
+      }));
+
+  If this message arrives while paused or awaiting resume, it will bypass the gating and could trigger an OpenAI VAD auto-response. The same isPaused || awaitingResume guard should be added here.
+
+  2. isListening stale closure in ws.onclose — Medium severity (auto-resume likely broken)
+
+  client/src/pages/interview.tsx:689 — The ws.onclose handler captures isListening, isPaused, and isTextOnlyMode by closure:
+
+  wasListeningBeforeDisconnectRef.current = isListening;
+  shouldAutoResumeRef.current = isListening && !isPaused && !isTextOnlyMode;
+
+  But connectWebSocket's dependency array (line 769) is [sessionId, collection?.voiceProvider, toast, stopAudioCapture] — it does not include isListening. Since connectWebSocket is created before the user ever clicks the mic, isListening is captured as false,
+  meaning shouldAutoResumeRef will always be false when the socket closes.
+
+  This means auto-resume after reconnection will never trigger when the user was actively interviewing. The fix is to add an isListeningRef (same pattern already used for isAiSpeakingRef).
+
+  3. awaitingResume not set on quick reconnect path — Low severity
+
+  server/voice-interview.ts:920-1006 — When the server reconnects to a session still in memory (before watchdog cleanup), the existing state is reused but awaitingResume is not set to true. It's only set for restored sessions (line 1228). This means on quick
+  reconnects, audio gating relies solely on the client stopping its audio processor (which does work), but there's no server-side defense-in-depth for this path.
+
+  4. handleWebSocketMessage missing startAudioCapture dependency — Low severity
+
+  client/src/pages/interview.tsx:1084 — startAudioCapture is called inside handleWebSocketMessage (line 842) but is not in its dependency array:
+
+  }, [playAudio, toast, navigate, stopAudioCapture, initAudioContext]);
+
+  If startAudioCapture is ever recreated, handleWebSocketMessage would hold a stale reference. In practice this is unlikely to cause issues since startAudioCapture's own dependencies are stable, but it's technically a hooks violation.
+
+  ---
+  Recommendations
+
+  1. Fix #1 (audio gate bypass): Add if (state.isPaused || state.awaitingResume) break; to the client_resuming_audio handler
+  2. Fix #2 (stale closure): Add isListeningRef, isPausedRef, isTextOnlyModeRef with sync effects, use them in ws.onclose — same pattern as isAiSpeakingRef
+  3. Fix #3 (quick reconnect): Set state.awaitingResume = true in the quick-reconnect path at line ~990
+  4. Fix #4 (missing dep): Add startAudioCapture to the handleWebSocketMessage dependency array
+
+  Issues #1 and #2 are the most impactful — #1 is a gap in the server-side defense, and #2 means auto-resume is effectively a dead code path right now.
