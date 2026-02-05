@@ -2141,16 +2141,10 @@ export async function registerRoutes(
   });
 
   // Disconnect diagnostics beacon endpoint (for debugging WebSocket disconnections)
-  // DISABLED in production for security - only enabled in development for debugging
   // Rate-limited to prevent log spam - max 10 logs per session per minute
   const disconnectLogRateLimit = new Map<string, { count: number; resetAt: number }>();
   const isProduction = process.env.NODE_ENV === "production";
   app.post("/api/sessions/:sessionId/disconnect-log", (req, res) => {
-    // In production, silently accept but don't log (security: prevents unauthenticated logging)
-    if (isProduction) {
-      return res.status(204).end();
-    }
-    
     const { sessionId } = req.params;
     const now = Date.now();
     
@@ -2168,16 +2162,23 @@ export async function registerRoutes(
     
     // Log diagnostics (body may be empty if sendBeacon fails)
     const diagnostics = req.body || {};
-    console.log(`[DisconnectDiag] Session ${sessionId}:`, {
-      closeCode: diagnostics.closeCode,
-      closeReason: diagnostics.closeReason,
-      wasClean: diagnostics.wasClean,
-      onLine: diagnostics.onLine,
-      visibilityState: diagnostics.visibilityState,
-      hasFocus: diagnostics.hasFocus,
-      timeSinceOpen: diagnostics.timeSinceOpen,
-      ip: req.ip || req.headers["x-forwarded-for"],
-    });
+    
+    // In production: log essential diagnostics only (no IP/user-agent for privacy)
+    // In development: log full diagnostics for debugging
+    if (isProduction) {
+      console.log(`[DisconnectDiag] Session ${sessionId}: code=${diagnostics.closeCode}, clean=${diagnostics.wasClean}, online=${diagnostics.onLine}, visibility=${diagnostics.visibilityState}, focus=${diagnostics.hasFocus}`);
+    } else {
+      console.log(`[DisconnectDiag] Session ${sessionId}:`, {
+        closeCode: diagnostics.closeCode,
+        closeReason: diagnostics.closeReason,
+        wasClean: diagnostics.wasClean,
+        onLine: diagnostics.onLine,
+        visibilityState: diagnostics.visibilityState,
+        hasFocus: diagnostics.hasFocus,
+        timeSinceOpen: diagnostics.timeSinceOpen,
+        ip: req.ip || req.headers["x-forwarded-for"],
+      });
+    }
     
     res.status(204).end();
   });
