@@ -1682,14 +1682,17 @@ function buildOverlapInstruction(
 ): string {
   const topics = result.overlappingTopics.slice(0, 2).join(" and ");
 
+  // Note: This function is called AFTER the user clicks "Next Question", so we should
+  // NOT ask if they want to add anything or move on - they've already decided to move on.
+  // Simply acknowledge the overlap and proceed to the new question.
   switch (result.coverageLevel) {
     case "fully_covered":
-      return `The respondent already covered ${topics} thoroughly earlier. Acknowledge this and ask if they'd like to add anything new, or if they're ready to move on. The question for reference: "${questionText}"`;
+      return `The respondent already covered ${topics} thoroughly earlier. Briefly acknowledge this (e.g., "You've actually touched on this earlier - thank you for that") and then ask this question: "${questionText}"`;
     case "partially_covered":
-      return `The respondent touched on ${topics} earlier. Briefly acknowledge this connection and invite any additional thoughts, then read the question: "${questionText}"`;
+      return `The respondent touched on ${topics} earlier. Briefly acknowledge this connection (e.g., "This builds on what you mentioned earlier") and then ask this question: "${questionText}"`;
     case "mentioned":
     default:
-      return `The respondent mentioned ${topics} earlier. Briefly acknowledge this, then read the question: "${questionText}"`;
+      return `The respondent mentioned ${topics} earlier. Briefly acknowledge this, then ask this question: "${questionText}"`;
   }
 }
 
