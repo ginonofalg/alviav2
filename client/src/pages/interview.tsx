@@ -243,6 +243,10 @@ export default function InterviewPage() {
   // Silence detection state - pauses audio streaming after 30s of silence to save resources
   const [silencePauseActive, setSilencePauseActive] = useState(false);
   
+  // VAD eagerness state - for debugging indicator (controlled by VITE_SHOW_VAD_INDICATOR)
+  const [vadEagerness, setVadEagerness] = useState<"auto" | "low">("auto");
+  const showVadIndicator = import.meta.env.VITE_SHOW_VAD_INDICATOR !== "false";
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -553,6 +557,10 @@ export default function InterviewPage() {
               setCurrentAQIndex(message.currentAQIndex);
             }
           }
+          // Sync VAD eagerness state on connect/reconnect
+          if (message.vadEagerness === "auto" || message.vadEagerness === "low") {
+            setVadEagerness(message.vadEagerness);
+          }
           break;
 
         case "audio":
@@ -740,6 +748,11 @@ export default function InterviewPage() {
 
         case "heartbeat.pong":
           // Server acknowledged heartbeat - connection is healthy
+          break;
+
+        case "vad_eagerness_update":
+          // VAD eagerness changed - update indicator state
+          setVadEagerness(message.eagerness);
           break;
 
         case "session_warning":
@@ -1292,7 +1305,21 @@ export default function InterviewPage() {
                 onToggle={toggleListening}
               />
 
-              <div className="w-9" />
+              {showVadIndicator && isConnected ? (
+                <div
+                  className={`w-16 h-9 flex items-center justify-center rounded-md text-xs font-mono ${
+                    vadEagerness === "low"
+                      ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                  title={`VAD eagerness: ${vadEagerness}`}
+                  data-testid="indicator-vad-eagerness"
+                >
+                  VAD:{vadEagerness}
+                </div>
+              ) : (
+                <div className="w-16" />
+              )}
             </div>
 
             <p className="text-sm text-muted-foreground">

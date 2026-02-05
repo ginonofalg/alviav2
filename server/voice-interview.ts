@@ -973,6 +973,7 @@ export function handleVoiceInterview(
         isResumed: true,
         persistedTranscript: existingState.fullTranscriptForPersistence,
         provider: existingState.providerType,
+        vadEagerness: existingState.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
       }),
     );
 
@@ -1437,6 +1438,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         currentAQIndex: state.isInAdditionalQuestionsPhase
           ? state.currentAdditionalQuestionIndex
           : undefined,
+        vadEagerness: state.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
       }),
     );
   });
@@ -2291,6 +2293,16 @@ function sendVadEagernessUpdate(
       },
     }),
   );
+
+  // Also notify client of eagerness change (for debugging indicator)
+  if (state.clientWs?.readyState === WebSocket.OPEN) {
+    state.clientWs.send(
+      JSON.stringify({
+        type: "vad_eagerness_update",
+        eagerness: eagerness,
+      }),
+    );
+  }
 
   console.log(
     `[VadEagerness] Session ${sessionId}: Changed eagerness to "${eagerness}"`,
