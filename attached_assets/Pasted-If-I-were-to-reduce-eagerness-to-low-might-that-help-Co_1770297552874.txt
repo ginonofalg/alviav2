@@ -1,0 +1,32 @@
+If I were to reduce eagerness to 'low', might that help? Could we change this mid conversation if we start detecting staccato conversations?                                                                            
+                                                                                                                                               
+● Good thinking on both counts. Let me check how the session config is currently updated mid-conversation.                                                                                                                
+                                                                                                                                                                                                                          
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)     
+                                                                                                                                                                                                                          
+● Yes to both questions.                                     
+                                                                                                                                                                                                                          
+  Would low eagerness help? Directly addresses the cutoff problem. Eagerness controls how quickly the semantic VAD decides the user has finished speaking. With "auto", the model is making its own judgment — and on
+  noisy/garbled audio, it misjudges frequently, triggering speech_stopped prematurely. "low" would make it more patient, waiting longer before deciding the user is done. That's exactly what you want for a respondent   
+  struggling with audio quality.
+                                                                                                                                                                                                                          
+  The tradeoff: for users with clean audio, "low" would feel slightly sluggish — longer pauses before Alvia responds. So starting on "auto" and dropping to "low" reactively is the right instinct.
+
+  Can you change it mid-conversation? Yes. The code already sends session.update mid-conversation in multiple places (Barbara guidance injection at line 2192, question transitions at line 2745, environment checks at
+  line 2192). You can include turn_detection in any session.update payload — it's a partial update, you don't need to resend the full config. So:
+
+  state.providerWs.send(JSON.stringify({
+    type: "session.update",
+    session: {
+      turn_detection: {
+        type: "semantic_vad",
+        eagerness: "low",
+      },
+    },
+  }));
+
+  The natural trigger point would be alongside the existing environment check at injectEnvironmentCheckGuidance (line 2155). You're already detecting the quality issue and injecting guidance there — adding a VAD
+  sensitivity reduction at the same time is a clean fit. You already have the quality signals (foreignLanguageCount, incoherentPhraseCount, repeatedWordGlitchCount) to define the threshold.
+
+  The staccato detection is also already partially there. The shortUtteranceStreak signal in the quality tracker counts consecutive sub-3-word utterances. A streak of short utterances + rapid turns is exactly the
+  "staccato" pattern. You could trigger on shortUtteranceStreak >= 3 or on a combination of high turn rate + low average speaking time.
