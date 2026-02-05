@@ -1,0 +1,20 @@
+ Findings
+
+  1. High – The proposed server-side gating still updates lastActivityAt and clears terminationWarned before checking isPaused/awaitingResume. That means leaked audio can keep a session “alive” indefinitely and mask genuine disconnects. Move the activity updates
+     after the gating or track a separate lastClientMessageAt that doesn’t reset on paused audio. proposals/voice-interview-reconnection-bugs.md:240
+  2. High – sendBeacon() likely won’t be parsed by express.json() as written, so req.body may be empty. Use sendBeacon(url, new Blob([JSON.stringify(diagnostics)], { type: "application/json" })) or fetch(..., { keepalive: true }) and ensure the server accepts
+     that content type. Also consider basic session validation or rate-limiting on /disconnect-log to avoid log spam on a public endpoint. proposals/voice-interview-reconnection-bugs.md:457, proposals/voice-interview-reconnection-bugs.md:566
+  3. Medium – Audio gating alone does not prevent OpenAI from auto-responding if there is buffered audio already in the provider. Add input_audio_buffer.clear on pause/awaiting resume (and possibly response.cancel) or temporarily disable
+     turn_detection.create_response until resume, then re-enable. This makes the pause semantics stronger and avoids “ghost” responses. proposals/voice-interview-reconnection-bugs.md:127, proposals/voice-interview-reconnection-bugs.md:240
+  4. Medium – The proposed freeze/resume event listeners will fail TypeScript type checks because these are not in DocumentEventMap in most DOM libs. You’ll need a type cast, a window listener, or guarded addEventListener calls. proposals/voice-interview-
+     reconnection-bugs.md:371
+  5. Medium – stopAudioCapture() in ws.onclose should be strictly idempotent and should null out onaudioprocess to avoid a final queued callback sending audio after disconnect. Also consider a guard to no-op startAudioCapture() if already capturing to prevent
+     “stop + restart” glitches when reconnect logic fires twice. proposals/voice-interview-reconnection-bugs.md:186, proposals/voice-interview-reconnection-bugs.md:210
+  6. Low – Debug logging collects UA/IP and can be activated by any client via query param in the proposal. Consider server-side authorization for debug mode or only honoring it in non-prod; also redact/truncate fields to reduce privacy exposure and log volume.
+     proposals/voice-interview-reconnection-bugs.md:594
+
+  Open Questions / Assumptions
+
+  1. I assumed stopAudioCapture() is safe to call multiple times without errors. If it isn’t, we should harden it before wiring it to ws.onclose.
+  2. I assumed express.json() is the only body parser. If you already accept text/plain, then the sendBeacon note is less urgent.
+  3. I assumed the provider supports input_audio_buffer.clear or session.update for turn_detection. If not, we should implement a server-side “buffer drop” by discarding audio until resume and explicitly sending response.cancel.
