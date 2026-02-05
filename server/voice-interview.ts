@@ -993,6 +993,9 @@ export function handleVoiceInterview(
         persistedTranscript: existingState.fullTranscriptForPersistence,
         provider: existingState.providerType,
         vadEagerness: existingState.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
+        // Include pause/resume state for client reconnection logic
+        awaitingResume: existingState.awaitingResume,
+        isPaused: existingState.isPaused,
       }),
     );
 
@@ -1201,30 +1204,40 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
 
-    // Restore persisted state if available
-    const hasPersistedState =
+    // Determine if this is a restored session based on session status or progress
+    // This catches all cases: in_progress, paused, or any session with question progress
+    const isRestoredSession =
+      session.status === "in_progress" ||
+      session.status === "paused" ||
+      (session.currentQuestionIndex && session.currentQuestionIndex > 0);
+
+    // Check if we also have persisted transcript data
+    const hasPersistedTranscript =
       session.liveTranscript &&
       Array.isArray(session.liveTranscript) &&
       session.liveTranscript.length > 0;
 
-    if (hasPersistedState) {
+    if (isRestoredSession) {
       console.log(
-        `[VoiceInterview] Restoring persisted state for session: ${sessionId}`,
+        `[VoiceInterview] Restoring session: ${sessionId} (status=${session.status}, questionIndex=${session.currentQuestionIndex})`,
       );
       state.isRestoredSession = true;
       // Set awaitingResume so audio is not forwarded until user explicitly resumes
       // This prevents OpenAI VAD from auto-responding to leaked/stray audio
+      // Critical: Set based on session state, not transcript length, to catch early disconnects
       state.awaitingResume = true;
 
-      // Restore FULL transcript to persistence buffer (never truncated - prevents data loss)
-      const persistedTranscript =
-        session.liveTranscript as PersistedTranscriptEntry[];
-      state.fullTranscriptForPersistence = [...persistedTranscript];
+      // Restore FULL transcript to persistence buffer if available (never truncated - prevents data loss)
+      if (hasPersistedTranscript) {
+        const persistedTranscript =
+          session.liveTranscript as PersistedTranscriptEntry[];
+        state.fullTranscriptForPersistence = [...persistedTranscript];
 
-      // Only keep last MAX_TRANSCRIPT_IN_MEMORY entries in memory for processing
-      state.transcriptLog = persistedTranscript.slice(
-        -MAX_TRANSCRIPT_IN_MEMORY,
-      ) as TranscriptEntry[];
+        // Only keep last MAX_TRANSCRIPT_IN_MEMORY entries in memory for processing
+        state.transcriptLog = persistedTranscript.slice(
+          -MAX_TRANSCRIPT_IN_MEMORY,
+        ) as TranscriptEntry[];
+      }
 
       // Restore Barbara guidance
       if (session.lastBarbaraGuidance) {
@@ -1478,6 +1491,9 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           ? state.currentAdditionalQuestionIndex
           : undefined,
         vadEagerness: state.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
+        // Include pause/resume state for client reconnection logic
+        awaitingResume: state.awaitingResume,
+        isPaused: state.isPaused,
       }),
     );
   });

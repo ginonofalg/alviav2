@@ -259,9 +259,36 @@ export default function InterviewPage() {
   // Track when WebSocket opened for disconnect diagnostics
   const wsOpenTimeRef = useRef<number>(0);
   const lastHeartbeatSentRef = useRef<number>(0);
+  
+  // Reconnection state and refs
+  // Use state for UI display, but refs for logic to avoid stale closures
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAbortedRef = useRef(false);
+  const wasListeningBeforeDisconnectRef = useRef(false);
+  const shouldAutoResumeRef = useRef(false);
+  const allowReconnectRef = useRef(true);
+  const isUnmountingRef = useRef(false);
+  // Refs to avoid stale closures in WebSocket callbacks
+  const isReconnectingRef = useRef(false);
+  const reconnectAttemptRef = useRef(0);
+  // Token to identify active reconnect attempt; stale closes from old WS instances are ignored
+  const reconnectTokenRef = useRef(0);
+  // Guard to prevent overlapping connection attempts
+  const isAttemptInFlightRef = useRef(false);
+  // Connection timeout timer ref
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const CONNECTION_TIMEOUT_MS = 5000; // 5 seconds to establish connection
 
   const HEARTBEAT_INTERVAL_MS = 30_000; // Send heartbeat every 30 seconds
   const SILENCE_THRESHOLD_SECONDS = 30; // Pause audio streaming after 30 seconds of silence
+  
+  // Reconnection constants
+  const RECONNECT_BASE_DELAY_MS = 500;
+  const RECONNECT_MAX_DELAY_MS = 10_000;
+  const RECONNECT_MAX_ATTEMPTS = 6;
+  const RECONNECT_JITTER_PCT = 0.2; // ±20%
 
   // Silence detection - pauses audio streaming to save resources during extended silence
   const handleSilenceStart = useCallback(() => {
@@ -317,6 +344,127 @@ export default function InterviewPage() {
       }));
     }
   }, []);
+
+  // Reconnection helper functions
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearConnectionTimeout = useCallback(() => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+  }, []);
+
+  const stopReconnect = useCallback(() => {
+    clearReconnectTimer();
+    clearConnectionTimeout();
+    setIsReconnecting(false);
+    setReconnectAttempt(0);
+    isReconnectingRef.current = false;
+    reconnectAttemptRef.current = 0;
+    isAttemptInFlightRef.current = false;
+    reconnectAbortedRef.current = true;
+  }, [clearReconnectTimer, clearConnectionTimeout]);
+
+  // Forward declaration - will be set after connectWebSocket is defined
+  const connectWebSocketRef = useRef<(() => void) | null>(null);
+
+  const scheduleReconnect = useCallback((attempt: number, token?: number) => {
+    // Use provided token or current token
+    const activeToken = token ?? reconnectTokenRef.current;
+    
+    if (reconnectAbortedRef.current || !allowReconnectRef.current || isUnmountingRef.current) {
+      console.log("[Interview] Reconnect aborted or not allowed");
+      return;
+    }
+
+    // Ignore stale reconnect requests from old WS instances
+    if (activeToken !== reconnectTokenRef.current) {
+      console.log(`[Interview] Ignoring stale reconnect request (token ${activeToken} vs current ${reconnectTokenRef.current})`);
+      return;
+    }
+
+    if (attempt > RECONNECT_MAX_ATTEMPTS) {
+      console.log("[Interview] Max reconnect attempts reached");
+      setIsReconnecting(false);
+      isReconnectingRef.current = false;
+      reconnectAttemptRef.current = 0;
+      return;
+    }
+
+    // Clear any existing timer to prevent duplicate schedules
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    // Exponential backoff with jitter
+    const base = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1),
+      RECONNECT_MAX_DELAY_MS
+    );
+    const jitter = base * RECONNECT_JITTER_PCT * (Math.random() * 2 - 1);
+    const delay = Math.max(0, base + jitter);
+
+    console.log(`[Interview] Scheduling reconnect attempt ${attempt} in ${Math.round(delay)}ms`);
+    // Update both state (for UI) and ref (for closures)
+    setReconnectAttempt(attempt);
+    reconnectAttemptRef.current = attempt;
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (reconnectAbortedRef.current || !allowReconnectRef.current) return;
+      // Verify token still valid before attempting
+      if (activeToken !== reconnectTokenRef.current) return;
+      // Prevent overlapping attempts
+      if (isAttemptInFlightRef.current) {
+        console.log("[Interview] Skipping reconnect - attempt already in flight");
+        return;
+      }
+      
+      console.log(`[Interview] Attempting reconnect #${attempt}`);
+      isAttemptInFlightRef.current = true;
+      
+      // Set connection timeout - if not connected within timeout, force close and retry
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (activeToken !== reconnectTokenRef.current || !isReconnectingRef.current) return;
+        console.log("[Interview] Connection attempt timed out");
+        isAttemptInFlightRef.current = false;
+        // Force close any pending connection
+        if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+          wsRef.current.close();
+        }
+        // Schedule next attempt
+        scheduleReconnect(attempt + 1, activeToken);
+      }, CONNECTION_TIMEOUT_MS);
+      
+      try {
+        connectWebSocketRef.current?.();
+      } catch (err) {
+        // If WebSocket constructor throws, schedule next attempt
+        console.error("[Interview] connectWebSocket threw error:", err);
+        isAttemptInFlightRef.current = false;
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+        scheduleReconnect(attempt + 1, activeToken);
+      }
+    }, delay);
+  }, []);
+
+  const startReconnect = useCallback(() => {
+    // Clear any existing timer to prevent duplicate schedules
+    clearReconnectTimer();
+    reconnectAbortedRef.current = false;
+    setIsReconnecting(true);
+    isReconnectingRef.current = true;
+    // Increment token to invalidate any stale WS close handlers
+    reconnectTokenRef.current += 1;
+    scheduleReconnect(1, reconnectTokenRef.current);
+  }, [scheduleReconnect, clearReconnectTimer]);
 
   const {
     isPausedDueToSilence,
@@ -536,6 +684,12 @@ export default function InterviewPage() {
 
       setIsConnected(false);
       setIsConnecting(false);
+      
+      // Save listening state before clearing it (for reconnect logic)
+      wasListeningBeforeDisconnectRef.current = isListening;
+      // Determine if we should auto-resume on reconnect
+      shouldAutoResumeRef.current = isListening && !isPaused && !isTextOnlyMode;
+      
       setIsListening(false);
       // CRITICAL: Stop audio capture to prevent leaked/orphaned audio processors
       // Without this, the ScriptProcessor and MediaStream continue running in the background
@@ -548,18 +702,74 @@ export default function InterviewPage() {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
+      
+      // Detect unexpected disconnect and trigger reconnection
+      // Close codes: 1005 = no status, 1006 = abnormal, 1011-1013 = server errors
+      const isUnexpectedClose = 
+        allowReconnectRef.current && 
+        !isUnmountingRef.current &&
+        [1005, 1006, 1011, 1012, 1013].includes(event.code);
+      
+      // Clear connection timeout and in-flight flag on any close
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+      isAttemptInFlightRef.current = false;
+      
+      if (isUnexpectedClose) {
+        // If we're already reconnecting, schedule the next attempt (exponential backoff)
+        // Use refs to avoid stale closure issues
+        if (isReconnectingRef.current && reconnectAttemptRef.current > 0) {
+          // Capture current token for this reconnect session
+          const currentToken = reconnectTokenRef.current;
+          console.log(`[Interview] Reconnect attempt ${reconnectAttemptRef.current} failed, scheduling next attempt`);
+          scheduleReconnect(reconnectAttemptRef.current + 1, currentToken);
+        } else {
+          console.log("[Interview] Unexpected close detected, starting reconnection");
+          startReconnect();
+        }
+      } else if (isReconnectingRef.current) {
+        // Expected close during reconnection (e.g., session terminated) - stop reconnecting
+        stopReconnect();
+      }
     };
 
     ws.onerror = (error) => {
       console.error("[Interview] WebSocket error:", error);
       setIsConnecting(false);
-      toast({
-        title: "Connection error",
-        description: "Failed to connect to voice service. Please try again.",
-        variant: "destructive",
-      });
+      
+      // If reconnecting, set up fallback scheduling in case onclose doesn't fire
+      if (isReconnectingRef.current && reconnectAttemptRef.current > 0 && 
+          allowReconnectRef.current && !isUnmountingRef.current) {
+        console.log(`[Interview] WebSocket error during reconnect attempt ${reconnectAttemptRef.current}`);
+        // Use a short delay fallback to schedule next attempt if onclose doesn't fire
+        // onclose typically fires, but this ensures the loop doesn't stall
+        const currentAttempt = reconnectAttemptRef.current;
+        const currentToken = reconnectTokenRef.current;
+        setTimeout(() => {
+          // Only schedule if token matches and no new attempt has been scheduled
+          if (reconnectTokenRef.current === currentToken && 
+              reconnectAttemptRef.current === currentAttempt &&
+              isReconnectingRef.current &&
+              !reconnectTimeoutRef.current) {
+            console.log("[Interview] onerror fallback: scheduling next attempt (onclose may not have fired)");
+            scheduleReconnect(currentAttempt + 1, currentToken);
+          }
+        }, 100);
+      } else if (!isReconnectingRef.current) {
+        // Only show error toast for non-reconnection errors
+        toast({
+          title: "Connection error",
+          description: "Failed to connect to voice service. Please try again.",
+          variant: "destructive",
+        });
+      }
     };
   }, [sessionId, collection?.voiceProvider, toast, stopAudioCapture]);
+
+  // Set ref so reconnection helpers can call connectWebSocket
+  connectWebSocketRef.current = connectWebSocket;
 
   const handleWebSocketMessage = useCallback(
     (message: any) => {
@@ -611,6 +821,40 @@ export default function InterviewPage() {
           // Sync VAD eagerness state on connect/reconnect
           if (message.vadEagerness === "auto" || message.vadEagerness === "low") {
             setVadEagerness(message.vadEagerness);
+          }
+          
+          // Handle reconnection: clear reconnect state and auto-resume if appropriate
+          // Use ref to avoid stale closure
+          if (isReconnectingRef.current) {
+            console.log("[Interview] Reconnection successful");
+            clearReconnectTimer();
+            clearConnectionTimeout();
+            setIsReconnecting(false);
+            setReconnectAttempt(0);
+            isReconnectingRef.current = false;
+            reconnectAttemptRef.current = 0;
+            isAttemptInFlightRef.current = false;
+            
+            // Auto-resume audio capture if we were listening before disconnect
+            // and the server says we should (awaitingResume indicates restored session)
+            if (shouldAutoResumeRef.current && !message.isPaused) {
+              console.log("[Interview] Auto-resuming audio capture after reconnect");
+              startAudioCapture().then((success) => {
+                if (success) {
+                  setIsListening(true);
+                  // If server is awaiting resume, send resume_interview
+                  if (message.awaitingResume) {
+                    wsRef.current?.send(JSON.stringify({ type: "resume_interview" }));
+                  }
+                } else {
+                  console.warn("[Interview] Failed to auto-resume audio capture");
+                }
+                shouldAutoResumeRef.current = false;
+              });
+            } else {
+              // Reset flag if we're not auto-resuming (e.g., paused state)
+              shouldAutoResumeRef.current = false;
+            }
           }
           break;
 
@@ -818,6 +1062,9 @@ export default function InterviewPage() {
         case "session_terminated":
           // Session was terminated by server
           console.log("[Interview] Session terminated:", message.reason);
+          // Prevent reconnection attempts - session is intentionally ended
+          allowReconnectRef.current = false;
+          stopReconnect();
           toast({
             title: "Session Ended",
             description: message.message || "Your interview session has ended.",
@@ -985,8 +1232,25 @@ export default function InterviewPage() {
     const visibilityHandler = logLifecycleEvent("visibilitychange");
     const pagehideHandler = logLifecycleEvent("pagehide");
     const pageshowHandler = logLifecycleEvent("pageshow");
-    const onlineHandler = logLifecycleEvent("online");
     const offlineHandler = logLifecycleEvent("offline");
+    
+    // Online handler: log the event AND trigger reconnection if disconnected
+    const onlineHandler = () => {
+      logLifecycleEvent("online")();
+      // Auto-retry connection when coming back online
+      // Use refs to avoid stale closure and prevent re-entrancy during active reconnect
+      const wsState = wsRef.current?.readyState;
+      const isDisconnected = !wsState || wsState === WebSocket.CLOSED || wsState === WebSocket.CLOSING;
+      // Only start reconnect if: disconnected, not already reconnecting, no pending timer, and allowed
+      const hasReconnectPending = reconnectTimeoutRef.current !== null;
+      if (isDisconnected && !isReconnectingRef.current && !hasReconnectPending && 
+          allowReconnectRef.current && !isUnmountingRef.current) {
+        console.log("[Interview] Network restored, starting reconnection");
+        startReconnect();
+      } else if (isDisconnected && isReconnectingRef.current) {
+        console.log("[Interview] Network restored during active reconnection, letting backoff continue");
+      }
+    };
 
     document.addEventListener("visibilitychange", visibilityHandler);
     window.addEventListener("pagehide", pagehideHandler);
@@ -1014,6 +1278,11 @@ export default function InterviewPage() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Mark as unmounting to prevent reconnection attempts
+      isUnmountingRef.current = true;
+      allowReconnectRef.current = false;
+      clearReconnectTimer();
+      
       stopAudioCapture();
       if (wsRef.current) {
         wsRef.current.close();
@@ -1027,7 +1296,7 @@ export default function InterviewPage() {
         heartbeatIntervalRef.current = null;
       }
     };
-  }, [stopAudioCapture]);
+  }, [stopAudioCapture, clearReconnectTimer]);
 
   const toggleListening = async () => {
     if (isConnecting) return;
@@ -1437,19 +1706,21 @@ export default function InterviewPage() {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              {isConnecting
-                ? "Connecting to Alvia..."
-                : isAiSpeaking
-                  ? "Alvia is speaking..."
-                  : isPaused
-                    ? "Interview paused. Click to resume."
-                    : isTextOnlyMode
-                      ? isConnected
-                        ? "Text-only mode - type your responses below"
-                        : "Click to start the interview in text-only mode"
-                      : isListening
-                        ? "Listening... speak naturally"
-                        : "Click the microphone to start the interview"}
+              {isReconnecting
+                ? `Reconnecting... (Attempt ${reconnectAttempt} of ${RECONNECT_MAX_ATTEMPTS})`
+                : isConnecting
+                  ? "Connecting to Alvia..."
+                  : isAiSpeaking
+                    ? "Alvia is speaking..."
+                    : isPaused
+                      ? "Interview paused. Click to resume."
+                      : isTextOnlyMode
+                        ? isConnected
+                          ? "Text-only mode - type your responses below"
+                          : "Click to start the interview in text-only mode"
+                        : isListening
+                          ? "Listening... speak naturally"
+                          : "Click the microphone to start the interview"}
             </p>
           </div>
 
