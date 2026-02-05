@@ -2140,6 +2140,48 @@ export async function registerRoutes(
     }
   });
 
+  // Disconnect diagnostics beacon endpoint (for debugging WebSocket disconnections)
+  // DISABLED in production for security - only enabled in development for debugging
+  // Rate-limited to prevent log spam - max 10 logs per session per minute
+  const disconnectLogRateLimit = new Map<string, { count: number; resetAt: number }>();
+  const isProduction = process.env.NODE_ENV === "production";
+  app.post("/api/sessions/:sessionId/disconnect-log", (req, res) => {
+    // In production, silently accept but don't log (security: prevents unauthenticated logging)
+    if (isProduction) {
+      return res.status(204).end();
+    }
+    
+    const { sessionId } = req.params;
+    const now = Date.now();
+    
+    // Simple rate limiting
+    let rateInfo = disconnectLogRateLimit.get(sessionId);
+    if (!rateInfo || now > rateInfo.resetAt) {
+      rateInfo = { count: 0, resetAt: now + 60000 }; // Reset every minute
+      disconnectLogRateLimit.set(sessionId, rateInfo);
+    }
+    
+    if (rateInfo.count >= 10) {
+      return res.status(429).end(); // Rate limited
+    }
+    rateInfo.count++;
+    
+    // Log diagnostics (body may be empty if sendBeacon fails)
+    const diagnostics = req.body || {};
+    console.log(`[DisconnectDiag] Session ${sessionId}:`, {
+      closeCode: diagnostics.closeCode,
+      closeReason: diagnostics.closeReason,
+      wasClean: diagnostics.wasClean,
+      onLine: diagnostics.onLine,
+      visibilityState: diagnostics.visibilityState,
+      hasFocus: diagnostics.hasFocus,
+      timeSinceOpen: diagnostics.timeSinceOpen,
+      ip: req.ip || req.headers["x-forwarded-for"],
+    });
+    
+    res.status(204).end();
+  });
+
   // Generate resume link for incomplete sessions
   app.post("/api/sessions/:id/resume-link", isAuthenticated, async (req: any, res) => {
     try {

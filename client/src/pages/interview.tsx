@@ -214,6 +214,8 @@ export default function InterviewPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  // Ref to track isAiSpeaking - avoids stale closure in onaudioprocess handler
+  const isAiSpeakingRef = useRef(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestionText, setCurrentQuestionText] = useState<string>("");
@@ -254,6 +256,9 @@ export default function InterviewPage() {
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track when WebSocket opened for disconnect diagnostics
+  const wsOpenTimeRef = useRef<number>(0);
+  const lastHeartbeatSentRef = useRef<number>(0);
 
   const HEARTBEAT_INTERVAL_MS = 30_000; // Send heartbeat every 30 seconds
   const SILENCE_THRESHOLD_SECONDS = 30; // Pause audio streaming after 30 seconds of silence
@@ -441,6 +446,9 @@ export default function InterviewPage() {
     setSilencePauseActive(false);
     
     if (processorRef.current) {
+      // Null out onaudioprocess BEFORE disconnect to prevent any final queued callback
+      // from sending audio after the WebSocket is closed
+      processorRef.current.onaudioprocess = null;
       processorRef.current.disconnect();
       processorRef.current = null;
     }
@@ -465,13 +473,29 @@ export default function InterviewPage() {
 
     ws.onopen = () => {
       console.log("[Interview] WebSocket connected");
+      wsOpenTimeRef.current = Date.now();
       // Start heartbeat interval
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
       heartbeatIntervalRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'heartbeat.ping' }));
+          const pingTime = Date.now();
+          ws.send(JSON.stringify({ type: 'heartbeat.ping', sentAt: pingTime }));
+
+          // Log if heartbeat is significantly delayed (timer throttled by browser)
+          if (lastHeartbeatSentRef.current) {
+            const actualInterval = pingTime - lastHeartbeatSentRef.current;
+            if (actualInterval > HEARTBEAT_INTERVAL_MS * 2) {
+              console.warn("[Interview] Heartbeat delayed", {
+                expected: HEARTBEAT_INTERVAL_MS,
+                actual: actualInterval,
+                ratio: (actualInterval / HEARTBEAT_INTERVAL_MS).toFixed(1),
+                visibilityState: document.visibilityState,
+              });
+            }
+          }
+          lastHeartbeatSentRef.current = pingTime;
         }
       }, HEARTBEAT_INTERVAL_MS);
     };
@@ -485,11 +509,38 @@ export default function InterviewPage() {
       }
     };
 
-    ws.onclose = () => {
-      console.log("[Interview] WebSocket closed");
+    ws.onclose = (event: CloseEvent) => {
+      // Enhanced diagnostic logging for disconnect investigation
+      const diagnostics = {
+        closeCode: event.code,
+        closeReason: event.reason,
+        wasClean: event.wasClean,
+        onLine: navigator.onLine,
+        visibilityState: document.visibilityState,
+        hasFocus: document.hasFocus(),
+        timeSinceOpen: wsOpenTimeRef.current ? Date.now() - wsOpenTimeRef.current : null,
+      };
+      console.log("[Interview] WebSocket closed", diagnostics);
+
+      // Send diagnostic data to server via sendBeacon (works even during page unload)
+      if (sessionId) {
+        try {
+          navigator.sendBeacon(
+            `/api/sessions/${sessionId}/disconnect-log`,
+            new Blob([JSON.stringify(diagnostics)], { type: "application/json" })
+          );
+        } catch (e) {
+          // Best effort - sendBeacon may not be available in all contexts
+        }
+      }
+
       setIsConnected(false);
       setIsConnecting(false);
       setIsListening(false);
+      // CRITICAL: Stop audio capture to prevent leaked/orphaned audio processors
+      // Without this, the ScriptProcessor and MediaStream continue running in the background
+      // and will send audio through any new WebSocket connection, causing doubled audio
+      stopAudioCapture();
       // Reset hasSentResumeRef so reconnection can properly resume
       hasSentResumeRef.current = false;
       // Stop heartbeat on disconnect
@@ -508,7 +559,7 @@ export default function InterviewPage() {
         variant: "destructive",
       });
     };
-  }, [sessionId, collection?.voiceProvider, toast]);
+  }, [sessionId, collection?.voiceProvider, toast, stopAudioCapture]);
 
   const handleWebSocketMessage = useCallback(
     (message: any) => {
@@ -792,8 +843,28 @@ export default function InterviewPage() {
     silencePauseActiveRef.current = silencePauseActive;
   }, [silencePauseActive]);
 
+  // Sync isAiSpeakingRef with isAiSpeaking state for stable closure in audio processor
+  useEffect(() => {
+    isAiSpeakingRef.current = isAiSpeaking;
+  }, [isAiSpeaking]);
+
   // Start audio capture
   const startAudioCapture = useCallback(async () => {
+    // Defensive cleanup FIRST: stop any orphaned audio from previous session
+    // This prevents doubled audio processors after reconnection
+    // Placed before the guard to handle edge cases where refs weren't properly cleared
+    if (processorRef.current) {
+      console.log("[Interview] Cleaning up orphaned audio processor");
+      processorRef.current.onaudioprocess = null;
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      console.log("[Interview] Cleaning up orphaned media stream");
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+
     try {
       // Initialize and resume audio context (handles browser autoplay policy)
       const audioContext = await initAudioContext();
@@ -817,7 +888,8 @@ export default function InterviewPage() {
       processor.onaudioprocess = (e) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
           return;
-        if (isAiSpeaking) return; // Don't send audio while AI is speaking
+        // Use ref instead of state to avoid stale closure - always reflects current value
+        if (isAiSpeakingRef.current) return; // Don't send audio while AI is speaking
 
         const inputData = e.inputBuffer.getChannelData(0);
 
@@ -862,7 +934,7 @@ export default function InterviewPage() {
       console.error("[Interview] Error starting audio capture:", error);
       return false;
     }
-  }, [initAudioContext, isAiSpeaking, startSilenceMonitoring, addAudioToSilenceBuffer]);
+  }, [initAudioContext, startSilenceMonitoring, addAudioToSilenceBuffer]);
 
 
   // Initialize question text from query data
@@ -896,6 +968,48 @@ export default function InterviewPage() {
       // Audio capture will be started when user clicks mic button (toggleListening)
     }
   }, [isResumedSession, isLoading, session?.currentQuestionIndex, session?.status, connectWebSocket]);
+
+  // Lifecycle event logging for disconnect diagnostics
+  // Logs browser events that commonly cause WebSocket disconnections
+  useEffect(() => {
+    const logLifecycleEvent = (eventName: string) => () => {
+      console.log(`[Interview] Lifecycle: ${eventName}`, {
+        visibilityState: document.visibilityState,
+        onLine: navigator.onLine,
+        hasFocus: document.hasFocus(),
+        wsState: wsRef.current?.readyState,
+        timestamp: Date.now(),
+      });
+    };
+
+    const visibilityHandler = logLifecycleEvent("visibilitychange");
+    const pagehideHandler = logLifecycleEvent("pagehide");
+    const pageshowHandler = logLifecycleEvent("pageshow");
+    const onlineHandler = logLifecycleEvent("online");
+    const offlineHandler = logLifecycleEvent("offline");
+
+    document.addEventListener("visibilitychange", visibilityHandler);
+    window.addEventListener("pagehide", pagehideHandler);
+    window.addEventListener("pageshow", pageshowHandler);
+    window.addEventListener("online", onlineHandler);
+    window.addEventListener("offline", offlineHandler);
+
+    // Page Lifecycle API events (freeze/resume) - use type assertion for browser compatibility
+    const freezeHandler = logLifecycleEvent("freeze");
+    const resumeHandler = logLifecycleEvent("resume");
+    (document as EventTarget).addEventListener("freeze", freezeHandler);
+    (document as EventTarget).addEventListener("resume", resumeHandler);
+
+    return () => {
+      document.removeEventListener("visibilitychange", visibilityHandler);
+      window.removeEventListener("pagehide", pagehideHandler);
+      window.removeEventListener("pageshow", pageshowHandler);
+      window.removeEventListener("online", onlineHandler);
+      window.removeEventListener("offline", offlineHandler);
+      (document as EventTarget).removeEventListener("freeze", freezeHandler);
+      (document as EventTarget).removeEventListener("resume", resumeHandler);
+    };
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {

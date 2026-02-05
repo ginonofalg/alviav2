@@ -96,6 +96,9 @@ interface InterviewState {
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;
   lastPersistAt: number;
   isRestoredSession: boolean;
+  // Awaiting resume flag - set for restored sessions, cleared on resume_interview
+  // While true, audio is not forwarded to provider to prevent auto-responses via VAD
+  awaitingResume: boolean;
   // Session hygiene tracking
   createdAt: number;
   lastHeartbeatAt: number;
@@ -939,9 +942,25 @@ export function handleVoiceInterview(
       }
     });
 
-    clientWs.on("close", () => {
-      console.log(`[VoiceInterview] Client disconnected: ${sessionId}`);
+    clientWs.on("close", (code: number, reason: Buffer) => {
       const state = interviewStates.get(sessionId);
+      const timeSinceHeartbeat = state?.lastHeartbeatAt
+        ? Date.now() - state.lastHeartbeatAt
+        : null;
+      const timeSinceActivity = state?.lastActivityAt
+        ? Date.now() - state.lastActivityAt
+        : null;
+
+      console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
+        closeCode: code,
+        closeReason: reason?.toString() || "(none)",
+        timeSinceLastHeartbeat: timeSinceHeartbeat ? `${timeSinceHeartbeat}ms` : "unknown",
+        timeSinceLastActivity: timeSinceActivity ? `${timeSinceActivity}ms` : "unknown",
+        sessionAge: state ? `${Date.now() - state.createdAt}ms` : "unknown",
+        isPaused: state?.isPaused || false,
+        questionIndex: state?.currentQuestionIndex,
+      });
+
       if (state) {
         state.clientDisconnectedAt = Date.now();
         state.clientWs = null;
@@ -1055,6 +1074,7 @@ export function handleVoiceInterview(
     pendingPersistTimeout: null,
     lastPersistAt: 0,
     isRestoredSession: false,
+    awaitingResume: false,
     // Session hygiene tracking
     createdAt: now,
     lastHeartbeatAt: now,
@@ -1096,11 +1116,27 @@ export function handleVoiceInterview(
     }
   });
 
-  clientWs.on("close", () => {
-    console.log(`[VoiceInterview] Client disconnected: ${sessionId}`);
+  clientWs.on("close", (code: number, reason: Buffer) => {
+    const state = interviewStates.get(sessionId);
+    const timeSinceHeartbeat = state?.lastHeartbeatAt
+      ? Date.now() - state.lastHeartbeatAt
+      : null;
+    const timeSinceActivity = state?.lastActivityAt
+      ? Date.now() - state.lastActivityAt
+      : null;
+
+    console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
+      closeCode: code,
+      closeReason: reason?.toString() || "(none)",
+      timeSinceLastHeartbeat: timeSinceHeartbeat ? `${timeSinceHeartbeat}ms` : "unknown",
+      timeSinceLastActivity: timeSinceActivity ? `${timeSinceActivity}ms` : "unknown",
+      sessionAge: state ? `${Date.now() - state.createdAt}ms` : "unknown",
+      isPaused: state?.isPaused || false,
+      questionIndex: state?.currentQuestionIndex,
+    });
+
     // Don't immediately cleanup - mark as disconnected and let watchdog handle
     // This allows for reconnection/resume within heartbeat timeout
-    const state = interviewStates.get(sessionId);
     if (state) {
       state.clientDisconnectedAt = Date.now();
       state.clientWs = null;
@@ -1176,6 +1212,9 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
         `[VoiceInterview] Restoring persisted state for session: ${sessionId}`,
       );
       state.isRestoredSession = true;
+      // Set awaitingResume so audio is not forwarded until user explicitly resumes
+      // This prevents OpenAI VAD from auto-responding to leaked/stray audio
+      state.awaitingResume = true;
 
       // Restore FULL transcript to persistence buffer (never truncated - prevents data loss)
       const persistedTranscript =
@@ -2526,7 +2565,14 @@ async function handleClientMessage(
 
   switch (message.type) {
     case "audio":
-      // Update activity timestamp on audio
+      // Gate audio forwarding on pause/resume state
+      // IMPORTANT: Check BEFORE updating lastActivityAt so leaked audio doesn't keep session alive
+      if (state.isPaused || state.awaitingResume) {
+        // Don't forward audio while paused or waiting for explicit resume
+        // This prevents OpenAI VAD from auto-responding to stray audio
+        break;
+      }
+      // Update activity timestamp AFTER gating check
       state.lastActivityAt = Date.now();
       state.terminationWarned = false;
       // Forward audio from client to provider
@@ -2650,6 +2696,15 @@ async function handleClientMessage(
       state.isPaused = true;
       // Track pause start time for accurate silence metrics
       state.pauseStartedAt = Date.now();
+      // Clear any buffered audio in provider to prevent ghost responses from accumulated audio
+      // This ensures pause takes effect immediately even if there's audio already buffered
+      if (state.providerWs && state.providerWs.readyState === WebSocket.OPEN) {
+        state.providerWs.send(
+          JSON.stringify({
+            type: "input_audio_buffer.clear",
+          }),
+        );
+      }
       // Stop timing if currently speaking
       if (state.speakingStartTime) {
         const elapsed = Date.now() - state.speakingStartTime;
@@ -2695,6 +2750,8 @@ async function handleClientMessage(
       state.terminationWarned = false;
       // Handle resume from pause - Alvia decides what to say based on transcript context
       state.isPaused = false;
+      // Clear awaitingResume flag so audio forwarding is re-enabled
+      state.awaitingResume = false;
       // Update session status back to in_progress
       storage.persistInterviewState(sessionId, {
         status: "in_progress",
