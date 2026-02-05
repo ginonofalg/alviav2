@@ -1085,7 +1085,7 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, startAudioCapture],
+    [playAudio, toast, navigate, stopAudioCapture, initAudioContext],
   );
 
   // Track silence pause state in a ref for use in audio processor callback
