@@ -1,0 +1,195 @@
+ Goal
+  Make reconnection seamless when a WebSocket drops unexpectedly (e.g., close code 1006) by:
+
+  - retrying with exponential backoff
+  - showing a visible “Reconnecting…” indicator
+
+  This proposal is designed to coexist with the existing fixes (stopAudioCapture on close, awaitingResume gating, isAiSpeaking ref, etc.).
+
+  ———
+
+  ## 1. Desired UX Behavior
+
+  When an unexpected disconnect occurs
+
+  - Auto‑retry with exponential backoff and jitter.
+  - If reconnection succeeds:
+      - Automatically resume audio capture if the user was actively listening and not paused.
+      - If the server says it’s awaiting resume, send resume_interview automatically.
+  - If the user had paused, do not resume audio capture (stay paused).
+  - If max retries are exceeded, show a clear prompt:
+
+  When a disconnect is expected (1000/1001, user navigates away, session terminated)
+
+  - No reconnection attempts.
+  - No indicator shown.
+
+
+  ## 2. Client Changes (Interview Page)
+
+  File: client/src/pages/interview.tsx
+  ### 2.1 New constants
+  const RECONNECT_BASE_DELAY_MS = 500;
+  const RECONNECT_MAX_DELAY_MS = 10_000;
+  const RECONNECT_MAX_ATTEMPTS = 6;
+  const RECONNECT_JITTER_PCT = 0.2; // ±20%
+
+  ### 2.2 New state + refs
+
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAbortedRef = useRef(false);
+
+  const wasListeningBeforeDisconnectRef = useRef(false);
+  const shouldAutoResumeRef = useRef(false);
+
+  const allowReconnectRef = useRef(true);
+  const isUnmountingRef = useRef(false);
+
+  ### 2.3 Add reconnection helpers
+  const clearReconnectTimer = () => {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    clearReconnectTimer();
+    setReconnectAttempt(0);
+    reconnectAbortedRef.current = true;
+  };
+
+    if (reconnectAbortedRef.current || !allowReconnectRef.current) return;
+    const attempt = reconnectAttemptsRef.current + 1;
+    if (attempt > RECONNECT_MAX_ATTEMPTS) {
+      setIsReconnecting(false);
+      // show UI: “Reconnect failed”
+      return;
+
+    const base = Math.min(
+      RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1),
+      RECONNECT_MAX_DELAY_MS
+    );
+    const delay = Math.max(0, base + jitter);
+    setReconnectAttempt(attempt);
+      reconnectAttemptsRef.current = attempt;
+  };
+  const startReconnect = () => {
+    reconnectAbortedRef.current = false;
+    reconnectAttemptsRef.current = 0;
+    setIsReconnecting(true);
+  };
+  ### 2.4 Update ws.onclose to trigger reconnect
+  Add logic inside ws.onclose after existing cleanup:
+
+    allowReconnectRef.current &&
+    [1005, 1006, 1011, 1012, 1013].includes(event.code);
+  wasListeningBeforeDisconnectRef.current = isListening;
+    isListening && !isPaused && !isTextOnlyMode;
+  if (unexpected) {
+    startReconnect();
+  }
+
+  Important safety fix: add a stale‑socket guard so an older socket doesn’t kill current audio:
+
+  ### 2.5 Use the “connected” message to finish reconnection
+  Inside handleWebSocketMessage for connected:
+  if (isReconnecting) {
+    clearReconnectTimer();
+  }
+  if (shouldAutoResumeRef.current) {
+    const success = await startAudioCapture();
+    if (success) {
+        wsRef.current?.send(JSON.stringify({ type: "resume_interview" }));
+    } else {
+      setIsListening(false);
+    }
+    shouldAutoResumeRef.current = false;
+  }
+
+  ### 2.6 Respect explicit termination
+
+  In session_terminated handler:
+
+  allowReconnectRef.current = false;
+  stopReconnect();
+
+  allowReconnectRef.current = false;
+
+  ### 2.7 Auto‑retry on network recovery
+
+  Use existing lifecycle hooks:
+
+  window.addEventListener("online", () => {
+    if (!isConnected && !isReconnecting && allowReconnectRef.current) {
+      startReconnect();
+    }
+  });
+
+
+
+
+  - Show when isReconnecting === true.
+  - Include attempt count: Reconnecting… (Attempt 2 of 6).
+  - Disable mic button while reconnecting (or make it “Retry now” which cancels backoff and calls connectWebSocket() immediately).
+
+
+  File: server/voice-interview.ts
+
+  ### 4.1 Include awaitingResume in connected payload
+
+  Add in both connected responses (the “reconnect” path and the “new connection” path):
+
+  awaitingResume: state.awaitingResume,
+  isPaused: state.isPaused,
+
+  This lets the client decide whether it must send resume_interview before audio forwarding.
+
+  ———
+
+  ## 5. Edge Cases to Handle Explicitly
+
+  1. User paused before disconnect
+      - Reconnect should not auto‑resume audio.
+      - Respect isPaused state.
+  2. Text‑only mode
+      - Reconnect without resuming audio capture.
+  3. Session terminated
+      - Don’t retry.
+  4. Reconnect after session cleanup
+      - Server will set awaitingResume = true.
+      - Client should auto‑send resume_interview only if it was listening.
+  5. Browser autoplay limitations
+      - If startAudioCapture() fails, prompt user to click mic.
+
+  ———
+
+  ## 6. Testing Plan
+
+  1. Unexpected close (1006)
+      - Kill network briefly, confirm reconnect attempts happen.
+      - Confirm audio resumes automatically if previously listening.
+  2. Paused disconnect
+      - Pause, disconnect, reconnect — confirm audio stays off.
+  3. Max attempt failure
+      - Simulate server down — confirm UI shows failure prompt.
+  4. Cleanup after reconnect
+      - Ensure stale socket close does not stop new audio capture.
+  5. Reconnection after watchdog cleanup
+      - Wait > heartbeat timeout, then reconnect — should wait for resume unless auto‑resume is appropriate.
+
+  ———
+
+  ## 7. Files Summary
+
+  Client
+
+  - client/src/pages/interview.tsx
+      - Add reconnection state/refs and helpers.
+      - Update ws.onclose to detect unexpected disconnects and auto‑retry.
+      - Add reconnect UI indicator.
+      - Auto‑resume audio and optionally send resume_interview after reconnection.
+
+  Server
+
+  - server/voice-interview.ts
+      - Add awaitingResume and isPaused to connected payload.
+
+  ———

@@ -44,4 +44,4 @@ integrations = ["javascript_database:1.0.0", "javascript_log_in_with_replit:2.0.
 [userenv]
 
 [userenv.shared]
-VITE_SHOW_VAD_INDICATOR = "true"
+VITE_SHOW_VAD_INDICATOR = "false"
