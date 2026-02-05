@@ -45,7 +45,8 @@ import {
 } from "./realtime-providers";
 
 // Feature flag for additional questions
-const ADDITIONAL_QUESTIONS_ENABLED = process.env.ADDITIONAL_QUESTIONS_ENABLED !== "false";
+const ADDITIONAL_QUESTIONS_ENABLED =
+  process.env.ADDITIONAL_QUESTIONS_ENABLED !== "false";
 
 function getProvider(
   providerOverride?: RealtimeProviderType | null,
@@ -144,7 +145,9 @@ function canCreateResponse(state: InterviewState): boolean {
   if (state.responseStartedAt) {
     const timeSinceResponseStarted = Date.now() - state.responseStartedAt;
     if (timeSinceResponseStarted > RESPONSE_TIMEOUT_MS) {
-      console.warn(`[Response] Resetting stale responseInProgress (${timeSinceResponseStarted}ms since response.create)`);
+      console.warn(
+        `[Response] Resetting stale responseInProgress (${timeSinceResponseStarted}ms since response.create)`,
+      );
       state.responseInProgress = false;
       state.responseStartedAt = null;
       return true;
@@ -155,7 +158,11 @@ function canCreateResponse(state: InterviewState): boolean {
 
 // Defensive WebSocket send helper - safely sends messages with readyState check and error handling
 // Prevents crashes from stale closure WebSockets that may have closed between event and handler
-function safeSend(ws: WebSocket | null, message: string | object, context?: string): boolean {
+function safeSend(
+  ws: WebSocket | null,
+  message: string | object,
+  context?: string,
+): boolean {
   if (!ws) {
     return false;
   }
@@ -163,11 +170,14 @@ function safeSend(ws: WebSocket | null, message: string | object, context?: stri
     return false;
   }
   try {
-    const data = typeof message === 'string' ? message : JSON.stringify(message);
+    const data =
+      typeof message === "string" ? message : JSON.stringify(message);
     ws.send(data);
     return true;
   } catch (error) {
-    console.warn(`[safeSend] Failed to send${context ? ` (${context})` : ''}: ${error}`);
+    console.warn(
+      `[safeSend] Failed to send${context ? ` (${context})` : ""}: ${error}`,
+    );
     return false;
   }
 }
@@ -175,7 +185,9 @@ function safeSend(ws: WebSocket | null, message: string | object, context?: stri
 // Helper to check if a connectionId matches the current state - centralized stale guard
 function isCurrentConnection(sessionId: string, connectionId: string): boolean {
   const state = interviewStates.get(sessionId);
-  return state !== null && state !== undefined && state.connectionId === connectionId;
+  return (
+    state !== null && state !== undefined && state.connectionId === connectionId
+  );
 }
 
 // Realtime API metrics tracking during session
@@ -434,7 +446,10 @@ function addTranscriptEntry(
   }
 }
 
-function detectQuestionRepeat(state: InterviewState, questionIndex: number): boolean {
+function detectQuestionRepeat(
+  state: InterviewState,
+  questionIndex: number,
+): boolean {
   const recentAlviaUtterances = state.transcriptLog
     .filter((e) => e.speaker === "alvia" && e.questionIndex === questionIndex)
     .slice(-4);
@@ -443,26 +458,127 @@ function detectQuestionRepeat(state: InterviewState, questionIndex: number): boo
 
   const getKeywords = (text: string): Set<string> => {
     const stopWords = new Set([
-      "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-      "have", "has", "had", "do", "does", "did", "will", "would", "could",
-      "should", "may", "might", "must", "shall", "can", "to", "of", "in",
-      "for", "on", "with", "at", "by", "from", "as", "into", "through",
-      "during", "before", "after", "above", "below", "between", "under",
-      "and", "but", "if", "or", "because", "until", "while", "although",
-      "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
-      "us", "them", "my", "your", "his", "its", "our", "their", "this",
-      "that", "these", "those", "what", "which", "who", "whom", "whose",
-      "so", "just", "now", "then", "here", "there", "when", "where", "why",
-      "how", "all", "each", "every", "both", "few", "more", "most", "other",
-      "some", "such", "no", "not", "only", "same", "than", "too", "very",
-      "please", "thank", "thanks", "sorry", "okay", "ok", "yes", "yeah",
+      "a",
+      "an",
+      "the",
+      "is",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "have",
+      "has",
+      "had",
+      "do",
+      "does",
+      "did",
+      "will",
+      "would",
+      "could",
+      "should",
+      "may",
+      "might",
+      "must",
+      "shall",
+      "can",
+      "to",
+      "of",
+      "in",
+      "for",
+      "on",
+      "with",
+      "at",
+      "by",
+      "from",
+      "as",
+      "into",
+      "through",
+      "during",
+      "before",
+      "after",
+      "above",
+      "below",
+      "between",
+      "under",
+      "and",
+      "but",
+      "if",
+      "or",
+      "because",
+      "until",
+      "while",
+      "although",
+      "i",
+      "you",
+      "he",
+      "she",
+      "it",
+      "we",
+      "they",
+      "me",
+      "him",
+      "her",
+      "us",
+      "them",
+      "my",
+      "your",
+      "his",
+      "its",
+      "our",
+      "their",
+      "this",
+      "that",
+      "these",
+      "those",
+      "what",
+      "which",
+      "who",
+      "whom",
+      "whose",
+      "so",
+      "just",
+      "now",
+      "then",
+      "here",
+      "there",
+      "when",
+      "where",
+      "why",
+      "how",
+      "all",
+      "each",
+      "every",
+      "both",
+      "few",
+      "more",
+      "most",
+      "other",
+      "some",
+      "such",
+      "no",
+      "not",
+      "only",
+      "same",
+      "than",
+      "too",
+      "very",
+      "please",
+      "thank",
+      "thanks",
+      "sorry",
+      "okay",
+      "ok",
+      "yes",
+      "yeah",
     ]);
     return new Set(
       text
         .toLowerCase()
         .replace(/[^a-z\s]/g, "")
         .split(/\s+/)
-        .filter((w) => w.length > 2 && !stopWords.has(w))
+        .filter((w) => w.length > 2 && !stopWords.has(w)),
     );
   };
 
@@ -532,8 +648,13 @@ async function flushPersist(sessionId: string): Promise<void> {
     currentQuestionIndex: persistableQuestionIndex,
     // Also persist AQ state for proper restoration
     additionalQuestionPhase: state.isInAdditionalQuestionsPhase,
-    additionalQuestions: state.additionalQuestions.length > 0 ? state.additionalQuestions : undefined,
-    currentAdditionalQuestionIndex: state.isInAdditionalQuestionsPhase ? state.currentAdditionalQuestionIndex : undefined,
+    additionalQuestions:
+      state.additionalQuestions.length > 0
+        ? state.additionalQuestions
+        : undefined,
+    currentAdditionalQuestionIndex: state.isInAdditionalQuestionsPhase
+      ? state.currentAdditionalQuestionIndex
+      : undefined,
   };
 
   try {
@@ -753,7 +874,7 @@ export function handleVoiceInterview(
   const existingState = interviewStates.get(sessionId);
   if (existingState && existingState.clientWs) {
     const wsState = existingState.clientWs.readyState;
-    
+
     if (wsState === WebSocket.OPEN) {
       console.log(
         `[VoiceInterview] Rejecting concurrent connection for session: ${sessionId} (existing WS is OPEN)`,
@@ -768,20 +889,21 @@ export function handleVoiceInterview(
       clientWs.close(1008, "Session active elsewhere");
       return;
     }
-    
+
     if (wsState === WebSocket.CLOSING || wsState === WebSocket.CONNECTING) {
       // Race condition prevention: old connection still transitioning
       // Reject and ask client to retry after brief delay
       console.log(
         `[VoiceInterview] Rejecting connection during state transition for session: ${sessionId} ` +
-        `(existing WS state: ${wsState === WebSocket.CLOSING ? 'CLOSING' : 'CONNECTING'}, ` +
-        `clientDisconnectedAt: ${existingState.clientDisconnectedAt})`
+          `(existing WS state: ${wsState === WebSocket.CLOSING ? "CLOSING" : "CONNECTING"}, ` +
+          `clientDisconnectedAt: ${existingState.clientDisconnectedAt})`,
       );
       clientWs.send(
         JSON.stringify({
           type: "error",
           code: "SESSION_TRANSITIONING",
-          message: "Session is transitioning. Please wait a moment and try again.",
+          message:
+            "Session is transitioning. Please wait a moment and try again.",
           retryAfterMs: 1000, // Suggest 1 second retry delay
         }),
       );
@@ -1111,13 +1233,15 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
 
       // Restore Additional Questions (AQ) state if session was in AQ phase
       if (session.additionalQuestionPhase && session.additionalQuestions) {
-        const aqData = session.additionalQuestions as GeneratedAdditionalQuestion[];
+        const aqData =
+          session.additionalQuestions as GeneratedAdditionalQuestion[];
         if (Array.isArray(aqData) && aqData.length > 0) {
           state.additionalQuestions = aqData;
           state.isInAdditionalQuestionsPhase = true;
           state.additionalQuestionsConsent = true; // They must have consented to be in AQ phase
-          state.currentAdditionalQuestionIndex = session.currentAdditionalQuestionIndex ?? 0;
-          
+          state.currentAdditionalQuestionIndex =
+            session.currentAdditionalQuestionIndex ?? 0;
+
           console.log(
             `[VoiceInterview] Restored AQ state: phase=true, aqIndex=${state.currentAdditionalQuestionIndex}/${aqData.length} questions`,
           );
@@ -1209,10 +1333,13 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     );
 
     // Check if we're resuming an AQ session and need to restore AQ state
-    if (state.isInAdditionalQuestionsPhase && state.additionalQuestions.length > 0) {
+    if (
+      state.isInAdditionalQuestionsPhase &&
+      state.additionalQuestions.length > 0
+    ) {
       const aqIndex = state.currentAdditionalQuestionIndex;
       const aq = state.additionalQuestions[aqIndex];
-      
+
       if (aq) {
         // Update provider with AQ-specific instructions
         const aqInstructions = buildAQInstructions(
@@ -1223,31 +1350,39 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           state.respondentInformalName,
         );
         const aqSessionConfig = provider.buildSessionConfig(aqInstructions);
-        providerWs.send(JSON.stringify({
-          type: "session.update",
-          session: aqSessionConfig,
-        }));
-        
-        console.log(`[VoiceInterview] Restored AQ phase for session ${sessionId}: AQ ${aqIndex + 1}/${state.additionalQuestions.length}`);
-        
+        providerWs.send(
+          JSON.stringify({
+            type: "session.update",
+            session: aqSessionConfig,
+          }),
+        );
+
+        console.log(
+          `[VoiceInterview] Restored AQ phase for session ${sessionId}: AQ ${aqIndex + 1}/${state.additionalQuestions.length}`,
+        );
+
         // Send AQ state to client
-        clientWs.send(JSON.stringify({
-          type: "additional_questions_ready",
-          questionCount: state.additionalQuestions.length,
-          questions: state.additionalQuestions.map((q, idx) => ({
-            index: idx,
-            questionText: q.questionText,
-            rationale: q.rationale,
-          })),
-        }));
-        
-        clientWs.send(JSON.stringify({
-          type: "additional_question_started",
-          questionIndex: aqIndex,
-          questionText: aq.questionText,
-          rationale: aq.rationale,
-          totalAQs: state.additionalQuestions.length,
-        }));
+        clientWs.send(
+          JSON.stringify({
+            type: "additional_questions_ready",
+            questionCount: state.additionalQuestions.length,
+            questions: state.additionalQuestions.map((q, idx) => ({
+              index: idx,
+              questionText: q.questionText,
+              rationale: q.rationale,
+            })),
+          }),
+        );
+
+        clientWs.send(
+          JSON.stringify({
+            type: "additional_question_started",
+            questionIndex: aqIndex,
+            questionText: aq.questionText,
+            rationale: aq.rationale,
+            totalAQs: state.additionalQuestions.length,
+          }),
+        );
       }
     }
 
@@ -1265,19 +1400,23 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         provider: provider.name,
         // Include AQ state for reconnecting clients
         isInAQPhase: state.isInAdditionalQuestionsPhase,
-        aqQuestions: state.isInAdditionalQuestionsPhase ? state.additionalQuestions.map((q, idx) => ({
-          index: idx,
-          questionText: q.questionText,
-          rationale: q.rationale,
-        })) : undefined,
-        currentAQIndex: state.isInAdditionalQuestionsPhase ? state.currentAdditionalQuestionIndex : undefined,
+        aqQuestions: state.isInAdditionalQuestionsPhase
+          ? state.additionalQuestions.map((q, idx) => ({
+              index: idx,
+              questionText: q.questionText,
+              rationale: q.rationale,
+            }))
+          : undefined,
+        currentAQIndex: state.isInAdditionalQuestionsPhase
+          ? state.currentAdditionalQuestionIndex
+          : undefined,
       }),
     );
   });
 
   // Capture connectionId in closure to detect stale events from orphaned connections
   const capturedConnectionId = state.connectionId;
-  
+
   providerWs.on("message", (data) => {
     try {
       const event = JSON.parse(data.toString());
@@ -1295,27 +1434,33 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     console.log(
       `[VoiceInterview] ${provider.displayName} connection closed for session: ${sessionId}`,
     );
-    
+
     // Guard against stale closure - only update current state
     if (!isCurrentConnection(sessionId, capturedConnectionId)) {
       console.log(
-        `[VoiceInterview] Ignoring close event from orphaned provider connection for ${sessionId}`
+        `[VoiceInterview] Ignoring close event from orphaned provider connection for ${sessionId}`,
       );
       return;
     }
-    
+
     // Get current state (closure 'state' may reference orphaned object)
     const currentState = interviewStates.get(sessionId);
     if (currentState) {
       currentState.isConnected = false;
       // Reset responseInProgress on disconnect to prevent deadlock
       if (currentState.responseInProgress) {
-        console.log(`[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`);
+        console.log(
+          `[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`,
+        );
         currentState.responseInProgress = false;
         currentState.responseStartedAt = null;
       }
       // Use safeSend with current clientWs from state (not stale closure)
-      safeSend(currentState.clientWs, { type: "disconnected" }, `providerWs close ${sessionId}`);
+      safeSend(
+        currentState.clientWs,
+        { type: "disconnected" },
+        `providerWs close ${sessionId}`,
+      );
     }
   });
 
@@ -1324,19 +1469,23 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       `[VoiceInterview] ${provider.displayName} error for ${sessionId}:`,
       error,
     );
-    
+
     // Guard against stale closure - only notify current client
     if (!isCurrentConnection(sessionId, capturedConnectionId)) {
       console.log(
-        `[VoiceInterview] Ignoring error event from orphaned provider connection for ${sessionId}`
+        `[VoiceInterview] Ignoring error event from orphaned provider connection for ${sessionId}`,
       );
       return;
     }
-    
+
     // Get current clientWs from state (not stale closure)
     const currentState = interviewStates.get(sessionId);
     if (currentState) {
-      safeSend(currentState.clientWs, { type: "error", message: "Voice service error" }, `providerWs error ${sessionId}`);
+      safeSend(
+        currentState.clientWs,
+        { type: "error", message: "Voice service error" },
+        `providerWs error ${sessionId}`,
+      );
     }
   });
 }
@@ -1413,9 +1562,9 @@ INSTRUCTIONS:
 6. Be encouraging and conversational, matching the ${tone} tone.
 7. Keep responses concise - this is a voice conversation.
 8. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-9. When the orchestrator talks about the next question or moving on, she means the next template question, not the next follow-up
+9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up
 10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. The respondent can "click the Complete Interview button below" to finish.`;
+11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.`;
 
   if (barbaraGuidance) {
     instructions += `\n\ORCHESTRATOR'S GUIDANCE (Barbara):
@@ -1558,9 +1707,9 @@ RESUME INSTRUCTIONS:
 7. Be encouraging and conversational, matching the ${tone} tone.
 8. Keep responses concise - this is a voice conversation.
 9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-10. When the orchestrator talks about the next question or moving on, she means the next template question, not the next follow-up.
+10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
 11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. The respondent can "click the Complete Interview button below" to finish.`;
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.`;
 
   if (lastBarbaraGuidance) {
     instructions += `
@@ -1585,7 +1734,11 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
   return instructions;
 }
 
-async function handleProviderEvent(sessionId: string, connectionId: string, event: any) {
+async function handleProviderEvent(
+  sessionId: string,
+  connectionId: string,
+  event: any,
+) {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
@@ -1595,8 +1748,8 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
   if (state.connectionId !== connectionId) {
     console.warn(
       `[VoiceInterview] Ignoring stale event from orphaned connection. ` +
-      `Event: ${event.type}, staleConnectionId: ${connectionId.slice(0, 8)}, ` +
-      `currentConnectionId: ${state.connectionId.slice(0, 8)}, session: ${sessionId}`
+        `Event: ${event.type}, staleConnectionId: ${connectionId.slice(0, 8)}, ` +
+        `currentConnectionId: ${state.connectionId.slice(0, 8)}, session: ${sessionId}`,
     );
     return;
   }
@@ -1641,7 +1794,7 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
           state.providerWs.readyState === WebSocket.OPEN
         ) {
           state.isInitialSession = false; // Mark initial setup complete
-          
+
           // Skip auto-trigger for restored sessions - user must click mic to trigger resume
           if (state.isRestoredSession) {
             console.log(
@@ -1649,9 +1802,11 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
             );
             break;
           }
-          
+
           if (!canCreateResponse(state)) {
-            console.log(`[Response] Skipping initial response - response already in progress for ${sessionId}`);
+            console.log(
+              `[Response] Skipping initial response - response already in progress for ${sessionId}`,
+            );
           } else {
             state.responseInProgress = true;
             state.responseStartedAt = Date.now();
@@ -1793,17 +1948,20 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
             state.questionIndexAtSpeechStart ?? state.currentQuestionIndex;
 
           // Transcription quality detection (noisy environment handling)
-          const wasQuestionRepeated = detectQuestionRepeat(state, correctQuestionIndex);
+          const wasQuestionRepeated = detectQuestionRepeat(
+            state,
+            correctQuestionIndex,
+          );
           const qualityResult = updateQualitySignals(
             state.transcriptionQualitySignals,
             event.transcript,
-            wasQuestionRepeated
+            wasQuestionRepeated,
           );
           state.transcriptionQualitySignals = qualityResult.signals;
 
           if (qualityResult.detectedIssues.length > 0) {
             console.log(
-              `[TranscriptionQuality] Session ${sessionId}: ${qualityResult.detectedIssues.join(", ")}`
+              `[TranscriptionQuality] Session ${sessionId}: ${qualityResult.detectedIssues.join(", ")}`,
             );
           }
 
@@ -1813,11 +1971,12 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
             !state.transcriptionQualitySignals.environmentCheckTriggered
           ) {
             state.transcriptionQualitySignals.environmentCheckTriggered = true;
-            state.transcriptionQualitySignals.environmentCheckTriggeredAt = Date.now();
+            state.transcriptionQualitySignals.environmentCheckTriggeredAt =
+              Date.now();
             state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck = 0;
 
             console.log(
-              `[TranscriptionQuality] Triggering environment check for session ${sessionId}`
+              `[TranscriptionQuality] Triggering environment check for session ${sessionId}`,
             );
 
             // Send quality warning to client
@@ -1826,8 +1985,10 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
               JSON.stringify({
                 type: "transcription_quality_warning",
                 issues: qualityResult.detectedIssues,
-                qualityScore: calculateQualityScore(state.transcriptionQualitySignals),
-              })
+                qualityScore: calculateQualityScore(
+                  state.transcriptionQualitySignals,
+                ),
+              }),
             );
 
             // Inject environment check guidance for Alvia
@@ -1835,7 +1996,9 @@ async function handleProviderEvent(sessionId: string, connectionId: string, even
           }
 
           // Sanitize transcript to remove connection glitches (e.g., "we we we we...")
-          const sanitizedTranscript = sanitizeGlitchedTranscript(event.transcript);
+          const sanitizedTranscript = sanitizeGlitchedTranscript(
+            event.transcript,
+          );
 
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
@@ -1991,7 +2154,7 @@ const BARBARA_TIMEOUT_MS = 5000;
 
 function injectEnvironmentCheckGuidance(
   state: InterviewState,
-  sessionId: string
+  sessionId: string,
 ): void {
   const guidanceMessage = `AUDIO QUALITY CONCERN: You are having difficulty hearing the respondent clearly due to background noise or audio quality issues. 
 Politely say something like: "I'm sorry, I'm having a little trouble hearing you clearly. Would you be able to move somewhere quieter, or speak a bit closer to your microphone?" 
@@ -2001,7 +2164,8 @@ Then continue the interview naturally once they acknowledge.`;
     action: "suggest_environment_check",
     message: guidanceMessage,
     confidence: 0.95,
-    reasoning: "Transcription quality signals indicate noisy environment or poor audio",
+    reasoning:
+      "Transcription quality signals indicate noisy environment or poor audio",
   };
 
   state.barbaraGuidanceQueue.push(environmentGuidance);
@@ -2022,11 +2186,11 @@ Then continue the interview naturally once they acknowledge.`;
         session: {
           instructions: updatedPrompt,
         },
-      })
+      }),
     );
 
     console.log(
-      `[TranscriptionQuality] Injected environment check guidance for session ${sessionId}`
+      `[TranscriptionQuality] Injected environment check guidance for session ${sessionId}`,
     );
   }
 
@@ -2035,7 +2199,7 @@ Then continue the interview naturally once they acknowledge.`;
     JSON.stringify({
       type: "barbara_guidance",
       guidance: environmentGuidance,
-    })
+    }),
   );
 }
 
@@ -2227,10 +2391,12 @@ async function handleClientMessage(
         state.isInitialSession = false;
         return;
       }
-      
+
       state.isInitialSession = false;
       if (!canCreateResponse(state)) {
-        console.log(`[Response] Skipping initial response (audio_ready) - response already in progress for ${sessionId}`);
+        console.log(
+          `[Response] Skipping initial response (audio_ready) - response already in progress for ${sessionId}`,
+        );
       } else {
         state.responseInProgress = true;
         state.responseStartedAt = Date.now();
@@ -2352,7 +2518,9 @@ async function handleClientMessage(
             state.providerWs.readyState === WebSocket.OPEN
           ) {
             if (!canCreateResponse(state)) {
-              console.log(`[Response] Skipping text input response - response already in progress for ${sessionId}`);
+              console.log(
+                `[Response] Skipping text input response - response already in progress for ${sessionId}`,
+              );
             } else {
               state.responseInProgress = true;
               state.responseStartedAt = Date.now();
@@ -2477,7 +2645,9 @@ INSTRUCTIONS:
 
         // Trigger AI response
         if (!canCreateResponse(state)) {
-          console.log(`[Response] Skipping resume response - response already in progress for ${sessionId}`);
+          console.log(
+            `[Response] Skipping resume response - response already in progress for ${sessionId}`,
+          );
         } else {
           state.responseInProgress = true;
           state.responseStartedAt = Date.now();
@@ -2576,15 +2746,18 @@ INSTRUCTIONS:
 
             // Add confirmation checkpoint if transcription quality is low
             const qualityScore = calculateQualityScore(
-              state.transcriptionQualitySignals
+              state.transcriptionQualitySignals,
             );
-            if (qualityScore < 70 && state.transcriptionQualitySignals.totalRespondentUtterances > 3) {
+            if (
+              qualityScore < 70 &&
+              state.transcriptionQualitySignals.totalRespondentUtterances > 3
+            ) {
               const previousQuestion = state.questions[previousIndex];
               const recentRespondentText = state.transcriptLog
                 .filter(
                   (e) =>
                     e.questionIndex === previousIndex &&
-                    e.speaker === "respondent"
+                    e.speaker === "respondent",
                 )
                 .slice(-3)
                 .map((e) => e.text)
@@ -2594,7 +2767,7 @@ INSTRUCTIONS:
                 const briefSummary = recentRespondentText.slice(0, 150);
                 transitionInstruction = `The respondent has clicked Next Question. IMPORTANT: Before moving on, briefly confirm what you heard since audio quality may have been unclear. Say something like: "Before we continue - I want to make sure I understood you correctly. It sounds like you said [paraphrase key points from: "${briefSummary}..."]. Is that right?" Then, once confirmed, ask the next question: "${nextQuestion?.questionText}"`;
                 console.log(
-                  `[TranscriptionQuality] Adding confirmation checkpoint for Q${previousIndex + 1} (score: ${qualityScore})`
+                  `[TranscriptionQuality] Adding confirmation checkpoint for Q${previousIndex + 1} (score: ${qualityScore})`,
                 );
               }
             }
@@ -2673,7 +2846,9 @@ INSTRUCTIONS:
               );
               // Then trigger the response
               if (!canCreateResponse(state)) {
-                console.log(`[Response] Skipping topic overlap response - response already in progress for ${sessionId}`);
+                console.log(
+                  `[Response] Skipping topic overlap response - response already in progress for ${sessionId}`,
+                );
               } else {
                 state.responseInProgress = true;
                 state.responseStartedAt = Date.now();
@@ -2705,17 +2880,21 @@ INSTRUCTIONS:
       } else {
         // On last question - check if AQs are enabled and should be offered
         // Instead of bypassing AQ entirely, prompt the client to show the consent dialog
-        const shouldOfferAQ = ADDITIONAL_QUESTIONS_ENABLED && 
-          state.maxAdditionalQuestions > 0 && 
-          !state.additionalQuestionsConsent && 
+        const shouldOfferAQ =
+          ADDITIONAL_QUESTIONS_ENABLED &&
+          state.maxAdditionalQuestions > 0 &&
+          !state.additionalQuestionsConsent &&
           !state.isInAdditionalQuestionsPhase;
-        
+
         if (shouldOfferAQ) {
           // Send message to prompt AQ consent dialog on the client
-          clientWs.send(JSON.stringify({ 
-            type: "prompt_additional_questions_consent",
-            message: "Please confirm whether you'd like additional questions."
-          }));
+          clientWs.send(
+            JSON.stringify({
+              type: "prompt_additional_questions_consent",
+              message:
+                "Please confirm whether you'd like additional questions.",
+            }),
+          );
         } else {
           // AQs disabled or already handled - complete the interview
           await storage.persistInterviewState(sessionId, {
@@ -2736,7 +2915,7 @@ INSTRUCTIONS:
         ...state.fullTranscriptForPersistence,
       ] as TranscriptEntry[];
       const endFinalQuestionIdx = state.currentQuestionIndex;
-      
+
       // Track the summary promise and await it before completing
       const endSummaryPromise = generateAndPersistSummary(
         sessionId,
@@ -2744,10 +2923,10 @@ INSTRUCTIONS:
         endFinalTranscriptSnapshot,
       );
       state.pendingSummaryPromises.set(endFinalQuestionIdx, endSummaryPromise);
-      
+
       // Await all pending summaries (including the final one)
       await awaitPendingSummaries(sessionId);
-      
+
       // Update session status to completed
       await storage.persistInterviewState(sessionId, {
         status: "completed",
@@ -2763,13 +2942,13 @@ INSTRUCTIONS:
       state.lastActivityAt = Date.now();
       state.additionalQuestionsConsent = true;
       state.additionalQuestionsGenerating = true;
-      
+
       // First, trigger summary generation for the final question (current question)
       // Capture transcript snapshot BEFORE AQ generation
       const finalQuestionTranscriptSnapshot = [
         ...state.fullTranscriptForPersistence,
       ] as TranscriptEntry[];
-      
+
       // Start summary generation for final question and track the promise
       const finalQuestionIdx = state.currentQuestionIndex;
       const summaryPromise = generateAndPersistSummary(
@@ -2780,11 +2959,14 @@ INSTRUCTIONS:
         console.error(`[AQ] Error generating final question summary:`, err);
       });
       state.pendingSummaryPromises.set(finalQuestionIdx, summaryPromise);
-      
-      clientWs.send(JSON.stringify({ 
-        type: "additional_questions_generating",
-        message: "Barbara is analyzing your interview to identify follow-up questions..."
-      }));
+
+      clientWs.send(
+        JSON.stringify({
+          type: "additional_questions_generating",
+          message:
+            "Barbara is analyzing your interview to identify follow-up questions...",
+        }),
+      );
 
       // Pause the provider during AQ generation to prevent stale responses
       // Send a session update with "waiting" instructions
@@ -2793,13 +2975,18 @@ INSTRUCTIONS:
 If the respondent speaks, politely acknowledge and let them know you'll be with them shortly. 
 Say something like: "Just a moment while we prepare some follow-up questions for you."
 Do not attempt to answer any questions or continue the interview.`;
-        
-        const waitingSessionConfig = state.providerInstance.buildSessionConfig(waitingInstructions);
-        state.providerWs.send(JSON.stringify({
-          type: "session.update",
-          session: waitingSessionConfig,
-        }));
-        console.log(`[AQ] Sent waiting instructions to provider for session: ${sessionId}`);
+
+        const waitingSessionConfig =
+          state.providerInstance.buildSessionConfig(waitingInstructions);
+        state.providerWs.send(
+          JSON.stringify({
+            type: "session.update",
+            session: waitingSessionConfig,
+          }),
+        );
+        console.log(
+          `[AQ] Sent waiting instructions to provider for session: ${sessionId}`,
+        );
       }
 
       // Generate additional questions asynchronously
@@ -2810,40 +2997,49 @@ Do not attempt to answer any questions or continue the interview.`;
             clientWs.send(JSON.stringify(data));
             return true;
           }
-          console.log(`[AQ] WebSocket not open (state: ${clientWs.readyState}), skipping send for ${sessionId}`);
+          console.log(
+            `[AQ] WebSocket not open (state: ${clientWs.readyState}), skipping send for ${sessionId}`,
+          );
           return false;
         } catch (err) {
-          console.error(`[AQ] Error sending to WebSocket for ${sessionId}:`, err);
+          console.error(
+            `[AQ] Error sending to WebSocket for ${sessionId}:`,
+            err,
+          );
           return false;
         }
       };
-      
+
       (async () => {
         try {
-          const aqResult = await generateAdditionalQuestionsForSession(sessionId);
-          
+          const aqResult =
+            await generateAdditionalQuestionsForSession(sessionId);
+
           // Check if session still exists (could have been cleaned up by watchdog)
           const currentState = interviewStates.get(sessionId);
           if (!currentState) {
-            console.log(`[AQ] Session ${sessionId} no longer exists, aborting AQ flow`);
+            console.log(
+              `[AQ] Session ${sessionId} no longer exists, aborting AQ flow`,
+            );
             return;
           }
-          
+
           if (!aqResult || aqResult.questions.length === 0) {
             // No additional questions generated
             currentState.additionalQuestionsGenerating = false;
-            safeSend({ 
+            safeSend({
               type: "additional_questions_none",
-              message: "Your interview was comprehensive - no additional questions needed."
+              message:
+                "Your interview was comprehensive - no additional questions needed.",
             });
-            
+
             // Await pending summaries before completing
             await awaitPendingSummaries(sessionId);
-            
+
             // Add a 3-second delay so the user can see the "no additional questions" message
             // before navigating to the review page
             await new Promise((resolve) => setTimeout(resolve, 3000));
-            
+
             // Complete the interview
             await storage.persistInterviewState(sessionId, {
               status: "completed",
@@ -2858,14 +3054,14 @@ Do not attempt to answer any questions or continue the interview.`;
             currentState.isInAdditionalQuestionsPhase = true;
             currentState.currentAdditionalQuestionIndex = 0;
             currentState.additionalQuestionsGenerating = false;
-            
+
             // Persist AQ to database
             await storage.persistInterviewState(sessionId, {
               additionalQuestions: aqResult.questions,
               additionalQuestionPhase: true,
             });
-            
-            safeSend({ 
+
+            safeSend({
               type: "additional_questions_ready",
               questionCount: aqResult.questions.length,
               questions: aqResult.questions.map((q, idx) => ({
@@ -2874,27 +3070,31 @@ Do not attempt to answer any questions or continue the interview.`;
                 rationale: q.rationale,
               })),
             });
-            
+
             // Start the first additional question
             await startAdditionalQuestion(sessionId, 0);
           }
         } catch (error) {
-          console.error(`[AQ] Error generating additional questions for ${sessionId}:`, error);
-          
+          console.error(
+            `[AQ] Error generating additional questions for ${sessionId}:`,
+            error,
+          );
+
           // Check if session still exists
           const currentState = interviewStates.get(sessionId);
           if (currentState) {
             currentState.additionalQuestionsGenerating = false;
           }
-          
-          safeSend({ 
+
+          safeSend({
             type: "additional_questions_none",
-            message: "Unable to generate additional questions. Your interview is complete."
+            message:
+              "Unable to generate additional questions. Your interview is complete.",
           });
-          
+
           // Await pending summaries before completing
           await awaitPendingSummaries(sessionId);
-          
+
           await storage.persistInterviewState(sessionId, {
             status: "completed",
             completedAt: new Date(),
@@ -2909,10 +3109,10 @@ Do not attempt to answer any questions or continue the interview.`;
       // User declined additional questions - complete the interview
       state.lastActivityAt = Date.now();
       state.additionalQuestionsConsent = false;
-      
+
       // Await pending summaries before completing
       await awaitPendingSummaries(sessionId);
-      
+
       await storage.persistInterviewState(sessionId, {
         status: "completed",
         completedAt: new Date(),
@@ -2925,28 +3125,41 @@ Do not attempt to answer any questions or continue the interview.`;
     case "next_additional_question":
       // Move to next additional question or complete
       state.lastActivityAt = Date.now();
-      
+
       if (state.isInAdditionalQuestionsPhase) {
         const currentAQIdx = state.currentAdditionalQuestionIndex;
         const nextAQIndex = currentAQIdx + 1;
-        
+
         // Save transcript for current AQ before moving on
-        const aqTranscriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-        await persistAQTranscript(sessionId, currentAQIdx, aqTranscriptSnapshot);
-        
+        const aqTranscriptSnapshot = [
+          ...state.fullTranscriptForPersistence,
+        ] as TranscriptEntry[];
+        await persistAQTranscript(
+          sessionId,
+          currentAQIdx,
+          aqTranscriptSnapshot,
+        );
+
         // Generate summary for current AQ (runs async, tracked for completion)
-        const aqSummaryPromise = generateAndPersistAQSummary(sessionId, currentAQIdx, aqTranscriptSnapshot);
-        state.pendingSummaryPromises.set(`aq-${currentAQIdx}`, aqSummaryPromise);
-        
+        const aqSummaryPromise = generateAndPersistAQSummary(
+          sessionId,
+          currentAQIdx,
+          aqTranscriptSnapshot,
+        );
+        state.pendingSummaryPromises.set(
+          `aq-${currentAQIdx}`,
+          aqSummaryPromise,
+        );
+
         if (nextAQIndex < state.additionalQuestions.length) {
           await startAdditionalQuestion(sessionId, nextAQIndex);
         } else {
           // All additional questions complete
           state.isInAdditionalQuestionsPhase = false;
-          
+
           // Await any pending summaries before completing
           await awaitPendingSummaries(sessionId);
-          
+
           await storage.persistInterviewState(sessionId, {
             status: "completed",
             completedAt: new Date(),
@@ -2961,21 +3174,34 @@ Do not attempt to answer any questions or continue the interview.`;
     case "end_additional_questions":
       // User wants to end early (skip remaining AQs)
       state.lastActivityAt = Date.now();
-      
+
       if (state.isInAdditionalQuestionsPhase) {
         // Save transcript for current AQ before ending
-        const currentAQTranscript = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-        await persistAQTranscript(sessionId, state.currentAdditionalQuestionIndex, currentAQTranscript);
-        
+        const currentAQTranscript = [
+          ...state.fullTranscriptForPersistence,
+        ] as TranscriptEntry[];
+        await persistAQTranscript(
+          sessionId,
+          state.currentAdditionalQuestionIndex,
+          currentAQTranscript,
+        );
+
         // Generate summary for current AQ (tracked for completion)
-        const endAQSummaryPromise = generateAndPersistAQSummary(sessionId, state.currentAdditionalQuestionIndex, currentAQTranscript);
-        state.pendingSummaryPromises.set(`aq-${state.currentAdditionalQuestionIndex}`, endAQSummaryPromise);
-        
+        const endAQSummaryPromise = generateAndPersistAQSummary(
+          sessionId,
+          state.currentAdditionalQuestionIndex,
+          currentAQTranscript,
+        );
+        state.pendingSummaryPromises.set(
+          `aq-${state.currentAdditionalQuestionIndex}`,
+          endAQSummaryPromise,
+        );
+
         state.isInAdditionalQuestionsPhase = false;
-        
+
         // Await any pending summaries before completing
         await awaitPendingSummaries(sessionId);
-        
+
         await storage.persistInterviewState(sessionId, {
           status: "completed",
           completedAt: new Date(),
@@ -3007,9 +3233,12 @@ Do not attempt to answer any questions or continue the interview.`;
       );
       state.lastActivityAt = Date.now();
       state.terminationWarned = false;
-      
+
       // Forward the buffered audio to the provider first
-      if (message.bufferedAudio && state.providerWs?.readyState === WebSocket.OPEN) {
+      if (
+        message.bufferedAudio &&
+        state.providerWs?.readyState === WebSocket.OPEN
+      ) {
         state.providerWs.send(
           JSON.stringify({
             type: "input_audio_buffer.append",
@@ -3052,16 +3281,30 @@ async function generateAdditionalQuestionsForSession(
   // Check feature flag first
   if (!ADDITIONAL_QUESTIONS_ENABLED) {
     console.log(`[AQ] Additional questions feature is disabled`);
-    return { questions: [], barbaraModel: "", usedCrossInterviewContext: false, priorSessionCount: 0 };
+    return {
+      questions: [],
+      barbaraModel: "",
+      usedCrossInterviewContext: false,
+      priorSessionCount: 0,
+    };
   }
 
   // Don't generate if maxAdditionalQuestions is 0
   if (state.maxAdditionalQuestions <= 0) {
-    console.log(`[AQ] Session ${sessionId} has maxAdditionalQuestions=0, skipping`);
-    return { questions: [], barbaraModel: "", usedCrossInterviewContext: false, priorSessionCount: 0 };
+    console.log(
+      `[AQ] Session ${sessionId} has maxAdditionalQuestions=0, skipping`,
+    );
+    return {
+      questions: [],
+      barbaraModel: "",
+      usedCrossInterviewContext: false,
+      priorSessionCount: 0,
+    };
   }
 
-  console.log(`[AQ] Generating up to ${state.maxAdditionalQuestions} additional questions for session: ${sessionId}`);
+  console.log(
+    `[AQ] Generating up to ${state.maxAdditionalQuestions} additional questions for session: ${sessionId}`,
+  );
 
   // Prepare the input for Barbara
   const templateQuestions = state.questions.map((q: any) => ({
@@ -3069,7 +3312,9 @@ async function generateAdditionalQuestionsForSession(
     guidance: q.guidance || null,
   }));
 
-  const projectObjective = state.template?.objective || "Gather qualitative insights from this interview.";
+  const projectObjective =
+    state.template?.objective ||
+    "Gather qualitative insights from this interview.";
   const audienceContext = state.template?.audienceContext || null;
   const tone = state.template?.tone || null;
 
@@ -3079,7 +3324,9 @@ async function generateAdditionalQuestionsForSession(
   const result = await generateAdditionalQuestions({
     transcriptLog: state.fullTranscriptForPersistence,
     templateQuestions,
-    questionSummaries: state.questionSummaries.filter((s): s is QuestionSummary => s != null),
+    questionSummaries: state.questionSummaries.filter(
+      (s): s is QuestionSummary => s != null,
+    ),
     projectObjective,
     audienceContext,
     tone,
@@ -3089,7 +3336,9 @@ async function generateAdditionalQuestionsForSession(
     },
   });
 
-  console.log(`[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`);
+  console.log(
+    `[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`,
+  );
   return result;
 }
 
@@ -3100,28 +3349,36 @@ async function startAdditionalQuestion(
 ): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state || !state.clientWs || !state.providerWs) {
-    console.error(`[AQ] Cannot start AQ - missing state or WebSocket for session: ${sessionId}`);
+    console.error(
+      `[AQ] Cannot start AQ - missing state or WebSocket for session: ${sessionId}`,
+    );
     return;
   }
 
   const aq = state.additionalQuestions[aqIndex];
   if (!aq) {
-    console.error(`[AQ] No additional question found at index ${aqIndex} for session: ${sessionId}`);
+    console.error(
+      `[AQ] No additional question found at index ${aqIndex} for session: ${sessionId}`,
+    );
     return;
   }
 
   state.currentAdditionalQuestionIndex = aqIndex;
   // Set currentQuestionIndex to questions.length + aqIndex so transcript entries are properly tagged
   state.currentQuestionIndex = state.questions.length + aqIndex;
-  console.log(`[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId} (questionIndex: ${state.currentQuestionIndex})`);
+  console.log(
+    `[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId} (questionIndex: ${state.currentQuestionIndex})`,
+  );
 
   // Notify client which AQ is starting
-  state.clientWs.send(JSON.stringify({
-    type: "additional_question_started",
-    questionIndex: aqIndex,
-    totalQuestions: state.additionalQuestions.length,
-    questionText: aq.questionText,
-  }));
+  state.clientWs.send(
+    JSON.stringify({
+      type: "additional_question_started",
+      questionIndex: aqIndex,
+      totalQuestions: state.additionalQuestions.length,
+      questionText: aq.questionText,
+    }),
+  );
 
   // Update Alvia's instructions for the additional question
   const aqInstruction = buildAQInstructions(
@@ -3161,7 +3418,9 @@ async function startAdditionalQuestion(
     );
 
     if (!canCreateResponse(state)) {
-      console.log(`[Response] Skipping additional question response - response already in progress for ${sessionId}`);
+      console.log(
+        `[Response] Skipping additional question response - response already in progress for ${sessionId}`,
+      );
     } else {
       state.responseInProgress = true;
       state.responseStartedAt = Date.now();
@@ -3186,7 +3445,7 @@ function buildAQInstructions(
   respondentName: string | null,
 ): string {
   const respondentAddress = respondentName || "the respondent";
-  
+
   return `You are Alvia, a warm and professional AI interviewer. You are now in the ADDITIONAL QUESTIONS phase of the interview.
 
 CONTEXT:
@@ -3213,16 +3472,20 @@ TONE: ${template?.tone || "Professional and conversational"}
 async function awaitPendingSummaries(sessionId: string): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state || state.pendingSummaryPromises.size === 0) return;
-  
-  console.log(`[Summary] Awaiting ${state.pendingSummaryPromises.size} pending summaries for session: ${sessionId}`);
-  
+
+  console.log(
+    `[Summary] Awaiting ${state.pendingSummaryPromises.size} pending summaries for session: ${sessionId}`,
+  );
+
   try {
     await Promise.all(state.pendingSummaryPromises.values());
-    console.log(`[Summary] All pending summaries completed for session: ${sessionId}`);
+    console.log(
+      `[Summary] All pending summaries completed for session: ${sessionId}`,
+    );
   } catch (error) {
     console.error(`[Summary] Error awaiting pending summaries:`, error);
   }
-  
+
   // Clear the map after all promises resolve
   state.pendingSummaryPromises.clear();
 }
@@ -3239,14 +3502,16 @@ async function persistAQTranscript(
   try {
     // Calculate the questionIndex for this AQ
     const aqQuestionIndex = state.questions.length + aqIndex;
-    
+
     // Filter transcript entries for this specific AQ
     const aqEntries = transcriptSnapshot.filter(
       (e) => e.questionIndex === aqQuestionIndex,
     );
 
     if (aqEntries.length === 0) {
-      console.log(`[AQ Transcript] No transcript entries found for AQ${aqIndex + 1}`);
+      console.log(
+        `[AQ Transcript] No transcript entries found for AQ${aqIndex + 1}`,
+      );
       return;
     }
 
@@ -3258,23 +3523,30 @@ async function persistAQTranscript(
       })
       .join("\n\n");
 
-    console.log(`[AQ Transcript] Storing transcript for AQ${aqIndex + 1} with ${aqEntries.length} entries`);
-    
+    console.log(
+      `[AQ Transcript] Storing transcript for AQ${aqIndex + 1} with ${aqEntries.length} entries`,
+    );
+
     // Update the additionalQuestions array with the transcript
     const updatedAQs = [...state.additionalQuestions];
     if (updatedAQs[aqIndex]) {
       (updatedAQs[aqIndex] as any).transcript = transcriptText;
     }
     state.additionalQuestions = updatedAQs as typeof state.additionalQuestions;
-    
+
     // Persist to database
     await storage.persistInterviewState(sessionId, {
       additionalQuestions: updatedAQs,
     });
-    
-    console.log(`[AQ Transcript] Successfully stored transcript for AQ${aqIndex + 1}`);
+
+    console.log(
+      `[AQ Transcript] Successfully stored transcript for AQ${aqIndex + 1}`,
+    );
   } catch (error) {
-    console.error(`[AQ Transcript] Error storing transcript for AQ${aqIndex + 1}:`, error);
+    console.error(
+      `[AQ Transcript] Error storing transcript for AQ${aqIndex + 1}:`,
+      error,
+    );
   }
 }
 
@@ -3295,7 +3567,9 @@ async function generateAndPersistAQSummary(
 
   // Check if summary already exists for this AQ
   if ((aq as any).summaryBullets && (aq as any).summaryBullets.length > 0) {
-    console.log(`[AQ Summary] Summary already exists for AQ${aqIndex + 1}, skipping`);
+    console.log(
+      `[AQ Summary] Summary already exists for AQ${aqIndex + 1}, skipping`,
+    );
     return;
   }
 
@@ -3309,7 +3583,9 @@ async function generateAndPersistAQSummary(
     );
 
     // Count respondent entries and words
-    const respondentEntries = aqEntries.filter((e) => e.speaker === "respondent");
+    const respondentEntries = aqEntries.filter(
+      (e) => e.speaker === "respondent",
+    );
     const wordCount = respondentEntries.reduce(
       (sum, e) => sum + (e.text?.split(/\s+/).length || 0),
       0,
@@ -3541,23 +3817,33 @@ function finalizeAndPersistMetrics(
   });
 
   // Build transcription quality metrics from current signals
-  const transcriptionQualityMetrics = createQualityMetrics(state.transcriptionQualitySignals);
+  const transcriptionQualityMetrics = createQualityMetrics(
+    state.transcriptionQualitySignals,
+  );
 
   console.log(`[TranscriptionQuality] Final metrics for ${sessionId}:`, {
     score: transcriptionQualityMetrics.qualityScore,
     flags: transcriptionQualityMetrics.flagsDetected,
     signals: {
-      shortUtteranceStreak: state.transcriptionQualitySignals.shortUtteranceStreak,
-      foreignLanguageCount: state.transcriptionQualitySignals.foreignLanguageCount,
-      questionRepeatCount: state.transcriptionQualitySignals.questionRepeatCount,
-      incoherentPhraseCount: state.transcriptionQualitySignals.incoherentPhraseCount,
-      totalUtterances: state.transcriptionQualitySignals.totalRespondentUtterances,
+      shortUtteranceStreak:
+        state.transcriptionQualitySignals.shortUtteranceStreak,
+      foreignLanguageCount:
+        state.transcriptionQualitySignals.foreignLanguageCount,
+      questionRepeatCount:
+        state.transcriptionQualitySignals.questionRepeatCount,
+      incoherentPhraseCount:
+        state.transcriptionQualitySignals.incoherentPhraseCount,
+      totalUtterances:
+        state.transcriptionQualitySignals.totalRespondentUtterances,
     },
   });
 
   // Persist metrics to database
   storage
-    .persistInterviewState(sessionId, { performanceMetrics, transcriptionQualityMetrics })
+    .persistInterviewState(sessionId, {
+      performanceMetrics,
+      transcriptionQualityMetrics,
+    })
     .catch((error) => {
       console.error(
         `[Metrics] Failed to persist metrics for ${sessionId}:`,
