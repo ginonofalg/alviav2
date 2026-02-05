@@ -489,13 +489,17 @@ export function shouldReduceVadEagerness(
     return false;
   }
 
-  // Use recent window for foreign language check instead of cumulative counter
-  // This allows VAD reduction even if there was a foreign language detection earlier
-  const hasRecentForeignLanguage = hasRecentQualityIssues(signals, {
+  // Expanded veto: only reduce VAD eagerness when short utterances are the ONLY signal
+  // If there are any transcription quality issues (foreign language, incoherence, 
+  // repeated-word glitches), the problem is likely audio/transcription quality,
+  // not VAD timing. VAD adjustment won't help and may worsen those issues.
+  const hasRecentBlockingIssues = hasRecentQualityIssues(signals, {
     foreignLanguage: true,
+    incoherence: true,
+    repeatedWordGlitch: true,
   });
 
-  if (signals.shortUtteranceStreak >= 4 && !hasRecentForeignLanguage) {
+  if (signals.shortUtteranceStreak >= 4 && !hasRecentBlockingIssues) {
     return true;
   }
 
