@@ -1,0 +1,55 @@
+Check out this exchange with Claude. Keen to get your views: so here's an interesting one. Look at the Alvia prompt(s) and the instructions given to het regarding what to say when moving to the next question. In the attached transcript, there are two blocks
+  of Alvia
+    speaking; 1) where she suggests the user clicks the Next Question buttong, 2) Immediately after the user has clicked it. Notice that she asks if there's any further build the interviewee would like to make on
+    the previous question, but they've just clicked to move on, and then in the same breath she's asking the new question. TRANSCRIPT: I understand, that’s a great example of how people can feel their creative work
+    or identity is being replicated. It’s a sensitive issue, and it’s understandable why it would cause concern. Thank you for sharing that. Is there anything else you'd like to add, or shall we move to the next
+    question?
+
+    03:21 PM
+    I appreciate you mentioning how capturing candid moments and waiting for the right light ties into your technique. Are there any other thoughts you'd like to share on that, or should we move on? Now, what do you
+     consider your greatest strength as a photographer?
+
+    03:21 PM
+
+  ● Let me look at how Alvia handles question transitions in the voice interview code.
+
+  ● Explore(Find Alvia question transition prompts)
+    ⎿  Done (17 tool uses · 41.0k tokens · 47s)
+
+  ● Now let me read the specific code sections to confirm the issue.
+
+  ● Read 1 file (ctrl+o to expand)
+
+  ● I can see the problem clearly now. There are two issues:
+
+    Issue 1: The buildOverlapInstruction() function (line 1619) replaces the default transition instruction when topic overlap is detected. The default instruction correctly says "Do NOT ask follow-ups about it", but the
+     overlap instructions say things like "invite any additional thoughts" and "ask if they'd like to add anything new, or if they're ready to move on" — which is exactly what's causing the awkward behavior in your
+    transcript.
+
+    Issue 2: For fully_covered topics, the instruction even tells Alvia to ask if they're "ready to move on" — but they already clicked Next Question, so they ARE ready.
+
+
+• Thanks for sharing this—this is a subtle but important bit of interview flow, and you’re absolutely right to call it out.
+
+  My take: the awkward “anything else to add / move on?” line after the user clicked Next Question is coming from the topic‑overlap transition logic, not from the normal move‑on prompt. So Claude’s diagnosis lines up with what’s in the code.
+
+  Here’s what I see in server/voice-interview.ts:
+
+  1. Normal transition after a click is clean: it says brief acknowledgment, then ask the next question.
+     server/voice-interview.ts:2851
+  2. If topic overlap is detected, that instruction is replaced by buildOverlapInstruction() which explicitly tells Alvia to ask if they want to add anything or move on—even though they already clicked.
+     server/voice-interview.ts:1619
+     server/voice-interview.ts:2908
+
+  That explains your transcript perfectly:
+
+  - First block = pre‑click “ready to move on?” prompt (fine).
+  - Second block = overlap‑transition prompt that still asks “anything else to add / move on” after the click, then immediately asks the new question (awkward).
+
+  Suggested fix (small + safe): change buildOverlapInstruction() to never ask whether they’re ready to move on, and instead always do: acknowledge overlap → ask the next question. Since this function is only used in the post‑click transition, it should be
+  “post‑click safe” by default.
+
+  Example rewrite (conceptually):
+
+  - fully_covered: “You already covered X earlier—thank you. With that in mind, here’s the next question: …”
+  - partially_covered / mentioned: “You touched on X earlier—keeping that in mind, … [ask question]”
