@@ -297,12 +297,12 @@ export function updateQualitySignals(
 function shouldTriggerCheck(signals: TranscriptionQualitySignals): boolean {
   if (
     signals.environmentCheckTriggered &&
-    signals.utterancesSinceEnvironmentCheck < 15
+    signals.utterancesSinceEnvironmentCheck < 5
   ) {
     return false;
   }
 
-  if (signals.foreignLanguageCount >= 2) {
+  if (signals.foreignLanguageCount >= 1) {
     return true;
   }
 

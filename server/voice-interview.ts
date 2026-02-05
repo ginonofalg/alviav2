@@ -986,19 +986,19 @@ export function handleVoiceInterview(
     console.log(
       `[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`,
     );
-    // Close orphaned providerWs
-    if (
-      existingState.providerWs &&
-      existingState.providerWs.readyState === WebSocket.OPEN
-    ) {
-      existingState.providerWs.close();
+    // Close orphaned providerWs - remove listeners first for instant cleanup
+    if (existingState.providerWs) {
+      existingState.providerWs.removeAllListeners();
+      if (existingState.providerWs.readyState === WebSocket.OPEN) {
+        existingState.providerWs.close();
+      }
     }
     // Close orphaned clientWs to prevent dangling connections
-    if (
-      existingState.clientWs &&
-      existingState.clientWs.readyState === WebSocket.OPEN
-    ) {
-      existingState.clientWs.close(1001, "Session replaced");
+    if (existingState.clientWs) {
+      existingState.clientWs.removeAllListeners();
+      if (existingState.clientWs.readyState === WebSocket.OPEN) {
+        existingState.clientWs.close(1001, "Session replaced");
+      }
     }
     if (existingState.pendingPersistTimeout) {
       clearTimeout(existingState.pendingPersistTimeout);
@@ -1965,7 +1965,16 @@ async function handleProviderEvent(
             );
           }
 
-          // Trigger environment check if quality signals indicate issues (once per 15 utterances)
+          // Trigger environment check if quality signals indicate issues
+          // Re-triggering allowed after cooldown (5 utterances) by resetting the guard
+          if (
+            qualityResult.shouldTriggerEnvironmentCheck &&
+            state.transcriptionQualitySignals.environmentCheckTriggered &&
+            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >= 5
+          ) {
+            state.transcriptionQualitySignals.environmentCheckTriggered = false;
+          }
+
           if (
             qualityResult.shouldTriggerEnvironmentCheck &&
             !state.transcriptionQualitySignals.environmentCheckTriggered
