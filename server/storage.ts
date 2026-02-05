@@ -33,6 +33,7 @@ export interface InterviewStatePatch {
   additionalQuestions?: unknown;
   additionalQuestionPhase?: boolean;
   currentAdditionalQuestionIndex?: number;
+  totalDurationMs?: number;
 }
 
 export interface EnrichedSession extends InterviewSession {
@@ -654,6 +655,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.currentAdditionalQuestionIndex !== undefined) {
       updateData.currentAdditionalQuestionIndex = patch.currentAdditionalQuestionIndex;
+    }
+    if (patch.totalDurationMs !== undefined) {
+      updateData.totalDurationMs = patch.totalDurationMs;
     }
 
     if (Object.keys(updateData).length === 0) {

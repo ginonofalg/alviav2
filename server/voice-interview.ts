@@ -3847,11 +3847,12 @@ function finalizeAndPersistMetrics(
     },
   });
 
-  // Persist metrics to database
+  // Persist metrics to database (including totalDurationMs for data integrity)
   storage
     .persistInterviewState(sessionId, {
       performanceMetrics,
       transcriptionQualityMetrics,
+      totalDurationMs: sessionDurationMs,
     })
     .catch((error) => {
       console.error(
