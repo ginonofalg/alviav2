@@ -463,6 +463,14 @@ export type TranscriptionQualityFlag =
   | "foreign_language_hallucination"
   | "repeated_word_glitch";
 
+// Tracks quality flags for a single utterance (for sliding window)
+export type UtteranceQualityFlags = {
+  hadForeignLanguage: boolean;
+  hadIncoherence: boolean;
+  hadRepeatedWordGlitch: boolean;
+  hadShortUtterance: boolean;
+};
+
 export type TranscriptionQualitySignals = {
   shortUtteranceStreak: number;
   foreignLanguageCount: number;
@@ -476,6 +484,8 @@ export type TranscriptionQualitySignals = {
   consecutiveGoodUtterances: number;
   vadEagernessReduced: boolean;
   vadEagernessReducedAt: number | null;
+  // Sliding window of recent utterance quality (last 5)
+  recentUtteranceQuality: UtteranceQualityFlags[];
 };
 
 export type TranscriptionQualityMetrics = {

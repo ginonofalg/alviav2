@@ -1335,6 +1335,30 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       }),
     );
 
+    // Re-apply VAD eagerness if it was reduced before provider reconnection
+    // This ensures the provider's turn_detection.eagerness matches our state
+    if (
+      state.transcriptionQualitySignals.vadEagernessReduced &&
+      provider.supportsSemanticVAD()
+    ) {
+      console.log(
+        `[VoiceInterview] Re-applying VAD eagerness "low" after provider reconnect for session: ${sessionId}`,
+      );
+      providerWs.send(
+        JSON.stringify({
+          type: "session.update",
+          session: {
+            turn_detection: {
+              type: "semantic_vad",
+              eagerness: "low",
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+        }),
+      );
+    }
+
     // Check if we're resuming an AQ session and need to restore AQ state
     if (
       state.isInAdditionalQuestionsPhase &&
@@ -1955,10 +1979,13 @@ async function handleProviderEvent(
             state,
             correctQuestionIndex,
           );
+          // Get question type for short-utterance tracking (skip for yes_no, scale, numeric)
+          const currentQuestionForQuality = state.questions[correctQuestionIndex];
           const qualityResult = updateQualitySignals(
             state.transcriptionQualitySignals,
             event.transcript,
             wasQuestionRepeated,
+            currentQuestionForQuality?.type,
           );
           state.transcriptionQualitySignals = qualityResult.signals;
 

@@ -18,7 +18,49 @@ export function createEmptyQualitySignals(): TranscriptionQualitySignals {
     consecutiveGoodUtterances: 0,
     vadEagernessReduced: false,
     vadEagernessReducedAt: null,
+    recentUtteranceQuality: [],
   };
+}
+
+const RECENT_WINDOW_SIZE = 5;
+
+// Helper to check if recent window has any quality issues
+export function hasRecentQualityIssues(
+  signals: TranscriptionQualitySignals,
+  checkFlags: {
+    foreignLanguage?: boolean;
+    incoherence?: boolean;
+    repeatedWordGlitch?: boolean;
+    shortUtterance?: boolean;
+  } = {},
+): boolean {
+  const window = signals.recentUtteranceQuality;
+  if (window.length === 0) return false;
+
+  return window.some((flags) => {
+    if (checkFlags.foreignLanguage && flags.hadForeignLanguage) return true;
+    if (checkFlags.incoherence && flags.hadIncoherence) return true;
+    if (checkFlags.repeatedWordGlitch && flags.hadRepeatedWordGlitch) return true;
+    if (checkFlags.shortUtterance && flags.hadShortUtterance) return true;
+    return false;
+  });
+}
+
+// Helper to add current utterance quality to sliding window
+function addToRecentWindow(
+  signals: TranscriptionQualitySignals,
+  flags: {
+    hadForeignLanguage: boolean;
+    hadIncoherence: boolean;
+    hadRepeatedWordGlitch: boolean;
+    hadShortUtterance: boolean;
+  },
+): void {
+  signals.recentUtteranceQuality.push(flags);
+  // Keep only last N utterances
+  if (signals.recentUtteranceQuality.length > RECENT_WINDOW_SIZE) {
+    signals.recentUtteranceQuality.shift();
+  }
 }
 
 interface NonEnglishDetectionResult {
@@ -230,20 +272,38 @@ interface QualityUpdateResult {
   detectedIssues: string[];
 }
 
+// Question types that naturally expect short answers
+const SHORT_ANSWER_QUESTION_TYPES = ["yes_no", "scale", "numeric"];
+
 export function updateQualitySignals(
   currentSignals: TranscriptionQualitySignals,
   transcriptText: string,
   wasQuestionRepeated: boolean,
+  questionType?: string,
 ): QualityUpdateResult {
-  const signals = { ...currentSignals };
+  const signals = { 
+    ...currentSignals,
+    recentUtteranceQuality: [...currentSignals.recentUtteranceQuality],
+  };
   const detectedIssues: string[] = [];
+
+  // Skip short-utterance tracking for question types that expect short answers
+  const skipShortUtteranceTracking =
+    questionType && SHORT_ANSWER_QUESTION_TYPES.includes(questionType);
 
   signals.totalRespondentUtterances++;
   signals.utterancesSinceEnvironmentCheck++;
 
+  // Track quality flags for this utterance (for sliding window)
+  let hadForeignLanguage = false;
+  let hadIncoherence = false;
+  let hadRepeatedWordGlitch = false;
+  let hadShortUtterance = false;
+
   const nonEnglishResult = detectNonEnglish(transcriptText);
   if (nonEnglishResult.detected) {
     signals.foreignLanguageCount++;
+    hadForeignLanguage = true;
     detectedIssues.push(
       `Foreign language: ${nonEnglishResult.detectedPatterns.join(", ")}`,
     );
@@ -252,6 +312,7 @@ export function updateQualitySignals(
   const incoherenceResult = detectIncoherentPhrase(transcriptText);
   if (incoherenceResult.isIncoherent && incoherenceResult.confidence >= 0.5) {
     signals.incoherentPhraseCount++;
+    hadIncoherence = true;
     detectedIssues.push(`Incoherent: ${incoherenceResult.reason}`);
   }
 
@@ -259,6 +320,7 @@ export function updateQualitySignals(
   const repeatedWordResult = detectRepeatedWords(transcriptText);
   if (repeatedWordResult.detected) {
     signals.repeatedWordGlitchCount++;
+    hadRepeatedWordGlitch = true;
     detectedIssues.push(
       `Repeated word glitch: "${repeatedWordResult.repeatedWord}" x${repeatedWordResult.repeatCount}`,
     );
@@ -268,15 +330,27 @@ export function updateQualitySignals(
     .trim()
     .split(/\s+/)
     .filter((w) => w.length > 0);
-  if (words.length < 3) {
-    signals.shortUtteranceStreak++;
-    if (signals.shortUtteranceStreak >= 3) {
-      detectedIssues.push(
-        `Short utterance streak: ${signals.shortUtteranceStreak}`,
-      );
+  
+  // Only track short utterances for question types that expect longer answers
+  // Skip for yes_no, scale, numeric questions where short answers are expected
+  if (!skipShortUtteranceTracking) {
+    if (words.length < 3) {
+      signals.shortUtteranceStreak++;
+      hadShortUtterance = true;
+      if (signals.shortUtteranceStreak >= 3) {
+        detectedIssues.push(
+          `Short utterance streak: ${signals.shortUtteranceStreak}`,
+        );
+      }
+    } else {
+      signals.shortUtteranceStreak = 0;
     }
   } else {
-    signals.shortUtteranceStreak = 0;
+    // For short-answer questions, don't count as short utterance but still reset streak
+    // if we get a longer answer
+    if (words.length >= 3) {
+      signals.shortUtteranceStreak = 0;
+    }
   }
 
   if (wasQuestionRepeated) {
@@ -287,6 +361,14 @@ export function updateQualitySignals(
       );
     }
   }
+
+  // Add this utterance's quality flags to the sliding window
+  addToRecentWindow(signals, {
+    hadForeignLanguage,
+    hadIncoherence,
+    hadRepeatedWordGlitch,
+    hadShortUtterance,
+  });
 
   const shouldTriggerEnvironmentCheck = shouldTriggerCheck(signals);
 
@@ -407,7 +489,13 @@ export function shouldReduceVadEagerness(
     return false;
   }
 
-  if (signals.shortUtteranceStreak >= 4 && signals.foreignLanguageCount === 0) {
+  // Use recent window for foreign language check instead of cumulative counter
+  // This allows VAD reduction even if there was a foreign language detection earlier
+  const hasRecentForeignLanguage = hasRecentQualityIssues(signals, {
+    foreignLanguage: true,
+  });
+
+  if (signals.shortUtteranceStreak >= 4 && !hasRecentForeignLanguage) {
     return true;
   }
 
@@ -437,13 +525,16 @@ export function updateGoodUtteranceTracking(
     .split(/\s+/)
     .filter((w) => w.length > 0);
   
-  const hasQualityIssues =
-    signals.shortUtteranceStreak > 0 ||
-    signals.foreignLanguageCount > 0 ||
-    signals.incoherentPhraseCount > 0 ||
-    signals.repeatedWordGlitchCount > 0;
+  // Use recent window to check for quality issues instead of cumulative counters
+  // This allows recovery once recent utterances are clean
+  const hasRecentIssues = hasRecentQualityIssues(signals, {
+    foreignLanguage: true,
+    incoherence: true,
+    repeatedWordGlitch: true,
+  });
 
-  const isGoodUtterance = words.length >= 3 && !hasQualityIssues;
+  // Note: shortUtteranceStreak is already a "streak" that resets, so we use it directly
+  const isGoodUtterance = words.length >= 3 && !hasRecentIssues && signals.shortUtteranceStreak === 0;
 
   if (isGoodUtterance) {
     signals.consecutiveGoodUtterances++;

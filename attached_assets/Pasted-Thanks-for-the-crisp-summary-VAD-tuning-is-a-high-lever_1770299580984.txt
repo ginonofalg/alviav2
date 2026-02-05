@@ -1,0 +1,38 @@
+Thanks for the crisp summary—VAD tuning is a high‑leverage change, so I read through the implementation with a focus on trigger and recovery behavior.
+
+  Findings
+
+  1. High: Recovery can be permanently blocked after any non‑short quality flag. updateGoodUtteranceTracking treats cumulative counters as current issues; because foreignLanguageCount, incoherentPhraseCount, and
+     repeatedWordGlitchCount only ever increment, a single detection makes hasQualityIssues true forever. That prevents consecutiveGoodUtterances from ever reaching 10, so shouldRestoreVadEagerness never fires and VAD
+     can get stuck at "low" after the first reduction. References: server/transcription-quality.ts:233-263, server/transcription-quality.ts:431-452, server/transcription-quality.ts:417-425.
+  2. High: A single foreign‑language detection permanently disables VAD reduction. The trigger checks foreignLanguageCount === 0, but that count is lifetime and the detector is heuristic regex. One false positive or a
+     bilingual respondent means you’ll never reduce eagerness again, even if later short‑utterance streaks clearly indicate VAD timing issues. References: server/transcription-quality.ts:244-249, server/transcription-
+     quality.ts:403-412.
+  3. Medium: Trigger is short‑utterance‑only and ignores question types where short replies are expected (yes/no, scale, numeric). A run of valid short answers can trip the reduction even when VAD is fine. You already
+     track speech timing (speech_started/speech_stopped), which could give a more reliable signal than word count alone. References: server/transcription-quality.ts:267-279, server/transcription-quality.ts:403-412,
+     server/voice-interview.ts:2085-2127.
+  4. Medium: Eagerness state can desync on provider reconnect. The initial OpenAI session config always sets "auto", and updates only happen on transitions; if the provider WS reconnects while vadEagernessReduced is
+     true, the provider may be "auto" while state thinks "low". References: server/realtime-providers.ts:84-104, server/voice-interview.ts:2241-2266.
+
+  Open Questions
+
+  1. For foreign‑language detection in the VAD trigger, which behavior do you want?
+      1. Use a recent‑window veto (e.g., “no foreign‑language flags in last N utterances”).
+      2. Keep it as a hard veto (current behavior).
+      3. Remove it from the VAD trigger entirely.
+  2. Should the short‑utterance trigger be disabled for yes_no, scale, and numeric questions?
+      1. Yes, always skip those question types.
+      2. Only skip when the question explicitly expects short answers.
+      3. Keep current behavior.
+
+  Test Gaps
+
+  1. No unit tests for shouldReduceVadEagerness, shouldRestoreVadEagerness, or updateGoodUtteranceTracking; these would catch the “stuck in low” scenario and false‑positive vetoes. References: server/transcription-
+     quality.ts.
+  2. No integration test that exercises a reconnect while vadEagernessReduced is true.
+
+  What Looks Good
+
+  1. Clean separation from the environment‑check path and clear logging.
+  2. Provider‑aware gating (supportsSemanticVAD) avoids touching Grok.
+  3. Sanitizing transcripts before “good utterance” evaluation is the right instinct.
