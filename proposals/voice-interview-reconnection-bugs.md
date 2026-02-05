@@ -1,0 +1,683 @@
+# Proposal: Voice Interview Reconnection & Audio Leak Bugs
+
+**Date:** 2026-02-05
+**Priority:** High
+**Affected component:** Voice interview system (`voice-interview.ts`, `interview.tsx`)
+**Observed in session:** `8a7849e2-5b5f-46e5-9f8e-527c86af8027`
+
+---
+
+## 1. Executive Summary
+
+During user testing, a WebSocket disconnection at 15:43:39 triggered a cascade of bugs that left the interview in a broken state. After the user clicked the microphone to reconnect, the AI interviewer (Alvia) began mishearing the respondent — producing garbled transcriptions like "Hanggal", "abduced", and "Prepare". When the user clicked the mic to pause, the orange pause icon appeared but Alvia continued responding to audio fragments. The respondent eventually said: *"She's replying to me saying that I was just saying hang on there"* — confirming Alvia was hearing audio that should have been suppressed.
+
+Three interconnected bugs have been identified. Additionally, since this user experiences frequent disconnections, we propose diagnostic logging to identify the root cause of the disconnections themselves.
+
+---
+
+## 2. Timeline of Events (from server logs)
+
+| Time | Event |
+|------|-------|
+| 15:43:36.11 | Normal operation — Barbara provides guidance for session |
+| 15:43:39.85 | **WebSocket disconnects.** Server logs: "Session marked as disconnected, watchdog will cleanup after heartbeat timeout" and "Client disconnected" |
+| 15:45:38.91 | **Watchdog terminates session** (~2 min after disconnect): "Terminating session - reason: client_disconnected" |
+| 15:45:40.09 | Final metrics logged. Session fully cleaned up. State persisted. |
+| 15:45:41.68 | "Session cleaned up", "Persist state saved" |
+| 15:45:41.88 | "Ignoring close event from orphaned provider connection" — confirms session removed from `interviewStates` map |
+| 15:46:36.45 | **User clicks mic.** New WebSocket connection established. Server treats as "New connection" (not reconnection, since state was cleaned up). |
+| 15:46:36.82 | Persisted state restored from DB: 30 transcript entries, question 3/6, 2 question summaries. `isRestoredSession = true`. |
+| 15:46:37.05 | New OpenAI realtime session created. "Using resume instructions for restored session." |
+| 15:46:37.21 | "Restored session - waiting for user to click mic to resume" **immediately followed by** "Client audio ready" |
+| 15:46:41.05 | Summary generation and TopicOverlap detection triggered — **before `resume_interview` was ever sent** |
+| 15:46:43.49 | OpenAI token usage logged (input=816, output=123) — OpenAI is generating responses autonomously via VAD |
+| 15:46:45.57 | State persisted with 31 transcript entries (was 30 at connection — new entry added without explicit resume) |
+| Post-reconnect | Transcript quality degrades: "Hanggal", "abduced", "Prepare", single-word fragments. Pause button appears non-functional. |
+
+---
+
+## 3. Observed Symptoms
+
+1. **Garbled transcriptions after reconnection**: Respondent utterances transcribed as nonsense words ("Hanggal", "abduced") or single fragments ("Prepare", "Hello.", "Yeah.").
+2. **Pause appears non-functional**: Orange pause icon displays but Alvia continues hearing and responding to audio fragments.
+3. **Alvia responds without `resume_interview`**: "Welcome back! Please go ahead and continue your..." appears in transcript before the user explicitly resumes.
+4. **Alvia enters a loop**: Repeatedly says variations of "No worries, take your time" and "Whenever you're ready" — responding to ambient audio fragments from the orphaned processor.
+5. **Respondent confirms the bug**: "She's replying to me saying that I was just saying hang on there" — the respondent was trying to pause but Alvia kept responding.
+
+---
+
+## 4. Root Cause Analysis
+
+### 4.1 Root Cause 1: Leaked Audio Processor (Primary Bug)
+
+**Location:** `client/src/pages/interview.tsx`, lines 488–500 (`ws.onclose` handler)
+
+**The problem:** When the WebSocket closes, `stopAudioCapture()` is **never called**. The `ws.onclose` handler only resets React state (`isConnected`, `isListening`) but leaves the browser's `ScriptProcessor` and `MediaStream` running:
+
+```javascript
+// Current code — lines 488-500
+ws.onclose = () => {
+  console.log("[Interview] WebSocket closed");
+  setIsConnected(false);
+  setIsConnecting(false);
+  setIsListening(false);
+  hasSentResumeRef.current = false;
+  if (heartbeatIntervalRef.current) {
+    clearInterval(heartbeatIntervalRef.current);
+    heartbeatIntervalRef.current = null;
+  }
+  // ❌ stopAudioCapture() is MISSING
+  // The ScriptProcessor and MediaStream from the previous session
+  // continue running in the background
+};
+```
+
+**Why this is devastating:**
+
+When the user clicks the mic to reconnect, `toggleListening()` enters the `!isConnected` branch (line 921) and calls both `connectWebSocket()` and `startAudioCapture()`. This creates a **second** `ScriptProcessor` (processor2) and `MediaStream` (stream2). The refs (`processorRef.current`, `mediaStreamRef.current`) are overwritten — so the original processor1/stream1 become **orphaned but still active**.
+
+The orphaned processor's `onaudioprocess` handler (line 817) checks `wsRef.current` — which is a React `useRef` (always points to the latest value), now pointing to the **new, open** WebSocket. Since the new WS is open, the orphaned processor sends audio through it.
+
+**The result is two audio processors simultaneously sending overlapping, interleaved audio to OpenAI**, producing garbled transcriptions.
+
+**When the user clicks pause:**
+- `stopAudioCapture()` disconnects processor2 and stops stream2 (the ones stored in refs)
+- **But processor1 and stream1 are still running** — they were orphaned when the refs were overwritten
+- The orphaned processor continues sending audio fragments through the open WebSocket
+- The user sees the orange pause icon but Alvia keeps hearing and responding
+
+**Lifecycle diagram:**
+
+```
+INITIAL SESSION:
+  startAudioCapture() → creates processor1, stream1
+  processorRef.current = processor1
+  mediaStreamRef.current = stream1
+  processor1.onaudioprocess → sends via wsRef.current (ws1)
+
+DISCONNECT (15:43:39):
+  ws1.onclose fires:
+    setIsConnected(false)
+    setIsListening(false)
+    ❌ stopAudioCapture() NOT called
+    processor1 still running, stream1 still capturing
+    processor1 tries wsRef.current → ws1 is closed → silently drops audio
+
+USER CLICKS MIC (15:46:36):
+  toggleListening() → !isConnected branch:
+    connectWebSocket() → wsRef.current = ws2 (new WebSocket)
+    startAudioCapture() → creates processor2, stream2
+      processorRef.current = processor2  (overwrites ref to processor1)
+      mediaStreamRef.current = stream2   (overwrites ref to stream1)
+
+  NOW TWO PROCESSORS ARE ACTIVE:
+    processor1.onaudioprocess → wsRef.current → ws2 (OPEN!) → sends audio ✅ (LEAK!)
+    processor2.onaudioprocess → wsRef.current → ws2 (OPEN!) → sends audio ✅
+
+  OpenAI receives interleaved/doubled audio → garbled transcriptions
+
+USER CLICKS PAUSE:
+  stopAudioCapture():
+    processorRef.current.disconnect() → disconnects processor2 only
+    mediaStreamRef.current.tracks.stop() → stops stream2 only
+    processor1 + stream1 still running → still sending fragments via ws2
+    User sees pause icon but Alvia keeps hearing ❌
+```
+
+### 4.2 Root Cause 2: Server Forwards Audio Without Pause/Resume Checks
+
+**Location:** `server/voice-interview.ts`, lines 2528–2541
+
+**The problem:** The server forwards client audio to OpenAI without checking `state.isPaused` or whether the session is awaiting `resume_interview`:
+
+```javascript
+// Current code — lines 2528-2541
+case "audio":
+  state.lastActivityAt = Date.now();
+  state.terminationWarned = false;
+  // ❌ No state.isPaused check
+  // ❌ No "waiting for resume_interview" check
+  if (state.providerWs.readyState === WebSocket.OPEN) {
+    state.providerWs.send(JSON.stringify({
+      type: "input_audio_buffer.append",
+      audio: message.audio,
+    }));
+  }
+  break;
+```
+
+Combined with OpenAI's `semantic_vad` configured with `create_response: true` (line 2290), this means **OpenAI auto-creates responses whenever it detects speech** — completely bypassing the server's "wait for `resume_interview`" logic.
+
+The server correctly avoids sending its own `response.create` for restored sessions (lines 2493–2501), but this is irrelevant because OpenAI's VAD independently triggers responses from the leaked audio.
+
+**This means:**
+- Even if the client correctly pauses, any stray audio that reaches the server will be forwarded to OpenAI
+- OpenAI's VAD will detect speech in those fragments and auto-respond
+- The server's pause/resume gating is effectively a no-op for audio forwarding
+
+### 4.3 Root Cause 3: Stale `isAiSpeaking` Closure in Audio Processor
+
+**Location:** `client/src/pages/interview.tsx`, lines 817–865
+
+**The problem:** The `isAiSpeaking` variable used in the `onaudioprocess` handler is captured by closure when `startAudioCapture()` is called:
+
+```javascript
+// Line 817-820 (inside startAudioCapture callback)
+processor.onaudioprocess = (e) => {
+  if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+  if (isAiSpeaking) return; // ❌ Stale closure — frozen at call-time value
+  // ...
+};
+
+// Line 865 — isAiSpeaking is in the dependency array
+}, [initAudioContext, isAiSpeaking, startSilenceMonitoring, addAudioToSilenceBuffer]);
+```
+
+While `isAiSpeaking` is in the `useCallback` dependency array (meaning the callback reference updates when `isAiSpeaking` changes), the `onaudioprocess` handler is only set **when the function is called**, not when the callback reference updates. The handler permanently captures `isAiSpeaking`'s value at call time.
+
+For the orphaned processor1, `isAiSpeaking` was `false` when the initial `startAudioCapture()` was called, so it **never suppresses audio during AI speech**. This exacerbates the problem because the orphaned processor sends audio even while Alvia is speaking, creating echo/feedback loops.
+
+**Contrast with refs:** `wsRef.current` and `silencePauseActiveRef.current` are React refs, so they always reflect the current value. `isAiSpeaking` is a state variable captured by closure, so it's stale.
+
+---
+
+## 5. Proposed Fixes
+
+### 5.1 Fix 1: Stop Audio Capture on WebSocket Close
+
+**File:** `client/src/pages/interview.tsx`
+**Lines:** 488–500
+
+Add `stopAudioCapture()` to the `ws.onclose` handler:
+
+```javascript
+ws.onclose = () => {
+  console.log("[Interview] WebSocket closed");
+  setIsConnected(false);
+  setIsConnecting(false);
+  setIsListening(false);
+  stopAudioCapture(); // ✅ Clean up audio processor and media stream
+  hasSentResumeRef.current = false;
+  if (heartbeatIntervalRef.current) {
+    clearInterval(heartbeatIntervalRef.current);
+    heartbeatIntervalRef.current = null;
+  }
+};
+```
+
+**Note:** `stopAudioCapture` must be added to the dependency array of `connectWebSocket`'s `useCallback`, or the reference inside the closure may be stale. Since `stopAudioCapture` is itself memoized with `useCallback`, this should be safe.
+
+### 5.2 Fix 2: Defensive Cleanup in `startAudioCapture`
+
+**File:** `client/src/pages/interview.tsx`
+**Lines:** 796–865
+
+Add a defensive cleanup at the start of `startAudioCapture()` to ensure any orphaned processor/stream from a previous session is cleaned up before creating new ones:
+
+```javascript
+const startAudioCapture = useCallback(async () => {
+  try {
+    // ✅ Defensive cleanup: stop any orphaned audio from previous session
+    // This prevents doubled audio processors after reconnection
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    const audioContext = await initAudioContext();
+    const stream = await navigator.mediaDevices.getUserMedia({ ... });
+    // ... rest of function
+  }
+}, [...]);
+```
+
+This is a belt-and-suspenders fix that protects against the leak even if the `ws.onclose` fix is somehow bypassed.
+
+### 5.3 Fix 3: Server-Side Audio Gating
+
+**File:** `server/voice-interview.ts`
+**Lines:** 2528–2541
+
+Add `isPaused` check before forwarding audio to the provider:
+
+```javascript
+case "audio":
+  state.lastActivityAt = Date.now();
+  state.terminationWarned = false;
+  // ✅ Don't forward audio to provider when interview is paused
+  if (state.isPaused) {
+    break;
+  }
+  if (state.providerWs.readyState === WebSocket.OPEN) {
+    state.providerWs.send(JSON.stringify({
+      type: "input_audio_buffer.append",
+      audio: message.audio,
+    }));
+  }
+  break;
+```
+
+This acts as a server-side safety net. Even if the client has a leaked audio processor, the server will drop audio when the session is paused.
+
+**Optional enhancement:** Also gate on a `waitingForResume` flag for restored sessions, preventing any audio forwarding until `resume_interview` is received:
+
+```javascript
+case "audio":
+  state.lastActivityAt = Date.now();
+  state.terminationWarned = false;
+  if (state.isPaused || state.awaitingResume) {
+    break;
+  }
+  // ... forward to provider
+```
+
+Where `state.awaitingResume` is set to `true` for restored sessions and cleared when `resume_interview` is received. This prevents OpenAI from auto-responding via VAD before the user explicitly resumes.
+
+### 5.4 Fix 4: Use Ref for `isAiSpeaking` in Audio Processor
+
+**File:** `client/src/pages/interview.tsx`
+
+Replace the stale closure capture with a ref:
+
+```javascript
+// Add ref to track isAiSpeaking (avoids stale closure in onaudioprocess)
+const isAiSpeakingRef = useRef(false);
+useEffect(() => {
+  isAiSpeakingRef.current = isAiSpeaking;
+}, [isAiSpeaking]);
+
+// Then in startAudioCapture:
+processor.onaudioprocess = (e) => {
+  if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+  if (isAiSpeakingRef.current) return; // ✅ Always reflects current value
+  // ...
+};
+```
+
+This ensures the audio suppression during AI speech works correctly regardless of when the processor was created.
+
+**Additionally**, remove `isAiSpeaking` from the `useCallback` dependency array of `startAudioCapture`, since it's no longer captured by closure. This prevents unnecessary re-creation of the callback when `isAiSpeaking` changes (which is frequent during an interview).
+
+---
+
+## 6. Impact Assessment
+
+| Fix | Severity | Risk | Effort |
+|-----|----------|------|--------|
+| Fix 1 (stopAudioCapture on close) | **Critical** — eliminates the leaked processor | Low — straightforward cleanup | Small — 1 line + dependency array |
+| Fix 2 (defensive cleanup in startAudioCapture) | **High** — belt-and-suspenders protection | Low — idempotent cleanup | Small — 5 lines |
+| Fix 3 (server-side audio gating) | **High** — safety net for any client-side leak | Low — server already tracks isPaused | Small — 3 lines |
+| Fix 4 (isAiSpeaking ref) | **Medium** — prevents echo during AI speech | Low — standard React ref pattern | Small — 5 lines |
+
+All four fixes should be implemented together. Fix 1 is the most critical. Fix 3 provides server-side defense-in-depth. Fixes 2 and 4 harden the system against edge cases.
+
+---
+
+## 7. Diagnostic Logging for Recurring Disconnections
+
+This user experiences frequent WebSocket disconnections. The current logging is minimal — the server logs "Client disconnected" but captures no diagnostic information about **why** the disconnection occurred. We need targeted logging on both client and server to identify the root cause.
+
+### 7.1 Likely Causes of Recurring Disconnections
+
+Based on the logs (the server saw a real `close` event from the client at 15:43:39.85, not a heartbeat timeout), the disconnection is initiated from the client side or the network layer. Likely causes:
+
+1. **Network instability** — Wi-Fi roaming, captive portals, corporate proxies, mobile data switching. Typically produces WebSocket close code `1006` (abnormal closure) on the client.
+2. **Browser lifecycle events** — Tab backgrounded, device sleep, power saver mode, iOS Safari aggressive throttling. Browsers may close WebSockets or throttle timers when tabs are backgrounded, causing heartbeat failures.
+3. **Page navigation or reload** — Accidental refresh, route change, crash recovery. Typically produces close code `1001` (going away) or `1000` (normal closure).
+4. **Server restarts or hot reloads** — Would close all sockets simultaneously. Less likely for a single user's recurring issue.
+5. **Proxy/load balancer timeouts** — Some infrastructure (Cloudflare, nginx, AWS ALB) has WebSocket idle timeouts (often 60s or 120s). If the heartbeat interval doesn't keep the connection active through the proxy, it may be silently dropped.
+
+### 7.2 Client-Side Logging Enhancements
+
+#### 7.2.1 WebSocket Close Event Details
+
+**File:** `client/src/pages/interview.tsx` — `ws.onclose` handler
+
+The WebSocket `close` event provides `code`, `reason`, and `wasClean` — none of which are currently logged. These are the single most valuable diagnostic signals:
+
+```javascript
+ws.onclose = (event) => {
+  console.log("[Interview] WebSocket closed", {
+    code: event.code,
+    reason: event.reason,
+    wasClean: event.wasClean,
+    onLine: navigator.onLine,
+    visibilityState: document.visibilityState,
+    hasFocus: document.hasFocus(),
+    timeSinceOpen: Date.now() - wsOpenTimeRef.current,
+  });
+  // ... existing cleanup
+};
+```
+
+**Close code reference:**
+| Code | Meaning | Likely cause |
+|------|---------|-------------|
+| 1000 | Normal closure | Client-initiated (page nav, intentional close) |
+| 1001 | Going away | Page unload, navigation |
+| 1005 | No status code | No close frame received (proxy dropped?) |
+| 1006 | Abnormal closure | Network failure, connection dropped without close frame |
+| 1008 | Policy violation | Server rejected message |
+| 1011 | Server error | Server-side exception |
+| 1012 | Service restart | Server restarting |
+| 1013 | Try again later | Server temporarily unavailable |
+
+If we see `1006` with `navigator.onLine = true` and `visibilityState = "visible"`, that points to proxy/infrastructure timeout. If `visibilityState = "hidden"`, it's browser throttling.
+
+#### 7.2.2 Browser Lifecycle Event Logging
+
+Add event listeners for browser lifecycle events that commonly cause WebSocket disconnections. These should be added in the interview component's mount effect and cleaned up on unmount:
+
+```javascript
+useEffect(() => {
+  const logLifecycleEvent = (eventName: string) => (e: Event) => {
+    console.log(`[Interview] Lifecycle: ${eventName}`, {
+      visibilityState: document.visibilityState,
+      onLine: navigator.onLine,
+      hasFocus: document.hasFocus(),
+      wsState: wsRef.current?.readyState,
+      timestamp: Date.now(),
+    });
+  };
+
+  const handlers = {
+    visibilitychange: logLifecycleEvent("visibilitychange"),
+    pagehide: logLifecycleEvent("pagehide"),
+    pageshow: logLifecycleEvent("pageshow"),
+    online: logLifecycleEvent("online"),
+    offline: logLifecycleEvent("offline"),
+    freeze: logLifecycleEvent("freeze"),     // Page Lifecycle API
+    resume: logLifecycleEvent("resume"),      // Page Lifecycle API
+  };
+
+  document.addEventListener("visibilitychange", handlers.visibilitychange);
+  window.addEventListener("pagehide", handlers.pagehide);
+  window.addEventListener("pageshow", handlers.pageshow);
+  window.addEventListener("online", handlers.online);
+  window.addEventListener("offline", handlers.offline);
+  document.addEventListener("freeze", handlers.freeze);
+  document.addEventListener("resume", handlers.resume);
+
+  return () => {
+    document.removeEventListener("visibilitychange", handlers.visibilitychange);
+    window.removeEventListener("pagehide", handlers.pagehide);
+    window.removeEventListener("pageshow", handlers.pageshow);
+    window.removeEventListener("online", handlers.online);
+    window.removeEventListener("offline", handlers.offline);
+    document.removeEventListener("freeze", handlers.freeze);
+    document.removeEventListener("resume", handlers.resume);
+  };
+}, []);
+```
+
+**What this tells us:**
+- If `visibilitychange` to `"hidden"` precedes a disconnect → browser backgrounding is the cause
+- If `offline` precedes a disconnect → network failure
+- If `freeze` is logged → browser froze the page (modern browsers do this for backgrounded tabs)
+- If `pagehide` precedes → page navigation
+
+#### 7.2.3 Heartbeat Diagnostics
+
+Add round-trip timing to heartbeat pings to detect network degradation before a full disconnect:
+
+```javascript
+// In heartbeat interval
+heartbeatIntervalRef.current = setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    const pingTime = Date.now();
+    ws.send(JSON.stringify({
+      type: 'heartbeat.ping',
+      sentAt: pingTime,
+    }));
+
+    // Log if heartbeat is significantly delayed (timer throttled by browser)
+    const expectedInterval = HEARTBEAT_INTERVAL_MS;
+    if (lastHeartbeatSentRef.current) {
+      const actualInterval = pingTime - lastHeartbeatSentRef.current;
+      if (actualInterval > expectedInterval * 2) {
+        console.warn("[Interview] Heartbeat delayed", {
+          expected: expectedInterval,
+          actual: actualInterval,
+          ratio: (actualInterval / expectedInterval).toFixed(1),
+          visibilityState: document.visibilityState,
+        });
+      }
+    }
+    lastHeartbeatSentRef.current = pingTime;
+  }
+}, HEARTBEAT_INTERVAL_MS);
+```
+
+This detects browser timer throttling (common in backgrounded tabs) which can cause heartbeat failures that lead to watchdog termination.
+
+#### 7.2.4 Send Diagnostic Data to Server
+
+To make client-side diagnostics available in server logs (since we can't always access the user's browser console), send diagnostic data over the WebSocket:
+
+```javascript
+ws.onclose = (event) => {
+  // If we can still send (closing but not closed), send diagnostics
+  // Otherwise, log client-side only
+  const diagnostics = {
+    type: "disconnect_diagnostics",
+    closeCode: event.code,
+    closeReason: event.reason,
+    wasClean: event.wasClean,
+    onLine: navigator.onLine,
+    visibilityState: document.visibilityState,
+    hasFocus: document.hasFocus(),
+    userAgent: navigator.userAgent,
+    timeSinceOpen: Date.now() - wsOpenTimeRef.current,
+  };
+
+  // Log to console always
+  console.log("[Interview] Disconnect diagnostics:", diagnostics);
+
+  // Try to send to server via fetch (WS is closing)
+  try {
+    navigator.sendBeacon(
+      `/api/sessions/${sessionId}/disconnect-log`,
+      JSON.stringify(diagnostics)
+    );
+  } catch (e) {
+    // Best effort
+  }
+};
+```
+
+Using `navigator.sendBeacon()` ensures the diagnostic data is sent even during page unload, when a regular `fetch` might be cancelled.
+
+### 7.3 Server-Side Logging Enhancements
+
+#### 7.3.1 WebSocket Close Code and Reason
+
+**File:** `server/voice-interview.ts` — `clientWs.on("close")` handlers (lines 942–952 and similar)
+
+The `ws` library provides `code` and `reason` parameters to the `close` event handler. These are not currently logged:
+
+```javascript
+// Current code — lines 942-951
+clientWs.on("close", () => {
+  console.log(`[VoiceInterview] Client disconnected: ${sessionId}`);
+  // ...
+});
+
+// Proposed enhancement:
+clientWs.on("close", (code, reason) => {
+  const state = interviewStates.get(sessionId);
+  const timeSinceHeartbeat = state?.lastHeartbeatAt
+    ? Date.now() - state.lastHeartbeatAt
+    : null;
+  const timeSinceActivity = state?.lastActivityAt
+    ? Date.now() - state.lastActivityAt
+    : null;
+
+  console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
+    closeCode: code,
+    closeReason: reason?.toString() || "(none)",
+    timeSinceLastHeartbeat: timeSinceHeartbeat ? `${timeSinceHeartbeat}ms` : "unknown",
+    timeSinceLastActivity: timeSinceActivity ? `${timeSinceActivity}ms` : "unknown",
+    sessionAge: state ? `${Date.now() - state.createdAt}ms` : "unknown",
+    isPaused: state?.isPaused || false,
+    questionIndex: state?.currentQuestionIndex,
+  });
+  // ... existing cleanup
+});
+```
+
+**This applies to all three `clientWs.on("close")` registrations:**
+- Line 942 (reconnection handler)
+- Line 1099 (new session handler)
+- Any other registration points
+
+#### 7.3.2 Heartbeat Tracking
+
+Log heartbeat round-trip metrics to detect degrading connections:
+
+```javascript
+case "heartbeat.ping":
+  const timeSinceLastHeartbeat = state.lastHeartbeatAt
+    ? Date.now() - state.lastHeartbeatAt
+    : null;
+
+  // Warn if heartbeat gap is significantly longer than expected
+  if (timeSinceLastHeartbeat && timeSinceLastHeartbeat > HEARTBEAT_INTERVAL_MS * 3) {
+    console.warn(`[Heartbeat] Large gap for ${sessionId}: ${timeSinceLastHeartbeat}ms (expected ~${HEARTBEAT_INTERVAL_MS}ms)`);
+  }
+
+  state.lastHeartbeatAt = Date.now();
+  state.terminationWarned = false;
+
+  // Send pong with server timestamp for RTT measurement
+  if (state.clientWs?.readyState === WebSocket.OPEN) {
+    state.clientWs.send(JSON.stringify({
+      type: "heartbeat.pong",
+      serverTime: Date.now(),
+      clientSentAt: message.sentAt, // Echo back for RTT calc
+    }));
+  }
+  break;
+```
+
+#### 7.3.3 Disconnect Diagnostics Endpoint
+
+Add a beacon endpoint to receive client-side disconnect diagnostics:
+
+```javascript
+// In server/routes.ts
+app.post("/api/sessions/:sessionId/disconnect-log", (req, res) => {
+  const { sessionId } = req.params;
+  const diagnostics = req.body;
+  console.log(`[DisconnectDiag] Session ${sessionId}:`, {
+    closeCode: diagnostics.closeCode,
+    closeReason: diagnostics.closeReason,
+    wasClean: diagnostics.wasClean,
+    onLine: diagnostics.onLine,
+    visibilityState: diagnostics.visibilityState,
+    hasFocus: diagnostics.hasFocus,
+    userAgent: diagnostics.userAgent,
+    timeSinceOpen: diagnostics.timeSinceOpen,
+    ip: req.ip || req.headers["x-forwarded-for"],
+  });
+  res.status(204).end();
+});
+```
+
+#### 7.3.4 WebSocket Connection Metadata
+
+Log connection metadata when a new WebSocket connects, to correlate with disconnection patterns:
+
+```javascript
+// When new WS connection is established
+console.log(`[VoiceInterview] New connection for session: ${sessionId}`, {
+  remoteAddress: clientWs._socket?.remoteAddress,
+  forwardedFor: request?.headers?.["x-forwarded-for"],
+  userAgent: request?.headers?.["user-agent"],
+  origin: request?.headers?.origin,
+});
+```
+
+### 7.4 Debug Flag (Optional)
+
+To avoid noisy logs in production, gate verbose diagnostics behind a `debug=1` query parameter on the WebSocket URL:
+
+**Client:** Add `debug=1` to the WS URL when needed:
+```javascript
+const debugMode = new URLSearchParams(window.location.search).get("debug") === "1";
+const wsUrl = `${protocol}//${host}/ws/interview?sessionId=${sessionId}&provider=${provider}${debugMode ? "&debug=1" : ""}`;
+```
+
+**Server:** Check for debug flag and enable verbose logging:
+```javascript
+const debugMode = url.searchParams.get("debug") === "1";
+// ... store in state
+if (state.debugMode) {
+  console.log(`[VoiceInterview][DEBUG] Detailed event: ...`);
+}
+```
+
+This allows per-session diagnostic logging without affecting other users.
+
+### 7.5 Questions to Ask the User
+
+To narrow down the disconnect cause faster, gather:
+
+1. **What browser and device?** (Chrome desktop, Safari iOS, etc.) — iOS Safari is notorious for aggressive WebSocket throttling.
+2. **Was the tab backgrounded or screen locked when the disconnect happened?** — This would point to browser lifecycle throttling.
+3. **What kind of network?** (Corporate Wi-Fi, home broadband, mobile data) — Corporate proxies often have WebSocket idle timeouts.
+4. **Does it happen at roughly the same time interval?** — A consistent interval (e.g., every 60s or 120s) would point to a proxy/load balancer timeout.
+5. **Are they using any browser extensions?** — Some privacy/security extensions interfere with WebSocket connections.
+
+---
+
+## 8. Testing Plan
+
+### 8.1 Reproducing the Bug
+
+1. Start a voice interview session
+2. Disconnect the WebSocket (e.g., toggle network off briefly, or close the WS via browser DevTools)
+3. Wait for watchdog termination (~2 minutes)
+4. Click the mic button to reconnect
+5. **Verify:** Check browser DevTools console for active MediaStream tracks — there should be only one set, not two
+6. **Verify:** Check that Alvia waits for mic click before speaking
+7. Click pause — **Verify:** Alvia stops responding entirely
+
+### 8.2 Verifying the Fixes
+
+1. **Fix 1 test:** After WebSocket close, verify `processorRef.current` is null and all MediaStream tracks are stopped
+2. **Fix 2 test:** Call `startAudioCapture()` twice in succession — verify only one processor/stream is active
+3. **Fix 3 test:** Send audio while `isPaused=true` on server — verify it is not forwarded to OpenAI (check OpenAI token usage)
+4. **Fix 4 test:** Start audio capture, change `isAiSpeaking` to true — verify the processor stops sending audio (check with a logging wrapper)
+
+### 8.3 Edge Cases
+
+- Rapid disconnect/reconnect cycles (< 1 second apart)
+- Disconnect during pause state
+- Disconnect during AI speech
+- Disconnect during `startAudioCapture()` (between `getUserMedia` and processor creation)
+- Multiple tab instances of the same interview session
+- Browser back/forward navigation to the interview page
+
+---
+
+## 9. Summary of All Changes
+
+| # | File | Change | Lines |
+|---|------|--------|-------|
+| 1 | `client/src/pages/interview.tsx` | Add `stopAudioCapture()` to `ws.onclose` | ~488 |
+| 2 | `client/src/pages/interview.tsx` | Add defensive cleanup at start of `startAudioCapture()` | ~796 |
+| 3 | `server/voice-interview.ts` | Add `state.isPaused` check before audio forwarding | ~2528 |
+| 4 | `server/voice-interview.ts` | Add `state.awaitingResume` flag for restored sessions | ~2528, ~2697 |
+| 5 | `client/src/pages/interview.tsx` | Replace `isAiSpeaking` closure with `isAiSpeakingRef` | ~820 |
+| 6 | `client/src/pages/interview.tsx` | Enhanced `ws.onclose` logging with close code/reason | ~488 |
+| 7 | `client/src/pages/interview.tsx` | Browser lifecycle event logging | New effect |
+| 8 | `client/src/pages/interview.tsx` | Heartbeat delay detection | ~472 |
+| 9 | `client/src/pages/interview.tsx` | `sendBeacon` disconnect diagnostics | ~488 |
+| 10 | `server/voice-interview.ts` | Log close code/reason in `clientWs.on("close")` | ~942, ~1099 |
+| 11 | `server/voice-interview.ts` | Heartbeat gap warning logging | Heartbeat handler |
+| 12 | `server/voice-interview.ts` | Connection metadata logging | ~986 |
+| 13 | `server/routes.ts` | Disconnect diagnostics beacon endpoint | New route |
