@@ -419,10 +419,12 @@ function calculateSilenceStats(
 
 interface SessionWatchdogState {
   interval: ReturnType<typeof setInterval> | null;
+  pingInterval: ReturnType<typeof setInterval> | null; // WebSocket protocol-level pings
 }
 
 const watchdogState: SessionWatchdogState = {
   interval: null,
+  pingInterval: null,
 };
 
 const PERSIST_DEBOUNCE_MS = 2000;
@@ -435,6 +437,8 @@ const SESSION_IDLE_TIMEOUT_MS = 5 * 60_000; // Terminate after 5 min of no activ
 const SESSION_MAX_AGE_MS = 60 * 60_000; // Absolute max session duration: 1 hour
 const WATCHDOG_INTERVAL_MS = 30_000; // Run watchdog every 30s
 const TERMINATION_WARNING_MS = 30_000; // Warn client 30s before termination
+// WebSocket protocol-level ping interval - prevents infrastructure (load balancer/proxy) timeouts
+const WS_PING_INTERVAL_MS = 30_000; // Send ws.ping() every 30s to keep connection alive at protocol level
 
 const interviewStates = new Map<string, InterviewState>();
 
@@ -1161,6 +1165,16 @@ export function handleVoiceInterview(
     if (state) {
       state.clientDisconnectedAt = Date.now();
       state.clientWs = null;
+    }
+  });
+
+  // Handle pong responses to server-initiated protocol pings
+  // This confirms the WebSocket connection is alive at the protocol level
+  clientWs.on("pong", () => {
+    const state = interviewStates.get(sessionId);
+    if (state) {
+      // Update heartbeat timestamp - protocol-level pong confirms connection is alive
+      state.lastHeartbeatAt = Date.now();
     }
   });
 }
@@ -4085,9 +4099,18 @@ function startSessionWatchdog(): void {
     runWatchdogCycle();
   }, WATCHDOG_INTERVAL_MS);
 
+  // Start WebSocket protocol-level ping interval
+  // This prevents infrastructure timeouts (load balancers, proxies) that may not respect
+  // application-level heartbeats - they specifically look for ws ping/pong frames
+  watchdogState.pingInterval = setInterval(() => {
+    sendProtocolPings();
+  }, WS_PING_INTERVAL_MS);
+
   console.log(
     "[SessionWatchdog] Started - checking every",
     WATCHDOG_INTERVAL_MS / 1000,
+    "seconds, WS pings every",
+    WS_PING_INTERVAL_MS / 1000,
     "seconds",
   );
 }
@@ -4096,7 +4119,34 @@ function stopSessionWatchdog(): void {
   if (watchdogState.interval) {
     clearInterval(watchdogState.interval);
     watchdogState.interval = null;
-    console.log("[SessionWatchdog] Stopped - no active sessions");
+  }
+  if (watchdogState.pingInterval) {
+    clearInterval(watchdogState.pingInterval);
+    watchdogState.pingInterval = null;
+  }
+  console.log("[SessionWatchdog] Stopped - no active sessions");
+}
+
+function sendProtocolPings(): void {
+  const now = Date.now();
+  let pingsSent = 0;
+  let errors = 0;
+  
+  for (const [sessionId, state] of interviewStates) {
+    // Only ping connected clients
+    if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
+      try {
+        state.clientWs.ping();
+        pingsSent++;
+      } catch (error) {
+        errors++;
+        console.error(`[WS-Ping] Failed to ping client ${sessionId}:`, error);
+      }
+    }
+  }
+  
+  if (pingsSent > 0 || errors > 0) {
+    console.log(`[WS-Ping] Sent ${pingsSent} protocol pings, ${errors} errors`);
   }
 }
 
