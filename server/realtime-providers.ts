@@ -80,9 +80,9 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
       voice: "marin",
       input_audio_format: "pcm16",
       output_audio_format: "pcm16",
-      //input_audio_noise_reduction: {
-      //  type: "near_field",
-      //},
+      input_audio_noise_reduction: {
+        type: "near_field",
+      },
       input_audio_transcription: {
         model: "gpt-4o-mini-transcribe",
         language: "en",

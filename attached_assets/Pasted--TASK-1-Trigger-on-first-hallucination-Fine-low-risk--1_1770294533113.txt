@@ -1,0 +1,100 @@
+---             
+  TASK 1: Trigger on first hallucination — Fine, low risk                                                                                                                                 
+   
+  Changing >= 2 to >= 1 is reasonable. A single non-Latin script hallucination (Korean, Chinese from an English speaker) is always a severe signal. Minor risk of false positive if a     
+  respondent says a non-English proper noun, but an environment check is a gentle intervention — not harmful if it fires once incorrectly.
+
+  Verdict: Approve.
+
+  ---
+  TASK 2: Reduce cooldown — Broken as proposed
+
+  This change does nothing. Look at the guard at voice-interview.ts:1969-1971:
+
+  if (
+    qualityResult.shouldTriggerEnvironmentCheck &&
+    !state.transcriptionQualitySignals.environmentCheckTriggered  // ← THIS
+  ) {
+
+  environmentCheckTriggered is set to true at line 1973 and never reset. So regardless of what shouldTriggerCheck returns after the cooldown, the if block never executes again. The
+  environment check fires exactly once per session, period.
+
+  Changing the cooldown from 15 to 5 in shouldTriggerCheck has no effect because the caller never allows re-entry.
+
+  To actually make re-triggering work, they'd need to also remove or modify the !environmentCheckTriggered guard — or reset it after the cooldown. The Replit agent didn't notice this.
+
+  Verdict: Reject — dead code change.
+
+  ---
+  TASK 3: Discard hallucinated transcripts — Has a bug and a fundamental design flaw
+
+  Bug: The string comparison is wrong. The detectedIssues array contains strings like:
+  "Foreign language: Non-Latin: Korean"
+  But the proposed code checks:
+  qualityResult.detectedIssues.includes('foreign_language')
+  This does an exact array element match. 'foreign_language' !== 'Foreign language: Non-Latin: Korean'. It would never match. It should be:
+  qualityResult.detectedIssues.some(issue => issue.startsWith('Foreign language'))
+
+  Side effects from early return:
+  - Skips state.questionIndexAtSpeechStart = null at line 2012 — corrupts the next transcription's question index attribution
+  - Skips scheduleDebouncedPersist(sessionId) — the placeholder entry won't be persisted
+  - Skips sending user_transcript to the client at lines 2040-2046 — client doesn't know speech was detected
+  - The placeholder "[unclear audio - please repeat]" will be fed to Barbara in future transcript analysis as if the respondent said it
+
+  Fundamental design flaw: It doesn't actually stop Alvia from responding to garbage. The OpenAI config has create_response: true in the VAD settings (line 93). This means:
+
+  1. VAD detects speech_stopped
+  2. OpenAI immediately auto-creates a response based on the raw audio
+  3. The transcription arrives separately as conversation.item.input_audio_transcription.completed
+
+  By the time we see the transcription and detect it's a hallucination, Alvia has already heard the audio and is responding to it. Discarding the transcript only affects logging and
+  Barbara — it doesn't prevent Alvia from "going wappy" because her response was triggered from the audio, not from the transcription text.
+
+  To actually prevent Alvia from responding to garbage, you'd need to either:
+  - Set create_response: false and manually trigger responses after validating transcription quality (adds latency)
+  - Send response.cancel when a hallucination is detected, then inject a "could you repeat that?" prompt
+
+  Both are significantly more complex than what's proposed. The honest answer is: noise reduction (already enabled) is the primary defense. Discarding the transcript is downstream
+  cosmetics.
+
+  Verdict: Reject as proposed — has a bug that makes it non-functional, and even if fixed, doesn't solve the stated problem.
+
+  ---
+  TASK 4: removeAllListeners() before close — Fine, good hygiene
+
+  This is a clean improvement. The connectionId guards already handle this, so this is belt-and-suspenders, but instant listener removal is better than relying on async close + guards.
+
+  Verdict: Approve.
+
+  ---
+  TASK 5: Fix totalDurationMs — Direction correct, approach fragile
+
+  The column exists in the schema (shared/schema.ts:179) and is never written by voice-interview.ts (confirmed: zero matches). So the data integrity bug is real.
+
+  However, scattering totalDurationMs: Date.now() - session.startedAt.getTime() across 7 different completion points is error-prone. It would be better to calculate this once in
+  finalizeAndPersistMetrics or cleanupSession — the centralized paths that already handle session finalization.
+
+  Verdict: Approve the goal, but centralize the fix rather than patching 7 locations.
+
+  ---
+  Summary
+  Task: 1. First hallucination triggers check
+  Verdict: Approve
+  Issue: Fine
+  ────────────────────────────────────────
+  Task: 2. Reduce cooldown 15→5
+  Verdict: Reject
+  Issue: Dead code — the one-time guard at line 1970 blocks re-triggering regardless
+  ────────────────────────────────────────
+  Task: 3. Discard hallucinated transcripts
+  Verdict: Reject
+  Issue: String comparison bug; early return skips state cleanup; doesn't stop Alvia responding (response already triggered by VAD before transcription arrives)
+  ────────────────────────────────────────
+  Task: 4. removeAllListeners()
+  Verdict: Approve
+  Issue: Good hygiene
+  ────────────────────────────────────────
+  Task: 5. Fix totalDurationMs
+  Verdict: Rework
+  Issue: Centralize instead of 7 copy-paste locations
+  Tasks 2 and 3 need redesigning before implementation.
