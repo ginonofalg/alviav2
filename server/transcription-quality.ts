@@ -15,6 +15,9 @@ export function createEmptyQualitySignals(): TranscriptionQualitySignals {
     environmentCheckTriggered: false,
     environmentCheckTriggeredAt: null,
     utterancesSinceEnvironmentCheck: 0,
+    consecutiveGoodUtterances: 0,
+    vadEagernessReduced: false,
+    vadEagernessReducedAt: null,
   };
 }
 
@@ -395,4 +398,56 @@ export function createQualityMetrics(
     flagsDetected: getQualityFlags(signals),
     environmentCheckCount: signals.environmentCheckTriggered ? 1 : 0,
   };
+}
+
+export function shouldReduceVadEagerness(
+  signals: TranscriptionQualitySignals,
+): boolean {
+  if (signals.vadEagernessReduced) {
+    return false;
+  }
+
+  if (signals.shortUtteranceStreak >= 4 && signals.foreignLanguageCount === 0) {
+    return true;
+  }
+
+  return false;
+}
+
+export function shouldRestoreVadEagerness(
+  signals: TranscriptionQualitySignals,
+): boolean {
+  if (!signals.vadEagernessReduced) {
+    return false;
+  }
+
+  if (signals.consecutiveGoodUtterances >= 10) {
+    return true;
+  }
+
+  return false;
+}
+
+export function updateGoodUtteranceTracking(
+  signals: TranscriptionQualitySignals,
+  sanitizedUtteranceText: string,
+): void {
+  const words = sanitizedUtteranceText
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  
+  const hasQualityIssues =
+    signals.shortUtteranceStreak > 0 ||
+    signals.foreignLanguageCount > 0 ||
+    signals.incoherentPhraseCount > 0 ||
+    signals.repeatedWordGlitchCount > 0;
+
+  const isGoodUtterance = words.length >= 3 && !hasQualityIssues;
+
+  if (isGoodUtterance) {
+    signals.consecutiveGoodUtterances++;
+  } else {
+    signals.consecutiveGoodUtterances = 0;
+  }
 }

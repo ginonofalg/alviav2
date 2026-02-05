@@ -47,6 +47,7 @@ The system organizes data hierarchically: **Workspace → Project → InterviewT
 - **Enhanced Transcription Quality Handling**: Environment check triggers on first foreign language hallucination (not 2+). Re-triggering enabled after 5-utterance cooldown when quality issues persist. Implemented via guard reset logic in `server/voice-interview.ts` and reduced cooldown in `server/transcription-quality.ts`.
 - **WebSocket Connection Cleanup**: Uses `removeAllListeners()` before `close()` for instant cleanup of orphaned provider/client connections, preventing stale event processing. ConnectionId guards remain as secondary safety net.
 - **Session Duration Tracking**: `totalDurationMs` now centrally computed in `finalizeAndPersistMetrics` and persisted to database for data integrity.
+- **Dynamic VAD Eagerness Adjustment**: Mid-session adjustment of OpenAI's semantic VAD eagerness. When `shortUtteranceStreak >= 4` with no foreign language hallucinations (indicating VAD timing issues, not transcription quality), eagerness is reduced from "auto" to "low". Restored to "auto" after 10 consecutive good utterances (≥3 words, no quality issues). Tracked via `vadEagernessReduced` and `consecutiveGoodUtterances` in TranscriptionQualitySignals. Only applies to OpenAI (Grok uses server_vad). Implementation in `server/voice-interview.ts:sendVadEagernessUpdate()` and `server/transcription-quality.ts`.
 
 ## External Dependencies
 

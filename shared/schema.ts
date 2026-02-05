@@ -473,6 +473,9 @@ export type TranscriptionQualitySignals = {
   environmentCheckTriggered: boolean;
   environmentCheckTriggeredAt: number | null;
   utterancesSinceEnvironmentCheck: number;
+  consecutiveGoodUtterances: number;
+  vadEagernessReduced: boolean;
+  vadEagernessReducedAt: number | null;
 };
 
 export type TranscriptionQualityMetrics = {

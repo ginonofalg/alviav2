@@ -37,6 +37,9 @@ import {
   createQualityMetrics,
   getQualityFlags,
   sanitizeGlitchedTranscript,
+  shouldReduceVadEagerness,
+  shouldRestoreVadEagerness,
+  updateGoodUtteranceTracking,
 } from "./transcription-quality";
 import {
   getRealtimeProvider,
@@ -2009,6 +2012,29 @@ async function handleProviderEvent(
             event.transcript,
           );
 
+          // Update good utterance tracking for VAD recovery (uses sanitized transcript)
+          updateGoodUtteranceTracking(
+            state.transcriptionQualitySignals,
+            sanitizedTranscript,
+          );
+
+          // VAD eagerness adjustment (separate from environment check - different problems)
+          // Reduce eagerness when we detect VAD timing issues (short utterance streak without hallucinations)
+          if (shouldReduceVadEagerness(state.transcriptionQualitySignals)) {
+            state.transcriptionQualitySignals.vadEagernessReduced = true;
+            state.transcriptionQualitySignals.vadEagernessReducedAt = Date.now();
+            state.transcriptionQualitySignals.consecutiveGoodUtterances = 0;
+            sendVadEagernessUpdate(state, sessionId, "low");
+          }
+
+          // Restore eagerness when quality improves (10 consecutive good utterances)
+          if (shouldRestoreVadEagerness(state.transcriptionQualitySignals)) {
+            state.transcriptionQualitySignals.vadEagernessReduced = false;
+            state.transcriptionQualitySignals.vadEagernessReducedAt = null;
+            state.transcriptionQualitySignals.consecutiveGoodUtterances = 0;
+            sendVadEagernessUpdate(state, sessionId, "auto");
+          }
+
           // Add to transcript log (both in-memory and persistence buffer)
           addTranscriptEntry(state, {
             speaker: "respondent",
@@ -2209,6 +2235,38 @@ Then continue the interview naturally once they acknowledge.`;
       type: "barbara_guidance",
       guidance: environmentGuidance,
     }),
+  );
+}
+
+function sendVadEagernessUpdate(
+  state: InterviewState,
+  sessionId: string,
+  eagerness: "auto" | "low",
+): void {
+  if (!state.providerInstance.supportsSemanticVAD()) {
+    return;
+  }
+
+  if (state.providerWs?.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  state.providerWs.send(
+    JSON.stringify({
+      type: "session.update",
+      session: {
+        turn_detection: {
+          type: "semantic_vad",
+          eagerness: eagerness,
+          create_response: true,
+          interrupt_response: true,
+        },
+      },
+    }),
+  );
+
+  console.log(
+    `[VadEagerness] Session ${sessionId}: Changed eagerness to "${eagerness}"`,
   );
 }
 
