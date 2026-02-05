@@ -931,6 +931,11 @@ export function handleVoiceInterview(
     existingState.lastHeartbeatAt = now;
     existingState.lastActivityAt = now;
     existingState.terminationWarned = false;
+    
+    // Set awaitingResume for server-side defense-in-depth
+    // This gates audio forwarding until the client explicitly sends a resume signal
+    // Prevents any stray audio from triggering OpenAI VAD after reconnection
+    existingState.awaitingResume = true;
 
     // Set up message handlers for reconnected client
     clientWs.on("message", (data) => {
@@ -3407,6 +3412,16 @@ Do not attempt to answer any questions or continue the interview.`;
       // Client detected speech after silence and is sending buffered audio
       // The buffered audio contains the first moments of speech (captured during silence)
       // to avoid losing audio due to the delay between speech detection and resumption
+      
+      // Gate audio forwarding on pause/resume state (same as regular audio path)
+      // This prevents buffered audio from bypassing the pause/awaiting-resume gate
+      if (state.isPaused || state.awaitingResume) {
+        console.log(
+          `[VoiceInterview] Discarding client_resuming_audio while paused/awaiting resume for session: ${sessionId}`,
+        );
+        break;
+      }
+      
       console.log(
         `[VoiceInterview] Client resuming audio with buffer for session: ${sessionId}`,
       );

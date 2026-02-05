@@ -214,8 +214,11 @@ export default function InterviewPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
-  // Ref to track isAiSpeaking - avoids stale closure in onaudioprocess handler
+  // Refs to track state values - avoids stale closures in callbacks
   const isAiSpeakingRef = useRef(false);
+  const isListeningRef = useRef(false);
+  const isPausedRef = useRef(false);
+  const isTextOnlyModeRef = useRef(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentQuestionText, setCurrentQuestionText] = useState<string>("");
@@ -686,9 +689,10 @@ export default function InterviewPage() {
       setIsConnecting(false);
       
       // Save listening state before clearing it (for reconnect logic)
-      wasListeningBeforeDisconnectRef.current = isListening;
+      // Use refs to avoid stale closure issue (connectWebSocket doesn't include these in deps)
+      wasListeningBeforeDisconnectRef.current = isListeningRef.current;
       // Determine if we should auto-resume on reconnect
-      shouldAutoResumeRef.current = isListening && !isPaused && !isTextOnlyMode;
+      shouldAutoResumeRef.current = isListeningRef.current && !isPausedRef.current && !isTextOnlyModeRef.current;
       
       setIsListening(false);
       // CRITICAL: Stop audio capture to prevent leaked/orphaned audio processors
@@ -1081,7 +1085,7 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture, initAudioContext],
+    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, startAudioCapture],
   );
 
   // Track silence pause state in a ref for use in audio processor callback
@@ -1090,10 +1094,19 @@ export default function InterviewPage() {
     silencePauseActiveRef.current = silencePauseActive;
   }, [silencePauseActive]);
 
-  // Sync isAiSpeakingRef with isAiSpeaking state for stable closure in audio processor
+  // Sync refs with state for stable closures in callbacks (ws.onclose, onaudioprocess, etc.)
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
   }, [isAiSpeaking]);
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+  useEffect(() => {
+    isTextOnlyModeRef.current = isTextOnlyMode;
+  }, [isTextOnlyMode]);
 
   // Start audio capture
   const startAudioCapture = useCallback(async () => {
