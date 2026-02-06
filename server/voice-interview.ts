@@ -941,7 +941,7 @@ export function handleVoiceInterview(
     existingState.lastHeartbeatAt = now;
     existingState.lastActivityAt = now;
     existingState.terminationWarned = false;
-    
+
     // Set awaitingResume for server-side defense-in-depth
     // This gates audio forwarding until the client explicitly sends a resume signal
     // Prevents any stray audio from triggering OpenAI VAD after reconnection
@@ -969,8 +969,12 @@ export function handleVoiceInterview(
       console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
         closeCode: code,
         closeReason: reason?.toString() || "(none)",
-        timeSinceLastHeartbeat: timeSinceHeartbeat ? `${timeSinceHeartbeat}ms` : "unknown",
-        timeSinceLastActivity: timeSinceActivity ? `${timeSinceActivity}ms` : "unknown",
+        timeSinceLastHeartbeat: timeSinceHeartbeat
+          ? `${timeSinceHeartbeat}ms`
+          : "unknown",
+        timeSinceLastActivity: timeSinceActivity
+          ? `${timeSinceActivity}ms`
+          : "unknown",
         sessionAge: state ? `${Date.now() - state.createdAt}ms` : "unknown",
         isPaused: state?.isPaused || false,
         questionIndex: state?.currentQuestionIndex,
@@ -1007,7 +1011,10 @@ export function handleVoiceInterview(
         isResumed: true,
         persistedTranscript: existingState.fullTranscriptForPersistence,
         provider: existingState.providerType,
-        vadEagerness: existingState.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
+        vadEagerness: existingState.transcriptionQualitySignals
+          .vadEagernessReduced
+          ? "low"
+          : "auto",
         // Include pause/resume state for client reconnection logic
         awaitingResume: existingState.awaitingResume,
         isPaused: existingState.isPaused,
@@ -1150,8 +1157,12 @@ export function handleVoiceInterview(
     console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
       closeCode: code,
       closeReason: reason?.toString() || "(none)",
-      timeSinceLastHeartbeat: timeSinceHeartbeat ? `${timeSinceHeartbeat}ms` : "unknown",
-      timeSinceLastActivity: timeSinceActivity ? `${timeSinceActivity}ms` : "unknown",
+      timeSinceLastHeartbeat: timeSinceHeartbeat
+        ? `${timeSinceHeartbeat}ms`
+        : "unknown",
+      timeSinceLastActivity: timeSinceActivity
+        ? `${timeSinceActivity}ms`
+        : "unknown",
       sessionAge: state ? `${Date.now() - state.createdAt}ms` : "unknown",
       isPaused: state?.isPaused || false,
       questionIndex: state?.currentQuestionIndex,
@@ -1232,7 +1243,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
-    state.endOfInterviewSummaryEnabled = collection.endOfInterviewSummaryEnabled ?? false;
+    state.endOfInterviewSummaryEnabled =
+      collection.endOfInterviewSummaryEnabled ?? false;
 
     // Determine if this is a restored session based on session status or progress
     // This catches all cases: in_progress, paused, or any session with question progress
@@ -1520,7 +1532,9 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         currentAQIndex: state.isInAdditionalQuestionsPhase
           ? state.currentAdditionalQuestionIndex
           : undefined,
-        vadEagerness: state.transcriptionQualitySignals.vadEagernessReduced ? "low" : "auto",
+        vadEagerness: state.transcriptionQualitySignals.vadEagernessReduced
+          ? "low"
+          : "auto",
         // Include pause/resume state for client reconnection logic
         awaitingResume: state.awaitingResume,
         isPaused: state.isPaused,
@@ -1635,7 +1649,7 @@ function buildInterviewInstructions(
         .join("\n")
     : "";
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview in English.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
@@ -1678,10 +1692,11 @@ INSTRUCTIONS:
 8. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up
 10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.`;
+11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
+12. Use British English, active voice, Oxford commas, varied sentence length, and strictly avoid em dashes, rhetorical questions, emojis, metaphors, clichés, hedging, buzzwords, and filler transitions.`;
 
   if (barbaraGuidance) {
-    instructions += `\n\ORCHESTRATOR'S GUIDANCE (Barbara):
+    instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
 ${barbaraGuidance}
  Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then - incorporate this guidance naturally when appropriate, not necessarily immediately.`;
   }
@@ -1826,12 +1841,11 @@ RESUME INSTRUCTIONS:
 9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
 11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.`;
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
+13. Use British English, active voice, Oxford commas, varied sentence length, and strictly avoid em dashes, rhetorical questions, emojis, metaphors, clichés, hedging, buzzwords, and filler transitions.`;
 
   if (lastBarbaraGuidance) {
-    instructions += `
-
-ORCHESTRATOR'S GUIDANCE (Barbara):
+    instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
 ${lastBarbaraGuidance}
 Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage - incorporate this guidance naturally when appropriate.`;
   }
@@ -2070,7 +2084,8 @@ async function handleProviderEvent(
             correctQuestionIndex,
           );
           // Get question type for short-utterance tracking (skip for yes_no, scale, numeric)
-          const currentQuestionForQuality = state.questions[correctQuestionIndex];
+          const currentQuestionForQuality =
+            state.questions[correctQuestionIndex];
           const qualityResult = updateQualitySignals(
             state.transcriptionQualitySignals,
             event.transcript,
@@ -2090,7 +2105,8 @@ async function handleProviderEvent(
           if (
             qualityResult.shouldTriggerEnvironmentCheck &&
             state.transcriptionQualitySignals.environmentCheckTriggered &&
-            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >= 5
+            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >=
+              5
           ) {
             state.transcriptionQualitySignals.environmentCheckTriggered = false;
           }
@@ -2139,7 +2155,8 @@ async function handleProviderEvent(
           // Reduce eagerness when we detect VAD timing issues (short utterance streak without hallucinations)
           if (shouldReduceVadEagerness(state.transcriptionQualitySignals)) {
             state.transcriptionQualitySignals.vadEagernessReduced = true;
-            state.transcriptionQualitySignals.vadEagernessReducedAt = Date.now();
+            state.transcriptionQualitySignals.vadEagernessReducedAt =
+              Date.now();
             state.transcriptionQualitySignals.consecutiveGoodUtterances = 0;
             sendVadEagernessUpdate(state, sessionId, "low");
           }
@@ -2271,12 +2288,14 @@ async function handleProviderEvent(
 
       if (state.isGeneratingAlviaSummary) {
         const textItem = event.response?.output?.[0]?.content?.find(
-          (c: any) => c.type === "text"
+          (c: any) => c.type === "text",
         );
         if (textItem?.text && state.alviaSummaryResolve) {
           state.alviaSummaryResolve(textItem.text);
         } else if (state.alviaSummaryReject) {
-          state.alviaSummaryReject(new Error("No text content in Alvia summary response"));
+          state.alviaSummaryReject(
+            new Error("No text content in Alvia summary response"),
+          );
         }
         state.isGeneratingAlviaSummary = false;
         state.alviaSummaryResolve = null;
@@ -2318,7 +2337,7 @@ async function handleProviderEvent(
 
 // Reduced timeout since Barbara analysis is now non-blocking (lag-by-one-turn architecture)
 // Barbara has more time to analyze since her guidance applies to the NEXT turn
-const BARBARA_TIMEOUT_MS = 5000;
+const BARBARA_TIMEOUT_MS = 10000;
 
 function injectEnvironmentCheckGuidance(
   state: InterviewState,
@@ -3257,7 +3276,9 @@ Do not attempt to answer any questions or continue the interview.`;
             // before navigating to the review page
             await new Promise((resolve) => setTimeout(resolve, 3000));
 
-            await finalizeInterview(sessionId, { additionalQuestionPhase: false });
+            await finalizeInterview(sessionId, {
+              additionalQuestionPhase: false,
+            });
           } else {
             // Store the questions and enter AQ phase
             currentState.additionalQuestions = aqResult.questions;
@@ -3359,7 +3380,9 @@ Do not attempt to answer any questions or continue the interview.`;
           // Await any pending summaries before completing
           await awaitPendingSummaries(sessionId);
 
-          await finalizeInterview(sessionId, { additionalQuestionPhase: false });
+          await finalizeInterview(sessionId, {
+            additionalQuestionPhase: false,
+          });
         }
       }
       break;
@@ -3415,7 +3438,7 @@ Do not attempt to answer any questions or continue the interview.`;
       // Client detected speech after silence and is sending buffered audio
       // The buffered audio contains the first moments of speech (captured during silence)
       // to avoid losing audio due to the delay between speech detection and resumption
-      
+
       // Gate audio forwarding on pause/resume state (same as regular audio path)
       // This prevents buffered audio from bypassing the pause/awaiting-resume gate
       if (state.isPaused || state.awaitingResume) {
@@ -3424,7 +3447,7 @@ Do not attempt to answer any questions or continue the interview.`;
         );
         break;
       }
-      
+
       console.log(
         `[VoiceInterview] Client resuming audio with buffer for session: ${sessionId}`,
       );
@@ -4052,8 +4075,14 @@ function finalizeAndPersistMetrics(
 
 async function generateAlviaSummary(sessionId: string): Promise<string | null> {
   const state = interviewStates.get(sessionId);
-  if (!state || !state.providerWs || state.providerWs.readyState !== WebSocket.OPEN) {
-    console.log(`[AlviaSummary] Cannot generate - no active provider WS for ${sessionId}`);
+  if (
+    !state ||
+    !state.providerWs ||
+    state.providerWs.readyState !== WebSocket.OPEN
+  ) {
+    console.log(
+      `[AlviaSummary] Cannot generate - no active provider WS for ${sessionId}`,
+    );
     return null;
   }
 
@@ -4062,7 +4091,8 @@ async function generateAlviaSummary(sessionId: string): Promise<string | null> {
   try {
     state.isGeneratingAlviaSummary = true;
 
-    const templateObjective = state.template?.objective || "General research interview";
+    const templateObjective =
+      state.template?.objective || "General research interview";
     const project = state.template?.projectId
       ? await storage.getProject(state.template.projectId)
       : null;
@@ -4091,38 +4121,52 @@ Respond with ONLY the JSON object. No other text.`;
     });
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Alvia summary timed out")), ALVIA_SUMMARY_TIMEOUT_MS);
+      setTimeout(
+        () => reject(new Error("Alvia summary timed out")),
+        ALVIA_SUMMARY_TIMEOUT_MS,
+      );
     });
 
-    const sessionConfig = state.providerInstance.buildSessionConfig(summaryPrompt);
-    state.providerWs.send(JSON.stringify({
-      type: "session.update",
-      session: {
-        ...sessionConfig,
-        modalities: ["text"],
-        turn_detection: null,
-      },
-    }));
+    const sessionConfig =
+      state.providerInstance.buildSessionConfig(summaryPrompt);
+    state.providerWs.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          ...sessionConfig,
+          modalities: ["text"],
+          turn_detection: null,
+        },
+      }),
+    );
 
-    state.providerWs.send(JSON.stringify({
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [{
-          type: "input_text",
-          text: summaryPrompt,
-        }],
-      },
-    }));
+    state.providerWs.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: summaryPrompt,
+            },
+          ],
+        },
+      }),
+    );
 
-    state.providerWs.send(JSON.stringify({
-      type: "response.create",
-      response: { modalities: ["text"] },
-    }));
+    state.providerWs.send(
+      JSON.stringify({
+        type: "response.create",
+        response: { modalities: ["text"] },
+      }),
+    );
 
     const result = await Promise.race([summaryPromise, timeoutPromise]);
-    console.log(`[AlviaSummary] Generated summary for ${sessionId} (${result.length} chars)`);
+    console.log(
+      `[AlviaSummary] Generated summary for ${sessionId} (${result.length} chars)`,
+    );
     return result;
   } catch (error) {
     console.error(`[AlviaSummary] Failed for ${sessionId}:`, error);
@@ -4147,7 +4191,8 @@ async function triggerBarbaraSessionSummary(
     const result = await generateSessionSummary({
       transcript: transcriptSnapshot,
       questionSummaries: summariesSnapshot,
-      templateObjective: state.template?.objective || "General research interview",
+      templateObjective:
+        state.template?.objective || "General research interview",
       projectObjective: project?.objective,
       strategicContext: state.strategicContext || undefined,
       questions: state.questions.map((q: any) => ({
@@ -4166,7 +4211,10 @@ async function triggerBarbaraSessionSummary(
   }
 }
 
-async function finalizeInterview(sessionId: string, extraPatch?: Partial<InterviewStatePatch>): Promise<void> {
+async function finalizeInterview(
+  sessionId: string,
+  extraPatch?: Partial<InterviewStatePatch>,
+): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
@@ -4176,40 +4224,61 @@ async function finalizeInterview(sessionId: string, extraPatch?: Partial<Intervi
     clientWs.send(JSON.stringify({ type: "interview_complete" }));
   }
 
-  await storage.persistInterviewState(sessionId, {
-    status: "completed",
-    completedAt: new Date(),
-    ...extraPatch,
-  });
-
   if (state.endOfInterviewSummaryEnabled) {
-    const transcriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
-    const summariesSnapshot = state.questionSummaries.filter((s): s is QuestionSummary => s != null);
-    const stateSnapshot = { ...state, template: state.template, strategicContext: state.strategicContext, questions: [...state.questions] };
+    const transcriptSnapshot = [
+      ...state.fullTranscriptForPersistence,
+    ] as TranscriptEntry[];
+    const summariesSnapshot = state.questionSummaries.filter(
+      (s): s is QuestionSummary => s != null,
+    );
+    const stateSnapshot = {
+      ...state,
+      template: state.template,
+      strategicContext: state.strategicContext,
+      questions: [...state.questions],
+    };
 
-    const alviaSummaryPromise = generateAlviaSummary(sessionId).then(async (alviaSummaryText) => {
-      if (alviaSummaryText) {
-        try {
-          const parsed = JSON.parse(alviaSummaryText) as AlviaSessionSummary;
-          parsed.generatedAt = Date.now();
-          parsed.model = state.providerType === "openai" ? "gpt-4o-mini-realtime" : "grok-3-fast";
-          parsed.provider = state.providerType;
-          await storage.persistInterviewState(sessionId, { alviaSummary: parsed });
-          console.log(`[AlviaSummary] Persisted for ${sessionId}`);
-        } catch (parseError) {
-          const fallback: AlviaSessionSummary = {
-            themes: [],
-            overallSummary: alviaSummaryText,
-            objectiveSatisfaction: { assessment: "Unable to parse structured response", coveredAreas: [], gaps: [] },
-            generatedAt: Date.now(),
-            model: state.providerType === "openai" ? "gpt-4o-mini-realtime" : "grok-3-fast",
-            provider: state.providerType,
-          };
-          await storage.persistInterviewState(sessionId, { alviaSummary: fallback });
-          console.warn(`[AlviaSummary] Stored raw text fallback for ${sessionId}`);
+    const alviaSummaryPromise = generateAlviaSummary(sessionId).then(
+      async (alviaSummaryText) => {
+        if (alviaSummaryText) {
+          try {
+            const parsed = JSON.parse(alviaSummaryText) as AlviaSessionSummary;
+            parsed.generatedAt = Date.now();
+            parsed.model =
+              state.providerType === "openai"
+                ? "gpt-4o-mini-realtime"
+                : "grok-3-fast";
+            parsed.provider = state.providerType;
+            await storage.persistInterviewState(sessionId, {
+              alviaSummary: parsed,
+            });
+            console.log(`[AlviaSummary] Persisted for ${sessionId}`);
+          } catch (parseError) {
+            const fallback: AlviaSessionSummary = {
+              themes: [],
+              overallSummary: alviaSummaryText,
+              objectiveSatisfaction: {
+                assessment: "Unable to parse structured response",
+                coveredAreas: [],
+                gaps: [],
+              },
+              generatedAt: Date.now(),
+              model:
+                state.providerType === "openai"
+                  ? "gpt-4o-mini-realtime"
+                  : "grok-3-fast",
+              provider: state.providerType,
+            };
+            await storage.persistInterviewState(sessionId, {
+              alviaSummary: fallback,
+            });
+            console.warn(
+              `[AlviaSummary] Stored raw text fallback for ${sessionId}`,
+            );
+          }
         }
-      }
-    });
+      },
+    );
 
     const barbaraSummaryPromise = triggerBarbaraSessionSummary(
       sessionId,
@@ -4221,10 +4290,18 @@ async function finalizeInterview(sessionId: string, extraPatch?: Partial<Intervi
     try {
       await Promise.allSettled([alviaSummaryPromise, barbaraSummaryPromise]);
     } catch (error) {
-      console.error(`[SessionSummary] Error during summary generation for ${sessionId}:`, error);
+      console.error(
+        `[SessionSummary] Error during summary generation for ${sessionId}:`,
+        error,
+      );
     }
   }
 
+  await storage.persistInterviewState(sessionId, {
+    status: "completed",
+    completedAt: new Date(),
+    ...extraPatch,
+  });
   cleanupSession(sessionId, "completed");
 }
 
@@ -4295,7 +4372,7 @@ function sendProtocolPings(): void {
   const now = Date.now();
   let pingsSent = 0;
   let errors = 0;
-  
+
   for (const [sessionId, state] of interviewStates) {
     // Only ping connected clients
     if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
@@ -4308,7 +4385,7 @@ function sendProtocolPings(): void {
       }
     }
   }
-  
+
   if (pingsSent > 0 || errors > 0) {
     console.log(`[WS-Ping] Sent ${pingsSent} protocol pings, ${errors} errors`);
   }
