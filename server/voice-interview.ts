@@ -3354,7 +3354,22 @@ Do not attempt to answer any questions or continue the interview.`;
       state.lastActivityAt = Date.now();
       state.additionalQuestionsConsent = false;
 
-      // Await pending summaries before completing
+      {
+        // Generate summary for the final question before completing
+        const declineTranscriptSnapshot = [
+          ...state.fullTranscriptForPersistence,
+        ] as TranscriptEntry[];
+        const declineFinalQuestionIdx = state.currentQuestionIndex;
+
+        const declineSummaryPromise = generateAndPersistSummary(
+          sessionId,
+          declineFinalQuestionIdx,
+          declineTranscriptSnapshot,
+        );
+        state.pendingSummaryPromises.set(declineFinalQuestionIdx, declineSummaryPromise);
+      }
+
+      // Await all pending summaries (including the final one just triggered)
       await awaitPendingSummaries(sessionId);
 
       await finalizeInterview(sessionId, { additionalQuestionPhase: false });
