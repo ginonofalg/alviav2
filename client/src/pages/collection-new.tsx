@@ -42,6 +42,7 @@ const collectionFormSchema = z.object({
   expiresAt: z.string().optional(),
   voiceProvider: z.enum(["openai", "grok"]).default("openai"),
   maxAdditionalQuestions: z.number().min(0).max(3).default(1),
+  endOfInterviewSummaryEnabled: z.boolean().default(false),
 });
 
 type CollectionFormData = z.infer<typeof collectionFormSchema>;
@@ -68,6 +69,7 @@ export default function CollectionNewPage() {
       expiresAt: "",
       voiceProvider: "openai",
       maxAdditionalQuestions: 1,
+      endOfInterviewSummaryEnabled: false,
     },
   });
 
@@ -412,6 +414,28 @@ export default function CollectionNewPage() {
                         checked={field.value}
                         onCheckedChange={field.onChange}
                         data-testid="switch-is-open"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="endOfInterviewSummaryEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between">
+                    <div>
+                      <FormLabel>End-of-Interview Summary</FormLabel>
+                      <FormDescription className="text-xs">
+                        Generate dual-perspective summaries when each interview completes (Alvia's audio-informed view and Barbara's analytical view)
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-end-of-interview-summary"
                       />
                     </FormControl>
                   </FormItem>

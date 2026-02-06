@@ -111,6 +111,7 @@ const editCollectionSchema = z.object({
   isActive: z.boolean(),
   voiceProvider: z.enum(["openai", "grok"]),
   maxAdditionalQuestions: z.number().min(0).max(3).default(1),
+  endOfInterviewSummaryEnabled: z.boolean().default(false),
 });
 
 type EditCollectionForm = z.infer<typeof editCollectionSchema>;
@@ -173,6 +174,7 @@ export default function CollectionDetailPage() {
       isActive: true,
       voiceProvider: "openai",
       maxAdditionalQuestions: 1,
+      endOfInterviewSummaryEnabled: false,
     },
   });
 
@@ -188,6 +190,7 @@ export default function CollectionDetailPage() {
           isActive: data.isActive,
           voiceProvider: data.voiceProvider,
           maxAdditionalQuestions: data.maxAdditionalQuestions,
+          endOfInterviewSummaryEnabled: data.endOfInterviewSummaryEnabled,
         },
       );
     },
@@ -219,6 +222,7 @@ export default function CollectionDetailPage() {
         isActive: collection.isActive ?? true,
         voiceProvider: (collection.voiceProvider as "openai" | "grok") || "openai",
         maxAdditionalQuestions: collection.maxAdditionalQuestions ?? 1,
+        endOfInterviewSummaryEnabled: collection.endOfInterviewSummaryEnabled ?? false,
       });
       setEditDialogOpen(true);
     }
@@ -931,6 +935,28 @@ export default function CollectionDetailPage() {
                         checked={field.value}
                         onCheckedChange={field.onChange}
                         data-testid="switch-collection-active"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="endOfInterviewSummaryEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>End-of-Interview Summary</FormLabel>
+                      <FormDescription>
+                        Generate dual-perspective summaries when each interview completes
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-end-of-interview-summary"
                       />
                     </FormControl>
                   </FormItem>

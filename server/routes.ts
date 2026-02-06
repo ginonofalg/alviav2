@@ -15,6 +15,7 @@ import {
   updateAnalysisConfig, 
   updateTopicOverlapConfig, 
   updateSummarisationConfig,
+  updateSessionSummaryConfig,
   updateTemplateAnalyticsConfig,
   updateProjectAnalyticsConfig,
   ALLOWED_MODELS,
@@ -22,6 +23,8 @@ import {
   generateTemplateAnalytics,
   generateProjectAnalytics,
   generateTemplateFromProject,
+  generateSessionSummary,
+  type TranscriptEntry,
 } from "./barbara-orchestrator";
 import { getInfographicService } from "./infographic-service";
 import { InfographicPromptBuilder } from "./infographic-prompts";
@@ -1670,6 +1673,7 @@ export async function registerRoutes(
     isActive: z.boolean().optional(),
     voiceProvider: z.enum(["openai", "grok"]).optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).optional(),
+    endOfInterviewSummaryEnabled: z.boolean().optional(),
   });
 
   app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
@@ -1715,6 +1719,7 @@ export async function registerRoutes(
     name: z.string().min(1).max(100),
     targetResponses: z.number().min(1).optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).default(1),
+    endOfInterviewSummaryEnabled: z.boolean().default(false),
   });
 
   app.post("/api/templates/:templateId/collections", isAuthenticated, async (req: any, res) => {
@@ -3034,6 +3039,7 @@ export async function registerRoutes(
     analysis: barbaraUseCaseConfigSchema.optional(),
     topicOverlap: barbaraUseCaseConfigSchema.optional(),
     summarisation: barbaraUseCaseConfigSchema.optional(),
+    sessionSummary: barbaraUseCaseConfigSchema.optional(),
   });
 
   // GET /api/barbara/config - Get current Barbara configuration
@@ -3112,6 +3118,80 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating summarisation config:", error);
       res.status(500).json({ message: "Failed to update summarisation configuration" });
+    }
+  });
+
+  // PATCH /api/barbara/config/session-summary - Update session summary configuration
+  app.patch("/api/barbara/config/session-summary", isAuthenticated, async (req, res) => {
+    try {
+      const parseResult = barbaraUseCaseConfigSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const errorMessage = fromError(parseResult.error).toString();
+        return res.status(400).json({ message: errorMessage });
+      }
+
+      const updatedConfig = updateSessionSummaryConfig(parseResult.data);
+      res.json(updatedConfig);
+    } catch (error) {
+      console.error("Error updating session summary config:", error);
+      res.status(500).json({ message: "Failed to update session summary configuration" });
+    }
+  });
+
+  // POST /api/sessions/:id/generate-summary - Manually regenerate Barbara session summary
+  app.post("/api/sessions/:id/generate-summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const session = await storage.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, session.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (session.status !== "completed") {
+        return res.status(400).json({ message: "Session must be completed to generate summary" });
+      }
+
+      const collection = await storage.getCollection(session.collectionId);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const template = await storage.getTemplate(collection.templateId);
+      const project = template?.projectId ? await storage.getProject(template.projectId) : null;
+      const questions = await storage.getQuestionsByTemplate(collection.templateId);
+
+      const transcript = (session.liveTranscript || []) as TranscriptEntry[];
+      const questionSummaries = ((session.questionSummaries || []) as any[]).filter(Boolean);
+
+      if (transcript.length === 0) {
+        return res.status(400).json({ message: "No transcript data available for summary generation" });
+      }
+
+      const result = await generateSessionSummary({
+        transcript,
+        questionSummaries,
+        templateObjective: template?.objective || "General research interview",
+        projectObjective: project?.objective || undefined,
+        strategicContext: project?.strategicContext || undefined,
+        questions: questions.map((q) => ({
+          text: q.questionText,
+          guidance: q.guidance || null,
+        })),
+      });
+
+      await storage.persistInterviewState(req.params.id, {
+        barbaraSessionSummary: result,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error generating session summary:", error);
+      res.status(500).json({ message: "Failed to generate session summary" });
     }
   });
 

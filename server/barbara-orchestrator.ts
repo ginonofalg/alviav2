@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
+import type { BarbaraSessionSummary } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -35,6 +36,7 @@ export interface BarbaraConfig {
   projectAnalytics: BarbaraUseCaseConfig;
   templateGeneration: BarbaraUseCaseConfig;
   additionalQuestions: BarbaraUseCaseConfig;
+  sessionSummary: BarbaraUseCaseConfig;
 }
 
 // Default configuration - can be updated at runtime
@@ -74,6 +76,11 @@ const barbaraConfig: BarbaraConfig = {
     verbosity: "low",
     reasoningEffort: "low",
   },
+  sessionSummary: {
+    model: "gpt-5-mini",
+    verbosity: "medium",
+    reasoningEffort: "low",
+  },
 };
 
 // Getters and setters for Barbara configuration
@@ -107,6 +114,9 @@ export function updateBarbaraConfig(
       barbaraConfig.additionalQuestions,
       updates.additionalQuestions,
     );
+  }
+  if (updates.sessionSummary) {
+    Object.assign(barbaraConfig.sessionSummary, updates.sessionSummary);
   }
   return getBarbaraConfig();
 }
@@ -151,6 +161,13 @@ export function updateAdditionalQuestionsConfig(
 ): BarbaraUseCaseConfig {
   Object.assign(barbaraConfig.additionalQuestions, config);
   return { ...barbaraConfig.additionalQuestions };
+}
+
+export function updateSessionSummaryConfig(
+  config: Partial<BarbaraUseCaseConfig>,
+): BarbaraUseCaseConfig {
+  Object.assign(barbaraConfig.sessionSummary, config);
+  return { ...barbaraConfig.sessionSummary };
 }
 
 export interface TranscriptEntry {
@@ -3033,4 +3050,113 @@ ${transcriptText}
 ${crossInterviewText}
 
 Based on this interview, identify up to ${input.maxQuestions} additional question(s) that would add genuine value, or indicate if no additional questions are needed.`;
+}
+
+// --- End-of-Interview Session Summary ---
+
+export interface SessionSummaryInput {
+  transcript: TranscriptEntry[];
+  questionSummaries: QuestionSummary[];
+  templateObjective: string;
+  projectObjective?: string;
+  strategicContext?: string;
+  questions: Array<{ text: string; guidance: string | null }>;
+}
+
+export async function generateSessionSummary(
+  input: SessionSummaryInput,
+): Promise<BarbaraSessionSummary> {
+  const config = barbaraConfig.sessionSummary;
+
+  const transcriptText = input.transcript
+    .map((e) => `[${e.speaker === "alvia" ? "Interviewer" : "Respondent"}] ${e.text}`)
+    .join("\n");
+
+  const summariesText = input.questionSummaries
+    .map((s) => `Q${s.questionIndex + 1} (${s.questionText}): ${s.respondentSummary}`)
+    .join("\n\n");
+
+  const questionsText = input.questions
+    .map((q, i) => `Q${i + 1}: ${q.text}`)
+    .join("\n");
+
+  const systemPrompt = `You are Barbara, a research analyst reviewing a completed interview. Your role is to provide a rigorous, evidence-based analysis — not a conversational summary.
+
+You are evaluating an interview conducted by an AI interviewer (Alvia). Your analysis should be independent and critical.
+
+Output ONLY valid JSON matching this exact structure:
+{
+  "themes": [
+    {
+      "theme": "short theme name",
+      "description": "one-sentence description of the theme",
+      "supportingEvidence": ["direct quote or paraphrase from transcript"],
+      "sentiment": "positive" | "negative" | "neutral" | "mixed"
+    }
+  ],
+  "overallSummary": "3-5 sentence analytical narrative of key findings, patterns, and notable observations",
+  "objectiveSatisfaction": {
+    "rating": 0-100,
+    "assessment": "How well the interview addressed the research objectives, with specific reasoning",
+    "coveredObjectives": ["objectives that were adequately addressed"],
+    "gapsIdentified": ["objectives or areas that were not sufficiently explored"]
+  },
+  "respondentEngagement": {
+    "level": "low" | "moderate" | "high",
+    "notes": "Brief observation about response depth, willingness to elaborate, and overall engagement quality"
+  }
+}
+
+Guidelines:
+- Identify 2-6 themes based on substance, not quantity of mentions
+- Supporting evidence should reference specific statements from the transcript
+- The objective satisfaction rating should reflect how thoroughly the research objectives were addressed (0=not at all, 100=completely)
+- Be specific about gaps — vague assessments are unhelpful
+- Engagement assessment should be factual, not judgmental`;
+
+  const userPrompt = `=== RESEARCH OBJECTIVE ===
+${input.templateObjective}
+${input.projectObjective ? `\n=== BROADER RESEARCH OBJECTIVE ===\n${input.projectObjective}` : ""}
+${input.strategicContext ? `\n=== STRATEGIC CONTEXT ===\n${input.strategicContext}` : ""}
+
+=== INTERVIEW QUESTIONS ===
+${questionsText}
+
+=== QUESTION-BY-QUESTION SUMMARIES ===
+${summariesText}
+
+=== FULL TRANSCRIPT ===
+${transcriptText}
+
+Analyze this interview and provide your structured assessment.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error("Empty response from Barbara session summary");
+    }
+
+    const parsed = JSON.parse(content) as BarbaraSessionSummary;
+    parsed.generatedAt = Date.now();
+    parsed.model = config.model;
+
+    console.log(
+      `[Barbara] Session summary generated: ${parsed.themes.length} themes, objective rating: ${parsed.objectiveSatisfaction.rating}`,
+    );
+
+    return parsed;
+  } catch (error) {
+    console.error("[Barbara] Session summary generation failed:", error);
+    throw error;
+  }
 }

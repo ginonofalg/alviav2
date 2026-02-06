@@ -8,6 +8,7 @@ import {
   generateQuestionSummary,
   detectTopicOverlap,
   generateAdditionalQuestions,
+  generateSessionSummary,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
@@ -29,6 +30,7 @@ import type {
   SilenceContext,
   SilenceStats,
   TranscriptionQualitySignals,
+  AlviaSessionSummary,
 } from "@shared/schema";
 import {
   createEmptyQualitySignals,
@@ -116,6 +118,10 @@ interface InterviewState {
   additionalQuestionsConsent: boolean | null; // null = not yet asked, true/false = answered
   additionalQuestionsGenerating: boolean;
   maxAdditionalQuestions: number;
+  endOfInterviewSummaryEnabled: boolean;
+  isGeneratingAlviaSummary: boolean;
+  alviaSummaryResolve: ((text: string) => void) | null;
+  alviaSummaryReject: ((error: Error) => void) | null;
   // Track pending summary generation promises to await before completion
   pendingSummaryPromises: Map<number | string, Promise<void>>;
   // Response state tracking - prevents concurrent response.create calls
@@ -1104,6 +1110,10 @@ export function handleVoiceInterview(
     additionalQuestionsConsent: null,
     additionalQuestionsGenerating: false,
     maxAdditionalQuestions: 0, // Will be set from collection later
+    endOfInterviewSummaryEnabled: false, // Will be set from collection later
+    isGeneratingAlviaSummary: false,
+    alviaSummaryResolve: null,
+    alviaSummaryReject: null,
     pendingSummaryPromises: new Map(),
     // Response state tracking - prevents concurrent response.create calls
     responseInProgress: false,
@@ -1222,6 +1232,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
+    state.endOfInterviewSummaryEnabled = collection.endOfInterviewSummaryEnabled ?? false;
 
     // Determine if this is a restored session based on session status or progress
     // This catches all cases: in_progress, paused, or any session with question progress
@@ -2257,6 +2268,22 @@ async function handleProviderEvent(
           `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
         );
       }
+
+      if (state.isGeneratingAlviaSummary) {
+        const textItem = event.response?.output?.[0]?.content?.find(
+          (c: any) => c.type === "text"
+        );
+        if (textItem?.text && state.alviaSummaryResolve) {
+          state.alviaSummaryResolve(textItem.text);
+        } else if (state.alviaSummaryReject) {
+          state.alviaSummaryReject(new Error("No text content in Alvia summary response"));
+        }
+        state.isGeneratingAlviaSummary = false;
+        state.alviaSummaryResolve = null;
+        state.alviaSummaryReject = null;
+        break;
+      }
+
       clientWs?.send(JSON.stringify({ type: "response_done" }));
       break;
     }
@@ -3098,12 +3125,7 @@ INSTRUCTIONS:
           );
         } else {
           // AQs disabled or already handled - complete the interview
-          await storage.persistInterviewState(sessionId, {
-            status: "completed",
-            completedAt: new Date(),
-          });
-          clientWs.send(JSON.stringify({ type: "interview_complete" }));
-          cleanupSession(sessionId, "completed");
+          await finalizeInterview(sessionId);
         }
       }
       break;
@@ -3128,13 +3150,7 @@ INSTRUCTIONS:
       // Await all pending summaries (including the final one)
       await awaitPendingSummaries(sessionId);
 
-      // Update session status to completed
-      await storage.persistInterviewState(sessionId, {
-        status: "completed",
-        completedAt: new Date(),
-      });
-      clientWs.send(JSON.stringify({ type: "interview_complete" }));
-      cleanupSession(sessionId, "completed");
+      await finalizeInterview(sessionId);
       break;
     }
 
@@ -3241,14 +3257,7 @@ Do not attempt to answer any questions or continue the interview.`;
             // before navigating to the review page
             await new Promise((resolve) => setTimeout(resolve, 3000));
 
-            // Complete the interview
-            await storage.persistInterviewState(sessionId, {
-              status: "completed",
-              completedAt: new Date(),
-              additionalQuestionPhase: false,
-            });
-            safeSend({ type: "interview_complete" });
-            cleanupSession(sessionId, "completed");
+            await finalizeInterview(sessionId, { additionalQuestionPhase: false });
           } else {
             // Store the questions and enter AQ phase
             currentState.additionalQuestions = aqResult.questions;
@@ -3296,12 +3305,7 @@ Do not attempt to answer any questions or continue the interview.`;
           // Await pending summaries before completing
           await awaitPendingSummaries(sessionId);
 
-          await storage.persistInterviewState(sessionId, {
-            status: "completed",
-            completedAt: new Date(),
-          });
-          safeSend({ type: "interview_complete" });
-          cleanupSession(sessionId, "completed");
+          await finalizeInterview(sessionId);
         }
       })();
       break;
@@ -3314,13 +3318,7 @@ Do not attempt to answer any questions or continue the interview.`;
       // Await pending summaries before completing
       await awaitPendingSummaries(sessionId);
 
-      await storage.persistInterviewState(sessionId, {
-        status: "completed",
-        completedAt: new Date(),
-        additionalQuestionPhase: false,
-      });
-      clientWs.send(JSON.stringify({ type: "interview_complete" }));
-      cleanupSession(sessionId, "completed");
+      await finalizeInterview(sessionId, { additionalQuestionPhase: false });
       break;
 
     case "next_additional_question":
@@ -3361,13 +3359,7 @@ Do not attempt to answer any questions or continue the interview.`;
           // Await any pending summaries before completing
           await awaitPendingSummaries(sessionId);
 
-          await storage.persistInterviewState(sessionId, {
-            status: "completed",
-            completedAt: new Date(),
-            additionalQuestionPhase: false,
-          });
-          clientWs.send(JSON.stringify({ type: "interview_complete" }));
-          cleanupSession(sessionId, "completed");
+          await finalizeInterview(sessionId, { additionalQuestionPhase: false });
         }
       }
       break;
@@ -3403,13 +3395,7 @@ Do not attempt to answer any questions or continue the interview.`;
         // Await any pending summaries before completing
         await awaitPendingSummaries(sessionId);
 
-        await storage.persistInterviewState(sessionId, {
-          status: "completed",
-          completedAt: new Date(),
-          additionalQuestionPhase: false,
-        });
-        clientWs.send(JSON.stringify({ type: "interview_complete" }));
-        cleanupSession(sessionId, "completed");
+        await finalizeInterview(sessionId, { additionalQuestionPhase: false });
       }
       break;
 
@@ -4062,6 +4048,183 @@ function finalizeAndPersistMetrics(
         error,
       );
     });
+}
+
+async function generateAlviaSummary(sessionId: string): Promise<string | null> {
+  const state = interviewStates.get(sessionId);
+  if (!state || !state.providerWs || state.providerWs.readyState !== WebSocket.OPEN) {
+    console.log(`[AlviaSummary] Cannot generate - no active provider WS for ${sessionId}`);
+    return null;
+  }
+
+  const ALVIA_SUMMARY_TIMEOUT_MS = 30000;
+
+  try {
+    state.isGeneratingAlviaSummary = true;
+
+    const templateObjective = state.template?.objective || "General research interview";
+    const project = state.template?.projectId
+      ? await storage.getProject(state.template.projectId)
+      : null;
+    const projectObjective = project?.objective || "";
+
+    const summaryPrompt = `You are Alvia. You just finished conducting an interview.
+The interview objective was: ${templateObjective}
+${projectObjective ? `The broader research objective: ${projectObjective}` : ""}
+
+Based on your conversation, provide a JSON summary:
+{
+  "themes": [{ "theme": "short name", "description": "one sentence" }],
+  "overallSummary": "3-5 sentence narrative of key takeaways",
+  "objectiveSatisfaction": {
+    "assessment": "How well did this interview address the research objectives?",
+    "coveredAreas": ["Areas well covered"],
+    "gaps": ["Areas that weren't adequately explored"]
+  }
+}
+
+Respond with ONLY the JSON object. No other text.`;
+
+    const summaryPromise = new Promise<string>((resolve, reject) => {
+      state.alviaSummaryResolve = resolve;
+      state.alviaSummaryReject = reject;
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Alvia summary timed out")), ALVIA_SUMMARY_TIMEOUT_MS);
+    });
+
+    const sessionConfig = state.providerInstance.buildSessionConfig(summaryPrompt);
+    state.providerWs.send(JSON.stringify({
+      type: "session.update",
+      session: {
+        ...sessionConfig,
+        modalities: ["text"],
+        turn_detection: null,
+      },
+    }));
+
+    state.providerWs.send(JSON.stringify({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: summaryPrompt,
+        }],
+      },
+    }));
+
+    state.providerWs.send(JSON.stringify({
+      type: "response.create",
+      response: { modalities: ["text"] },
+    }));
+
+    const result = await Promise.race([summaryPromise, timeoutPromise]);
+    console.log(`[AlviaSummary] Generated summary for ${sessionId} (${result.length} chars)`);
+    return result;
+  } catch (error) {
+    console.error(`[AlviaSummary] Failed for ${sessionId}:`, error);
+    state.isGeneratingAlviaSummary = false;
+    state.alviaSummaryResolve = null;
+    state.alviaSummaryReject = null;
+    return null;
+  }
+}
+
+async function triggerBarbaraSessionSummary(
+  sessionId: string,
+  transcriptSnapshot: TranscriptEntry[],
+  summariesSnapshot: QuestionSummary[],
+  state: InterviewState,
+): Promise<void> {
+  try {
+    const project = state.template?.projectId
+      ? await storage.getProject(state.template.projectId)
+      : null;
+
+    const result = await generateSessionSummary({
+      transcript: transcriptSnapshot,
+      questionSummaries: summariesSnapshot,
+      templateObjective: state.template?.objective || "General research interview",
+      projectObjective: project?.objective,
+      strategicContext: state.strategicContext || undefined,
+      questions: state.questions.map((q: any) => ({
+        text: q.questionText,
+        guidance: q.guidance || null,
+      })),
+    });
+
+    await storage.persistInterviewState(sessionId, {
+      barbaraSessionSummary: result,
+    });
+
+    console.log(`[BarbaraSummary] Session summary persisted for ${sessionId}`);
+  } catch (error) {
+    console.error(`[BarbaraSummary] Failed for ${sessionId}:`, error);
+  }
+}
+
+async function finalizeInterview(sessionId: string, extraPatch?: Partial<InterviewStatePatch>): Promise<void> {
+  const state = interviewStates.get(sessionId);
+  if (!state) return;
+
+  const clientWs = state.clientWs;
+
+  if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+    clientWs.send(JSON.stringify({ type: "interview_complete" }));
+  }
+
+  if (state.endOfInterviewSummaryEnabled) {
+    const transcriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
+    const summariesSnapshot = state.questionSummaries.filter((s): s is QuestionSummary => s != null);
+    const stateSnapshot = { ...state, template: state.template, strategicContext: state.strategicContext, questions: [...state.questions] };
+
+    const alviaSummaryPromise = generateAlviaSummary(sessionId).then(async (alviaSummaryText) => {
+      if (alviaSummaryText) {
+        try {
+          const parsed = JSON.parse(alviaSummaryText) as AlviaSessionSummary;
+          parsed.generatedAt = Date.now();
+          parsed.model = state.providerType === "openai" ? "gpt-4o-mini-realtime" : "grok-3-fast";
+          parsed.provider = state.providerType;
+          await storage.persistInterviewState(sessionId, { alviaSummary: parsed });
+          console.log(`[AlviaSummary] Persisted for ${sessionId}`);
+        } catch (parseError) {
+          const fallback: AlviaSessionSummary = {
+            themes: [],
+            overallSummary: alviaSummaryText,
+            objectiveSatisfaction: { assessment: "Unable to parse structured response", coveredAreas: [], gaps: [] },
+            generatedAt: Date.now(),
+            model: state.providerType === "openai" ? "gpt-4o-mini-realtime" : "grok-3-fast",
+            provider: state.providerType,
+          };
+          await storage.persistInterviewState(sessionId, { alviaSummary: fallback });
+          console.warn(`[AlviaSummary] Stored raw text fallback for ${sessionId}`);
+        }
+      }
+    });
+
+    const barbaraSummaryPromise = triggerBarbaraSessionSummary(
+      sessionId,
+      transcriptSnapshot,
+      summariesSnapshot,
+      stateSnapshot as InterviewState,
+    );
+
+    try {
+      await Promise.allSettled([alviaSummaryPromise, barbaraSummaryPromise]);
+    } catch (error) {
+      console.error(`[SessionSummary] Error during summary generation for ${sessionId}:`, error);
+    }
+  }
+
+  await storage.persistInterviewState(sessionId, {
+    status: "completed",
+    completedAt: new Date(),
+    ...extraPatch,
+  });
+  cleanupSession(sessionId, "completed");
 }
 
 async function cleanupSession(sessionId: string, terminationReason?: string) {

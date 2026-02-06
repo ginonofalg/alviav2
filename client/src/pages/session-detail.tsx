@@ -56,7 +56,7 @@ import {
   Eye,
   AlertCircle
 } from "lucide-react";
-import type { InterviewSession, Segment, Question, QuestionSummary, Respondent, SessionReviewFlag, TranscriptionQualityMetrics } from "@shared/schema";
+import type { InterviewSession, Segment, Question, QuestionSummary, Respondent, SessionReviewFlag, TranscriptionQualityMetrics, AlviaSessionSummary, BarbaraSessionSummary } from "@shared/schema";
 import { format, formatDuration, intervalToDuration } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -533,6 +533,20 @@ export default function SessionDetailPage() {
     },
   });
 
+  const regenerateBarbaraSummaryMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sessions/${sessionId}/generate-summary`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions", sessionId] });
+      toast({ title: "Summary regenerated", description: "Barbara's analytical summary has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to regenerate summary", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleExport = async (format: "json" | "csv") => {
     try {
       const response = await fetch(`/api/sessions/${sessionId}/export?format=${format}`, {
@@ -841,6 +855,154 @@ export default function SessionDetailPage() {
             </TabsList>
 
             <TabsContent value="summary" className="space-y-4">
+              {/* Session-level summaries (Alvia + Barbara) */}
+              {(() => {
+                const alviaSummary = session.alviaSummary as AlviaSessionSummary | null;
+                const barbaraSummary = session.barbaraSessionSummary as BarbaraSessionSummary | null;
+                const canGenerateSummary = session.status === "completed" && !barbaraSummary;
+                if (!alviaSummary && !barbaraSummary && !canGenerateSummary) return null;
+                return (
+                  <div className="space-y-4" data-testid="section-session-summaries">
+                    <h3 className="text-sm font-medium text-muted-foreground">Session Summaries</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {alviaSummary && (
+                        <Card data-testid="card-alvia-summary">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">Alvia</Badge>
+                              <span className="text-xs text-muted-foreground">Audio-informed perspective</span>
+                            </div>
+                            <CardTitle className="text-sm font-medium">Conversational Summary</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-alvia-overall-summary">{alviaSummary.overallSummary}</p>
+                            {alviaSummary.themes.length > 0 && (
+                              <div className="space-y-1.5" data-testid="section-alvia-themes">
+                                <h4 className="text-xs font-medium">Key Themes</h4>
+                                {alviaSummary.themes.map((t, i) => (
+                                  <div key={i} className="text-xs" data-testid={`text-alvia-theme-${i}`}>
+                                    <span className="font-medium">{t.theme}</span>
+                                    <span className="text-muted-foreground"> — {t.description}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {alviaSummary.objectiveSatisfaction && (
+                              <div className="space-y-1.5" data-testid="section-alvia-objective">
+                                <h4 className="text-xs font-medium">Objective Coverage</h4>
+                                <p className="text-xs text-muted-foreground" data-testid="text-alvia-objective-assessment">{alviaSummary.objectiveSatisfaction.assessment}</p>
+                                {alviaSummary.objectiveSatisfaction.gaps.length > 0 && (
+                                  <div className="text-xs text-muted-foreground" data-testid="text-alvia-gaps">
+                                    <span className="font-medium">Gaps: </span>
+                                    {alviaSummary.objectiveSatisfaction.gaps.join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="text-xs text-muted-foreground pt-1 border-t" data-testid="text-alvia-model">
+                              {alviaSummary.provider} / {alviaSummary.model}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                      {!barbaraSummary && canGenerateSummary && (
+                        <Card data-testid="card-barbara-summary-empty">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">Barbara</Badge>
+                              <span className="text-xs text-muted-foreground">Analytical perspective</span>
+                            </div>
+                            <CardTitle className="text-sm font-medium">Analytical Summary</CardTitle>
+                          </CardHeader>
+                          <CardContent className="text-center py-4">
+                            <p className="text-sm text-muted-foreground mb-3">No analytical summary generated yet</p>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => regenerateBarbaraSummaryMutation.mutate()}
+                              disabled={regenerateBarbaraSummaryMutation.isPending}
+                              data-testid="button-generate-barbara-summary"
+                            >
+                              <RefreshCw className={`w-3 h-3 mr-1 ${regenerateBarbaraSummaryMutation.isPending ? "animate-spin" : ""}`} />
+                              {regenerateBarbaraSummaryMutation.isPending ? "Generating..." : "Generate Summary"}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
+                      {barbaraSummary && (
+                        <Card data-testid="card-barbara-summary">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">Barbara</Badge>
+                              <span className="text-xs text-muted-foreground">Analytical perspective</span>
+                            </div>
+                            <CardTitle className="text-sm font-medium">Analytical Summary</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-barbara-overall-summary">{barbaraSummary.overallSummary}</p>
+                            {barbaraSummary.themes.length > 0 && (
+                              <div className="space-y-1.5" data-testid="section-barbara-themes">
+                                <h4 className="text-xs font-medium">Key Themes</h4>
+                                {barbaraSummary.themes.map((t, i) => (
+                                  <div key={i} className="text-xs" data-testid={`text-barbara-theme-${i}`}>
+                                    <span className="font-medium">{t.theme}</span>
+                                    <Badge variant="secondary" className="text-[10px] ml-1" data-testid={`badge-barbara-sentiment-${i}`}>{t.sentiment}</Badge>
+                                    <p className="text-muted-foreground mt-0.5">{t.description}</p>
+                                    {t.supportingEvidence.length > 0 && (
+                                      <ul className="list-disc list-inside text-muted-foreground mt-0.5 space-y-0.5">
+                                        {t.supportingEvidence.map((e, j) => (
+                                          <li key={j}>{e}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {barbaraSummary.objectiveSatisfaction && (
+                              <div className="space-y-1.5" data-testid="section-barbara-objective">
+                                <h4 className="text-xs font-medium">Objective Satisfaction</h4>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs" data-testid="badge-barbara-rating">{barbaraSummary.objectiveSatisfaction.rating}/10</Badge>
+                                  <span className="text-xs text-muted-foreground" data-testid="text-barbara-objective-assessment">{barbaraSummary.objectiveSatisfaction.assessment}</span>
+                                </div>
+                                {barbaraSummary.objectiveSatisfaction.gapsIdentified.length > 0 && (
+                                  <div className="text-xs text-muted-foreground" data-testid="text-barbara-gaps">
+                                    <span className="font-medium">Gaps: </span>
+                                    {barbaraSummary.objectiveSatisfaction.gapsIdentified.join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {barbaraSummary.respondentEngagement && (
+                              <div className="text-xs text-muted-foreground" data-testid="section-barbara-engagement">
+                                <span className="font-medium">Engagement: </span>
+                                <Badge variant="secondary" className="text-[10px]" data-testid="badge-barbara-engagement">{barbaraSummary.respondentEngagement.level}</Badge>
+                                <span className="ml-1">{barbaraSummary.respondentEngagement.notes}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-1 border-t">
+                              <span className="text-xs text-muted-foreground" data-testid="text-barbara-model">{barbaraSummary.model}</span>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => regenerateBarbaraSummaryMutation.mutate()}
+                                disabled={regenerateBarbaraSummaryMutation.isPending}
+                                data-testid="button-regenerate-barbara-summary"
+                              >
+                                <RefreshCw className={`w-3 h-3 mr-1 ${regenerateBarbaraSummaryMutation.isPending ? "animate-spin" : ""}`} />
+                                {regenerateBarbaraSummaryMutation.isPending ? "Regenerating..." : "Regenerate"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                    <Separator />
+                  </div>
+                );
+              })()}
+
               {(() => {
                 // Build the full summaries list including AQs from legacy data
                 const templateSummaries = Array.isArray(session.questionSummaries) 

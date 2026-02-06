@@ -133,6 +133,7 @@ export const collections = pgTable("collections", {
   voiceProvider: text("voice_provider").default("openai"),
   // Additional Questions configuration (0-3, default 1)
   maxAdditionalQuestions: integer("max_additional_questions").default(1),
+  endOfInterviewSummaryEnabled: boolean("end_of_interview_summary_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   closedAt: timestamp("closed_at"),
   // Analytics metadata
@@ -206,6 +207,8 @@ export const interviewSessions = pgTable("interview_sessions", {
   additionalQuestions: jsonb("additional_questions"), // Type: AdditionalQuestionsData - stores generated AQs and metadata
   additionalQuestionPhase: boolean("additional_question_phase").default(false), // True when in AQ phase (for resume support)
   currentAdditionalQuestionIndex: integer("current_additional_question_index"), // Which AQ is currently being asked (0-based)
+  alviaSummary: jsonb("alvia_summary"),
+  barbaraSessionSummary: jsonb("barbara_session_summary"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -612,6 +615,46 @@ export type AdditionalQuestionsData = {
   // Cross-interview context used (if applicable)
   usedCrossInterviewContext?: boolean;
   priorSessionCount?: number;  // How many prior sessions were considered
+};
+
+// End-of-interview session summary types
+
+export type AlviaSessionSummary = {
+  themes: Array<{
+    theme: string;
+    description: string;
+  }>;
+  overallSummary: string;
+  objectiveSatisfaction: {
+    assessment: string;
+    coveredAreas: string[];
+    gaps: string[];
+  };
+  generatedAt: number;
+  model: string;
+  provider: string;
+};
+
+export type BarbaraSessionSummary = {
+  themes: Array<{
+    theme: string;
+    description: string;
+    supportingEvidence: string[];
+    sentiment: "positive" | "negative" | "neutral" | "mixed";
+  }>;
+  overallSummary: string;
+  objectiveSatisfaction: {
+    rating: number;
+    assessment: string;
+    coveredObjectives: string[];
+    gapsIdentified: string[];
+  };
+  respondentEngagement: {
+    level: "low" | "moderate" | "high";
+    notes: string;
+  };
+  generatedAt: number;
+  model: string;
 };
 
 // Enhanced analytics types for collection-level insights

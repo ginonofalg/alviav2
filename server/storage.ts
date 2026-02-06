@@ -16,7 +16,8 @@ import {
   type TemplateStaleness, type CollectionStaleness,
   type RealtimePerformanceMetrics, type TranscriptionQualityMetrics,
   type InviteListEntry, type InsertInviteListEntry,
-  type WaitlistEntry, type InsertWaitlistEntry
+  type WaitlistEntry, type InsertWaitlistEntry,
+  type AlviaSessionSummary, type BarbaraSessionSummary
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -34,6 +35,8 @@ export interface InterviewStatePatch {
   additionalQuestionPhase?: boolean;
   currentAdditionalQuestionIndex?: number;
   totalDurationMs?: number;
+  alviaSummary?: AlviaSessionSummary;
+  barbaraSessionSummary?: BarbaraSessionSummary;
 }
 
 export interface EnrichedSession extends InterviewSession {
@@ -658,6 +661,12 @@ export class DatabaseStorage implements IStorage {
     }
     if (patch.totalDurationMs !== undefined) {
       updateData.totalDurationMs = patch.totalDurationMs;
+    }
+    if (patch.alviaSummary !== undefined) {
+      updateData.alviaSummary = patch.alviaSummary;
+    }
+    if (patch.barbaraSessionSummary !== undefined) {
+      updateData.barbaraSessionSummary = patch.barbaraSessionSummary;
     }
 
     if (Object.keys(updateData).length === 0) {
