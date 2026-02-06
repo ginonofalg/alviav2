@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Mic, ArrowRight, User, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { InterviewSession } from "@shared/schema";
 
 export default function InterviewWelcomePage() {
@@ -37,6 +37,7 @@ export default function InterviewWelcomePage() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/interview", sessionId] });
       navigate(`/interview/${sessionId}`);
     },
     onError: (error: Error) => {
