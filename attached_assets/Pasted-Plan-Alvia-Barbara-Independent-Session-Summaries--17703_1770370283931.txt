@@ -1,0 +1,306 @@
+Plan: Alvia + Barbara Independent Session Summaries                                                                                                                                                                                                                  
+                                                        
+ Overview
+
+ Two independent, server-side session summaries generated after interview completion:
+
+ 1. Alvia summary — text-only response from the realtime provider (which has the full audio conversation context), generated before closing the provider WS
+ 2. Barbara summary — async LLM call using transcript + question summaries
+
+ Both assess: thematic coverage and objective satisfaction. Neither affects the respondent experience (no new interview phase, no additional time for respondent).
+
+ Flow
+
+ All questions/AQs complete → awaitPendingSummaries()
+   → send interview_complete to client (respondent goes to review page)
+   → [parallel] Alvia: text-only summary via realtime provider WS
+   → [parallel] Barbara: async summary via Chat Completion API
+   → both persist to session JSONB fields
+   → cleanup session
+
+ Key Design Decisions
+
+ Independence: Alvia works from the realtime model's context (includes audio tokens). Barbara works from the text transcript + question summaries. Neither sees the other's output.
+
+ No respondent impact: The respondent gets interview_complete immediately. Both summaries generate silently server-side.
+
+ Alvia uses the realtime API, not a chat API: This preserves the audio-informed perspective. The realtime model's context window contains the audio tokens from the conversation — a regular chat API call with the text transcript would lose this distinction.
+
+ ---
+ 1. Schema Changes — shared/schema.ts
+
+ 1a. collections table (~line 135, after maxAdditionalQuestions)
+
+ endOfInterviewSummaryEnabled: boolean("end_of_interview_summary_enabled").default(false),
+
+ 1b. interviewSessions table (~line 208, after currentAdditionalQuestionIndex)
+
+ alviaSummary: jsonb("alvia_summary"),
+ barbaraSessionSummary: jsonb("barbara_session_summary"),
+
+ 1c. New types (after QuestionSummary, ~line 596)
+
+ export type AlviaSessionSummary = {
+   themes: Array<{
+     theme: string;
+     description: string;
+   }>;
+   overallSummary: string;
+   objectiveSatisfaction: {
+     assessment: string;
+     coveredAreas: string[];
+     gaps: string[];
+   };
+   generatedAt: number;
+   model: string;                      // e.g. "gpt-realtime-mini"
+   provider: string;                   // "openai" or "grok"
+ };
+
+ export type BarbaraSessionSummary = {
+   themes: Array<{
+     theme: string;
+     description: string;
+     supportingEvidence: string[];
+     sentiment: "positive" | "negative" | "neutral" | "mixed";
+   }>;
+   overallSummary: string;
+   objectiveSatisfaction: {
+     rating: number;                   // 0-100
+     assessment: string;
+     coveredObjectives: string[];
+     gapsIdentified: string[];
+   };
+   respondentEngagement: {
+     level: "low" | "moderate" | "high";
+     notes: string;
+   };
+   generatedAt: number;
+   model: string;
+ };
+
+ Alvia's type is simpler (she's a conversational model, not an analyst — no quality scores, no sentiment, no supporting evidence). Barbara's is richer.
+
+ 1d. Run npm run db:push
+
+ ---
+ 2. Storage Layer — server/storage.ts
+
+ Update persistInterviewState patch type and handler to accept alviaSummary and barbaraSessionSummary, following the existing pattern for additionalQuestions.
+
+ ---
+ 3. Barbara Orchestrator — server/barbara-orchestrator.ts
+
+ 3a. New config use case in BarbaraConfig (~line 37)
+
+ sessionSummary: BarbaraUseCaseConfig;
+ Default: { model: "gpt-5-mini", verbosity: "medium", reasoningEffort: "low" }
+
+ Update updateBarbaraConfig() (~line 84) and add PATCH /api/barbara/config/session-summary route.
+
+ 3b. New function generateSessionSummary()
+
+ Inputs: transcript, questionSummaries, templateObjective, projectObjective, strategicContext, questions list
+
+ System prompt: Instructs Barbara to identify themes, write narrative summary, assess objective satisfaction (with 0-100 rating, covered/gaps), assess respondent engagement. Uses both transcript and question summaries for efficiency.
+
+ Output: BarbaraSessionSummary JSON
+
+ ---
+ 4. Voice Interview — server/voice-interview.ts
+
+ 4a. New state fields on InterviewState (~line 120)
+
+ // End-of-interview summary generation
+ endOfInterviewSummaryEnabled: boolean;
+ isGeneratingAlviaSummary: boolean;
+ alviaSummaryResolve: ((text: string) => void) | null;
+ alviaSummaryReject: ((error: Error) => void) | null;
+
+ Initialize to false/null. Load endOfInterviewSummaryEnabled from collection during initializeInterview().
+
+ 4b. New function generateAlviaSummary(sessionId) → Promise<string | null>
+
+ 1. Set state.isGeneratingAlviaSummary = true
+ 2. Create a Promise with resolve/reject stored on state
+ 3. Set a 30-second timeout that rejects
+ 4. Send session.update to provider WS:
+    - modalities: ["text"]
+    - turn_detection: null (disable VAD)
+    - instructions: summary prompt (see 4c below)
+ 5. Send conversation.item.create with summary prompt
+ 6. Send response.create with modalities: ["text"]
+ 7. Await the Promise (resolved by response.done handler)
+ 8. Parse JSON from the text, return AlviaSessionSummary
+ 9. On timeout/error: return null (non-fatal)
+
+ 4c. Alvia summary prompt
+
+ Crucially: NO question summaries from Barbara. Alvia works from her own context.
+
+ You are Alvia. You just finished conducting an interview.
+ The interview objective was: {templateObjective}
+ {projectObjective ? `The broader research objective: ${projectObjective}` : ""}
+
+ Based on your conversation, provide a JSON summary:
+ {
+   "themes": [{ "theme": "short name", "description": "one sentence" }],
+   "overallSummary": "3-5 sentence narrative of key takeaways",
+   "objectiveSatisfaction": {
+     "assessment": "How well did this interview address the research objectives?",
+     "coveredAreas": ["Areas well covered"],
+     "gaps": ["Areas that weren't adequately explored"]
+   }
+ }
+
+ Respond with ONLY the JSON object. No other text.
+
+ 4d. Handle text response in provider message handler
+
+ In the response.done case (~line 2237), add:
+
+ if (state.isGeneratingAlviaSummary) {
+   // Extract text from text-only response
+   const textItem = event.response?.output?.[0]?.content?.find(
+     (c: any) => c.type === "text"
+   );
+   if (textItem?.text && state.alviaSummaryResolve) {
+     state.alviaSummaryResolve(textItem.text);
+   }
+   state.isGeneratingAlviaSummary = false;
+   break; // Don't send response_done to client (they've already navigated away)
+ }
+
+ 4e. New function finalizeInterview(sessionId)
+
+ Replaces the duplicated completion logic across all 5 paths:
+
+ async function finalizeInterview(sessionId):
+   state = interviewStates.get(sessionId)
+
+   // 1. Send client to review page immediately
+   send interview_complete to client
+
+   // 2. If summaries enabled, generate both in parallel (non-blocking to respondent)
+   if (state.endOfInterviewSummaryEnabled) {
+     // Capture transcript snapshot for Barbara BEFORE any cleanup
+     const transcriptSnapshot = [...state.fullTranscriptForPersistence]
+     const summariesSnapshot = state.questionSummaries.filter(s => s != null)
+
+     // Generate Alvia summary via realtime provider (must happen before cleanup closes WS)
+     const alviaSummaryText = await generateAlviaSummary(sessionId)  // 10-30s, with timeout
+
+     if (alviaSummaryText) {
+       try {
+         const parsed = JSON.parse(alviaSummaryText)
+         parsed.generatedAt = Date.now()
+         parsed.model = state.providerType === "openai" ? "gpt-realtime-mini" : "grok-3-fast"
+         parsed.provider = state.providerType
+         await storage.persistInterviewState(sessionId, { alviaSummary: parsed })
+       } catch { /* store raw text as fallback */ }
+     }
+
+     // Fire Barbara summary async (continues after cleanup)
+     triggerBarbaraSessionSummary(sessionId, transcriptSnapshot, summariesSnapshot)
+   }
+
+   // 3. Standard cleanup
+   await storage.persistInterviewState(sessionId, {
+     status: "completed",
+     completedAt: new Date(),
+   })
+   cleanupSession(sessionId, "completed")
+
+ Note: triggerBarbaraSessionSummary receives captured snapshots as arguments (not from state) because cleanup will delete state.
+
+ 4f. Refactor all 5 completion paths
+
+ Each path's completion block replaced with await finalizeInterview(sessionId):
+
+ - Path A (~line 3099-3107): else block → await finalizeInterview(sessionId)
+ - Path B (~line 3129-3137): after awaitPendingSummaries → await finalizeInterview(sessionId)
+ - Path C (~line 3315-3323): after awaitPendingSummaries → await finalizeInterview(sessionId)
+ - Path D (~line 3362-3370): after awaitPendingSummaries → await finalizeInterview(sessionId)
+ - Path E (~line 3404-3412): after awaitPendingSummaries → await finalizeInterview(sessionId)
+
+ Each path still does its own pre-work (persisting AQ transcripts, generating final question/AQ summaries, calling awaitPendingSummaries) before calling finalizeInterview.
+
+ 4g. triggerBarbaraSessionSummary(sessionId, transcriptSnapshot, summariesSnapshot) — fire-and-forget
+
+ Accepts pre-captured snapshots. Loads project objective from DB. Calls generateSessionSummary(). Persists result. Fully async — errors are logged but don't block.
+
+ ---
+ 5. API Routes — server/routes.ts
+
+ 5a. Collection creation/update
+
+ Add endOfInterviewSummaryEnabled to validation schemas.
+
+ 5b. Barbara config endpoint
+
+ PATCH /api/barbara/config/session-summary following existing pattern.
+
+ 5c. Manual regeneration endpoint
+
+ POST /api/sessions/:id/generate-summary — regenerates Barbara's summary from persisted session data (for when async generation failed). Rebuilds inputs from liveTranscript and questionSummaries JSONB fields on the session.
+
+ ---
+ 6. Frontend: Session Detail — client/src/pages/session-detail.tsx
+
+ 6a. New "Session Summaries" section at top of Summary tab
+
+ Side-by-side cards, shown when either summary exists:
+
+ Left — Alvia's Summary:
+ - Mic icon (blue)
+ - Overall summary narrative
+ - Themes list
+ - Objective satisfaction: assessment + covered/gaps
+ - Note: "Generated by {model} from audio conversation context"
+
+ Right — Barbara's Summary:
+ - Brain icon (purple)
+ - Overall summary narrative
+ - Themes with sentiment badges and supporting evidence
+ - Objective satisfaction: rating badge + assessment + covered/gaps
+ - Respondent engagement level
+ - Loading state if session completed but summary pending
+
+ 6b. Data extraction
+
+ const alviaSummary = session.alviaSummary as AlviaSessionSummary | null;
+ const barbaraSummary = session.barbaraSessionSummary as BarbaraSessionSummary | null;
+
+ ---
+ 7. Frontend: Collection New — client/src/pages/collection-new.tsx
+
+ Add toggle for "End-of-interview summary" near the existing "Additional Questions" control. Default off. Brief description: "Generate AI summaries comparing Alvia's and Barbara's perspectives after each interview."
+
+ ---
+ 8. Frontend: Interview Page — client/src/pages/interview.tsx
+
+ No changes needed. The respondent experience is unchanged. They get interview_complete and navigate to review as before. Summary generation happens entirely server-side.
+
+ ---
+ Implementation Order
+
+ 1. Schema — types + fields in shared/schema.ts, run db:push
+ 2. Storage — update persistInterviewState in storage.ts
+ 3. Barbara — config use case + generateSessionSummary() in barbara-orchestrator.ts
+ 4. Voice interview — state fields, generateAlviaSummary, provider message handler update, finalizeInterview, triggerBarbaraSessionSummary, refactor 5 completion paths
+ 5. Routes — collection validation, Barbara config endpoint, manual regeneration
+ 6. Frontend session-detail.tsx — side-by-side display
+ 7. Frontend collection-new.tsx — toggle
+
+ Risks & Mitigations
+ ┌──────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────┐
+ │                       Risk                       │                                    Mitigation                                    │
+ ├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+ │ Realtime API text-only response fails/times out  │ 30s timeout, graceful fallback to null. Non-fatal.                               │
+ ├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+ │ State deleted by cleanup before Barbara finishes │ Barbara receives pre-captured snapshots, not state references                    │
+ ├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+ │ Grok provider may not support text-only modality │ Fall back to audio+text modality, discard audio. Or skip Alvia summary for Grok. │
+ ├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+ │ Realtime-mini produces invalid JSON              │ Try/catch parse with fallback: store raw text in overallSummary field            │
+ ├──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────┤
+ │ Provider WS closes before summary response       │ The timeout handles this — resolve with null                                     │
