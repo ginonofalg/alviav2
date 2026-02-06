@@ -77,7 +77,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     return {
       modalities: ["text", "audio"],
       instructions: instructions,
-      voice: "ballad",
+      voice: "marin",
       input_audio_format: "pcm16",
       output_audio_format: "pcm16",
       input_audio_noise_reduction: {
