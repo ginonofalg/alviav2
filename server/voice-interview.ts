@@ -1693,7 +1693,7 @@ INSTRUCTIONS:
 9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up
 10. The interviewee will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
 11. If the current question is the last one (e.g. Current Question: 5 of 5), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
-12. Use British English, active voice, Oxford commas, varied sentence length, and strictly avoid em dashes, rhetorical questions, emojis, metaphors, clichés, hedging, buzzwords, and filler transitions.`;
+12. Use British English, Oxford commas, varied sentence length, and strictly avoid em dashes (—), rhetorical questions, clichés, hedging, buzzwords, and filler transitions.`;
 
   if (barbaraGuidance) {
     instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
@@ -1842,7 +1842,7 @@ RESUME INSTRUCTIONS:
 10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
 11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
 12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question - just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
-13. Use British English, active voice, Oxford commas, varied sentence length, and strictly avoid em dashes, rhetorical questions, emojis, metaphors, clichés, hedging, buzzwords, and filler transitions.`;
+13. Use British English, Oxford commas, varied sentence length, and strictly avoid em dashes (—), rhetorical questions, clichés, hedging, buzzwords, and filler transitions.`;
 
   if (lastBarbaraGuidance) {
     instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
