@@ -232,6 +232,9 @@ export default function InterviewPage() {
   }>({ open: false, type: "next" });
   const [readyPhase, setReadyPhase] = useState(true);
   
+  // Interview finalizing state (shown when declining AQs while summary generates)
+  const [isFinalizingInterview, setIsFinalizingInterview] = useState(false);
+
   // Additional Questions state
   const [isInAQPhase, setIsInAQPhase] = useState(false);
   const [aqQuestions, setAqQuestions] = useState<Array<{ questionText: string; rationale: string; index: number }>>([]);
@@ -959,6 +962,7 @@ export default function InterviewPage() {
           setAqGenerating(false);
           setIsInAQPhase(false);
           setIsCompletingAQ(false);
+          setIsFinalizingInterview(false);
           toast({
             title: "Interview completed",
             description: "Thank you for participating!",
@@ -1069,6 +1073,7 @@ export default function InterviewPage() {
           // Prevent reconnection attempts - session is intentionally ended
           allowReconnectRef.current = false;
           stopReconnect();
+          setIsFinalizingInterview(false);
           toast({
             title: "Session Ended",
             description: message.message || "Your interview session has ended.",
@@ -1450,8 +1455,22 @@ export default function InterviewPage() {
 
   const handleDeclineAdditionalQuestions = () => {
     setConfirmDialog({ open: false, type: "complete" });
+    stopAudioCapture();
+    setIsFinalizingInterview(true);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "decline_additional_questions" }));
+      const timeoutId = setTimeout(() => {
+        setIsFinalizingInterview(false);
+        toast({
+          title: "Interview completed",
+          description: "Thank you for participating!",
+        });
+        navigate(`/review/${sessionId}`);
+      }, 15000);
+      (wsRef.current as any)._completeTimeoutId = timeoutId;
+    } else {
+      setIsFinalizingInterview(false);
+      navigate(`/review/${sessionId}`);
     }
   };
 
@@ -2013,6 +2032,37 @@ export default function InterviewPage() {
                       </div>
                     </>
                   )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Interview Finalizing Overlay (shown when declining AQs) */}
+      <AnimatePresence>
+        {isFinalizingInterview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+            data-testid="overlay-finalizing-interview"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+            >
+              <Card className="w-full max-w-md">
+                <CardContent className="pt-8 pb-8 flex flex-col items-center gap-4">
+                  <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                  <div className="text-center space-y-2">
+                    <h3 className="font-semibold text-lg" data-testid="text-finalizing-title">Wrapping Up</h3>
+                    <p className="text-muted-foreground text-sm" data-testid="text-finalizing-message">
+                      Barbara is finishing up her notes...
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
