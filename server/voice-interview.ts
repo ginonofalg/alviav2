@@ -107,6 +107,7 @@ interface InterviewState {
   lastActivityAt: number; // Any meaningful activity (audio, interaction, AI response)
   terminationWarned: boolean; // Whether client has been warned about impending termination
   clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
+  isFinalizing: boolean; // True when finalizeInterview() is in progress — prevents disconnect/watchdog interference
   // Realtime API performance metrics
   metricsTracker: MetricsTracker;
   // Transcription quality tracking (noisy environment detection)
@@ -981,11 +982,17 @@ export function handleVoiceInterview(
       });
 
       if (state) {
-        state.clientDisconnectedAt = Date.now();
         state.clientWs = null;
-        console.log(
-          `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
-        );
+        if (state.isFinalizing) {
+          console.log(
+            `[VoiceInterview] Session ${sessionId} client disconnected during finalization — skipping disconnect marking`,
+          );
+        } else {
+          state.clientDisconnectedAt = Date.now();
+          console.log(
+            `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
+          );
+        }
       }
     });
 
@@ -993,8 +1000,10 @@ export function handleVoiceInterview(
       console.error(`[VoiceInterview] Client error for ${sessionId}:`, error);
       const state = interviewStates.get(sessionId);
       if (state) {
-        state.clientDisconnectedAt = Date.now();
         state.clientWs = null;
+        if (!state.isFinalizing) {
+          state.clientDisconnectedAt = Date.now();
+        }
       }
     });
 
@@ -1106,6 +1115,7 @@ export function handleVoiceInterview(
     lastActivityAt: now,
     terminationWarned: false,
     clientDisconnectedAt: null,
+    isFinalizing: false,
     // Realtime API performance metrics
     metricsTracker: createEmptyMetricsTracker(),
     // Transcription quality tracking (noisy environment detection)
@@ -1171,11 +1181,17 @@ export function handleVoiceInterview(
     // Don't immediately cleanup - mark as disconnected and let watchdog handle
     // This allows for reconnection/resume within heartbeat timeout
     if (state) {
-      state.clientDisconnectedAt = Date.now();
       state.clientWs = null;
-      console.log(
-        `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
-      );
+      if (state.isFinalizing) {
+        console.log(
+          `[VoiceInterview] Session ${sessionId} client disconnected during finalization — skipping disconnect marking`,
+        );
+      } else {
+        state.clientDisconnectedAt = Date.now();
+        console.log(
+          `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
+        );
+      }
     }
   });
 
@@ -1184,8 +1200,10 @@ export function handleVoiceInterview(
     // Same as close - mark as disconnected, let watchdog handle
     const state = interviewStates.get(sessionId);
     if (state) {
-      state.clientDisconnectedAt = Date.now();
       state.clientWs = null;
+      if (!state.isFinalizing) {
+        state.clientDisconnectedAt = Date.now();
+      }
     }
   });
 
@@ -4218,11 +4236,20 @@ async function finalizeInterview(
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
+  state.isFinalizing = true;
+
   const clientWs = state.clientWs;
 
   if (clientWs && clientWs.readyState === WebSocket.OPEN) {
     clientWs.send(JSON.stringify({ type: "interview_complete" }));
   }
+
+  await storage.persistInterviewState(sessionId, {
+    status: "completed",
+    completedAt: new Date(),
+    ...extraPatch,
+  });
+  console.log(`[VoiceInterview] Session ${sessionId} marked completed before summary generation`);
 
   if (state.endOfInterviewSummaryEnabled) {
     const transcriptSnapshot = [
@@ -4297,11 +4324,6 @@ async function finalizeInterview(
     }
   }
 
-  await storage.persistInterviewState(sessionId, {
-    status: "completed",
-    completedAt: new Date(),
-    ...extraPatch,
-  });
   cleanupSession(sessionId, "completed");
 }
 
@@ -4401,6 +4423,9 @@ function runWatchdogCycle(): void {
 
   const sessionEntries = Array.from(interviewStates.entries());
   for (const [sessionId, state] of sessionEntries) {
+    // Skip sessions that are in the process of finalizing (completing + generating summaries)
+    if (state.isFinalizing) continue;
+
     const age = now - state.createdAt;
     const timeSinceHeartbeat = now - state.lastHeartbeatAt;
     const timeSinceActivity = now - state.lastActivityAt;

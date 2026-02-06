@@ -72,6 +72,13 @@ export default function InterviewReviewPage() {
     enabled: !!sessionId,
     staleTime: 0,
     refetchOnMount: "always",
+    retry: (failureCount, err) => {
+      if (failureCount >= 5) return false;
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("not completed") || msg.includes("not found")) return true;
+      return false;
+    },
+    retryDelay: (attempt) => Math.min(1000 * (attempt + 1), 3000),
   });
 
   useEffect(() => {
