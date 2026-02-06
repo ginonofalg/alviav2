@@ -1346,7 +1346,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     // Connect to Realtime API provider
     connectToRealtimeProvider(sessionId, clientWs);
   } catch (error) {
-    console.error("[VoiceInterview] Error initializing:", error);
+    console.error("[VoiceInterview] Error initialising:", error);
     clientWs.send(
       JSON.stringify({
         type: "error",
@@ -2423,7 +2423,7 @@ async function triggerBarbaraAnalysis(
   if (state.transcriptLog.length < 2) return null;
 
   state.isWaitingForBarbara = true;
-  console.log(`[Barbara] Analyzing conversation for session: ${sessionId}`);
+  console.log(`[Barbara] Analysing conversation for session: ${sessionId}`);
 
   try {
     const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -3181,7 +3181,7 @@ INSTRUCTIONS:
         JSON.stringify({
           type: "additional_questions_generating",
           message:
-            "Barbara is analyzing your interview to identify follow-up questions...",
+            "Barbara is analysing your interview to identify follow-up questions...",
         }),
       );
 
@@ -4176,6 +4176,12 @@ async function finalizeInterview(sessionId: string, extraPatch?: Partial<Intervi
     clientWs.send(JSON.stringify({ type: "interview_complete" }));
   }
 
+  await storage.persistInterviewState(sessionId, {
+    status: "completed",
+    completedAt: new Date(),
+    ...extraPatch,
+  });
+
   if (state.endOfInterviewSummaryEnabled) {
     const transcriptSnapshot = [...state.fullTranscriptForPersistence] as TranscriptEntry[];
     const summariesSnapshot = state.questionSummaries.filter((s): s is QuestionSummary => s != null);
@@ -4219,11 +4225,6 @@ async function finalizeInterview(sessionId: string, extraPatch?: Partial<Intervi
     }
   }
 
-  await storage.persistInterviewState(sessionId, {
-    status: "completed",
-    completedAt: new Date(),
-    ...extraPatch,
-  });
   cleanupSession(sessionId, "completed");
 }
 
