@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Form,
@@ -286,27 +285,6 @@ function QuestionCard({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name={`questions.${index}.isRequired`}
-          render={({ field }) => (
-            <FormItem className="flex items-center justify-between">
-              <div>
-                <FormLabel className="text-xs">Required</FormLabel>
-                <FormDescription className="text-xs">
-                  Respondent must answer before proceeding
-                </FormDescription>
-              </div>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  data-testid={`switch-required-${index}`}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
       </CardContent>
     </Card>
   );

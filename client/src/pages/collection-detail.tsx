@@ -870,6 +870,7 @@ export default function CollectionDetailPage() {
                     <Select
                       onValueChange={field.onChange}
                       value={field.value}
+                      disabled
                     >
                       <FormControl>
                         <SelectTrigger data-testid="select-voice-provider">

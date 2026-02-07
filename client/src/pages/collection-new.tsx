@@ -303,7 +303,7 @@ export default function CollectionNewPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Voice Provider</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled>
                       <FormControl>
                         <SelectTrigger data-testid="select-voice-provider">
                           <SelectValue placeholder="Select voice provider" />
@@ -315,7 +315,7 @@ export default function CollectionNewPage() {
                       </SelectContent>
                     </Select>
                     <FormDescription className="text-xs">
-                      The AI voice service to use for interviews in this collection
+                      The AI voice service used for interviews in this collection
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
