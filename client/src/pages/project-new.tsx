@@ -174,14 +174,17 @@ export default function NewProjectPage() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea 
+                        <Textarea
                           placeholder="Briefly describe the purpose of this research project..."
                           className="resize-none"
                           rows={3}
-                          {...field} 
+                          {...field}
                           data-testid="input-project-description"
                         />
                       </FormControl>
+                      <FormDescription>
+                        Used as context when AI-generating interview templates from this project. A clear description helps produce more relevant questions.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -203,7 +206,7 @@ export default function NewProjectPage() {
                         />
                       </FormControl>
                       <FormDescription>
-                        This helps the AI interviewer understand context and ask better follow-up questions.
+                        Alvia uses this to introduce and steer each interview. Barbara uses it to evaluate whether responses are on-track and to guide follow-up probing. Be specific — vague objectives produce vague interviews.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -217,12 +220,15 @@ export default function NewProjectPage() {
                     <FormItem>
                       <FormLabel>Target Audience</FormLabel>
                       <FormControl>
-                        <Input 
+                        <Input
                           placeholder="e.g., New customers in the first 30 days"
-                          {...field} 
+                          {...field}
                           data-testid="input-project-audience"
                         />
                       </FormControl>
+                      <FormDescription>
+                        Barbara uses this when generating additional end-of-interview questions and session summaries, tailoring probes to the respondent profile.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -248,7 +254,7 @@ export default function NewProjectPage() {
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        Sets the conversational style of the AI interviewer.
+                        Alvia adopts this tone throughout every interview — in her greetings, follow-ups, and transitions. Barbara also uses it to keep her real-time guidance stylistically consistent.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -444,7 +450,7 @@ export default function NewProjectPage() {
                     name="contextType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>What will you use these insights for?</FormLabel>
+                        <FormLabel>Insights Context</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || ""}>
                           <FormControl>
                             <SelectTrigger data-testid="select-context-type">
@@ -463,7 +469,7 @@ export default function NewProjectPage() {
                           </SelectContent>
                         </Select>
                         <FormDescription>
-                          This helps us frame recommendations for your specific use case.
+                          Barbara uses this to frame your project analytics — choosing whether to emphasise content strategy, product decisions, marketing angles, or CX improvements. This shapes the structure and language of recommendations and action items.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -475,7 +481,7 @@ export default function NewProjectPage() {
                     name="strategicContext"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Tell us about your business context</FormLabel>
+                        <FormLabel>Strategic Context</FormLabel>
                         <FormControl>
                           <Textarea 
                             placeholder="e.g., I run a specialist online photography store with 5k email subscribers. I'm planning a monthly newsletter to drive repeat purchases and differentiate through expertise rather than competing on price with large retailers."
@@ -486,7 +492,7 @@ export default function NewProjectPage() {
                           />
                         </FormControl>
                         <FormDescription>
-                          Include your business goals, constraints, and what decisions these insights will inform.
+                          Barbara uses this to generate tailored recommendations, action items, and curated verbatims in your project analytics. It's also referenced during session summaries. The more specific you are about your goals and constraints, the more actionable your insights will be.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

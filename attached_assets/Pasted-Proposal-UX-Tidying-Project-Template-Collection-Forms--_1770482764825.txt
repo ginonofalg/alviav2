@@ -1,0 +1,79 @@
+Proposal: UX Tidying — Project, Template & Collection Forms                                                                                                                                                                                                         
+   
+  Change 1: Remove "Default Avoid Rules" section from project creation                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                      
+  File: client/src/pages/project-new.tsx                                                                                                                                                                                                                              
+                  
+  What to do:
+  - Delete the DEFAULT_AVOID_RULES constant (lines 59-66) and the entire Card that displays the rules (lines 397-414)
+  - Keep sending the same default rules silently — move the array inline into the mutation payload (line 94: avoidRules: [...]) so new projects still get defaults stored in the DB
+
+  Why this is safe: avoidRules is stored in the DB but never consumed by voice-interview.ts or barbara-orchestrator.ts. Displaying the rules gives a false impression of enforcement. The data is still persisted for future use.
+
+  Risk: LOW — No backend logic depends on this field. Purely cosmetic removal.
+
+  ---
+  Change 2: Remove isRequired toggle from template builder question cards
+
+  File: client/src/pages/template-builder.tsx
+
+  What to remove:
+  - Lines 289-309: The entire isRequired FormField (Switch) inside QuestionCard
+  - Hardcode isRequired: true in the addQuestion function (line 447) and the edit-mode mapping (line 381)
+  - Keep isRequired in the Zod questionSchema (line 71) so existing data is preserved
+
+  Side effects:
+  - template-detail.tsx:64-65 — Displays a "Required" badge per question. Existing questions retain their stored value. Cosmetic only.
+  - voice-interview.ts — Does not check isRequired. All questions are asked regardless. No enforcement exists.
+
+  Risk: LOW — Purely informational field with no behavioral enforcement anywhere in the codebase.
+
+  ---
+  Change 3: Make voiceProvider read-only, defaulting to OpenAI for new collections
+
+  Files: client/src/pages/collection-new.tsx, client/src/pages/collection-detail.tsx
+
+  Critical context: The interview page (interview.tsx:621) actively reads collection.voiceProvider to construct the WebSocket URL:
+  const voiceProvider = collection?.voiceProvider || "openai";
+  const wsUrl = `...&provider=${voiceProvider}`;
+  This field must remain in the schema, form data, and mutation payload. Do not remove it.
+
+  What to do in collection-new.tsx (lines 300-323):
+  - Replace the <Select> dropdown with a disabled Select (or a static text display) showing "OpenAI"
+  - Keep voiceProvider: "openai" as the hardcoded default in the form. New collections will always be created with OpenAI.
+
+  What to do in collection-detail.tsx edit dialog (lines 864-890):
+  - Replace the editable <Select> with a read-only display showing the current stored value (e.g. "OpenAI" or "Grok (xAI)")
+  - Do not override the stored value on save — if a collection was created with Grok, it should stay on Grok
+  - The simplest approach: add disabled to the <Select> component so it renders the current value but cannot be changed
+
+  What NOT to do:
+  - Do not remove voiceProvider from the Zod schema, form data, or mutation payload
+  - Do not force existing Grok collections to OpenAI
+
+  Risk: LOW — Existing collections retain their provider. New collections default to OpenAI. The field continues to flow correctly to the WebSocket connection.
+
+  ---
+  Summary
+  ┌─────┬─────────────────────────────────┬───────────────────────────────────────────┬──────┐
+  │  #  │             Change              │                   Files                   │ Risk │
+  ├─────┼─────────────────────────────────┼───────────────────────────────────────────┼──────┤
+  │ 1   │ Remove Avoid Rules display card │ project-new.tsx                           │ LOW  │
+  ├─────┼─────────────────────────────────┼───────────────────────────────────────────┼──────┤
+  │ 2   │ Remove isRequired toggle        │ template-builder.tsx                      │ LOW  │
+  ├─────┼─────────────────────────────────┼───────────────────────────────────────────┼──────┤
+  │ 3   │ Lock voiceProvider to read-only │ collection-new.tsx, collection-detail.tsx │ LOW  │
+  └─────┴─────────────────────────────────┴───────────────────────────────────────────┴──────┘
+  Files modified
+
+  1. client/src/pages/project-new.tsx — Remove the Default Avoid Rules display card. Keep sending defaults silently in the create mutation.
+  2. client/src/pages/template-builder.tsx — Remove isRequired switch from QuestionCard. Hardcode isRequired: true. Keep the field in the Zod schema.
+  3. client/src/pages/collection-new.tsx — Replace voiceProvider Select with disabled/read-only display showing "OpenAI". Keep form value locked to "openai".
+  4. client/src/pages/collection-detail.tsx — Replace voiceProvider Select in edit dialog with disabled Select showing the current stored value. Do not override on save.
+
+  Files NOT modified (but relevant)
+
+  - shared/schema.ts — No changes. All fields remain in the DB schema.
+  - server/routes.ts — No changes. API still accepts these fields.
+  - client/src/pages/interview.tsx — Still reads voiceProvider from collection data for WebSocket URL. Works unchanged.
+  - client/src/pages/template-detail.tsx — Still displays isRequired badge for existing data. Works unchanged.

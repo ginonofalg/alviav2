@@ -345,7 +345,7 @@ export default function CollectionNewPage() {
                       </SelectContent>
                     </Select>
                     <FormDescription className="text-xs">
-                      Barbara can ask follow-up questions at the end based on the interview
+                      After all scripted questions, Barbara analyses the full transcript and generates up to this many additional questions to explore gaps or emerging themes. Alvia then asks them in the same conversational tone. Set to 0 to skip this phase entirely.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -428,7 +428,7 @@ export default function CollectionNewPage() {
                     <div>
                       <FormLabel>End-of-Interview Summary</FormLabel>
                       <FormDescription className="text-xs">
-                        Generate dual-perspective summaries when each interview completes (Alvia's audio-informed view and Barbara's analytical view)
+                        When enabled, Barbara generates a structured summary after each interview using your research objective and strategic context. This produces per-session insights that feed into collection and project analytics.
                       </FormDescription>
                     </div>
                     <FormControl>

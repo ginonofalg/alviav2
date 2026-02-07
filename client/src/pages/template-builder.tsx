@@ -123,7 +123,7 @@ function QuestionCard({
                 <FormItem>
                   <FormControl>
                     <Textarea
-                      placeholder="Enter your question..."
+                      placeholder="Enter the question Alvia will ask the respondent..."
                       className="resize-none text-base font-medium border-0 p-0 focus-visible:ring-0 shadow-none"
                       rows={2}
                       {...field}
@@ -242,7 +242,7 @@ function QuestionCard({
           name={`questions.${index}.guidance`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs">Guidance for AI</FormLabel>
+              <FormLabel className="text-xs">Interviewer Guidance</FormLabel>
               <FormControl>
                 <Textarea
                   placeholder="What makes a good answer? What should the AI probe for?"
@@ -254,7 +254,7 @@ function QuestionCard({
                 />
               </FormControl>
               <FormDescription className="text-xs">
-                Helps Barbara understand what information to extract and when to probe deeper.
+                Alvia sees this as her briefing for each question — it tells her what a good answer looks like and what to probe for. Barbara uses it to evaluate whether the respondent has covered enough ground before moving on.
               </FormDescription>
             </FormItem>
           )}
@@ -265,7 +265,7 @@ function QuestionCard({
           name={`questions.${index}.recommendedFollowUps`}
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="text-xs">Recommended Follow-ups</FormLabel>
+              <FormLabel className="text-xs">Follow-up Depth</FormLabel>
               <FormControl>
                 <Input
                   type="number"
@@ -280,7 +280,7 @@ function QuestionCard({
                 />
               </FormControl>
               <FormDescription className="text-xs">
-                Suggested number of probing questions. Leave blank to use template default.
+                How many follow-up probes Alvia should attempt for this question before Barbara signals to move on. Leave blank to use the template default.
               </FormDescription>
             </FormItem>
           )}
@@ -523,14 +523,17 @@ export default function TemplateBuilderPage() {
                   <FormItem>
                     <FormLabel>Interview Objective</FormLabel>
                     <FormControl>
-                      <Textarea 
+                      <Textarea
                         placeholder="What is the goal of this interview?"
                         className="resize-none"
                         rows={2}
-                        {...field} 
+                        {...field}
                         data-testid="input-template-objective"
                       />
                     </FormControl>
+                    <FormDescription>
+                      Alvia opens each interview with this objective in mind and uses it to decide when a question has been sufficiently explored. Barbara references it in real-time to judge whether follow-up probing is on-track. This is the single most important field for interview quality.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -542,7 +545,7 @@ export default function TemplateBuilderPage() {
                   name="tone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tone</FormLabel>
+                      <FormLabel>Interview Tone</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-template-tone">
@@ -556,6 +559,9 @@ export default function TemplateBuilderPage() {
                           <SelectItem value="empathetic">Empathetic</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormDescription className="text-xs">
+                        Alvia adopts this tone throughout the interview — from greeting through to wrap-up. Barbara's real-time guidance also respects this tone when suggesting how Alvia should probe or transition.
+                      </FormDescription>
                     </FormItem>
                   )}
                 />
@@ -579,7 +585,7 @@ export default function TemplateBuilderPage() {
                         />
                       </FormControl>
                       <FormDescription className="text-xs">
-                        Suggested probing questions per question unless overridden.
+                        Sets the default number of follow-up probes Alvia will attempt per question. Individual questions can override this. Barbara uses this to judge when Alvia has probed enough and should move on. '0' means Alvia asks only the scripted question with no follow-ups.
                       </FormDescription>
                     </FormItem>
                   )}
