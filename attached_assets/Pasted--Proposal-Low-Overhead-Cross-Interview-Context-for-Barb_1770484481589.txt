@@ -1,0 +1,193 @@
+ ## Proposal: Low-Overhead Cross-Interview Context for Barbara’s Live Steering
+
+  The design is optimized for low overhead by using a precomputed snapshot from collections.analyticsData at interview start, then injecting a compact, bounded context block into each live Barbara analysis call.
+
+  This avoids heavy runtime queries, avoids large prompts, and avoids extra model calls.
+
+  ## Goals
+  - Make Barbara aware of cross-interview themes during ongoing interview guidance.
+  - Keep runtime overhead negligible in DB, CPU, and token usage.
+  ## Non-Goals
+
+  - No new analytics generation in the live loop.
+  - No dynamic recomputation of collection themes while interview is in progress.
+  - No DB schema migration for this phase.
+
+  ## Current State (Observed)
+
+  - End-of-interview additional-question flow already has placeholder support for cross-interview context, but live steering does not.
+      - projects.crossInterviewContext
+  - Collection-level analytics already exist:
+      - collections.analyzedSessionCount
+
+
+  ### Core Strategy
+
+
+  2. Store it in InterviewState.
+  3. On each Barbara call, pass only a small question-scoped subset to the prompt.
+
+  ### Why This Strategy
+
+  - Prompt overhead: fixed and small.
+  - Reliability: degrades gracefully to current behavior when context is unavailable.
+  ## Data Contract Changes
+  ### 1) InterviewState (server runtime only)
+
+  Add:
+
+  - enabled: boolean
+  - priorSessionCount: number
+  - themesByQuestion: Record<number, CompactCrossInterviewTheme[]>
+  - }
+  Where:
+  - CompactCrossInterviewTheme = {
+  - theme: string
+  - prevalence: number
+  - cue: string  (paraphrased short example)
+  - }
+
+
+
+  - enabled: boolean
+  - source: "collection_analytics_snapshot"
+  - priorSessionCount: number
+  - snapshotGeneratedAt: number | null
+  - emergentThemes: CompactCrossInterviewTheme[]
+  - }
+
+  No API endpoint or DB schema changes are required.
+  ## Runtime Flow
+
+  ### A) During initializeInterview
+
+  2. Build runtime context if all conditions pass:
+
+  - project.crossInterviewContext === true
+  - (collection.analyzedSessionCount ?? 0) >= (project.crossInterviewThreshold ?? 5)
+  3. Normalize and cap context:
+
+  - Theme cue from theme description, paraphrased/trimmed.
+  - Max 3 themes per question (relatedQuestions mapping).
+  - Max 2 emergent themes (isEmergent).
+  - Cue length cap ~120 chars.
+
+
+  - Enabled + counts, or disabled + reason.
+
+
+  2. Select capped emergentThemes.
+  3. Pass these into analyzeWithBarbara.
+  4. No storage calls, no analytics recomputation.
+
+
+
+
+  ### 1) System Prompt Addition (Barbara)
+
+  Append this to Barbara’s system prompt in buildBarbaraSystemPrompt():
+
+     - Do not force these themes into the conversation.
+     - Treat cross-interview themes as hypotheses, not facts about this respondent.
+     - Prefer neutral phrasing such as “it may be useful to explore…” rather than asserting consensus.
+     - Avoid introducing bias or leading the respondent toward expected answers.
+
+
+
+  CROSS-INTERVIEW SNAPSHOT (same collection):
+  - Source: collection analytics snapshot
+  - Snapshot generated at: {snapshotGeneratedAt or "unknown"}
+  Themes most relevant to CURRENT QUESTION:
+  - Theme: {theme} (prevalence: {prevalence}%)
+
+  Emergent themes from prior interviews:
+  - Theme: {theme} (prevalence: {prevalence}%)
+
+  Instruction:
+  If not clearly relevant, ignore it and continue with current-question guidance.
+  ### 3) Token Budget Guardrails
+
+  - Hard caps:
+      - Current-question themes: 3
+      - Emergent themes: 2
+      - Cue length: 120 chars each
+
+
+  - Use paraphrased examples only, no direct respondent quotes in live steering prompt.
+  - Context is aggregate guidance, not evidence about the current respondent.
+
+  - DB: effectively unchanged in hot path.
+  - Prompt tokens: bounded incremental cost only.
+  - Model latency: marginal impact due to small additional text.
+
+  ## Implementation Checklist (Decision-Complete)
+  1. server/voice-interview.ts
+  - Extend InterviewState type with crossInterviewRuntimeContext.
+  - Initialize field in default state.
+  - Add helper buildCrossInterviewRuntimeContext(project, collection).
+  - Call helper in initializeInterview after loading project and collection.
+
+
+  - Extend BarbaraAnalysisInput with optional crossInterviewContext.
+  - Update buildBarbaraSystemPrompt() with CROSS-INTERVIEW AWARENESS section.
+  - Update buildBarbaraUserPrompt(input) to conditionally append CROSS-INTERVIEW SNAPSHOT block.
+  - Keep existing BarbaraGuidance output schema unchanged.
+  3. Logging
+
+  - Add concise logs for:
+      - Cross-context enabled/disabled reason at init.
+      - Count of themes injected per Barbara call (debug-level).
+
+  ## Test Plan
+
+  ### Unit/Integration Scenarios
+
+  1. Feature off:
+
+  - project.crossInterviewContext = false
+  - Expect no cross-interview block in Barbara prompt.
+
+  2. Threshold unmet:
+
+  - Feature on, but analyzedSessionCount < crossInterviewThreshold
+  - Expect disabled context and current behavior only.
+
+  3. Valid context:
+
+  - Feature on, threshold met, analytics present
+  - Expect capped question-scoped themes + emergent themes in prompt.
+
+  4. Missing analytics:
+
+  - analyticsData = null
+  - Expect graceful fallback with no prompt addition.
+
+  5. Oversized analytics:
+
+  - Many themes/long descriptions
+  - Expect strict cap and trimming.
+
+  6. Hot-path regression:
+
+  - Verify no added storage.* calls from triggerBarbaraAnalysis.
+
+  ### Acceptance Criteria
+
+  - Barbara guidance references cross-interview themes only when relevant.
+  - No measurable DB query increase per respondent turn.
+  - Prompt size increase remains bounded and stable.
+  - Existing interviews continue to function unchanged when context is unavailable.
+
+  ## Rollout Plan
+
+  1. Implement behind existing project flag crossInterviewContext.
+  2. Internal QA on staged collection with known analytics.
+  3. Validate guidance quality and token/latency telemetry.
+  4. Enable for selected projects first, then broader rollout.
+
+  ## Assumptions and Defaults
+
+  - Freshness mode: session-start snapshot.
+  - Evidence style: paraphrased examples only.
+  - Default threshold: existing crossInterviewThreshold (default 5).
+  - No live analytics refresh during interview session.
