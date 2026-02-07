@@ -1,0 +1,33 @@
+What the code confirms                                                                                                                                             
+ 1. Barbara already receives previousQuestionSummaries — these are generated when each question completes and include summaries, key insights, completeness assessments, verbatims, and quality scores.                                                                                                                        
+  2. But she ALSO gets the full transcript on top of that — the user prompt includes the formatted transcript twice: once as the "Full Transcript So Far" and once  filtered as "Respondent's Answer to Current Question." So there's already redundancy.
+  3. The cost is quadratic, not linear — Barbara is called after every respondent utterance, and each call includes the growing transcript. A 10-question interview with 64 turns means ~64 calls with progressively larger prompts. Replit's estimate of 300K-500K cumulative input tokens per interview is realistic.                
+  4. The 100-entry cap is both a cost ceiling and a quality ceiling — once hit, Barbara loses early context entirely rather than gracefully degrading to summaries.
+
+  My recommended next steps:
+  
+  The hybrid approach is clearly the right move, and the infrastructure is already 80% there. Here's what I'd suggest:
+
+  Step 1: Measure first (quick)
+
+  Before changing anything, add lightweight token counting to Barbara calls so you have real before/after data. You already have performanceMetrics JSONB on sessions
+   — just extend it.
+
+  Step 2: Implement the hybrid prompt (the real work)
+
+  In barbara-orchestrator.ts, modify the user prompt construction (~lines 371-442) to:
+  - Completed questions: Use previousQuestionSummaries only (summaries + verbatims + quality flags). Drop raw transcript for these.
+  - Current question: Include full raw transcript entries for the current questionIndex.
+  - Previous questions (2 back): Include raw transcript for continuity/overlap detection.
+  - Remove the full "Transcript Summary" section that currently dumps all 100 entries.
+
+  This keeps Barbara's context quality high while making prompt size roughly proportional to the current question's length, not the entire interview.
+
+  Step 3: Remove the 100-entry cap concern
+
+  With the hybrid approach, the cap becomes irrelevant — you'd only ever send raw transcript for 1-2 questions at a time, which is far fewer than 100 entries.
+
+  ---
+  Bottom line: The hybrid approach isn't just a nice-to-have optimization — it's necessary for cost control and it actually improves quality for longer interviews
+  since Barbara will never lose early context (summaries persist). The existing questionSummaries infrastructure means the implementation is relatively
+  straightforward.
