@@ -237,6 +237,14 @@ export async function analyzeWithBarbara(
     const systemPrompt = buildBarbaraSystemPrompt();
     const userPrompt = buildBarbaraUserPrompt(input);
 
+    if (process.env.DEBUG_BARBARA_PROMPTS === "true") {
+      console.log("[Barbara][DEBUG] ===== SYSTEM PROMPT =====");
+      console.log(systemPrompt);
+      console.log("[Barbara][DEBUG] ===== USER PROMPT =====");
+      console.log(userPrompt);
+      console.log("[Barbara][DEBUG] ===== END PROMPTS =====");
+    }
+
     const config = barbaraConfig.analysis;
     const response = (await openai.chat.completions.create({
       model: config.model,
