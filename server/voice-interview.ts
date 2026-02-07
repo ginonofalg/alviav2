@@ -530,7 +530,7 @@ const watchdogState: SessionWatchdogState = {
 };
 
 const PERSIST_DEBOUNCE_MS = 2000;
-const MAX_TRANSCRIPT_IN_MEMORY = 100;
+const MAX_TRANSCRIPT_IN_MEMORY = 50;
 
 // Session hygiene constants
 const HEARTBEAT_INTERVAL_MS = 30_000; // Client sends ping every 30s

@@ -237,6 +237,11 @@ export async function analyzeWithBarbara(
     const systemPrompt = buildBarbaraSystemPrompt();
     const userPrompt = buildBarbaraUserPrompt(input);
 
+    const estimatedInputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+    console.log(
+      `[Barbara] Prompt estimate: ~${estimatedInputTokens} input tokens (system: ${systemPrompt.length} chars, user: ${userPrompt.length} chars)`,
+    );
+
     if (process.env.DEBUG_BARBARA_PROMPTS === "true") {
       console.log("[Barbara][DEBUG] ===== SYSTEM PROMPT =====");
       console.log(systemPrompt);
@@ -259,6 +264,12 @@ export async function analyzeWithBarbara(
     } as Parameters<
       typeof openai.chat.completions.create
     >[0])) as ChatCompletion;
+
+    if (response.usage) {
+      console.log(
+        `[Barbara] Actual usage: ${response.usage.prompt_tokens} input, ${response.usage.completion_tokens} output tokens`,
+      );
+    }
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -294,7 +305,7 @@ function buildBarbaraSystemPrompt(): string {
 IMPORTANT TIMING: Your guidance will be incorporated into Alvia's NEXT response, not her current one (while she's talking). The conversation continues while you analyze, so phrase your guidance to remain relevant even if the respondent says something else in the meantime.
 
 Your responsibilities:
-1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier in the transcript. If so, Alvia should acknowledge this.
+1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier — using question summaries for older questions and the recent transcript for nearby questions. If so, Alvia should acknowledge this.
 2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question.
 3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question.
 4. QUESTION DEDUPLICATION: Review the UPCOMING QUESTIONS list. Don't encourage Alvia to ask a follow-up that overlaps with a future template question. This prevents repetitive questioning and maintains interview flow.
@@ -368,8 +379,12 @@ function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
   return lines.join("\n");
 }
 
+const RECENT_TRANSCRIPT_QUESTION_WINDOW = 2;
+
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
-  const transcriptSummary = input.transcriptLog
+  const recentWindowStart = Math.max(0, input.currentQuestionIndex - RECENT_TRANSCRIPT_QUESTION_WINDOW);
+  const recentTranscript = input.transcriptLog
+    .filter((entry) => entry.questionIndex >= recentWindowStart)
     .map(
       (entry) =>
         `[${entry.speaker.toUpperCase()}] (Q${entry.questionIndex + 1}): ${entry.text}`,
@@ -402,9 +417,18 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
     input.questionMetrics.activeTimeMs / 1000,
   );
 
-  // Build summaries text from available previous question summaries
-  const summariesText = input.previousQuestionSummaries
-    .filter((s) => s && s.questionIndex < input.currentQuestionIndex)
+  const summariesForCompletedQuestions = input.previousQuestionSummaries
+    .filter((s) => s && s.questionIndex < recentWindowStart)
+    .map(
+      (s) => `Q${s.questionIndex + 1}: ${s.questionText}
+  Response Summary: ${s.respondentSummary}
+  Key Insights: ${s.keyInsights.join("; ")}
+  Completeness: ${s.completenessAssessment}`,
+    )
+    .join("\n\n");
+
+  const summariesForRecentQuestions = input.previousQuestionSummaries
+    .filter((s) => s && s.questionIndex >= recentWindowStart && s.questionIndex < input.currentQuestionIndex)
     .map(
       (s) => `Q${s.questionIndex + 1}: ${s.questionText}
   Response Summary: ${s.respondentSummary}
@@ -430,15 +454,14 @@ METRICS FOR CURRENT QUESTION:
 - Follow-ups asked so far: ${input.questionMetrics.followUpCount}
 - Recommended follow-up depth: ${input.questionMetrics.recommendedFollowUps !== null ? input.questionMetrics.recommendedFollowUps : "No limit set (use judgment)"}
 
-${summariesText ? `PREVIOUS QUESTIONS SUMMARY:\n${summariesText}\n\n` : ""}${previousQuestions ? `PREVIOUS QUESTIONS:\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `UPCOMING QUESTIONS (avoid asking follow-ups that overlap with these):\n${upcomingQuestions}\n` : ""}
-
-FULL TRANSCRIPT SO FAR:
-${transcriptSummary || "(No transcript yet)"}
+${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesForCompletedQuestions}\n\n` : ""}${summariesForRecentQuestions ? `RECENT QUESTIONS (summaries):\n${summariesForRecentQuestions}\n\n` : ""}${previousQuestions ? `QUESTION LIST (completed):\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `UPCOMING QUESTIONS (avoid asking follow-ups that overlap with these):\n${upcomingQuestions}\n` : ""}
+RECENT TRANSCRIPT (current + previous ${RECENT_TRANSCRIPT_QUESTION_WINDOW} questions):
+${recentTranscript || "(No transcript yet)"}
 
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
-${currentQuestionResponses || "(No response yet)"} //check this gets pushed
+${currentQuestionResponses || "(No response yet)"}
 ${buildCrossInterviewSnapshotBlock(input)}
-Based on this context, should Alvia receive any guidance? Respond with  your analysis in JSON format.`;
+Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
 }
 
 export function createEmptyMetrics(
