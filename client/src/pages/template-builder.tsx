@@ -4,7 +4,13 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,17 +32,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  ArrowLeft, 
-  Plus, 
-  GripVertical, 
+import {
+  ArrowLeft,
+  Plus,
+  GripVertical,
   Trash2,
   MessageSquare,
   ToggleLeft,
   Gauge,
   Hash,
   List,
-  Save
+  Save,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
@@ -76,7 +82,9 @@ const templateFormSchema = z.object({
   tone: z.string().optional(),
   constraints: z.string().optional(),
   defaultRecommendedFollowUps: z.number().min(0).max(10).optional(),
-  questions: z.array(questionSchema).min(1, "At least one question is required"),
+  questions: z
+    .array(questionSchema)
+    .min(1, "At least one question is required"),
 });
 
 type TemplateFormData = z.infer<typeof templateFormSchema>;
@@ -85,12 +93,12 @@ interface TemplateWithQuestions extends InterviewTemplate {
   questions?: Question[];
 }
 
-function QuestionCard({ 
-  index, 
+function QuestionCard({
+  index,
   question,
   onRemove,
   form,
-}: { 
+}: {
   index: number;
   question: any;
   onRemove: () => void;
@@ -112,9 +120,11 @@ function QuestionCard({
                 <Icon className="w-3 h-3" />
                 {questionTypeLabels[questionType]}
               </Badge>
-              <span className="text-xs text-muted-foreground">Question {index + 1}</span>
+              <span className="text-xs text-muted-foreground">
+                Question {index + 1}
+              </span>
             </div>
-            
+
             <FormField
               control={form.control}
               name={`questions.${index}.questionText`}
@@ -156,7 +166,9 @@ function QuestionCard({
                 <FormLabel className="text-xs">Question Type</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
-                    <SelectTrigger data-testid={`select-question-type-${index}`}>
+                    <SelectTrigger
+                      data-testid={`select-question-type-${index}`}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                   </FormControl>
@@ -184,7 +196,11 @@ function QuestionCard({
                     placeholder="Optional"
                     {...field}
                     value={field.value ?? ""}
-                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                    onChange={(e) =>
+                      field.onChange(
+                        e.target.value ? parseInt(e.target.value) : undefined,
+                      )
+                    }
                     data-testid={`input-time-hint-${index}`}
                   />
                 </FormControl>
@@ -253,7 +269,10 @@ function QuestionCard({
                 />
               </FormControl>
               <FormDescription className="text-xs">
-                Alvia sees this as her briefing for each question — it tells her what a good answer looks like and what to probe for. Barbara uses it to evaluate whether the respondent has covered enough ground before moving on.
+                Alvia sees this as her briefing for each question — it tells her
+                what a good answer looks like and what to probe for. Barbara
+                uses it to evaluate whether the respondent has covered enough
+                ground before moving on.
               </FormDescription>
             </FormItem>
           )}
@@ -273,18 +292,23 @@ function QuestionCard({
                   placeholder="Use template default"
                   {...field}
                   value={field.value ?? ""}
-                  onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value ? parseInt(e.target.value) : undefined,
+                    )
+                  }
                   className="w-40"
                   data-testid={`input-recommended-followups-${index}`}
                 />
               </FormControl>
               <FormDescription className="text-xs">
-                How many follow-up probes Alvia should attempt for this question before Barbara signals to move on. Leave blank to use the template default.
+                How many follow-up probes Alvia should attempt for this question
+                before Barbara signals to move on. Leave blank to use the
+                template default.
               </FormDescription>
             </FormItem>
           )}
         />
-
       </CardContent>
     </Card>
   );
@@ -298,12 +322,15 @@ export default function TemplateBuilderPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const { data: existingTemplate, isLoading: templateLoading } = useQuery<TemplateWithQuestions>({
-    queryKey: ["/api/templates", templateId],
-    enabled: isEditMode && !!templateId,
-  });
+  const { data: existingTemplate, isLoading: templateLoading } =
+    useQuery<TemplateWithQuestions>({
+      queryKey: ["/api/templates", templateId],
+      enabled: isEditMode && !!templateId,
+    });
 
-  const projectId = isEditMode ? existingTemplate?.projectId : projectIdFromParams;
+  const projectId = isEditMode
+    ? existingTemplate?.projectId
+    : projectIdFromParams;
 
   const { data: project } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -336,45 +363,60 @@ export default function TemplateBuilderPage() {
   useEffect(() => {
     if (isEditMode && existingTemplate) {
       const questions = existingTemplate.questions || [];
-      
+
       form.reset({
         name: existingTemplate.name,
         objective: existingTemplate.objective || "",
         tone: existingTemplate.tone || "professional",
         constraints: existingTemplate.constraints || "",
-        defaultRecommendedFollowUps: existingTemplate.defaultRecommendedFollowUps ?? undefined,
+        defaultRecommendedFollowUps:
+          existingTemplate.defaultRecommendedFollowUps ?? undefined,
         questions: [],
       });
 
-      const mappedQuestions = questions.length > 0 
-        ? questions.map(q => ({
-            questionText: q.questionText,
-            questionType: q.questionType as "open" | "yes_no" | "scale" | "numeric" | "multi_select",
-            guidance: q.guidance || "",
-            scaleMin: q.scaleMin ?? undefined,
-            scaleMax: q.scaleMax ?? undefined,
-            multiSelectOptions: q.multiSelectOptions || undefined,
-            timeHintSeconds: q.timeHintSeconds ?? undefined,
-            recommendedFollowUps: q.recommendedFollowUps ?? undefined,
-            isRequired: q.isRequired ?? true,
-          }))
-        : [{
-            questionText: "",
-            questionType: "open" as const,
-            guidance: "",
-            isRequired: true,
-          }];
-      
+      const mappedQuestions =
+        questions.length > 0
+          ? questions.map((q) => ({
+              questionText: q.questionText,
+              questionType: q.questionType as
+                | "open"
+                | "yes_no"
+                | "scale"
+                | "numeric"
+                | "multi_select",
+              guidance: q.guidance || "",
+              scaleMin: q.scaleMin ?? undefined,
+              scaleMax: q.scaleMax ?? undefined,
+              multiSelectOptions: q.multiSelectOptions || undefined,
+              timeHintSeconds: q.timeHintSeconds ?? undefined,
+              recommendedFollowUps: q.recommendedFollowUps ?? undefined,
+              isRequired: q.isRequired ?? true,
+            }))
+          : [
+              {
+                questionText: "",
+                questionType: "open" as const,
+                guidance: "",
+                isRequired: true,
+              },
+            ];
+
       replace(mappedQuestions);
     }
   }, [existingTemplate, isEditMode]);
 
   const createTemplate = useMutation({
     mutationFn: async (data: TemplateFormData) => {
-      return apiRequestJson<InterviewTemplate>("POST", `/api/projects/${projectId}/templates`, data);
+      return apiRequestJson<InterviewTemplate>(
+        "POST",
+        `/api/projects/${projectId}/templates`,
+        data,
+      );
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "templates"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", projectId, "templates"],
+      });
       toast({
         title: "Template created",
         description: "Your interview template has been created successfully.",
@@ -392,11 +434,19 @@ export default function TemplateBuilderPage() {
 
   const updateTemplate = useMutation({
     mutationFn: async (data: TemplateFormData) => {
-      return apiRequestJson<InterviewTemplate>("PATCH", `/api/templates/${templateId}`, data);
+      return apiRequestJson<InterviewTemplate>(
+        "PATCH",
+        `/api/templates/${templateId}`,
+        data,
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/templates", templateId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "templates"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/templates", templateId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", projectId, "templates"],
+      });
       toast({
         title: "Template updated",
         description: "Your interview template has been updated successfully.",
@@ -430,7 +480,9 @@ export default function TemplateBuilderPage() {
   };
 
   const isPending = createTemplate.isPending || updateTemplate.isPending;
-  const backLink = isEditMode ? `/templates/${templateId}` : `/projects/${projectId}`;
+  const backLink = isEditMode
+    ? `/templates/${templateId}`
+    : `/projects/${projectId}`;
 
   if (isEditMode && templateLoading) {
     return (
@@ -483,9 +535,9 @@ export default function TemplateBuilderPage() {
                   <FormItem>
                     <FormLabel>Template Name *</FormLabel>
                     <FormControl>
-                      <Input 
-                        placeholder="e.g., New User Onboarding Interview" 
-                        {...field} 
+                      <Input
+                        placeholder="e.g., New User Onboarding Interview"
+                        {...field}
                         data-testid="input-template-name"
                       />
                     </FormControl>
@@ -510,7 +562,14 @@ export default function TemplateBuilderPage() {
                       />
                     </FormControl>
                     <FormDescription>
-                      Alvia opens each interview with this objective in mind and uses it to decide when a question has been sufficiently explored. Barbara references it in real-time to judge whether follow-up probing is on-track. This is the single most important field for interview quality.
+                      Alvia uses this to introduce the interview to each
+                      respondent and to decide when a question has been
+                      sufficiently explored. Barbara references it in real-time
+                      to judge whether follow-up probing is on-track.{" "}
+                      <strong>
+                        This is the single most important field for interview
+                        quality.
+                      </strong>
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -524,21 +583,31 @@ export default function TemplateBuilderPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Interview Tone</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger data-testid="select-template-tone">
                             <SelectValue placeholder="Select tone" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="professional">Professional</SelectItem>
-                          <SelectItem value="friendly">Friendly & Casual</SelectItem>
+                          <SelectItem value="professional">
+                            Professional
+                          </SelectItem>
+                          <SelectItem value="friendly">
+                            Friendly & Casual
+                          </SelectItem>
                           <SelectItem value="formal">Formal</SelectItem>
                           <SelectItem value="empathetic">Empathetic</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormDescription className="text-xs">
-                        Alvia adopts this tone throughout the interview — from greeting through to wrap-up. Barbara's real-time guidance also respects this tone when suggesting how Alvia should probe or transition.
+                        Alvia adopts this tone throughout the interview — from
+                        greeting through to wrap-up. Barbara's real-time
+                        guidance also respects this tone when suggesting how
+                        Alvia should probe or transition.
                       </FormDescription>
                     </FormItem>
                   )}
@@ -558,12 +627,22 @@ export default function TemplateBuilderPage() {
                           placeholder="No limit"
                           {...field}
                           value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value
+                                ? parseInt(e.target.value)
+                                : undefined,
+                            )
+                          }
                           data-testid="input-default-followups"
                         />
                       </FormControl>
                       <FormDescription className="text-xs">
-                        Sets the default number of follow-up probes Alvia will attempt per question. Individual questions can override this. Barbara uses this to judge when Alvia has probed enough and should move on. '0' means Alvia asks only the scripted question with no follow-ups.
+                        Sets the default number of follow-up probes Alvia will
+                        attempt per question. Individual questions can override
+                        this. Barbara uses this to judge when Alvia has probed
+                        enough and should move on. '0' means Alvia asks only the
+                        scripted question with no follow-ups.
                       </FormDescription>
                     </FormItem>
                   )}
@@ -577,11 +656,11 @@ export default function TemplateBuilderPage() {
                   <FormItem>
                     <FormLabel>Constraints</FormLabel>
                     <FormControl>
-                      <Textarea 
+                      <Textarea
                         placeholder="Any topics or areas to avoid?"
                         className="resize-none"
                         rows={2}
-                        {...field} 
+                        {...field}
                         data-testid="input-template-constraints"
                       />
                     </FormControl>
@@ -632,7 +711,11 @@ export default function TemplateBuilderPage() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Add your first question to start building your interview.
                   </p>
-                  <Button type="button" onClick={addQuestion} data-testid="button-add-first-question">
+                  <Button
+                    type="button"
+                    onClick={addQuestion}
+                    data-testid="button-add-first-question"
+                  >
                     <Plus className="w-4 h-4 mr-2" />
                     Add Question
                   </Button>
@@ -643,17 +726,25 @@ export default function TemplateBuilderPage() {
 
           <div className="flex justify-end gap-4 pt-6 border-t">
             <Link href={backLink}>
-              <Button type="button" variant="outline" data-testid="button-cancel">
+              <Button
+                type="button"
+                variant="outline"
+                data-testid="button-cancel"
+              >
                 Cancel
               </Button>
             </Link>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={isPending}
               data-testid="button-save-template"
             >
               <Save className="w-4 h-4 mr-2" />
-              {isPending ? "Saving..." : isEditMode ? "Update Template" : "Save Template"}
+              {isPending
+                ? "Saving..."
+                : isEditMode
+                  ? "Update Template"
+                  : "Save Template"}
             </Button>
           </div>
         </form>
