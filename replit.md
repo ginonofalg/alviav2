@@ -28,6 +28,7 @@ The system organizes data hierarchically: **Workspace → Project → InterviewT
 - **API Pattern**: REST endpoints with authentication middleware.
 - **Component Library**: shadcn/ui.
 - **Lag-by-one-turn guidance**: Asynchronous AI guidance for next response.
+- **Hybrid Barbara Prompt Strategy**: Barbara receives question summaries for older questions and raw transcript only for the current + previous 2 questions (configurable via `RECENT_TRANSCRIPT_QUESTION_WINDOW`). This replaces the previous full-transcript dump approach, reducing prompt size from O(interview_length) to O(current_question_window) per call. `MAX_TRANSCRIPT_IN_MEMORY` set to 50 as a safety cap. Token estimation and actual usage are logged per Barbara call.
 - **Multi-Level Analytics System**: Analytics generated at Collection, Template, and Project levels, with AI-powered cross-template synthesis at the Project level.
 - **Strategic Context Integration**: Enables tailored analytics recommendations based on user-provided business context.
 - **Aggregated Analytics Command Center**: Centralized dashboard for cross-project insights and analytics health.
