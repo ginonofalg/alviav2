@@ -9,6 +9,7 @@ import {
   detectTopicOverlap,
   generateAdditionalQuestions,
   generateSessionSummary,
+  type BarbaraAnalysisInput,
   type TranscriptEntry,
   type QuestionMetrics,
   type BarbaraGuidance,
@@ -52,6 +53,98 @@ import {
 // Feature flag for additional questions
 const ADDITIONAL_QUESTIONS_ENABLED =
   process.env.ADDITIONAL_QUESTIONS_ENABLED !== "false";
+
+type CompactCrossInterviewTheme = {
+  theme: string;
+  prevalence: number;
+  cue: string;
+};
+
+type CrossInterviewRuntimeContext = {
+  enabled: boolean;
+  reason?: string;
+  source?: "collection_analytics_snapshot";
+  priorSessionCount?: number;
+  snapshotGeneratedAt?: number | null;
+  themesByQuestion?: Record<number, CompactCrossInterviewTheme[]>;
+  emergentThemes?: CompactCrossInterviewTheme[];
+};
+
+const MAX_THEMES_PER_QUESTION = 3;
+const MAX_EMERGENT_THEMES = 2;
+const MAX_CUE_LENGTH = 120;
+
+function buildCrossInterviewRuntimeContext(
+  project: any,
+  collection: any,
+): CrossInterviewRuntimeContext {
+  if (!project?.crossInterviewContext) {
+    return { enabled: false, reason: "feature_disabled_on_project" };
+  }
+
+  const threshold = project.crossInterviewThreshold ?? 5;
+  const analyzedCount = collection?.analyzedSessionCount ?? 0;
+
+  if (analyzedCount < threshold) {
+    return {
+      enabled: false,
+      reason: `threshold_unmet (${analyzedCount}/${threshold} sessions analyzed)`,
+    };
+  }
+
+  const analyticsData = collection?.analyticsData as any;
+  if (!analyticsData?.themes || !Array.isArray(analyticsData.themes) || analyticsData.themes.length === 0) {
+    return { enabled: false, reason: "no_analytics_data" };
+  }
+
+  const themes = analyticsData.themes as Array<{
+    theme: string;
+    description: string;
+    prevalence: number;
+    relatedQuestions: number[];
+    isEmergent?: boolean;
+  }>;
+
+  const truncateCue = (text: string): string =>
+    text.length <= MAX_CUE_LENGTH ? text : text.slice(0, MAX_CUE_LENGTH - 1) + "\u2026";
+
+  const toCompact = (t: typeof themes[number]): CompactCrossInterviewTheme => ({
+    theme: t.theme,
+    prevalence: t.prevalence,
+    cue: truncateCue(t.description),
+  });
+
+  const themesByQuestion: Record<number, CompactCrossInterviewTheme[]> = {};
+  for (const t of themes) {
+    if (t.isEmergent) continue;
+    if (!Array.isArray(t.relatedQuestions)) continue;
+    for (const qIdx of t.relatedQuestions) {
+      if (!themesByQuestion[qIdx]) themesByQuestion[qIdx] = [];
+      if (themesByQuestion[qIdx].length < MAX_THEMES_PER_QUESTION) {
+        themesByQuestion[qIdx].push(toCompact(t));
+      }
+    }
+  }
+
+  const emergentThemes = themes
+    .filter((t) => t.isEmergent)
+    .sort((a, b) => b.prevalence - a.prevalence)
+    .slice(0, MAX_EMERGENT_THEMES)
+    .map(toCompact);
+
+  const snapshotGeneratedAt = analyticsData.generatedAt
+    ? new Date(analyticsData.generatedAt).getTime()
+    : (collection.lastAnalyzedAt ? new Date(collection.lastAnalyzedAt).getTime() : null);
+
+  return {
+    enabled: true,
+    source: "collection_analytics_snapshot",
+    priorSessionCount: analyzedCount,
+    snapshotGeneratedAt,
+    themesByQuestion,
+    emergentThemes,
+  };
+}
 
 function getProvider(
   providerOverride?: RealtimeProviderType | null,
@@ -129,6 +222,8 @@ interface InterviewState {
   responseInProgress: boolean;
   responseStartedAt: number | null; // When current response.create was sent
   lastResponseDoneAt: number | null;
+  // Cross-interview context snapshot (precomputed at init, never updated during session)
+  crossInterviewRuntimeContext: CrossInterviewRuntimeContext;
   // Client-side performance metrics (e.g., calibration data)
   performanceMetrics?: {
     calibration?: {
@@ -1136,6 +1231,7 @@ export function handleVoiceInterview(
     responseInProgress: false,
     responseStartedAt: null,
     lastResponseDoneAt: null,
+    crossInterviewRuntimeContext: { enabled: false, reason: "not_initialized" },
   };
   interviewStates.set(sessionId, state);
 
@@ -1263,6 +1359,20 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
     state.endOfInterviewSummaryEnabled =
       collection.endOfInterviewSummaryEnabled ?? false;
+
+    state.crossInterviewRuntimeContext = buildCrossInterviewRuntimeContext(project, collection);
+    if (state.crossInterviewRuntimeContext.enabled) {
+      const ctx = state.crossInterviewRuntimeContext;
+      const questionCount = Object.keys(ctx.themesByQuestion || {}).length;
+      const emergentCount = (ctx.emergentThemes || []).length;
+      console.log(
+        `[CrossInterview] Enabled for session ${sessionId}: ${ctx.priorSessionCount} prior sessions, ${questionCount} questions with themes, ${emergentCount} emergent themes`,
+      );
+    } else {
+      console.log(
+        `[CrossInterview] Disabled for session ${sessionId}: ${state.crossInterviewRuntimeContext.reason}`,
+      );
+    }
 
     // Determine if this is a restored session based on session status or progress
     // This catches all cases: in_progress, paused, or any session with question progress
@@ -2477,7 +2587,7 @@ async function triggerBarbaraAnalysis(
       );
     });
 
-    const analysisPromise = analyzeWithBarbara({
+    const barbaraInput: BarbaraAnalysisInput = {
       transcriptLog: state.transcriptLog,
       previousQuestionSummaries: state.questionSummaries.filter(
         (s) => s != null,
@@ -2494,7 +2604,26 @@ async function triggerBarbaraAnalysis(
       questionMetrics: metrics,
       templateObjective: state.template?.objective || "",
       templateTone: state.template?.tone || "professional",
-    });
+    };
+
+    const ctx = state.crossInterviewRuntimeContext;
+    if (ctx.enabled && ctx.themesByQuestion) {
+      const questionThemes = ctx.themesByQuestion[state.currentQuestionIndex] || [];
+      const emergentThemes = ctx.emergentThemes || [];
+      if (questionThemes.length > 0 || emergentThemes.length > 0) {
+        barbaraInput.crossInterviewContext = {
+          priorSessionCount: ctx.priorSessionCount!,
+          snapshotGeneratedAt: ctx.snapshotGeneratedAt ?? null,
+          questionThemes,
+          emergentThemes,
+        };
+        console.log(
+          `[CrossInterview] Injecting ${questionThemes.length} question themes + ${emergentThemes.length} emergent themes for Q${state.currentQuestionIndex + 1}`,
+        );
+      }
+    }
+
+    const analysisPromise = analyzeWithBarbara(barbaraInput);
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
 

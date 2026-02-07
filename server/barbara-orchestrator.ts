@@ -201,7 +201,13 @@ export interface BarbaraGuidance {
   reasoning: string;
 }
 
-interface BarbaraAnalysisInput {
+type CompactCrossInterviewTheme = {
+  theme: string;
+  prevalence: number;
+  cue: string;
+};
+
+export interface BarbaraAnalysisInput {
   transcriptLog: TranscriptEntry[];
   previousQuestionSummaries: QuestionSummary[];
   currentQuestionIndex: number;
@@ -216,6 +222,12 @@ interface BarbaraAnalysisInput {
   questionMetrics: QuestionMetrics;
   templateObjective: string;
   templateTone: string;
+  crossInterviewContext?: {
+    priorSessionCount: number;
+    snapshotGeneratedAt: number | null;
+    questionThemes: CompactCrossInterviewTheme[];
+    emergentThemes: CompactCrossInterviewTheme[];
+  };
 }
 
 export async function analyzeWithBarbara(
@@ -304,7 +316,48 @@ Action meanings:
 Be conservative - only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Phrase guidance flexibly since the conversation may have progressed by the time Alvia uses it.
 
 IMPORTANT: Remember, Alvia is having a voice conversation with the respondent. It's normal not to cover every single aspect of the Guidance for This Question. Use judgement to determine when to intervene and suggest moving to the next question.
+
+CROSS-INTERVIEW AWARENESS:
+You may receive a snapshot of themes from prior interviews in the same collection. When present:
+- Do not force these themes into the conversation.
+- Treat cross-interview themes as hypotheses, not facts about this respondent.
+- Prefer neutral phrasing such as "it may be useful to explore..." rather than asserting consensus.
+- Avoid introducing bias or leading the respondent toward expected answers.
+- If not clearly relevant to the current moment, ignore the cross-interview context entirely and continue with current-question guidance.
 `;
+}
+
+function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
+  const ctx = input.crossInterviewContext;
+  if (!ctx || (ctx.questionThemes.length === 0 && ctx.emergentThemes.length === 0)) {
+    return "";
+  }
+
+  const lines: string[] = [
+    "",
+    "CROSS-INTERVIEW SNAPSHOT (same collection):",
+    `- Source: collection analytics snapshot (${ctx.priorSessionCount} prior sessions)`,
+    `- Snapshot generated at: ${ctx.snapshotGeneratedAt ? new Date(ctx.snapshotGeneratedAt).toISOString() : "unknown"}`,
+  ];
+
+  if (ctx.questionThemes.length > 0) {
+    lines.push("Themes most relevant to CURRENT QUESTION:");
+    for (const t of ctx.questionThemes) {
+      lines.push(`  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`);
+    }
+  }
+
+  if (ctx.emergentThemes.length > 0) {
+    lines.push("Emergent themes from prior interviews:");
+    for (const t of ctx.emergentThemes) {
+      lines.push(`  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`);
+    }
+  }
+
+  lines.push("Instruction: If not clearly relevant, ignore this snapshot and continue with current-question guidance.");
+  lines.push("");
+
+  return lines.join("\n");
 }
 
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
@@ -376,7 +429,7 @@ ${transcriptSummary || "(No transcript yet)"}
 
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
 ${currentQuestionResponses || "(No response yet)"} //check this gets pushed
-
+${buildCrossInterviewSnapshotBlock(input)}
 Based on this context, should Alvia receive any guidance? Respond with  your analysis in JSON format.`;
 }
 
