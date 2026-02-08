@@ -32,6 +32,7 @@ import type {
   SilenceStats,
   TranscriptionQualitySignals,
   AlviaSessionSummary,
+  QualityFlag,
 } from "@shared/schema";
 import {
   createEmptyQualitySignals,
@@ -60,6 +61,21 @@ type CompactCrossInterviewTheme = {
   cue: string;
 };
 
+type CompactFlagCount = {
+  flag: QualityFlag;
+  count: number;
+};
+
+type CompactQuestionQualityInsight = {
+  questionIndex: number;
+  responseCount: number;
+  avgQualityScore: number;
+  responseRichness: "brief" | "moderate" | "detailed";
+  avgWordCount: number;
+  topFlags: CompactFlagCount[];
+  perspectiveRange: "narrow" | "moderate" | "diverse";
+};
+
 type CrossInterviewRuntimeContext = {
   enabled: boolean;
   reason?: string;
@@ -68,11 +84,17 @@ type CrossInterviewRuntimeContext = {
   snapshotGeneratedAt?: number | null;
   themesByQuestion?: Record<number, CompactCrossInterviewTheme[]>;
   emergentThemes?: CompactCrossInterviewTheme[];
+  qualityInsightsByQuestion?: Record<number, CompactQuestionQualityInsight>;
 };
 
 const MAX_THEMES_PER_QUESTION = 3;
 const MAX_EMERGENT_THEMES = 2;
 const MAX_CUE_LENGTH = 120;
+
+const QUALITY_ALERT_THRESHOLD = 65;
+const MIN_RESPONSE_COUNT_FOR_ALERT = 2;
+const MIN_FLAG_COUNT_FOR_ALERT = 2;
+const MAX_TOP_FLAGS_PER_QUESTION = 2;
 
 function buildCrossInterviewRuntimeContext(
   project: any,
@@ -93,44 +115,117 @@ function buildCrossInterviewRuntimeContext(
   }
 
   const analyticsData = collection?.analyticsData as any;
-  if (!analyticsData?.themes || !Array.isArray(analyticsData.themes) || analyticsData.themes.length === 0) {
-    return { enabled: false, reason: "no_analytics_data" };
-  }
 
-  const themes = analyticsData.themes as Array<{
-    theme: string;
-    description: string;
-    prevalence: number;
-    relatedQuestions: number[];
-    isEmergent?: boolean;
-  }>;
+  const hasThemes = Array.isArray(analyticsData?.themes) && analyticsData.themes.length > 0;
+  const hasQuestionPerformance = Array.isArray(analyticsData?.questionPerformance) && analyticsData.questionPerformance.length > 0;
+
+  if (!hasThemes && !hasQuestionPerformance) {
+    return { enabled: false, reason: "no_actionable_cross_interview_context" };
+  }
 
   const truncateCue = (text: string): string =>
     text.length <= MAX_CUE_LENGTH ? text : text.slice(0, MAX_CUE_LENGTH - 1) + "\u2026";
 
-  const toCompact = (t: typeof themes[number]): CompactCrossInterviewTheme => ({
-    theme: t.theme,
-    prevalence: t.prevalence,
-    cue: truncateCue(t.description),
-  });
+  let themesByQuestion: Record<number, CompactCrossInterviewTheme[]> | undefined;
+  let emergentThemes: CompactCrossInterviewTheme[] | undefined;
 
-  const themesByQuestion: Record<number, CompactCrossInterviewTheme[]> = {};
-  for (const t of themes) {
-    if (t.isEmergent) continue;
-    if (!Array.isArray(t.relatedQuestions)) continue;
-    for (const qIdx of t.relatedQuestions) {
-      if (!themesByQuestion[qIdx]) themesByQuestion[qIdx] = [];
-      if (themesByQuestion[qIdx].length < MAX_THEMES_PER_QUESTION) {
-        themesByQuestion[qIdx].push(toCompact(t));
+  if (hasThemes) {
+    const themes = analyticsData.themes as Array<{
+      theme: string;
+      description: string;
+      prevalence: number;
+      relatedQuestions: number[];
+      isEmergent?: boolean;
+    }>;
+
+    const toCompact = (t: typeof themes[number]): CompactCrossInterviewTheme => ({
+      theme: t.theme,
+      prevalence: t.prevalence,
+      cue: truncateCue(t.description),
+    });
+
+    themesByQuestion = {};
+    for (const t of themes) {
+      if (t.isEmergent) continue;
+      if (!Array.isArray(t.relatedQuestions)) continue;
+      for (const qIdx of t.relatedQuestions) {
+        if (!themesByQuestion[qIdx]) themesByQuestion[qIdx] = [];
+        if (themesByQuestion[qIdx].length < MAX_THEMES_PER_QUESTION) {
+          themesByQuestion[qIdx].push(toCompact(t));
+        }
       }
+    }
+
+    emergentThemes = themes
+      .filter((t) => t.isEmergent)
+      .sort((a, b) => b.prevalence - a.prevalence)
+      .slice(0, MAX_EMERGENT_THEMES)
+      .map(toCompact);
+  }
+
+  let qualityInsightsByQuestion: Record<number, CompactQuestionQualityInsight> | undefined;
+
+  if (hasQuestionPerformance) {
+    const qpEntries = analyticsData.questionPerformance as Array<{
+      questionIndex: number;
+      avgWordCount: number;
+      avgQualityScore: number;
+      responseCount: number;
+      qualityFlagCounts: Record<string, number>;
+      perspectiveRange: "narrow" | "moderate" | "diverse";
+      responseRichness: "brief" | "moderate" | "detailed";
+    }>;
+
+    qualityInsightsByQuestion = {};
+
+    for (const qp of qpEntries) {
+      if (typeof qp.questionIndex !== "number" || qp.questionIndex < 0) continue;
+      if ((qp.responseCount ?? 0) < MIN_RESPONSE_COUNT_FOR_ALERT) continue;
+
+      const hasLowQuality = qp.avgQualityScore > 0 && qp.avgQualityScore < QUALITY_ALERT_THRESHOLD;
+      const hasBriefResponses = qp.responseRichness === "brief";
+      const hasNarrowPerspective = qp.perspectiveRange === "narrow";
+
+      const flagCounts: CompactFlagCount[] = [];
+      if (qp.qualityFlagCounts && typeof qp.qualityFlagCounts === "object") {
+        for (const [flag, count] of Object.entries(qp.qualityFlagCounts)) {
+          if (typeof count === "number" && count >= MIN_FLAG_COUNT_FOR_ALERT) {
+            flagCounts.push({ flag: flag as QualityFlag, count });
+          }
+        }
+      }
+      flagCounts.sort((a, b) => b.count - a.count || a.flag.localeCompare(b.flag));
+      const topFlags = flagCounts.slice(0, MAX_TOP_FLAGS_PER_QUESTION);
+
+      const hasRecurringFlags = topFlags.length > 0;
+
+      if (!hasLowQuality && !hasBriefResponses && !hasRecurringFlags && !hasNarrowPerspective) continue;
+
+      const insight: CompactQuestionQualityInsight = {
+        questionIndex: qp.questionIndex,
+        responseCount: qp.responseCount,
+        avgQualityScore: qp.avgQualityScore,
+        responseRichness: qp.responseRichness,
+        avgWordCount: qp.avgWordCount,
+        topFlags,
+        perspectiveRange: qp.perspectiveRange,
+      };
+
+      qualityInsightsByQuestion[qp.questionIndex] = insight;
+    }
+
+    if (Object.keys(qualityInsightsByQuestion).length === 0) {
+      qualityInsightsByQuestion = undefined;
     }
   }
 
-  const emergentThemes = themes
-    .filter((t) => t.isEmergent)
-    .sort((a, b) => b.prevalence - a.prevalence)
-    .slice(0, MAX_EMERGENT_THEMES)
-    .map(toCompact);
+  const hasActionableThemes = themesByQuestion && Object.keys(themesByQuestion).length > 0
+    || (emergentThemes && emergentThemes.length > 0);
+  const hasActionableQuality = qualityInsightsByQuestion !== undefined;
+
+  if (!hasActionableThemes && !hasActionableQuality) {
+    return { enabled: false, reason: "no_actionable_cross_interview_context" };
+  }
 
   const snapshotGeneratedAt = analyticsData.generatedAt
     ? new Date(analyticsData.generatedAt).getTime()
@@ -143,6 +238,7 @@ function buildCrossInterviewRuntimeContext(
     snapshotGeneratedAt,
     themesByQuestion,
     emergentThemes,
+    qualityInsightsByQuestion,
   };
 }
 
@@ -1365,8 +1461,9 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       const ctx = state.crossInterviewRuntimeContext;
       const questionCount = Object.keys(ctx.themesByQuestion || {}).length;
       const emergentCount = (ctx.emergentThemes || []).length;
+      const qualityAlertCount = Object.keys(ctx.qualityInsightsByQuestion || {}).length;
       console.log(
-        `[CrossInterview] Enabled for session ${sessionId}: ${ctx.priorSessionCount} prior sessions, ${questionCount} questions with themes, ${emergentCount} emergent themes`,
+        `[CrossInterview] Enabled for session ${sessionId}: ${ctx.priorSessionCount} prior sessions, ${questionCount} questions with themes, ${emergentCount} emergent themes, ${qualityAlertCount} questions with quality alerts`,
       );
     } else {
       console.log(
@@ -2607,18 +2704,59 @@ async function triggerBarbaraAnalysis(
     };
 
     const ctx = state.crossInterviewRuntimeContext;
-    if (ctx.enabled && ctx.themesByQuestion) {
-      const questionThemes = ctx.themesByQuestion[state.currentQuestionIndex] || [];
+    if (ctx.enabled) {
+      const questionThemes = ctx.themesByQuestion?.[state.currentQuestionIndex] || [];
       const emergentThemes = ctx.emergentThemes || [];
-      if (questionThemes.length > 0 || emergentThemes.length > 0) {
+
+      const isAdditionalQuestion = state.currentQuestionIndex >= state.questions.length;
+      const currentQuestionQuality = !isAdditionalQuestion
+        ? ctx.qualityInsightsByQuestion?.[state.currentQuestionIndex]
+        : undefined;
+
+      const upcomingQualityAlerts: CompactQuestionQualityInsight[] = [];
+      if (ctx.qualityInsightsByQuestion && !isAdditionalQuestion) {
+        const templateQuestionCount = state.questions.length;
+        for (let i = state.currentQuestionIndex + 1; i < templateQuestionCount && upcomingQualityAlerts.length < 3; i++) {
+          const insight = ctx.qualityInsightsByQuestion[i];
+          if (insight) {
+            upcomingQualityAlerts.push(insight);
+          }
+        }
+      }
+
+      const hasThemeContext = questionThemes.length > 0 || emergentThemes.length > 0;
+      const hasQualityContext = currentQuestionQuality !== undefined || upcomingQualityAlerts.length > 0;
+
+      if (hasThemeContext || hasQualityContext) {
         barbaraInput.crossInterviewContext = {
           priorSessionCount: ctx.priorSessionCount!,
           snapshotGeneratedAt: ctx.snapshotGeneratedAt ?? null,
           questionThemes,
           emergentThemes,
+          currentQuestionQuality: currentQuestionQuality ? {
+            questionIndex: currentQuestionQuality.questionIndex,
+            responseCount: currentQuestionQuality.responseCount,
+            avgQualityScore: currentQuestionQuality.avgQualityScore,
+            responseRichness: currentQuestionQuality.responseRichness,
+            avgWordCount: currentQuestionQuality.avgWordCount,
+            topFlags: currentQuestionQuality.topFlags,
+            perspectiveRange: currentQuestionQuality.perspectiveRange,
+          } : undefined,
+          upcomingQualityAlerts: upcomingQualityAlerts.length > 0 ? upcomingQualityAlerts.map((q) => ({
+            questionIndex: q.questionIndex,
+            responseCount: q.responseCount,
+            avgQualityScore: q.avgQualityScore,
+            responseRichness: q.responseRichness,
+            avgWordCount: q.avgWordCount,
+            topFlags: q.topFlags,
+            perspectiveRange: q.perspectiveRange,
+          })) : undefined,
         };
         console.log(
           `[CrossInterview] Injecting ${questionThemes.length} question themes + ${emergentThemes.length} emergent themes for Q${state.currentQuestionIndex + 1}`,
+        );
+        console.log(
+          `[CrossInterview] Injecting quality insights for Q${state.currentQuestionIndex + 1}: current=${currentQuestionQuality ? 1 : 0}, upcoming=${upcomingQualityAlerts.length}`,
         );
       }
     }

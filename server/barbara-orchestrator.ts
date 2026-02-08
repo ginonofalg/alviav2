@@ -227,6 +227,24 @@ export interface BarbaraAnalysisInput {
     snapshotGeneratedAt: number | null;
     questionThemes: CompactCrossInterviewTheme[];
     emergentThemes: CompactCrossInterviewTheme[];
+    currentQuestionQuality?: {
+      questionIndex: number;
+      responseCount: number;
+      avgQualityScore: number;
+      responseRichness: "brief" | "moderate" | "detailed";
+      avgWordCount: number;
+      topFlags: Array<{ flag: QualityFlag; count: number }>;
+      perspectiveRange: "narrow" | "moderate" | "diverse";
+    };
+    upcomingQualityAlerts?: Array<{
+      questionIndex: number;
+      responseCount: number;
+      avgQualityScore: number;
+      responseRichness: "brief" | "moderate" | "detailed";
+      avgWordCount: number;
+      topFlags: Array<{ flag: QualityFlag; count: number }>;
+      perspectiveRange: "narrow" | "moderate" | "diverse";
+    }>;
   };
 }
 
@@ -336,6 +354,8 @@ Be conservative - only intervene when there's a clear benefit. Most of the time,
 
 IMPORTANT: Remember, Alvia is having a voice conversation with the respondent. It's normal not to cover every single aspect of the Guidance for This Question. Use judgement to determine when to intervene and suggest moving to the next question.
 
+6. QUESTION QUALITY AWARENESS: If historical quality insights are present, use them to anticipate where probing, rephrasing, or warmer phrasing may help. Treat them as statistical priors, not assumptions about this respondent.
+
 CROSS-INTERVIEW AWARENESS:
 You may receive a snapshot of themes from prior interviews in the same collection. When present:
 - Do not force these themes into the conversation.
@@ -343,6 +363,8 @@ You may receive a snapshot of themes from prior interviews in the same collectio
 - Prefer neutral phrasing such as "it may be useful to explore..." rather than asserting consensus.
 - Avoid introducing bias or leading the respondent toward expected answers.
 - If not clearly relevant to the current moment, ignore the cross-interview context entirely and continue with current-question guidance.
+- Historical quality issues may not apply to this respondent. Use live transcript evidence to override historical priors.
+- Do not force interventions solely because a quality alert exists.
 `;
 }
 
@@ -374,6 +396,55 @@ function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
   }
 
   lines.push("Instruction: If not clearly relevant, ignore this snapshot and continue with current-question guidance.");
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+const MAX_UPCOMING_QUALITY_ALERTS = 3;
+
+function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string {
+  const ctx = input.crossInterviewContext;
+  if (!ctx) return "";
+
+  const current = ctx.currentQuestionQuality;
+  const upcoming = ctx.upcomingQualityAlerts;
+
+  if (!current && (!upcoming || upcoming.length === 0)) return "";
+
+  const formatFlags = (flags: Array<{ flag: QualityFlag; count: number }>): string =>
+    flags.map((f) => `${f.flag}\u00d7${f.count}`).join(", ");
+
+  const formatAlert = (q: NonNullable<typeof current>, prefix: string): string => {
+    const parts = [`${prefix} (n=${q.responseCount}): quality ${q.avgQualityScore}/100`];
+    parts.push(`richness ${q.responseRichness} (${q.avgWordCount} words)`);
+    if (q.topFlags.length > 0) {
+      parts.push(`flags ${formatFlags(q.topFlags)}`);
+    }
+    if (q.perspectiveRange === "narrow") {
+      parts.push("perspective narrow");
+    }
+    return parts.join("; ") + ".";
+  };
+
+  const lines: string[] = [
+    "",
+    "QUESTION QUALITY INSIGHTS (prior interviews, same collection):",
+  ];
+
+  if (current) {
+    lines.push(formatAlert(current, `CURRENT Q${current.questionIndex + 1}`));
+    lines.push("Recommended handling: probe for specifics, rephrase if needed, and allow pause for elaboration.");
+  }
+
+  if (upcoming && upcoming.length > 0) {
+    lines.push("UPCOMING ALERTS:");
+    for (const q of upcoming.slice(0, MAX_UPCOMING_QUALITY_ALERTS)) {
+      lines.push(`- ${formatAlert(q, `Q${q.questionIndex + 1}`)}`);
+    }
+  }
+
+  lines.push("Note: Historical patterns only. Prioritize this respondent's live signals.");
   lines.push("");
 
   return lines.join("\n");
@@ -460,7 +531,7 @@ ${recentTranscript || "(No transcript yet)"}
 
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
 ${currentQuestionResponses || "(No response yet)"}
-${buildCrossInterviewSnapshotBlock(input)}
+${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}
 Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
 }
 
