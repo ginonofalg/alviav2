@@ -28,6 +28,8 @@ import {
 } from "./barbara-orchestrator";
 import { getInfographicService } from "./infographic-service";
 import { InfographicPromptBuilder } from "./infographic-prompts";
+import type { LLMUsageAttribution } from "@shared/schema";
+import { recordLlmUsageEvent, extractGeminiUsage } from "./llm-usage";
 import { 
   insertProjectSchema, 
   insertTemplateSchema, 
@@ -223,11 +225,16 @@ export async function registerRoutes(
       console.log("[Analytics] Total summaries:", sessionsWithSummaries.reduce((sum, s) => sum + s.questionSummaries.length, 0));
 
       const project = await storage.getProject(template.projectId);
+      const collectionUsageContext: LLMUsageAttribution = {
+        projectId: template.projectId,
+        templateId: template.id,
+        collectionId: req.params.collectionId,
+      };
       const analysisResult = await generateCrossInterviewAnalysis({
         sessions: sessionsWithSummaries,
         templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
         templateObjective: project?.objective || "",
-      });
+      }, collectionUsageContext);
 
       const analyticsData: CollectionAnalytics = {
         ...analysisResult,
@@ -336,11 +343,15 @@ export async function registerRoutes(
       console.log("[Template Analytics] Generating for template:", template.name);
       console.log("[Template Analytics] Collections with analytics:", collectionsWithAnalytics.length);
 
+      const templateUsageContext: LLMUsageAttribution = {
+        projectId: template.projectId,
+        templateId: template.id,
+      };
       const analysisResult = await generateTemplateAnalytics({
         collections: collectionsData,
         templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
         templateName: template.name,
-      });
+      }, templateUsageContext);
 
       const analyticsData: TemplateAnalytics = {
         ...analysisResult,
@@ -457,13 +468,16 @@ export async function registerRoutes(
       console.log("[Project Analytics] Generating for project:", project.name);
       console.log("[Project Analytics] Templates with analytics:", templatesWithAnalytics.length);
 
+      const projectUsageContext: LLMUsageAttribution = {
+        projectId: project.id,
+      };
       const analysisResult = await generateProjectAnalytics({
         templates: templatesData,
         projectName: project.name,
         projectObjective: project.objective || "",
         strategicContext: project.strategicContext || undefined,
         contextType: project.contextType || undefined,
-      });
+      }, projectUsageContext);
 
       const analyticsData: ProjectAnalytics = {
         ...analysisResult,
@@ -634,11 +648,16 @@ export async function registerRoutes(
                 };
               });
 
+              const cascadeCollectionUsageContext: LLMUsageAttribution = {
+                projectId: project.id,
+                templateId: template.id,
+                collectionId: collection.id,
+              };
               const analysisResult = await generateCrossInterviewAnalysis({
                 sessions: sessionsWithSummaries,
                 templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
                 templateObjective: project.objective || "",
-              });
+              }, cascadeCollectionUsageContext);
 
               const analyticsData: CollectionAnalytics = {
                 ...analysisResult,
@@ -690,11 +709,15 @@ export async function registerRoutes(
         try {
           console.log("[Cascade Refresh] Refreshing template:", template.name);
           
+          const cascadeTemplateUsageContext: LLMUsageAttribution = {
+            projectId: project.id,
+            templateId: template.id,
+          };
           const analysisResult = await generateTemplateAnalytics({
             collections: collectionsData,
             templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
             templateName: template.name,
-          });
+          }, cascadeTemplateUsageContext);
 
           const analyticsData: TemplateAnalytics = {
             ...analysisResult,
@@ -746,13 +769,16 @@ export async function registerRoutes(
         try {
           console.log("[Cascade Refresh] Refreshing project:", project.name);
           
+          const cascadeProjectUsageContext: LLMUsageAttribution = {
+            projectId: project.id,
+          };
           const analysisResult = await generateProjectAnalytics({
             templates: templatesData,
             projectName: project.name,
             projectObjective: project.objective || "",
             strategicContext: project.strategicContext || undefined,
             contextType: project.contextType || undefined,
-          });
+          }, cascadeProjectUsageContext);
 
           const projectAnalyticsData: ProjectAnalytics = {
             ...analysisResult,
@@ -899,11 +925,16 @@ export async function registerRoutes(
               };
             });
 
+            const tplCascadeCollUsageContext: LLMUsageAttribution = {
+              projectId: template.projectId,
+              templateId: template.id,
+              collectionId: collection.id,
+            };
             const analysisResult = await generateCrossInterviewAnalysis({
               sessions: sessionsWithSummaries,
               templateQuestions: questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
               templateObjective: project?.objective || "",
-            });
+            }, tplCascadeCollUsageContext);
 
             const analyticsData: CollectionAnalytics = {
               ...analysisResult,
@@ -949,11 +980,15 @@ export async function registerRoutes(
         try {
           console.log("[Cascade Refresh] Refreshing template:", template.name);
           
+          const tplCascadeUsageContext: LLMUsageAttribution = {
+            projectId: template.projectId,
+            templateId: template.id,
+          };
           const analysisResult = await generateTemplateAnalytics({
             collections: collectionsData,
             templateQuestions: questions.map((q, idx) => ({ text: q.questionText, index: idx })),
             templateName: template.name,
-          });
+          }, tplCascadeUsageContext);
 
           const templateAnalyticsData: TemplateAnalytics = {
             ...analysisResult,
@@ -1026,6 +1061,20 @@ export async function registerRoutes(
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
 
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          collectionId: collectionId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_collection_summary",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
+
       res.json({
         success: true,
         id: result.id,
@@ -1063,6 +1112,20 @@ export async function registerRoutes(
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
 
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          collectionId: collectionId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_collection_themes",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
+
       res.json({
         success: true,
         id: result.id,
@@ -1099,6 +1162,20 @@ export async function registerRoutes(
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
+
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          collectionId: collectionId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_collection_findings",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
 
       res.json({
         success: true,
@@ -1144,6 +1221,20 @@ export async function registerRoutes(
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
 
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          projectId: projectId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_project_summary",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
+
       res.json({
         success: true,
         id: result.id,
@@ -1187,6 +1278,20 @@ export async function registerRoutes(
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
 
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          projectId: projectId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_project_themes",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
+
       res.json({
         success: true,
         id: result.id,
@@ -1229,6 +1334,20 @@ export async function registerRoutes(
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
+
+      if (result.usage) {
+        const infographicAttribution: LLMUsageAttribution = {
+          projectId: projectId,
+        };
+        recordLlmUsageEvent(
+          infographicAttribution,
+          "gemini",
+          result.model || "gemini-2.0-flash-preview-image-generation",
+          "infographic_project_insights",
+          result.usage,
+          result.usage.totalTokens > 0 ? "success" : "missing_usage",
+        ).catch(err => console.error("[LLM Usage] Failed to record infographic usage:", err));
+      }
 
       res.json({
         success: true,
@@ -1480,6 +1599,9 @@ export async function registerRoutes(
       }
       
       // Generate template using AI
+      const templateGenUsageContext: LLMUsageAttribution = {
+        projectId: projectId,
+      };
       const generatedTemplate = await generateTemplateFromProject({
         projectName: project.name,
         description: project.description,
@@ -1488,7 +1610,7 @@ export async function registerRoutes(
         contextType: project.contextType,
         strategicContext: project.strategicContext,
         tone: project.tone,
-      });
+      }, templateGenUsageContext);
       
       res.json(generatedTemplate);
     } catch (error) {
@@ -3172,6 +3294,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No transcript data available for summary generation" });
       }
 
+      const sessionSummaryUsageContext: LLMUsageAttribution = {
+        projectId: project?.id ?? null,
+        templateId: template?.id ?? null,
+        collectionId: session.collectionId,
+        sessionId: req.params.id,
+      };
       const result = await generateSessionSummary({
         transcript,
         questionSummaries,
@@ -3182,7 +3310,7 @@ export async function registerRoutes(
           text: q.questionText,
           guidance: q.guidance || null,
         })),
-      });
+      }, sessionSummaryUsageContext);
 
       await storage.persistInterviewState(req.params.id, {
         barbaraSessionSummary: result,
@@ -3192,6 +3320,75 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating session summary:", error);
       res.status(500).json({ message: "Failed to generate session summary" });
+    }
+  });
+
+  // ============================================================
+  // LLM Usage / Billing Rollup Endpoints
+  // ============================================================
+
+  app.get("/api/usage/session/:sessionId", isAuthenticated, async (req: any, res) => {
+    try {
+      const session = await storage.getSession(req.params.sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      const rollup = await storage.getUsageRollupBySession(req.params.sessionId);
+      res.json(rollup);
+    } catch (error) {
+      console.error("Error fetching session usage:", error);
+      res.status(500).json({ message: "Failed to fetch session usage" });
+    }
+  });
+
+  app.get("/api/usage/collection/:collectionId", isAuthenticated, async (req: any, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.collectionId);
+      if (!collection) return res.status(404).json({ message: "Collection not found" });
+
+      const rollup = await storage.getUsageRollupByCollection(req.params.collectionId);
+      res.json(rollup);
+    } catch (error) {
+      console.error("Error fetching collection usage:", error);
+      res.status(500).json({ message: "Failed to fetch collection usage" });
+    }
+  });
+
+  app.get("/api/usage/template/:templateId", isAuthenticated, async (req: any, res) => {
+    try {
+      const template = await storage.getTemplate(req.params.templateId);
+      if (!template) return res.status(404).json({ message: "Template not found" });
+
+      const rollup = await storage.getUsageRollupByTemplate(req.params.templateId);
+      res.json(rollup);
+    } catch (error) {
+      console.error("Error fetching template usage:", error);
+      res.status(500).json({ message: "Failed to fetch template usage" });
+    }
+  });
+
+  app.get("/api/usage/project/:projectId", isAuthenticated, async (req: any, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      const rollup = await storage.getUsageRollupByProject(req.params.projectId);
+      res.json(rollup);
+    } catch (error) {
+      console.error("Error fetching project usage:", error);
+      res.status(500).json({ message: "Failed to fetch project usage" });
+    }
+  });
+
+  app.get("/api/usage/session/:sessionId/events", isAuthenticated, async (req: any, res) => {
+    try {
+      const session = await storage.getSession(req.params.sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      const events = await storage.getUsageEventsBySession(req.params.sessionId);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching session usage events:", error);
+      res.status(500).json({ message: "Failed to fetch session usage events" });
     }
   });
 

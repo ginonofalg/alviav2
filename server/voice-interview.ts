@@ -18,6 +18,8 @@ import {
   type GeneratedAdditionalQuestion,
   type AdditionalQuestionsResult,
 } from "./barbara-orchestrator";
+import { recordLlmUsageEvent, emptyTokenBucket, addToTokenBucket } from "./llm-usage";
+import type { LLMUsageAttribution, BarbaraTokensByUseCase } from "@shared/schema";
 import type {
   PersistedTranscriptEntry,
   PersistedBarbaraGuidance,
@@ -402,6 +404,7 @@ interface InterviewState {
   template: any;
   strategicContext: string | null;
   providerWs: WebSocket | null;
+  collectionId: string | null;
   providerType: RealtimeProviderType;
   providerInstance: RealtimeProvider; // Cached provider instance to avoid repeated allocation
   clientWs: WebSocket | null;
@@ -477,6 +480,16 @@ interface InterviewState {
       variance: number;
       timestamp: number;
     };
+  };
+}
+
+function buildUsageAttribution(state: InterviewState): LLMUsageAttribution {
+  return {
+    sessionId: state.sessionId,
+    collectionId: state.collectionId || null,
+    templateId: state.template?.id || null,
+    projectId: state.template?.projectId || null,
+    workspaceId: null,
   };
 }
 
@@ -582,6 +595,8 @@ interface MetricsTracker {
   };
   // Connection tracking
   openaiConnectionCount: number;
+  // Barbara token usage tracking
+  barbaraTokens: BarbaraTokensByUseCase;
 }
 
 function createEmptyMetricsTracker(): MetricsTracker {
@@ -618,6 +633,9 @@ function createEmptyMetricsTracker(): MetricsTracker {
       },
     },
     openaiConnectionCount: 0,
+    barbaraTokens: {
+      total: emptyTokenBucket(),
+    },
   };
 }
 
@@ -1161,6 +1179,7 @@ async function generateAndPersistSummary(
       transcriptSnapshot, // Use the pre-captured snapshot
       metrics,
       state.template?.objective || "",
+      buildUsageAttribution(state),
     );
 
     // Ensure array is properly sized to avoid sparse array nulls during serialization
@@ -1416,6 +1435,7 @@ export function handleVoiceInterview(
     template: null,
     strategicContext: null,
     providerWs: null,
+    collectionId: null,
     providerType: selectedProviderType,
     providerInstance: getProvider(selectedProviderType), // Cache provider instance once
     clientWs: clientWs,
@@ -1598,6 +1618,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.respondentInformalName = respondent?.informalName || null;
 
     state.template = template;
+    state.collectionId = collection.id;
     state.strategicContext = project?.strategicContext || null;
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
@@ -2945,7 +2966,7 @@ async function triggerBarbaraAnalysis(
       );
     }
 
-    const analysisPromise = analyzeWithBarbara(barbaraInput);
+    const analysisPromise = analyzeWithBarbara(barbaraInput, buildUsageAttribution(state));
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
 
@@ -3512,6 +3533,7 @@ INSTRUCTIONS:
                   nextQuestion?.questionText || "",
                   completedSummaries,
                   recentTranscript,
+                  buildUsageAttribution(state),
                 );
 
                 if (
@@ -4045,7 +4067,7 @@ async function generateAdditionalQuestionsForSession(
           priority: h.priority,
         }))
       : undefined,
-  });
+  }, buildUsageAttribution(state));
 
   console.log(
     `[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`,
@@ -4336,6 +4358,7 @@ async function generateAndPersistAQSummary(
       transcriptSnapshot,
       aqMetrics,
       state.template?.objective || "",
+      buildUsageAttribution(state),
     );
 
     // Store full summary data in the AQ object (not just bullets)
@@ -4509,7 +4532,25 @@ function finalizeAndPersistMetrics(
     sessionDurationMs,
     openaiConnectionCount: tracker.openaiConnectionCount,
     terminationReason,
+    barbaraTokens: tracker.barbaraTokens,
   };
+
+  const realtimeAttribution = buildUsageAttribution(state);
+  const voiceProvider = state.providerType || "openai";
+  recordLlmUsageEvent(
+    realtimeAttribution,
+    voiceProvider === "grok" ? "xai" : "openai",
+    voiceProvider === "grok" ? "grok-3-mini" : "gpt-4o-realtime",
+    "alvia_realtime",
+    {
+      promptTokens: tracker.tokens.inputTextTokens,
+      completionTokens: tracker.tokens.outputTextTokens,
+      totalTokens: tracker.tokens.inputTokens + tracker.tokens.outputTokens,
+      inputAudioTokens: tracker.tokens.inputAudioTokens,
+      outputAudioTokens: tracker.tokens.outputAudioTokens,
+    },
+    "success",
+  ).catch(err => console.error("[LLM Usage] Failed to record alvia_realtime event:", err));
 
   // Log metrics summary with pause-aware breakdown
   const activeSilencePercent =
@@ -4684,13 +4725,13 @@ async function triggerBarbaraSessionSummary(
       questionSummaries: summariesSnapshot,
       templateObjective:
         state.template?.objective || "General research interview",
-      projectObjective: project?.objective,
+      projectObjective: project?.objective || undefined,
       strategicContext: state.strategicContext || undefined,
       questions: state.questions.map((q: any) => ({
         text: q.questionText,
         guidance: q.guidance || null,
       })),
-    });
+    }, buildUsageAttribution(state));
 
     await storage.persistInterviewState(sessionId, {
       barbaraSessionSummary: result,

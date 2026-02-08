@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, pgEnum, index, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -29,6 +29,21 @@ export const userRoleEnum = pgEnum("user_role", [
   "creator",
   "analyst",
   "respondent"
+]);
+
+// LLM provider enum for usage tracking
+export const llmProviderEnum = pgEnum("llm_provider", [
+  "openai",
+  "xai",
+  "gemini"
+]);
+
+// LLM usage event status
+export const llmUsageStatusEnum = pgEnum("llm_usage_status", [
+  "success",
+  "missing_usage",
+  "timeout",
+  "error"
 ]);
 
 // Context types for strategic context
@@ -559,6 +574,21 @@ export type SpeakingTimeMetrics = {
   activeSessionDurationMs?: number;      // Session duration minus pause time
 };
 
+export type BarbaraTokenBucket = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+export type BarbaraTokensByUseCase = {
+  analysis?: BarbaraTokenBucket;
+  topicOverlap?: BarbaraTokenBucket;
+  questionSummary?: BarbaraTokenBucket;
+  additionalQuestions?: BarbaraTokenBucket;
+  sessionSummary?: BarbaraTokenBucket;
+  total: BarbaraTokenBucket;
+};
+
 export type RealtimePerformanceMetrics = {
   sessionId: string;
   recordedAt: number;                    // Timestamp when metrics were finalized
@@ -568,6 +598,7 @@ export type RealtimePerformanceMetrics = {
   sessionDurationMs: number;             // Total session duration
   openaiConnectionCount: number;         // Number of OpenAI WS connections (ideally 1)
   terminationReason?: string;            // How the session ended
+  barbaraTokens?: BarbaraTokensByUseCase;
 };
 
 // Verbatim statement captured from respondent's speech
@@ -1127,4 +1158,95 @@ export type AggregatedAnalytics = {
     templatesNeedingRefresh: number;
     collectionsNeedingRefresh: number;
   };
+};
+
+// ============================================================
+// LLM Usage Events (Billing Ledger)
+// ============================================================
+
+export const LLM_USE_CASES = [
+  "alvia_realtime",
+  "barbara_analysis",
+  "barbara_topic_overlap",
+  "barbara_question_summary",
+  "barbara_cross_interview_enhanced_analysis",
+  "barbara_project_cross_template_analysis",
+  "barbara_template_generation",
+  "barbara_additional_questions",
+  "barbara_session_summary",
+  "infographic_collection_summary",
+  "infographic_collection_themes",
+  "infographic_collection_findings",
+  "infographic_project_summary",
+  "infographic_project_themes",
+  "infographic_project_insights",
+] as const;
+
+export type LLMUseCase = typeof LLM_USE_CASES[number];
+
+export type LLMProvider = "openai" | "xai" | "gemini";
+
+export type LLMUsageStatus = "success" | "missing_usage" | "timeout" | "error";
+
+export type LLMUsageAttribution = {
+  workspaceId?: string | null;
+  projectId?: string | null;
+  templateId?: string | null;
+  collectionId?: string | null;
+  sessionId?: string | null;
+};
+
+export type NormalizedTokenUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  inputAudioTokens: number;
+  outputAudioTokens: number;
+};
+
+export const llmUsageEvents = pgTable("llm_usage_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: varchar("workspace_id"),
+  projectId: varchar("project_id"),
+  templateId: varchar("template_id"),
+  collectionId: varchar("collection_id"),
+  sessionId: varchar("session_id"),
+  provider: llmProviderEnum("provider").notNull(),
+  model: text("model").notNull(),
+  useCase: text("use_case").notNull(),
+  status: llmUsageStatusEnum("status").notNull().default("success"),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  inputAudioTokens: integer("input_audio_tokens").notNull().default(0),
+  outputAudioTokens: integer("output_audio_tokens").notNull().default(0),
+  rawUsage: jsonb("raw_usage"),
+  requestId: text("request_id"),
+  latencyMs: integer("latency_ms"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_usage_session").on(table.sessionId, table.createdAt),
+  index("idx_usage_collection").on(table.collectionId, table.createdAt),
+  index("idx_usage_template").on(table.templateId, table.createdAt),
+  index("idx_usage_project").on(table.projectId, table.createdAt),
+  index("idx_usage_workspace").on(table.workspaceId, table.createdAt),
+  index("idx_usage_provider_model").on(table.provider, table.model, table.createdAt),
+]);
+
+export const insertLlmUsageEventSchema = createInsertSchema(llmUsageEvents).omit({ id: true, createdAt: true });
+export type LlmUsageEvent = typeof llmUsageEvents.$inferSelect;
+export type InsertLlmUsageEvent = z.infer<typeof insertLlmUsageEventSchema>;
+
+export type UsageRollup = {
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalInputAudioTokens: number;
+  totalOutputAudioTokens: number;
+  totalCalls: number;
+  byProvider: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }>;
+  byModel: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }>;
+  byUseCase: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }>;
+  byStatus: Record<string, number>;
 };

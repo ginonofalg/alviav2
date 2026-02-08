@@ -1,7 +1,7 @@
 import { 
   workspaces, projects, interviewTemplates, questions, collections,
   respondents, interviewSessions, segments, redactionMaps, workspaceMembers,
-  inviteList, waitlistEntries,
+  inviteList, waitlistEntries, llmUsageEvents,
   type Workspace, type InsertWorkspace, type Project, type InsertProject,
   type InterviewTemplate, type InsertTemplate, type Question, type InsertQuestion,
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
@@ -17,7 +17,8 @@ import {
   type RealtimePerformanceMetrics, type TranscriptionQualityMetrics,
   type InviteListEntry, type InsertInviteListEntry,
   type WaitlistEntry, type InsertWaitlistEntry,
-  type AlviaSessionSummary, type BarbaraSessionSummary
+  type AlviaSessionSummary, type BarbaraSessionSummary,
+  type LlmUsageEvent, type InsertLlmUsageEvent, type UsageRollup
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -208,6 +209,16 @@ export interface IStorage {
   getWaitlistEntryByEmail(email: string): Promise<WaitlistEntry | undefined>;
   createWaitlistEntry(entry: InsertWaitlistEntry): Promise<WaitlistEntry>;
   addToInviteList(entry: InsertInviteListEntry): Promise<InviteListEntry>;
+  
+  // LLM Usage Events
+  createLlmUsageEvent(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
+  createLlmUsageEvents(events: InsertLlmUsageEvent[]): Promise<LlmUsageEvent[]>;
+  getUsageRollupBySession(sessionId: string): Promise<UsageRollup>;
+  getUsageRollupByCollection(collectionId: string): Promise<UsageRollup>;
+  getUsageRollupByTemplate(templateId: string): Promise<UsageRollup>;
+  getUsageRollupByProject(projectId: string): Promise<UsageRollup>;
+  getUsageRollupByWorkspace(workspaceId: string): Promise<UsageRollup>;
+  getUsageEventsBySession(sessionId: string): Promise<LlmUsageEvent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1572,6 +1583,101 @@ export class DatabaseStorage implements IStorage {
       .values(normalizedEntry)
       .returning();
     return created;
+  }
+
+  // LLM Usage Events
+  async createLlmUsageEvent(event: InsertLlmUsageEvent): Promise<LlmUsageEvent> {
+    const [created] = await db.insert(llmUsageEvents).values(event).returning();
+    return created;
+  }
+
+  async createLlmUsageEvents(events: InsertLlmUsageEvent[]): Promise<LlmUsageEvent[]> {
+    if (events.length === 0) return [];
+    return await db.insert(llmUsageEvents).values(events).returning();
+  }
+
+  async getUsageEventsBySession(sessionId: string): Promise<LlmUsageEvent[]> {
+    return await db.select().from(llmUsageEvents)
+      .where(eq(llmUsageEvents.sessionId, sessionId))
+      .orderBy(desc(llmUsageEvents.createdAt));
+  }
+
+  private async computeUsageRollup(filterColumn: any, filterValue: string): Promise<UsageRollup> {
+    const events = await db.select().from(llmUsageEvents)
+      .where(eq(filterColumn, filterValue));
+
+    const rollup: UsageRollup = {
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      totalTokens: 0,
+      totalInputAudioTokens: 0,
+      totalOutputAudioTokens: 0,
+      totalCalls: events.length,
+      byProvider: {},
+      byModel: {},
+      byUseCase: {},
+      byStatus: {},
+    };
+
+    for (const event of events) {
+      rollup.totalPromptTokens += event.promptTokens;
+      rollup.totalCompletionTokens += event.completionTokens;
+      rollup.totalTokens += event.totalTokens;
+      rollup.totalInputAudioTokens += event.inputAudioTokens;
+      rollup.totalOutputAudioTokens += event.outputAudioTokens;
+
+      const providerKey = event.provider;
+      if (!rollup.byProvider[providerKey]) {
+        rollup.byProvider[providerKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
+      }
+      rollup.byProvider[providerKey].promptTokens += event.promptTokens;
+      rollup.byProvider[providerKey].completionTokens += event.completionTokens;
+      rollup.byProvider[providerKey].totalTokens += event.totalTokens;
+      rollup.byProvider[providerKey].calls += 1;
+
+      const modelKey = event.model;
+      if (!rollup.byModel[modelKey]) {
+        rollup.byModel[modelKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
+      }
+      rollup.byModel[modelKey].promptTokens += event.promptTokens;
+      rollup.byModel[modelKey].completionTokens += event.completionTokens;
+      rollup.byModel[modelKey].totalTokens += event.totalTokens;
+      rollup.byModel[modelKey].calls += 1;
+
+      const useCaseKey = event.useCase;
+      if (!rollup.byUseCase[useCaseKey]) {
+        rollup.byUseCase[useCaseKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
+      }
+      rollup.byUseCase[useCaseKey].promptTokens += event.promptTokens;
+      rollup.byUseCase[useCaseKey].completionTokens += event.completionTokens;
+      rollup.byUseCase[useCaseKey].totalTokens += event.totalTokens;
+      rollup.byUseCase[useCaseKey].calls += 1;
+
+      const statusKey = event.status;
+      rollup.byStatus[statusKey] = (rollup.byStatus[statusKey] || 0) + 1;
+    }
+
+    return rollup;
+  }
+
+  async getUsageRollupBySession(sessionId: string): Promise<UsageRollup> {
+    return this.computeUsageRollup(llmUsageEvents.sessionId, sessionId);
+  }
+
+  async getUsageRollupByCollection(collectionId: string): Promise<UsageRollup> {
+    return this.computeUsageRollup(llmUsageEvents.collectionId, collectionId);
+  }
+
+  async getUsageRollupByTemplate(templateId: string): Promise<UsageRollup> {
+    return this.computeUsageRollup(llmUsageEvents.templateId, templateId);
+  }
+
+  async getUsageRollupByProject(projectId: string): Promise<UsageRollup> {
+    return this.computeUsageRollup(llmUsageEvents.projectId, projectId);
+  }
+
+  async getUsageRollupByWorkspace(workspaceId: string): Promise<UsageRollup> {
+    return this.computeUsageRollup(llmUsageEvents.workspaceId, workspaceId);
   }
 }
 

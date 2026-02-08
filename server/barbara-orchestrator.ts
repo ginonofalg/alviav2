@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { BarbaraSessionSummary } from "@shared/schema";
+import { withTrackedLlmCall, makeBarbaraUsageExtractor, type TrackedLlmResult } from "./llm-usage";
+import type { LLMUsageAttribution, NormalizedTokenUsage, LLMUsageStatus, LLMUseCase } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -260,6 +262,7 @@ export interface BarbaraAnalysisInput {
 
 export async function analyzeWithBarbara(
   input: BarbaraAnalysisInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<BarbaraGuidance> {
   try {
     const systemPrompt = buildBarbaraSystemPrompt();
@@ -279,19 +282,29 @@ export async function analyzeWithBarbara(
     }
 
     const config = barbaraConfig.analysis;
-    const response = (await openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 500,
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<
-      typeof openai.chat.completions.create
-    >[0])) as ChatCompletion;
+      useCase: "barbara_analysis",
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 500,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     if (response.usage) {
       console.log(
@@ -655,6 +668,7 @@ export async function detectTopicOverlap(
   upcomingQuestionText: string,
   completedSummaries: QuestionSummary[],
   recentTranscript: TranscriptEntry[],
+  usageContext?: LLMUsageAttribution,
 ): Promise<TopicOverlapResult | null> {
   const hasCompletedSummaries = completedSummaries.length > 0;
   const hasRecentTranscript = recentTranscript.length > 0;
@@ -717,35 +731,28 @@ Does the upcoming question's topic overlap with what the respondent has already 
       `[TopicOverlap] Calling OpenAI (model: ${config.model}, prompt: ${promptLength} chars)`,
     );
 
-    let timedOut = false;
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => {
-        timedOut = true;
-        const elapsed = Date.now() - startTime;
-        console.log(
-          `[TopicOverlap] Detection timed out after ${elapsed}ms (limit: ${TOPIC_OVERLAP_TIMEOUT_MS}ms)`,
-        );
-        resolve(null);
-      }, TOPIC_OVERLAP_TIMEOUT_MS),
-    );
-
-    const detectionPromise = openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 200,
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
-
-    const response = await Promise.race([detectionPromise, timeoutPromise]);
-
-    if (timedOut) {
-      return null;
-    }
+      useCase: "barbara_topic_overlap",
+      timeoutMs: TOPIC_OVERLAP_TIMEOUT_MS,
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 200,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     const elapsed = Date.now() - startTime;
 
@@ -781,6 +788,7 @@ export async function generateQuestionSummary(
   transcript: TranscriptEntry[],
   metrics: QuestionMetrics,
   templateObjective: string,
+  usageContext?: LLMUsageAttribution,
 ): Promise<QuestionSummary> {
   const questionTranscript = transcript.filter(
     (e) => e.questionIndex === questionIndex,
@@ -896,29 +904,31 @@ METRICS:
 Create a structured summary of the respondent's answer.`;
 
   try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(
-        () => reject(new Error("Summary generation timeout")),
-        SUMMARY_TIMEOUT_MS,
-      );
-    });
-
     const config = barbaraConfig.summarisation;
-    const summaryPromise = openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 1500, // Increased from 800 to handle full JSON structure with verbatims
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<
-      typeof openai.chat.completions.create
-    >[0]) as Promise<ChatCompletion>;
-
-    const response = await Promise.race([summaryPromise, timeoutPromise]);
+      useCase: "barbara_question_summary",
+      timeoutMs: SUMMARY_TIMEOUT_MS,
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 1500,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
     const finishReason = response.choices[0]?.finish_reason;
     console.log(
       `[Summary] Q${questionIndex + 1}: OpenAI API call completed, finish_reason: ${finishReason}`,
@@ -1098,6 +1108,7 @@ const CROSS_ANALYSIS_TIMEOUT_MS = 90000;
 
 export async function generateCrossInterviewAnalysis(
   input: CrossInterviewAnalysisInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<Omit<CollectionAnalytics, "generatedAt">> {
   const allFlags: QualityFlag[] = [
     "incomplete",
@@ -1209,7 +1220,7 @@ export async function generateCrossInterviewAnalysis(
   console.log("[Barbara] Starting enhanced cross-interview analysis...");
 
   const [enhancedAnalysis] = await Promise.all([
-    extractEnhancedAnalysis(input, baseQuestionPerformance),
+    extractEnhancedAnalysis(input, baseQuestionPerformance, usageContext),
   ]);
 
   // Generate recommendations based on metrics
@@ -1372,6 +1383,7 @@ async function extractEnhancedAnalysis(
     questionText: string;
     summaries: string[];
   }[],
+  usageContext?: LLMUsageAttribution,
 ): Promise<EnhancedAnalysisResult> {
   if (input.sessions.length === 0) {
     return {
@@ -1520,19 +1532,29 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
     const config = barbaraConfig.summarisation;
     console.log("[Barbara] Using model:", config.model);
 
-    const response = (await openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 16000,
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<
-      typeof openai.chat.completions.create
-    >[0])) as ChatCompletion;
+      useCase: "barbara_cross_interview_enhanced_analysis",
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 16000,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     console.log(
       "[Barbara] Full API response:",
@@ -1752,6 +1774,7 @@ const TEMPLATE_ANALYTICS_TIMEOUT_MS = 60000;
 
 export async function generateTemplateAnalytics(
   input: TemplateAnalyticsInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<Omit<TemplateAnalytics, "generatedAt">> {
   console.log("[Barbara] Starting template analytics generation...");
 
@@ -2199,6 +2222,7 @@ const PROJECT_ANALYTICS_TIMEOUT_MS = 240000; // 4 minutes for complex AI analysi
 
 export async function generateProjectAnalytics(
   input: ProjectAnalyticsInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<Omit<ProjectAnalytics, "generatedAt">> {
   console.log("[Barbara] Starting project analytics generation...");
 
@@ -2283,6 +2307,7 @@ export async function generateProjectAnalytics(
   const aiAnalysis = await extractCrossTemplateThemesWithAI(
     input,
     templatesWithAnalytics,
+    usageContext,
   );
 
   // Generate recommendations
@@ -2376,6 +2401,7 @@ interface AIProjectAnalysisResult {
 async function extractCrossTemplateThemesWithAI(
   input: ProjectAnalyticsInput,
   templatesWithAnalytics: ProjectAnalyticsInput["templates"],
+  usageContext?: LLMUsageAttribution,
 ): Promise<AIProjectAnalysisResult> {
   if (templatesWithAnalytics.length === 0) {
     return {
@@ -2671,25 +2697,28 @@ Pay special attention to the verbatims provided - use them to support your insig
       `[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`,
     );
 
-    const response = (await Promise.race([
-      openai.chat.completions.create({
-        model: config.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 20000,
-        reasoning_effort: config.reasoningEffort,
-        verbosity: config.verbosity,
-      } as Parameters<typeof openai.chat.completions.create>[0]),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Project analytics AI timeout")),
-          PROJECT_ANALYTICS_TIMEOUT_MS,
-        ),
-      ),
-    ])) as ChatCompletion;
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
+      model: config.model,
+      useCase: "barbara_project_cross_template_analysis",
+      timeoutMs: PROJECT_ANALYTICS_TIMEOUT_MS,
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 20000,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -2861,6 +2890,7 @@ export interface TemplateGenerationInput {
 
 export async function generateTemplateFromProject(
   input: TemplateGenerationInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<GeneratedTemplate> {
   console.log("[Barbara] Generating template from project:", input.projectName);
 
@@ -2915,19 +2945,29 @@ ${input.tone ? `PREFERRED TONE: ${input.tone}` : ""}
 ${hasContent ? `Focus questions on achieving the research objectives while keeping the target audience in mind.${input.contextType ? ` The context type is "${input.contextType}" so frame questions appropriately for ${input.contextType} research.` : ""}` : "Generate a general interview template based on the project name, suitable for exploratory research."}`;
 
   try {
-    const response = (await openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 10000,
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<
-      typeof openai.chat.completions.create
-    >[0])) as ChatCompletion;
+      useCase: "barbara_template_generation",
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 10000,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -3070,6 +3110,7 @@ export interface AdditionalQuestionsResult {
 
 export async function generateAdditionalQuestions(
   input: AdditionalQuestionsInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<AdditionalQuestionsResult> {
   const config = barbaraConfig.additionalQuestions;
   const startTime = Date.now();
@@ -3088,17 +3129,27 @@ export async function generateAdditionalQuestions(
     const systemPrompt = buildAdditionalQuestionsSystemPrompt(input);
     const userPrompt = buildAdditionalQuestionsUserPrompt(input);
 
-    const response = await openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 20000,
-      reasoning_effort: config.reasoningEffort,
-      verbosity: config.verbosity,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
+      useCase: "barbara_additional_questions",
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 20000,
+          reasoning_effort: config.reasoningEffort,
+          verbosity: config.verbosity,
+        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
+    });
+    const response = tracked.result;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -3331,6 +3382,7 @@ export interface SessionSummaryInput {
 
 export async function generateSessionSummary(
   input: SessionSummaryInput,
+  usageContext?: LLMUsageAttribution,
 ): Promise<BarbaraSessionSummary> {
   const config = barbaraConfig.sessionSummary;
 
@@ -3397,14 +3449,26 @@ ${transcriptText}
 Analyze this interview and provide your structured assessment.`;
 
   try {
-    const response = await openai.chat.completions.create({
+    const tracked = await withTrackedLlmCall({
+      attribution: usageContext || {},
+      provider: "openai",
       model: config.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
+      useCase: "barbara_session_summary",
+      callFn: async () => {
+        return (await openai.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
+      },
+      extractUsage: makeBarbaraUsageExtractor(config.model),
     });
+    const response = tracked.result;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {

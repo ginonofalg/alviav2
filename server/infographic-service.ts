@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'url';
+import type { NormalizedTokenUsage } from "@shared/schema";
 
 const __filename = import.meta.url ? fileURLToPath(import.meta.url) : "";
 const __dirname = __filename ? path.dirname(__filename) : process.cwd();
@@ -19,6 +20,7 @@ interface InfographicResult {
   imageUrl: string;
   prompt: string;
   model: string;
+  usage: NormalizedTokenUsage | null;
 }
 
 export class InfographicService {
@@ -63,6 +65,13 @@ export class InfographicService {
         imageUrl: `/infographics/${filename}`,
         prompt,
         model,
+        usage: response.usageMetadata ? {
+          promptTokens: response.usageMetadata.promptTokenCount || 0,
+          completionTokens: response.usageMetadata.candidatesTokenCount || 0,
+          totalTokens: response.usageMetadata.totalTokenCount || 0,
+          inputAudioTokens: 0,
+          outputAudioTokens: 0,
+        } : null,
       };
     } catch (error) {
       console.error('[Infographic] Generation failed:', error);
