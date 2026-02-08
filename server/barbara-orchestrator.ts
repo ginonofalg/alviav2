@@ -246,6 +246,16 @@ export interface BarbaraAnalysisInput {
       perspectiveRange: "narrow" | "moderate" | "diverse";
     }>;
   };
+  analyticsHypotheses?: {
+    totalProjectSessions: number;
+    analyticsGeneratedAt: number | null;
+    hypotheses: Array<{
+      hypothesis: string;
+      source: string;
+      priority: string;
+      isCurrentQuestionRelevant: boolean;
+    }>;
+  };
 }
 
 export async function analyzeWithBarbara(
@@ -365,6 +375,17 @@ You may receive a snapshot of themes from prior interviews in the same collectio
 - If not clearly relevant to the current moment, ignore the cross-interview context entirely and continue with current-question guidance.
 - Historical quality issues may not apply to this respondent. Use live transcript evidence to override historical priors.
 - Do not force interventions solely because a quality alert exists.
+
+ANALYTICS-DRIVEN HYPOTHESIS TESTING:
+You may receive hypotheses derived from project-level analytics. When present:
+- Treat as optional probes. Only suggest testing when NATURALLY RELEVANT to current discussion.
+- Hypotheses marked "relevant to current question" are best candidates. Others are background.
+- Frame as curiosity, not leading questions. E.g., "it might be worth exploring whether..."
+- NEVER reveal these came from analytics or prior interviews.
+- NEVER force a hypothesis into conversation. If none are relevant, ignore entirely.
+- Prefer probe_followup action. Include the hypothesis as a suggested probe direction.
+- High-priority hypotheses preferred when multiple are relevant.
+- Cross-interview themes take precedence if both are present.
 `;
 }
 
@@ -479,6 +500,44 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
   return lines.join("\n");
 }
 
+const MAX_BACKGROUND_HYPOTHESES = 3;
+
+function buildAnalyticsHypothesesBlock(input: BarbaraAnalysisInput): string {
+  const ctx = input.analyticsHypotheses;
+  if (!ctx || ctx.hypotheses.length === 0) return "";
+
+  const relevant = ctx.hypotheses.filter((h) => h.isCurrentQuestionRelevant);
+  const background = ctx.hypotheses
+    .filter((h) => !h.isCurrentQuestionRelevant)
+    .slice(0, MAX_BACKGROUND_HYPOTHESES);
+
+  if (relevant.length === 0 && background.length === 0) return "";
+
+  const lines: string[] = [
+    "",
+    "ANALYTICS HYPOTHESES (project-level, for optional probing):",
+    `- Source: project analytics (${ctx.totalProjectSessions} sessions across project)`,
+  ];
+
+  if (relevant.length > 0) {
+    lines.push("Relevant to CURRENT QUESTION:");
+    for (const h of relevant) {
+      lines.push(`  - [${h.priority}] ${h.hypothesis}`);
+    }
+  }
+
+  if (background.length > 0) {
+    lines.push("Background (use only if conversation naturally leads there):");
+    for (const h of background) {
+      lines.push(`  - [${h.priority}] ${h.hypothesis}`);
+    }
+  }
+
+  lines.push("");
+
+  return lines.join("\n");
+}
+
 const RECENT_TRANSCRIPT_QUESTION_WINDOW = 2;
 
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
@@ -560,7 +619,7 @@ ${recentTranscript || "(No transcript yet)"}
 
 RESPONDENT'S ANSWER TO CURRENT QUESTION:
 ${currentQuestionResponses || "(No response yet)"}
-${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}
+${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}${buildAnalyticsHypothesesBlock(input)}
 Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
 }
 
@@ -2988,6 +3047,11 @@ export interface AdditionalQuestionsInput {
       summaries: QuestionSummary[];
     }>;
   };
+  analyticsHypotheses?: Array<{
+    hypothesis: string;
+    source: string;
+    priority: string;
+  }>;
 }
 
 export interface GeneratedAdditionalQuestion {
@@ -3122,6 +3186,14 @@ You also have access to summaries from prior interviews under the same template.
 - Note any unique perspectives this respondent might be able to elaborate on`
     : "";
 
+  const analyticsHypothesesSection = input.analyticsHypotheses?.length
+    ? `
+You also have access to project-level analytics hypotheses. Use these to:
+- Generate questions that directly test high-priority hypotheses not yet explored in this interview
+- Prioritise hypotheses that relate to gaps in the respondent's answers
+- Frame hypothesis-testing questions conversationally — never reveal they came from analytics`
+    : "";
+
   return `You are Barbara, an expert research interview analyst. Your task is to review a completed interview and determine if there are any valuable additional questions to ask before the interview concludes.
 
 CRITICAL RULES:
@@ -3136,7 +3208,7 @@ WHEN TO SUGGEST QUESTIONS:
 - Interesting tangents the respondent hinted at but weren't followed up
 - Gaps between the research objective and what was actually discussed
 - Contradictions or ambiguities that could benefit from clarification
-${crossInterviewSection}
+${crossInterviewSection}${analyticsHypothesesSection}
 
 WHEN TO RETURN ZERO QUESTIONS:
 - The interview comprehensively covered the research objective
@@ -3214,6 +3286,16 @@ function buildAdditionalQuestionsUserPrompt(
     }
   }
 
+  let analyticsHypothesesText = "";
+  if (input.analyticsHypotheses?.length) {
+    analyticsHypothesesText = `\n\n=== PROJECT ANALYTICS HYPOTHESES ===\n`;
+    analyticsHypothesesText += "These hypotheses from project-level analytics may warrant testing:\n";
+    for (const h of input.analyticsHypotheses) {
+      analyticsHypothesesText += `- [${h.priority}] ${h.hypothesis}\n`;
+    }
+    analyticsHypothesesText += "\nConsider these when generating additional questions, but only if they add genuine value and weren't already covered.";
+  }
+
   return `=== RESEARCH OBJECTIVE ===
 ${input.projectObjective}
 
@@ -3231,7 +3313,7 @@ ${summariesText}
 
 === FULL TRANSCRIPT ===
 ${transcriptText}
-${crossInterviewText}
+${crossInterviewText}${analyticsHypothesesText}
 
 Based on this interview, identify up to ${input.maxQuestions} additional question(s) that would add genuine value, or indicate if no additional questions are needed.`;
 }

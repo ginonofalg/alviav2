@@ -73,6 +73,8 @@ export const projects = pgTable("projects", {
   piiRedactionEnabled: boolean("pii_redaction_enabled").default(true),
   crossInterviewContext: boolean("cross_interview_context").default(false),
   crossInterviewThreshold: integer("cross_interview_threshold").default(5),
+  analyticsGuidedHypotheses: boolean("analytics_guided_hypotheses").default(false),
+  analyticsHypothesesMinSessions: integer("analytics_hypotheses_min_sessions").default(5),
   avoidRules: text("avoid_rules").array(),
   // Strategic context for tailored analytics
   strategicContext: text("strategic_context"),

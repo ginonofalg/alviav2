@@ -96,6 +96,152 @@ const MIN_RESPONSE_COUNT_FOR_ALERT = 2;
 const MIN_FLAG_COUNT_FOR_ALERT = 2;
 const MAX_TOP_FLAGS_PER_QUESTION = 2;
 
+type CompactAnalyticsHypothesis = {
+  hypothesis: string;
+  source: "recommendation" | "action_item" | "strategic_insight";
+  priority: "high" | "medium" | "low";
+  relatedQuestionIndices: number[];
+  relatedThemes: string[];
+};
+
+type AnalyticsHypothesesRuntimeContext = {
+  enabled: boolean;
+  reason?: string;
+  analyticsGeneratedAt?: number | null;
+  totalProjectSessions?: number;
+  hypotheses?: CompactAnalyticsHypothesis[];
+};
+
+const MAX_ANALYTICS_HYPOTHESES = 8;
+const MAX_HYPOTHESIS_LENGTH = 150;
+const MAX_RELATED_THEMES_PER_HYPOTHESIS = 3;
+
+function buildAnalyticsHypothesesRuntimeContext(
+  project: any,
+  templateQuestions: Array<{ text: string; guidance?: string | null }>,
+): AnalyticsHypothesesRuntimeContext {
+  if (!project?.analyticsGuidedHypotheses) {
+    return { enabled: false, reason: "feature_disabled_on_project" };
+  }
+
+  const analyticsData = project.analyticsData as any;
+  if (!analyticsData) {
+    return { enabled: false, reason: "no_project_analytics" };
+  }
+
+  const totalSessions = analyticsData.projectMetrics?.totalSessions ?? 0;
+  const threshold = project.analyticsHypothesesMinSessions ?? 5;
+
+  if (totalSessions < threshold) {
+    return {
+      enabled: false,
+      reason: `threshold_unmet (${totalSessions}/${threshold} sessions)`,
+    };
+  }
+
+  const truncateHypothesis = (title: string, description: string): string => {
+    const combined = `${title}: ${description}`;
+    return combined.length <= MAX_HYPOTHESIS_LENGTH
+      ? combined
+      : combined.slice(0, MAX_HYPOTHESIS_LENGTH - 1) + "\u2026";
+  };
+
+  const hypotheses: CompactAnalyticsHypothesis[] = [];
+
+  const recommendations = Array.isArray(analyticsData.recommendations)
+    ? (analyticsData.recommendations as Array<{
+        type: string;
+        title: string;
+        description: string;
+        relatedQuestions?: number[];
+        relatedThemes?: string[];
+        priority: "high" | "medium" | "low";
+      }>)
+    : [];
+
+  const allowedRecTypes = new Set(["explore_deeper", "coverage_gap", "needs_probing"]);
+  for (const rec of recommendations) {
+    if (!allowedRecTypes.has(rec.type)) continue;
+    if (hypotheses.length >= MAX_ANALYTICS_HYPOTHESES) break;
+
+    const hasQuestionMapping =
+      Array.isArray(rec.relatedQuestions) && rec.relatedQuestions.length > 0;
+    const hasThemeOverlap =
+      Array.isArray(rec.relatedThemes) && rec.relatedThemes.length > 0;
+
+    if (!hasQuestionMapping && !hasThemeOverlap) continue;
+
+    hypotheses.push({
+      hypothesis: truncateHypothesis(rec.title, rec.description),
+      source: "recommendation",
+      priority: rec.priority,
+      relatedQuestionIndices: rec.relatedQuestions ?? [],
+      relatedThemes: (rec.relatedThemes ?? []).slice(0, MAX_RELATED_THEMES_PER_HYPOTHESIS),
+    });
+  }
+
+  if (
+    hypotheses.length < MAX_ANALYTICS_HYPOTHESES &&
+    analyticsData.contextualRecommendations?.actionItems
+  ) {
+    const actionItems = analyticsData.contextualRecommendations.actionItems as Array<{
+      title: string;
+      description: string;
+      priority: "high" | "medium" | "low";
+      relatedThemes?: string[];
+    }>;
+
+    for (const item of actionItems) {
+      if (hypotheses.length >= MAX_ANALYTICS_HYPOTHESES) break;
+      hypotheses.push({
+        hypothesis: truncateHypothesis(item.title, item.description),
+        source: "action_item",
+        priority: item.priority,
+        relatedQuestionIndices: [],
+        relatedThemes: (item.relatedThemes ?? []).slice(0, MAX_RELATED_THEMES_PER_HYPOTHESIS),
+      });
+    }
+  }
+
+  if (
+    hypotheses.length < MAX_ANALYTICS_HYPOTHESES &&
+    Array.isArray(analyticsData.strategicInsights)
+  ) {
+    const strategicInsights = analyticsData.strategicInsights as Array<{
+      insight: string;
+      significance: string;
+      supportingTemplates: string[];
+    }>;
+
+    for (const si of strategicInsights) {
+      if (hypotheses.length >= MAX_ANALYTICS_HYPOTHESES) break;
+      hypotheses.push({
+        hypothesis: truncateHypothesis(si.insight, si.significance),
+        source: "strategic_insight",
+        priority: "medium",
+        relatedQuestionIndices: [],
+        relatedThemes: [],
+      });
+    }
+  }
+
+  if (hypotheses.length === 0) {
+    return { enabled: false, reason: "no_mappable_hypotheses" };
+  }
+
+  hypotheses.sort((a, b) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    return priorityOrder[a.priority] - priorityOrder[b.priority];
+  });
+
+  return {
+    enabled: true,
+    analyticsGeneratedAt: analyticsData.generatedAt ?? null,
+    totalProjectSessions: totalSessions,
+    hypotheses,
+  };
+}
+
 function buildCrossInterviewRuntimeContext(
   project: any,
   collection: any,
@@ -320,6 +466,8 @@ interface InterviewState {
   lastResponseDoneAt: number | null;
   // Cross-interview context snapshot (precomputed at init, never updated during session)
   crossInterviewRuntimeContext: CrossInterviewRuntimeContext;
+  // Analytics-guided hypothesis testing context (precomputed at init, never updated during session)
+  analyticsHypothesesRuntimeContext: AnalyticsHypothesesRuntimeContext;
   // Client-side performance metrics (e.g., calibration data)
   performanceMetrics?: {
     calibration?: {
@@ -1328,6 +1476,7 @@ export function handleVoiceInterview(
     responseStartedAt: null,
     lastResponseDoneAt: null,
     crossInterviewRuntimeContext: { enabled: false, reason: "not_initialized" },
+    analyticsHypothesesRuntimeContext: { enabled: false, reason: "not_initialized" },
   };
   interviewStates.set(sessionId, state);
 
@@ -1468,6 +1617,22 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     } else {
       console.log(
         `[CrossInterview] Disabled for session ${sessionId}: ${state.crossInterviewRuntimeContext.reason}`,
+      );
+    }
+
+    const templateQuestions = questions.map((q: any) => ({
+      text: q.questionText,
+      guidance: q.guidance || null,
+    }));
+    state.analyticsHypothesesRuntimeContext = buildAnalyticsHypothesesRuntimeContext(project, templateQuestions);
+    if (state.analyticsHypothesesRuntimeContext.enabled) {
+      const hCtx = state.analyticsHypothesesRuntimeContext;
+      console.log(
+        `[AnalyticsHypotheses] Enabled for session ${sessionId}: ${hCtx.hypotheses?.length} hypotheses from ${hCtx.totalProjectSessions} project sessions (analytics generated at ${hCtx.analyticsGeneratedAt ? new Date(hCtx.analyticsGeneratedAt).toISOString() : "unknown"})`,
+      );
+    } else {
+      console.log(
+        `[AnalyticsHypotheses] Disabled for session ${sessionId}: ${state.analyticsHypothesesRuntimeContext.reason}`,
       );
     }
 
@@ -2761,6 +2926,25 @@ async function triggerBarbaraAnalysis(
       }
     }
 
+    const hCtx = state.analyticsHypothesesRuntimeContext;
+    if (hCtx.enabled && hCtx.hypotheses?.length) {
+      barbaraInput.analyticsHypotheses = {
+        totalProjectSessions: hCtx.totalProjectSessions!,
+        analyticsGeneratedAt: hCtx.analyticsGeneratedAt ?? null,
+        hypotheses: hCtx.hypotheses.map((h) => ({
+          hypothesis: h.hypothesis,
+          source: h.source,
+          priority: h.priority,
+          isCurrentQuestionRelevant:
+            h.relatedQuestionIndices.includes(state.currentQuestionIndex) ||
+            h.relatedQuestionIndices.length === 0,
+        })),
+      };
+      console.log(
+        `[AnalyticsHypotheses] Injecting ${hCtx.hypotheses.length} hypotheses for Q${state.currentQuestionIndex + 1}`,
+      );
+    }
+
     const analysisPromise = analyzeWithBarbara(barbaraInput);
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
@@ -3854,6 +4038,13 @@ async function generateAdditionalQuestionsForSession(
     crossInterviewContext: {
       enabled: false, // TODO: Implement cross-interview context in future iteration
     },
+    analyticsHypotheses: state.analyticsHypothesesRuntimeContext.enabled
+      ? state.analyticsHypothesesRuntimeContext.hypotheses?.map((h) => ({
+          hypothesis: h.hypothesis,
+          source: h.source,
+          priority: h.priority,
+        }))
+      : undefined,
   });
 
   console.log(

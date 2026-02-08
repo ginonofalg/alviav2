@@ -42,6 +42,8 @@ const projectFormSchema = z.object({
   piiRedactionEnabled: z.boolean().default(true),
   crossInterviewContext: z.boolean().default(false),
   crossInterviewThreshold: z.number().min(1).max(100).default(5),
+  analyticsGuidedHypotheses: z.boolean().default(false),
+  analyticsHypothesesMinSessions: z.number().min(3).max(200).default(5),
   strategicContext: z.string().max(2000).optional(),
   contextType: z.enum(["content", "product", "marketing", "cx", "other"]).optional(),
 });
@@ -74,6 +76,8 @@ export default function NewProjectPage() {
       piiRedactionEnabled: true,
       crossInterviewContext: false,
       crossInterviewThreshold: 5,
+      analyticsGuidedHypotheses: false,
+      analyticsHypothesesMinSessions: 5,
       strategicContext: "",
       contextType: undefined,
     },
@@ -384,6 +388,54 @@ export default function NewProjectPage() {
                           </FormControl>
                           <FormDescription>
                             Only inject context after this many completed interviews
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="analyticsGuidedHypotheses"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Analytics-Guided Hypothesis Testing</FormLabel>
+                          <FormDescription>
+                            Use project analytics recommendations to guide follow-up probes during interviews. Requires project analytics to be generated first.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-analytics-hypotheses"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  {form.watch("analyticsGuidedHypotheses") && (
+                    <FormField
+                      control={form.control}
+                      name="analyticsHypothesesMinSessions"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Minimum Sessions for Hypotheses</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              min={3} 
+                              max={200}
+                              {...field}
+                              onChange={(e) => field.onChange(parseInt(e.target.value))}
+                              data-testid="input-hypotheses-threshold"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Only inject analytics hypotheses after this many completed sessions across the project
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
