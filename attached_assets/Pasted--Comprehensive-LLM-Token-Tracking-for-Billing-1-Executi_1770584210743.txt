@@ -1,0 +1,542 @@
+# Comprehensive LLM Token Tracking for Billing
+
+## 1. Executive Summary
+
+This proposal replaces the current partial-token-tracking approach with an auditable, provider-agnostic usage ledger that captures every billable LLM call (Alvia realtime, Barbara orchestration, and Gemini infographic generation).  
+
+Recommended architecture:
+
+1. Add a new `llm_usage_events` table as the source of truth for billing.
+2. Instrument every LLM call through a shared tracking helper.
+3. Keep existing return types in most business functions to reduce churn.
+4. Preserve lightweight session-level aggregates for UX in `performanceMetrics`.
+5. Compute session/collection/template/project costs from event rollups (not ad-hoc JSON counters).
+
+This yields accurate billing, better debuggability, and safer concurrency behavior than aggregate-only JSON updates.
+
+---
+
+## 2. Review of Claude Proposal (Critique + Amendments)
+
+## What is strong
+
+1. Correctly identifies the core gap: Barbara + Gemini usage is not persisted.
+2. Correctly targets primary integration points (`barbara-orchestrator.ts`, `voice-interview.ts`, `routes.ts`, `infographic-service.ts`).
+3. Correctly notes that `performanceMetrics` can be extended without a dedicated migration since it is JSONB.
+
+## What needs amendment
+
+1. **Call-site counts are off in this repo**.
+   - `server/barbara-orchestrator.ts` currently has **8** `openai.chat.completions.create(...)` call sites, not 11.
+   - `server/routes.ts` has **8** analytics-refresh Barbara call sites (not 7): collection refresh x3, template refresh x3, project refresh x2.
+2. **`generateTemplateAnalytics()` currently has no LLM call**.
+   - Wrapping it is harmless but unnecessary for token extraction.
+3. **`tokenUsageData` new columns are likely redundant**.
+   - `projects`, `interviewTemplates`, and `collections` already have `analyticsData` JSONB plus metadata columns.
+   - Separate cumulative JSON counters introduce duplication and read-modify-write race risks.
+4. **Timeout behavior can undercount cost**.
+   - Existing `Promise.race` timeout patterns may return before usage is captured.
+   - If requests are not aborted, usage may still be billed but never recorded.
+5. **Aggregate-only persistence is not audit-grade billing**.
+   - Billing should be based on immutable usage events, then rolled up.
+6. **No pricing/versioning design**.
+   - Accurate billing needs model-price history (effective date ranges), not only token counts.
+7. **No plan for missing-usage states**.
+   - Some API responses can omit usage; this must be tracked as a first-class status.
+
+---
+
+## 3. Proposed Design
+
+## 3.1 Data Model (Source of Truth)
+
+Add a new table in `shared/schema.ts`:
+
+`llm_usage_events`
+
+1. `id` UUID PK
+2. `workspaceId` (nullable FK)
+3. `projectId` (nullable FK)
+4. `templateId` (nullable FK)
+5. `collectionId` (nullable FK)
+6. `sessionId` (nullable FK)
+7. `provider` (`openai` | `xai` | `gemini`)
+8. `model` text
+9. `useCase` text enum-like value (see taxonomy below)
+10. `status` (`success` | `missing_usage` | `timeout` | `error`)
+11. `promptTokens` integer default 0
+12. `completionTokens` integer default 0
+13. `totalTokens` integer default 0
+14. `inputAudioTokens` integer default 0
+15. `outputAudioTokens` integer default 0
+16. `rawUsage` JSONB nullable (provider-native payload for forensics)
+17. `requestId` text nullable
+18. `latencyMs` integer nullable
+19. `createdAt` timestamp default now
+
+Indexes:
+
+1. `(sessionId, createdAt desc)`
+2. `(collectionId, createdAt desc)`
+3. `(templateId, createdAt desc)`
+4. `(projectId, createdAt desc)`
+5. `(workspaceId, createdAt desc)`
+6. `(provider, model, createdAt desc)`
+
+Add shared types in `shared/schema.ts`:
+
+1. `NormalizedTokenUsage`
+2. `LLMUsageStatus`
+3. `LLMUseCase`
+4. `LLMUsageAttribution`
+
+Use-case taxonomy (initial):
+
+1. `alvia_realtime`
+2. `barbara_analysis`
+3. `barbara_topic_overlap`
+4. `barbara_question_summary`
+5. `barbara_cross_interview_enhanced_analysis`
+6. `barbara_project_cross_template_analysis`
+7. `barbara_template_generation`
+8. `barbara_additional_questions`
+9. `barbara_session_summary`
+10. `infographic_collection_summary`
+11. `infographic_collection_themes`
+12. `infographic_collection_findings`
+13. `infographic_project_summary`
+14. `infographic_project_themes`
+15. `infographic_project_insights`
+
+## 3.2 Keep UX Aggregates, but Make Them Secondary
+
+Extend `RealtimePerformanceMetrics` in `shared/schema.ts` with optional:
+
+1. `barbaraTokens?: { ...by use-case bucket + total }`
+
+This is for session display and debugging. Billing uses `llm_usage_events`.
+
+## 3.3 Shared Tracking Helper
+
+Add `server/llm-usage.ts` with:
+
+1. `extractOpenAIChatUsage(response, model)`
+2. `extractGeminiUsage(response, model)`
+3. `recordLlmUsageEvent(storage, attribution, usage, status, metadata)`
+4. `withTrackedLlmCall<T>(...)` helper that:
+   - measures latency
+   - applies timeout via `AbortController` where supported
+   - normalizes usage
+   - records event on success/failure/timeout/missing usage
+
+Important behavior:
+
+1. Timeout paths must emit an event with `status=timeout`.
+2. Error paths must emit an event with `status=error`.
+3. Responses without usage must emit `status=missing_usage`.
+
+## 3.4 Barbara Instrumentation Strategy
+
+Avoid large return-type churn where possible.
+
+Recommended pattern:
+
+1. Keep business return types (`BarbaraGuidance`, `QuestionSummary`, etc.) unchanged.
+2. Add optional `usageContext?: LLMUsageAttribution` param to Barbara entry functions.
+3. Route each OpenAI call through `withTrackedLlmCall`.
+4. Internal helper calls (`extractEnhancedAnalysis`, `extractCrossTemplateThemesWithAI`) should receive and forward context.
+
+Files:
+
+1. `server/barbara-orchestrator.ts`
+2. `server/llm-usage.ts` (new)
+
+## 3.5 Voice Interview Integration
+
+In `server/voice-interview.ts`:
+
+1. Add Barbara per-use-case accumulator in `MetricsTracker` (for UX-level totals).
+2. Pass `usageContext` with `sessionId`, `collectionId`, `templateId`, `projectId` into:
+   - `analyzeWithBarbara(...)`
+   - `detectTopicOverlap(...)`
+   - `generateQuestionSummary(...)` (both call sites)
+   - `generateAdditionalQuestions(...)`
+   - `generateSessionSummary(...)`
+3. Continue persisting `performanceMetrics` at completion with `barbaraTokens`.
+4. Emit one `llm_usage_events` row for existing realtime totals (`alvia_realtime`) during finalization, so all billing sources share one ledger.
+
+## 3.6 Routes Integration (Analytics + Template Generation + Infographics)
+
+In `server/routes.ts`:
+
+1. For all analytics refresh paths, pass entity attribution context into Barbara functions.
+2. For template generation (`/api/projects/:projectId/generate-template`), pass project attribution context.
+3. For infographic endpoints, persist usage events with corresponding infographic use-case IDs.
+4. Optionally include normalized `tokenUsage` in API response for transparency, but do not rely on response payload for billing persistence.
+
+No need for `tokenUsageData` columns on `projects` / `interviewTemplates` / `collections`.
+
+## 3.7 Billing Rollups
+
+Add `server/billing-usage.ts`:
+
+1. `getSessionUsage(sessionId)`
+2. `getCollectionUsage(collectionId, range?)`
+3. `getTemplateUsage(templateId, range?)`
+4. `getProjectUsage(projectId, range?)`
+
+Rollups should return:
+
+1. token totals by provider/model/useCase
+2. count of calls by status
+3. missing-usage and error counts
+4. optional cost fields if pricing table is present
+
+Optional but recommended: add `llm_pricing` table with effective date windows to compute historical-accurate cost.
+
+---
+
+## 4. Implementation Plan (Phased)
+
+## Phase 0: Preflight
+
+1. Confirm all current LLM entry points and map to useCase taxonomy.
+2. Add feature flag `LLM_USAGE_TRACKING_ENABLED` (default true in dev, controlled in prod).
+
+## Phase 1: Schema + Storage
+
+1. Add `llm_usage_events` table and types in `shared/schema.ts`.
+2. Add storage methods in `server/storage.ts`:
+   - `createLlmUsageEvent(...)`
+   - rollup queries by session/collection/template/project.
+3. Run `npm run db:push`.
+
+## Phase 2: Tracking Helper
+
+1. Create `server/llm-usage.ts`.
+2. Add normalization extractors for OpenAI ChatCompletion and Gemini.
+3. Add timeout/error/missing usage event recording.
+
+## Phase 3: Barbara + Voice
+
+1. Integrate helper in `server/barbara-orchestrator.ts`.
+2. Add optional attribution context parameters.
+3. Wire usage context + accumulators in `server/voice-interview.ts`.
+4. Persist `barbaraTokens` into `RealtimePerformanceMetrics`.
+
+## Phase 4: Routes + Infographics
+
+1. Update all analytics refresh and cascade-refresh call paths in `server/routes.ts`.
+2. Update template-generation route context.
+3. Update `server/infographic-service.ts` to extract usage and persist via routes/service helper.
+
+## Phase 5: Billing Rollup Surface
+
+1. Implement rollup methods in `server/billing-usage.ts` (or `storage.ts`).
+2. Add internal endpoints if needed for dashboard/billing export.
+
+---
+
+## 5. Verification Plan
+
+1. `npm run check` passes.
+2. Run one full interview and verify:
+   - `performanceMetrics.tokenUsage` present (existing behavior)
+   - `performanceMetrics.barbaraTokens` present
+   - multiple `llm_usage_events` rows exist for Barbara + realtime
+3. Trigger each analytics refresh path and verify usage events tied to collection/template/project.
+4. Generate each infographic type and verify usage events with correct useCase.
+5. Validate rollups:
+   - Session rollup equals sum of that session’s events.
+   - Collection/template/project rollups match expected event sets.
+6. Force failure scenarios (timeout, invalid key in test env) and verify `status=timeout/error` events are recorded.
+
+---
+
+## 6. Risks and Mitigations
+
+1. **Timeout undercount risk**  
+Mitigation: enforce abort + explicit timeout event status.
+
+2. **Missing usage fields from providers**  
+Mitigation: store `status=missing_usage`, include `rawUsage`, alert on high missing ratio.
+
+3. **High write volume in usage ledger**  
+Mitigation: lean row shape, indexed query paths, optional batch insert if needed.
+
+4. **PII leakage in metadata**  
+Mitigation: never store prompts/transcripts in usage table; store only IDs + token metrics.
+
+5. **Cost drift from model price changes**  
+Mitigation: effective-dated pricing table and cost computation by event timestamp.
+
+---
+
+## 7. Acceptance Criteria
+
+1. 100% of LLM call paths in this repo emit usage events or explicit error/timeout/missing events.
+2. Per-session, per-collection, per-template, per-project rollups are queryable and internally consistent.
+3. Existing interview behavior and analytics outputs remain unchanged.
+4. No additional runtime failures introduced in voice interview flow.
+5. Billing export can distinguish provider/model/useCase and includes confidence signals (`status` counts).
+
+---
+
+## 8. File-Level Change Plan
+
+1. `shared/schema.ts`
+   - add usage event table + shared token usage types
+   - optionally extend `RealtimePerformanceMetrics` with `barbaraTokens`
+2. `server/storage.ts`
+   - add create/query methods for usage events
+3. `server/llm-usage.ts` (new)
+   - normalization + tracked-call helper
+4. `server/barbara-orchestrator.ts`
+   - route each OpenAI call through tracked helper
+   - pass useCase and attribution context
+5. `server/voice-interview.ts`
+   - add Barbara token accumulator
+   - pass attribution context
+   - emit realtime aggregate event on finalize
+6. `server/routes.ts`
+   - pass attribution context in refresh/template-generation paths
+   - persist infographic usage events
+7. `server/infographic-service.ts`
+   - extract Gemini usage metadata in typed form
+
+---
+
+## 9. Why This Is Better Than Aggregate-Only Tracking
+
+1. Immutable event ledger supports audit, reconciliation, and post-hoc re-pricing.
+2. Rollups become deterministic and race-safe.
+3. Failures/timeouts become measurable instead of silent blind spots.
+4. The system can support invoice-grade reporting without re-architecture later.
+
+## THIS WAS CLAUDE'S ORIGINAL PROPOSAL:
+
+ Comprehensive LLM Token Tracking for Billing
+
+   Context
+
+   Currently only Alvia voice API tokens (OpenAI Realtime / Grok) are tracked and persisted. All Barbara orchestrator calls (11 LLM call sites across 9 functions)
+   silently discard response.usage data. Gemini infographic generation has zero tracking. This means ~40-60% of actual LLM costs are invisible, making accurate
+   billing impossible.
+
+   Goal: Track and persist actual token usage from every LLM call in the system so that per-session, per-collection, per-template, and per-project costs can be
+   computed for billing.
+
+   ---
+   Approach: Generic Wrapper + Accumulator Pattern
+
+   Core idea: A WithTokenUsage<T> wrapper type lets Barbara functions return their existing result alongside token data, without modifying the 9+ existing return
+  type
+    interfaces. Callers destructure { result, tokenUsage } and accumulate tokens into the appropriate tracker.
+
+   ---
+   Step 1: New Types in shared/schema.ts
+
+   Add after the existing TokenUsage type (line 509):
+
+   // LLM API token usage (text-only, for Barbara/Gemini calls)
+   export type LLMTokenUsage = {
+     promptTokens: number;
+     completionTokens: number;
+     totalTokens: number;
+     model: string;
+   };
+
+   // Accumulated Barbara tokens for a single interview session
+   export type BarbaraSessionTokens = {
+     analysis: { calls: number; promptTokens: number; completionTokens: number };
+     topicOverlap: { calls: number; promptTokens: number; completionTokens: number };
+     summarisation: { calls: number; promptTokens: number; completionTokens: number };
+     additionalQuestions: { calls: number; promptTokens: number; completionTokens: number };
+     sessionSummary: { calls: number; promptTokens: number; completionTokens: number };
+     total: { calls: number; promptTokens: number; completionTokens: number };
+   };
+
+   // Token usage for analytics refresh operations (stored on entity)
+   export type AnalyticsTokenUsage = {
+     lastRefreshTokens: LLMTokenUsage;
+     lastRefreshAt: number;
+     totalRefreshes: number;
+     totalPromptTokens: number;
+     totalCompletionTokens: number;
+   };
+
+   Extend RealtimePerformanceMetrics (line 560) with an optional field:
+     barbaraTokens?: BarbaraSessionTokens;
+
+   ---
+   Step 2: Helper + Wrapper in server/barbara-orchestrator.ts
+
+   Add near the top of the file:
+
+   // Generic wrapper returned by all Barbara functions
+   export interface WithTokenUsage<T> {
+     result: T;
+     tokenUsage: LLMTokenUsage | null;
+   }
+
+   // Extract token usage from an OpenAI ChatCompletion response
+   function extractTokenUsage(response: ChatCompletion, model: string): LLMTokenUsage | null {
+     if (!response.usage) return null;
+     return {
+       promptTokens: response.usage.prompt_tokens || 0,
+       completionTokens: response.usage.completion_tokens || 0,
+       totalTokens: response.usage.total_tokens || 0,
+       model,
+     };
+   }
+
+   Modify each function to return WithTokenUsage<T>
+
+   For each of the 9 exported Barbara functions, the change pattern is:
+
+   1. Change return type from Promise<T> to Promise<WithTokenUsage<T>>
+   2. After the API call, capture extractTokenUsage(response, config.model)
+   3. Return { result: <existing return value>, tokenUsage }
+   4. On error/timeout paths, return { result: <fallback>, tokenUsage: null }
+
+   Functions to modify (all in server/barbara-orchestrator.ts):
+   ┌──────────────────────────────────┬───────┬──────────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+   │             Function             │ Line  │              Current Return              │                        New Return                        │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ analyzeWithBarbara()             │ ~233  │ BarbaraGuidance                          │ WithTokenUsage<BarbaraGuidance>                          │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ detectTopicOverlap()             │ ~495  │ TopicOverlapResult | null                │ WithTokenUsage<TopicOverlapResult | null>                │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateQuestionSummary()        │ ~618  │ QuestionSummary                          │ WithTokenUsage<QuestionSummary>                          │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateCrossInterviewAnalysis() │ ~940  │ Omit<CollectionAnalytics, "generatedAt"> │ WithTokenUsage<Omit<CollectionAnalytics, "generatedAt">> │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateTemplateAnalytics()      │ ~1594 │ Omit<TemplateAnalytics, "generatedAt">   │ WithTokenUsage<Omit<TemplateAnalytics, "generatedAt">>   │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateProjectAnalytics()       │ ~2041 │ Omit<ProjectAnalytics, "generatedAt">    │ WithTokenUsage<Omit<ProjectAnalytics, "generatedAt">>    │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateTemplateFromProject()    │ ~2703 │ GeneratedTemplate                        │ WithTokenUsage<GeneratedTemplate>                        │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateAdditionalQuestions()    │ ~2907 │ AdditionalQuestionsResult                │ WithTokenUsage<AdditionalQuestionsResult>                │
+   ├──────────────────────────────────┼───────┼──────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+   │ generateSessionSummary()         │ ~3150 │ BarbaraSessionSummary                    │ WithTokenUsage<BarbaraSessionSummary>                    │
+   └──────────────────────────────────┴───────┴──────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+   Internal helpers that make their own API calls (extractEnhancedAnalysis, extractCrossTemplateThemesWithAI) should also return WithTokenUsage<T> so tokens bubble
+  up
+    to the parent function. Parent functions should sum child + own tokens.
+
+   ---
+   Step 3: Accumulate Barbara Tokens During Interviews — server/voice-interview.ts
+
+   3a. Extend MetricsTracker interface (line 302)
+
+   Add a new field to the MetricsTracker interface:
+   barbaraTokens: {
+     analysis: { calls: number; promptTokens: number; completionTokens: number };
+     topicOverlap: { calls: number; promptTokens: number; completionTokens: number };
+     summarisation: { calls: number; promptTokens: number; completionTokens: number };
+     additionalQuestions: { calls: number; promptTokens: number; completionTokens: number };
+     sessionSummary: { calls: number; promptTokens: number; completionTokens: number };
+   };
+
+   Initialize in createEmptyMetricsTracker() (line 343) with zeros for all fields.
+
+   3b. Add accumulator helper
+
+   function accumulateBarbaraTokens(
+     tracker: MetricsTracker,
+     useCase: keyof MetricsTracker['barbaraTokens'],
+     tokenUsage: LLMTokenUsage | null
+   ) {
+     if (!tokenUsage) return;
+     const bucket = tracker.barbaraTokens[useCase];
+     bucket.calls++;
+     bucket.promptTokens += tokenUsage.promptTokens;
+     bucket.completionTokens += tokenUsage.completionTokens;
+   }
+
+   3c. Update 5 call sites to destructure and accumulate
+
+   Each Barbara call site changes from:
+   const result = await someBarbaraFunction(args);
+   to:
+   const { result, tokenUsage } = await someBarbaraFunction(args);
+   accumulateBarbaraTokens(state.metricsTracker, 'useCase', tokenUsage);
+
+   Specific call sites:
+   1. analyzeWithBarbara() — line ~2626, use case: 'analysis'
+   2. detectTopicOverlap() — line ~3189, use case: 'topicOverlap'
+   3. generateQuestionSummary() — lines ~913 & ~4003, use case: 'summarisation'
+   4. generateAdditionalQuestions() — line ~3706, use case: 'additionalQuestions'
+   5. generateSessionSummary() — line ~4353, use case: 'sessionSummary'
+
+   3d. Include in RealtimePerformanceMetrics at persist time
+
+   In capturePerformanceMetrics() (line ~4148), add barbaraTokens to the metrics object:
+   const performanceMetrics: RealtimePerformanceMetrics = {
+     // ...existing fields...
+     barbaraTokens: buildBarbaraSessionTokens(tracker.barbaraTokens),
+   };
+
+   Where buildBarbaraSessionTokens() computes the total field by summing all use cases.
+
+   No schema migration needed — performanceMetrics is a JSONB field, so the new nested field is automatically stored.
+
+   ---
+   Step 4: Track Analytics Refresh Tokens — server/routes.ts
+
+   4a. New JSONB column on entities
+
+   Add to shared/schema.ts:
+   - collections table: tokenUsageData: jsonb("token_usage_data") (after line 142)
+   - interviewTemplates table: tokenUsageData: jsonb("token_usage_data") (after line 104)
+   - projects table: tokenUsageData: jsonb("token_usage_data") (after line 85)
+
+   4b. Update analytics refresh endpoints in routes.ts
+
+   At each of the 7 analytics refresh call sites, destructure the wrapper and persist token usage:
+
+   Collection analytics (lines ~226, ~637, ~902):
+   const { result: analysisResult, tokenUsage } = await generateCrossInterviewAnalysis({...});
+   // Persist analytics as before, plus:
+   if (tokenUsage) {
+     const existing = collection.tokenUsageData as AnalyticsTokenUsage | null;
+     await storage.updateCollection(collectionId, {
+       tokenUsageData: {
+         lastRefreshTokens: tokenUsage,
+         lastRefreshAt: Date.now(),
+         totalRefreshes: (existing?.totalRefreshes || 0) + 1,
+         totalPromptTokens: (existing?.totalPromptTokens || 0) + tokenUsage.promptTokens,
+         totalCompletionTokens: (existing?.totalCompletionTokens || 0) + tokenUsage.completionTokens,
+       }
+     });
+   }
+
+   Same pattern for template analytics (lines ~339, ~693, ~952) and project analytics (lines ~460, ~749).
+
+   Template generation (line ~1483): Log tokens in response but no entity to persist to — include in the API response JSON so the client is aware.
+
+   4c. Run npm run db:push to sync schema
+
+   ---
+   Step 5: Track Gemini Infographic Tokens — server/infographic-service.ts
+
+   5a. Extract usage from Gemini response
+
+   The Google Gemini API response includes usageMetadata with promptTokenCount, candidatesTokenCount, totalTokenCount.
+
+   In generateWithRetry() (line ~102), after getting the response, extract and return usage:
+   // Extract from: response.usageMetadata
+
+     tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+   }
+
+   5c. Log in routes.ts infographic endpoints
+   Files Modified (Summary)
+   File: shared/schema.ts
+   Changes: Add LLMTokenUsage, BarbaraSessionTokens, AnalyticsTokenUsage types. Add optional barbaraTokens to RealtimePerformanceMetrics. Add tokenUsageData JSONB
+     column to collections, interviewTemplates, projects tables.
+      capturePerformanceMetrics().
+   ────────────────────────────────────────
+   File: server/routes.ts
+   Changes: Update 7 analytics refresh endpoints and 1 template generation endpoint to destructure WithTokenUsage wrappers. Persist AnalyticsTokenUsage on entity
