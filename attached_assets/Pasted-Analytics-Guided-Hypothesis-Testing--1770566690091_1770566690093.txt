@@ -1,0 +1,313 @@
+Analytics-Guided Hypothesis Testing                                                                                                                                 
+                                                                               
+ Context
+
+ Project analytics surface recommendations (e.g. "explore pricing sensitivity deeper"), action items, and strategic insights aggregated across all templates and
+ collections. Currently these insights are only visible in the analytics dashboard. This feature feeds them back into live interviews so Alvia can test hypotheses
+ with subsequent respondents — closing the loop between analysis and data collection.
+
+ Critique of the Proposal
+
+ Strengths:
+ - Closes the feedback loop between analytics and interviews — a natural evolution
+ - Opt-in with sensible defaults protects against premature/unwanted influence
+ - Leveraging Barbara (not Alvia directly) for injection gives the right level of judgment
+
+ Risks & mitigations:
+ - Bias risk: Hypotheses could lead to confirmation bias. Mitigated by Barbara's system prompt instructions to frame probes as curiosity, never reveal source, never
+  force
+ - Stale analytics: Project analytics may not reflect recent sessions. Mitigated by passing generatedAt timestamp to Barbara and the session threshold guard
+ - Prompt bloat: Project analytics can be verbose. Mitigated by compacting to max 8 hypotheses at 150 chars each (~580 tokens overhead)
+ - Relevance mismatch: Not all project-level recommendations apply to every template. Mitigated by pre-filtering on relatedQuestions indices and theme keywords,
+ with Barbara as final arbiter
+
+ Design Decision: Barbara-Only Injection
+
+ Hypotheses flow exclusively through Barbara's analysis pipeline, never directly into Alvia's instructions. Barbara already evaluates context relevance in real-time
+  and decides timing. This follows the established cross-interview context pattern and prevents Alvia from mechanically forcing hypotheses into conversation.
+
+ ---
+ Implementation Plan
+
+ 1. Schema — shared/schema.ts
+
+ Add 2 columns to projects table (after crossInterviewThreshold, line 75):
+
+ analyticsGuidedHypotheses: boolean("analytics_guided_hypotheses").default(false),
+ analyticsHypothesesMinSessions: integer("analytics_hypotheses_min_sessions").default(5),
+
+ - analyticsGuidedHypotheses: Feature toggle, default OFF
+ - analyticsHypothesesMinSessions: Minimum completed sessions across project before hypotheses inject (default 5, matching cross-interview threshold)
+
+ Run npm run db:push to apply. Non-breaking additive migration.
+
+ 2. Backend types — server/voice-interview.ts
+
+ Add new types near existing CompactCrossInterviewTheme (~line 58):
+
+ type CompactAnalyticsHypothesis = {
+   hypothesis: string;                 // Max 150 chars
+   source: "recommendation" | "action_item" | "strategic_insight";
+   priority: "high" | "medium" | "low";
+   relatedQuestionIndices: number[];   // Template question indices
+   relatedThemes: string[];            // Theme names (max 3)
+ };
+
+ type AnalyticsHypothesesRuntimeContext = {
+   enabled: boolean;
+   reason?: string;
+   analyticsGeneratedAt?: number | null;
+   totalProjectSessions?: number;
+   hypotheses?: CompactAnalyticsHypothesis[];
+ };
+
+ 3. Builder function — server/voice-interview.ts
+
+ Add buildAnalyticsHypothesesRuntimeContext(project, templateQuestions) near buildCrossInterviewRuntimeContext (line 99). Guards:
+
+ 1. Feature enabled on project? (analyticsGuidedHypotheses)
+ 2. Project has analytics data? (analyticsData not null)
+ 3. Session threshold met? (projectMetrics.totalSessions >= analyticsHypothesesMinSessions)
+
+ Sources (in priority order, capped at 8 total):
+ - recommendations[] — only types explore_deeper, coverage_gap, needs_probing (skip question_improvement — that's for template revision, not live testing)
+ - contextualRecommendations.actionItems[] — if strategic context is set
+ - strategicInsights[] — cross-template patterns
+
+ Relevance filtering: Each recommendation must map to at least one template question via relatedQuestions indices or keyword overlap with theme names. Unmappable
+ items are excluded. Strategic insights pass without filtering (they're cross-template by nature).
+
+ Compaction: Truncate title: description to 150 chars per hypothesis. Cap relatedThemes at 3. Sort final list by priority (high first).
+
+ 4. InterviewState — server/voice-interview.ts
+
+ - Add field to interface (after line 322): analyticsHypothesesRuntimeContext: AnalyticsHypothesesRuntimeContext
+ - Initialize in default state (after line 1330): analyticsHypothesesRuntimeContext: { enabled: false, reason: "not_initialized" }
+ - Populate at session init (after line 1472):
+ state.analyticsHypothesesRuntimeContext = buildAnalyticsHypothesesRuntimeContext(project, questions);
+ - With console logging matching the cross-interview context pattern.
+
+ 5. Barbara input extension — server/barbara-orchestrator.ts
+
+ Extend BarbaraAnalysisInput interface (~line 210):
+
+ analyticsHypotheses?: {
+   totalProjectSessions: number;
+   analyticsGeneratedAt: number | null;
+   hypotheses: Array<{
+     hypothesis: string;
+     source: string;
+     priority: string;
+     isCurrentQuestionRelevant: boolean;  // Pre-filtered by caller
+   }>;
+ };
+
+ 6. Barbara system prompt — server/barbara-orchestrator.ts
+
+ Add to buildBarbaraSystemPrompt() (after cross-interview awareness section, ~line 368):
+
+ ANALYTICS-DRIVEN HYPOTHESIS TESTING:
+ You may receive hypotheses derived from project-level analytics. When present:
+ - Treat as optional probes. Only suggest testing when NATURALLY RELEVANT to current discussion.
+ - Hypotheses marked "relevant to current question" are best candidates. Others are background.
+ - Frame as curiosity, not leading questions. E.g., "it might be worth exploring whether..."
+ - NEVER reveal these came from analytics or prior interviews.
+ - NEVER force a hypothesis into conversation. If none are relevant, ignore entirely.
+ - Prefer probe_followup action. Include the hypothesis as a suggested probe direction.
+ - High-priority hypotheses preferred when multiple are relevant.
+ - Cross-interview themes take precedence if both are present.
+
+ 7. Prompt block builder — server/barbara-orchestrator.ts
+
+ Add buildAnalyticsHypothesesBlock(input) (after buildQuestionQualityInsightsBlock, ~line 451):
+
+ - Splits hypotheses into "relevant to current question" vs "background"
+ - Caps background at 3 to limit tokens
+ - Format:
+ ANALYTICS HYPOTHESES (project-level, for optional probing):
+ - Source: project analytics (N sessions across project)
+ Relevant to CURRENT QUESTION:
+   - [high] Hypothesis text...
+ Background (use only if conversation naturally leads there):
+   - [medium] Hypothesis text...
+
+ Wire into buildBarbaraUserPrompt() at line 534, after existing blocks:
+ ${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}${buildAnalyticsHypothesesBlock(input)}
+
+ 8. Injection into Barbara input — server/voice-interview.ts
+
+ In requestBarbaraAnalysis() (after line 2761, after cross-interview context block):
+
+ const hCtx = state.analyticsHypothesesRuntimeContext;
+ if (hCtx.enabled && hCtx.hypotheses?.length) {
+   barbaraInput.analyticsHypotheses = {
+     totalProjectSessions: hCtx.totalProjectSessions!,
+     analyticsGeneratedAt: hCtx.analyticsGeneratedAt ?? null,
+     hypotheses: hCtx.hypotheses.map((h) => ({
+       hypothesis: h.hypothesis,
+       source: h.source,
+       priority: h.priority,
+       isCurrentQuestionRelevant:
+         h.relatedQuestionIndices.includes(state.currentQuestionIndex) ||
+         h.relatedQuestionIndices.length === 0,
+     })),
+   };
+ }
+
+ 9. Frontend — client/src/pages/project-edit.tsx
+
+ Form schema (~line 43): Add analyticsGuidedHypotheses: z.boolean().default(false) and analyticsHypothesesMinSessions: z.number().min(3).max(200).default(5)
+
+ Default values (~line 81): Add both fields
+
+ useEffect populating from project (~line 98): Map from project.analyticsGuidedHypotheses
+
+ Advanced tab UI (after line 454, after the cross-interview threshold field): Add toggle + conditional threshold field mirroring the cross-interview context
+ pattern. Toggle label: "Analytics-Guided Hypothesis Testing". Description: "Use project analytics recommendations to guide follow-up probes during interviews.
+ Requires project analytics to be generated first."
+
+ Card description (line 403): Update to "Cross-interview context, hypothesis testing, and AI behavior"
+
+ 10. Frontend — client/src/pages/project-new.tsx
+
+ Same form schema and UI additions as project-edit, placed after line 392 in Step 2 (Advanced Settings).
+
+ ---
+ 11. AQ (Additional Questions) Integration — server/barbara-orchestrator.ts + server/voice-interview.ts
+
+ Extend AdditionalQuestionsInput interface (line 2973) with:
+
+ analyticsHypotheses?: Array<{
+   hypothesis: string;
+   source: string;
+   priority: string;
+ }>;
+
+ Add hypothesis section to buildAdditionalQuestionsSystemPrompt() (after line 3139, the crossInterviewSection):
+
+ const analyticsHypothesesSection = input.analyticsHypotheses?.length
+   ? `
+ You also have access to project-level analytics hypotheses. Use these to:
+ - Generate questions that directly test high-priority hypotheses not yet explored in this interview
+ - Prioritise hypotheses that relate to gaps in the respondent's answers
+ - Frame hypothesis-testing questions conversationally — never reveal they came from analytics`
+   : "";
+
+ Wire into the system prompt return string alongside crossInterviewSection.
+
+ Add hypothesis block to buildAdditionalQuestionsUserPrompt() (after line 3234, after crossInterviewText):
+
+ let analyticsHypothesesText = "";
+ if (input.analyticsHypotheses?.length) {
+   analyticsHypothesesText = `\n\n=== PROJECT ANALYTICS HYPOTHESES ===\n`;
+   analyticsHypothesesText += "These hypotheses from project-level analytics may warrant testing:\n";
+   for (const h of input.analyticsHypotheses) {
+     analyticsHypothesesText += `- [${h.priority}] ${h.hypothesis}\n`;
+   }
+   analyticsHypothesesText += "\nConsider these when generating additional questions, but only if they add genuine value and weren't already covered.";
+ }
+
+ Wire in generateAdditionalQuestionsForSession() in voice-interview.ts (line 3844), pass hypotheses from state:
+
+ const result = await generateAdditionalQuestions({
+   // ... existing fields ...
+   analyticsHypotheses: state.analyticsHypothesesRuntimeContext.enabled
+     ? state.analyticsHypothesesRuntimeContext.hypotheses?.map((h) => ({
+         hypothesis: h.hypothesis,
+         source: h.source,
+         priority: h.priority,
+       }))
+     : undefined,
+ });
+
+ ---
+ Data Flow
+
+ projects.analyticsData (JSONB)
+   └─ recommendations, contextualRecommendations.actionItems, strategicInsights
+        │
+        ▼
+ buildAnalyticsHypothesesRuntimeContext()  [session init, once]
+   - Guards: feature ON? analytics exist? threshold met?
+   - Compacts: 8 hypotheses max, 150 chars each, relevance-filtered
+        │
+        ▼
+ state.analyticsHypothesesRuntimeContext  [immutable during session]
+        │
+        ▼
+ requestBarbaraAnalysis()  [each respondent utterance]
+   - Marks isCurrentQuestionRelevant per hypothesis
+   - Injects into barbaraInput.analyticsHypotheses
+        │
+        ▼
+ buildBarbaraUserPrompt() → buildAnalyticsHypothesesBlock()
+   - Relevant vs background split, capped at ~580 tokens
+        │
+        ▼
+ Barbara analysis → BarbaraGuidance { action: "probe_followup", message: "..." }
+        │
+        ▼
+ buildInterviewInstructions() → ORCHESTRATOR'S GUIDANCE section
+   - Alvia probes naturally, unaware of analytics origin
+
+ --- AQ path (end of interview) ---
+
+ state.analyticsHypothesesRuntimeContext.hypotheses
+        │
+        ▼
+ generateAdditionalQuestionsForSession() → passes hypotheses to Barbara
+        │
+        ▼
+ buildAdditionalQuestionsSystemPrompt() + buildAdditionalQuestionsUserPrompt()
+   - Hypotheses section added to AQ generation prompt
+        │
+        ▼
+ Barbara generates AQs that may test untouched hypotheses
+
+ Files to Modify
+ ┌────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────┐
+ │                        File                        │                         Changes                          │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ shared/schema.ts:75                                │ Add 2 columns to projects table                          │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:58                       │ Add types                                                │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:99                       │ Add builder function + compaction helpers                │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:322                      │ Extend InterviewState                                    │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:1330                     │ Initialize default state                                 │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:1472                     │ Populate at session init                                 │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:2761                     │ Inject into Barbara input                                │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:210                 │ Extend BarbaraAnalysisInput                              │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:368                 │ Add system prompt section                                │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:451                 │ Add buildAnalyticsHypothesesBlock()                      │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:534                 │ Wire block into user prompt                              │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:2973                │ Extend AdditionalQuestionsInput with analyticsHypotheses │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:3114                │ Add hypotheses section to AQ system prompt               │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts:3160                │ Add hypotheses block to AQ user prompt                   │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts:3844                     │ Pass hypotheses to generateAdditionalQuestions()         │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ client/src/pages/project-edit.tsx:43,81,98,403,454 │ Form schema, defaults, UI                                │
+ ├────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+ │ client/src/pages/project-new.tsx:43,75,392         │ Form schema, defaults, UI                                │
+ └────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+ Verification
+
+ 1. Schema: Run npm run db:push, verify columns exist
+ 2. Type check: Run npm run check — no TypeScript errors
+ 3. UI: Create/edit project, verify toggle appears in Advanced Settings, conditional threshold shows/hides
+ 4. Integration: Enable feature on a project that has analytics, start an interview, check server logs for [AnalyticsHypotheses] Enabled... and Injecting N
+ hypotheses
+ 5. Guard checks: Test with feature OFF (disabled log), no analytics (no_project_analytics), below threshold (threshold_unmet)
+ 6. Barbara behavior: Monitor Barbara's guidance output — should see probe_followup actions referencing hypothesis content when relevant
