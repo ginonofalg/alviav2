@@ -412,8 +412,27 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
 
   if (!current && (!upcoming || upcoming.length === 0)) return "";
 
+  const FLAG_CORRECTIVE_GUIDANCE: Record<QualityFlag, string> = {
+    incomplete: "Encourage elaboration — e.g. 'Can you tell me more about that?' or 'What else comes to mind?'",
+    low_engagement: "Try a warmer, more conversational tone; reframe the question around personal experience rather than abstract opinion.",
+    ambiguous: "Ask clarifying follow-ups to ground the response in specifics — e.g. 'Could you give me an example?'",
+    off_topic: "Gently redirect back to the question's core intent without dismissing what the respondent shared.",
+    distress_cue: "Acknowledge the respondent's feelings before proceeding — e.g. 'I appreciate you sharing that.'",
+    contradiction: "Ask the respondent to clarify the differences in their statements; invite them to walk through their reasoning.",
+  };
+
   const formatFlags = (flags: Array<{ flag: QualityFlag; count: number }>): string =>
     flags.map((f) => `${f.flag}\u00d7${f.count}`).join(", ");
+
+  const MAX_FLAG_GUIDANCE_LINES = 3;
+
+  const buildFlagGuidance = (flags: Array<{ flag: QualityFlag; count: number }>): string[] => {
+    if (flags.length === 0) return [];
+    return flags
+      .filter((f) => FLAG_CORRECTIVE_GUIDANCE[f.flag])
+      .slice(0, MAX_FLAG_GUIDANCE_LINES)
+      .map((f) => `  → ${f.flag}: ${FLAG_CORRECTIVE_GUIDANCE[f.flag]}`);
+  };
 
   const formatAlert = (q: NonNullable<typeof current>, prefix: string): string => {
     const parts = [`${prefix} (n=${q.responseCount}): quality ${q.avgQualityScore}/100`];
@@ -434,7 +453,17 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
 
   if (current) {
     lines.push(formatAlert(current, `CURRENT Q${current.questionIndex + 1}`));
-    lines.push("Recommended handling: probe for specifics, rephrase if needed, and allow pause for elaboration.");
+    const flagGuidance = buildFlagGuidance(current.topFlags);
+    if (flagGuidance.length > 0) {
+      lines.push("Recommended corrective strategies:");
+      lines.push(...flagGuidance);
+    }
+    if (current.perspectiveRange === "narrow") {
+      lines.push("  → narrow perspective: Encourage the respondent to consider alternative viewpoints or contexts.");
+    }
+    if (current.responseRichness === "brief") {
+      lines.push("  → brief responses: Allow longer pauses before moving on; use prompts like 'Take your time' to invite deeper reflection.");
+    }
   }
 
   if (upcoming && upcoming.length > 0) {
