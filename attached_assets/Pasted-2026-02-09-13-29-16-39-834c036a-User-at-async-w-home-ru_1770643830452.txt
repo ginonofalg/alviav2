@@ -1,0 +1,136 @@
+2026-02-09 13:29:16.39
+834c036a
+User
+at async $w (/home/runner/workspace/dist/index.cjs:419:88)
+2026-02-09 13:29:16.39
+834c036a
+User
+file: 'postgres.c',
+2026-02-09 13:29:16.39
+834c036a
+User
+at async t.transaction (/home/runner/workspace/dist/index.cjs:85:39818)
+2026-02-09 13:29:16.39
+834c036a
+User
+dataType: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+}
+2026-02-09 13:29:16.39
+834c036a
+User
+severity: 'ERROR',
+2026-02-09 13:29:16.39
+834c036a
+User
+hint: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+at async Bn (/home/runner/workspace/dist/index.cjs:214:9500)
+2026-02-09 13:29:16.39
+834c036a
+User
+detail: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+column: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+[Summary] Q1: OpenAI API call completed, finish_reason: stop
+2026-02-09 13:29:16.39
+834c036a
+User
+length: 125,
+2026-02-09 13:29:16.39
+834c036a
+User
+internalQuery: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+position: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+table: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+where: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+constraint: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+[Summary] Q1: Parsing OpenAI response (2547 chars)
+2026-02-09 13:29:16.39
+834c036a
+User
+schema: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-02-09 13:29:16.39
+834c036a
+User
+at /home/runner/workspace/dist/index.cjs:79:11661
+2026-02-09 13:29:16.39
+834c036a
+User
+at async tr (/home/runner/workspace/dist/index.cjs:214:9915)
+2026-02-09 13:29:16.39
+834c036a
+User
+routine: 'pg_analyze_and_rewrite_varparams'
+2026-02-09 13:29:16.39
+834c036a
+User
+internalPosition: undefined,
+2026-02-09 13:29:16.39
+834c036a
+User
+[Summary] Summary completed for Q1: "The respondent described a recent incident on a bus where an elderly woman pushed to the front of th..."
+2026-02-09 13:29:16.39
+834c036a
+User
+at async Af (/home/runner/workspace/dist/index.cjs:791:21912) {
+2026-02-09 13:29:16.39
+834c036a
+User
+[LLM Usage] Failed to record usage event for barbara_question_summary: error: could not determine data type of parameter $29
+2026-02-09 13:29:16.39
+834c036a
+User
+at async /home/runner/workspace/dist/index.cjs:85:143583
+2026-02-09 13:29:16.39
+834c036a
+User
+[Summary] Q1: Parsed summary - respondentSummary: "The respondent described a recent incident on a bu...", keyInsights count: 5
+2026-02-09 13:29:16.39
+834c036a
+User
+at async G0.createEventAndUpsertRollup (/home/runner/workspace/dist/index.cjs:85:143280)
+2026-02-09 13:29:16.39
+834c036a
+User
+line: '744',
+2026-02-09 13:29:16.39
+834c036a
+User
+code: '42P18',
+2026-02-09 13:29:16.43
+834c036a
+User
+[Summary] Summary persisted for Q1
+2026-02-09 13:29:42.12
+834c036a
+User
+[WS-Ping] Sent 1 protocol pings, 0 errors
