@@ -28,6 +28,9 @@ export interface RealtimeProvider {
 
   buildTextOnlySessionConfig(instructions: string): Record<string, any>;
 
+  buildResponseCreate(): Record<string, any>;
+  buildTextOnlyResponseCreate(): Record<string, any>;
+
   parseTokenUsage(event: any): TokenUsageDetails | null;
 
   getModelName(): string;
@@ -63,7 +66,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     return {
       type: "realtime",
       instructions: instructions,
-      output_modalities: ["text", "audio"],
+      output_modalities: ["audio"],
       audio: {
         input: {
           format: { type: "audio/pcm", rate: 24000 },
@@ -120,6 +123,24 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
         input: {
           turn_detection: null,
         },
+      },
+    };
+  }
+
+  buildResponseCreate(): Record<string, any> {
+    return {
+      type: "response.create",
+      response: {
+        output_modalities: ["audio"],
+      },
+    };
+  }
+
+  buildTextOnlyResponseCreate(): Record<string, any> {
+    return {
+      type: "response.create",
+      response: {
+        output_modalities: ["text"],
       },
     };
   }
@@ -218,6 +239,24 @@ export class GrokRealtimeProvider implements RealtimeProvider {
       modalities: ["text"],
       instructions: instructions,
       turn_detection: null,
+    };
+  }
+
+  buildResponseCreate(): Record<string, any> {
+    return {
+      type: "response.create",
+      response: {
+        modalities: ["text", "audio"],
+      },
+    };
+  }
+
+  buildTextOnlyResponseCreate(): Record<string, any> {
+    return {
+      type: "response.create",
+      response: {
+        modalities: ["text"],
+      },
     };
   }
 

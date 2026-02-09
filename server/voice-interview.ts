@@ -2353,12 +2353,7 @@ async function handleProviderEvent(
               `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
             );
             state.providerWs.send(
-              JSON.stringify({
-                type: "response.create",
-                response: {
-                  modalities: ["text", "audio"],
-                },
-              }),
+              JSON.stringify(state.providerInstance.buildResponseCreate()),
             );
           }
         } else {
@@ -3133,12 +3128,7 @@ async function handleClientMessage(
           `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
         );
         state.providerWs.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              modalities: ["text", "audio"],
-            },
-          }),
+          JSON.stringify(state.providerInstance.buildResponseCreate()),
         );
       }
     }
@@ -3261,12 +3251,7 @@ async function handleClientMessage(
               state.responseInProgress = true;
               state.responseStartedAt = Date.now();
               state.providerWs.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    modalities: ["text", "audio"],
-                  },
-                }),
+                JSON.stringify(state.providerInstance.buildResponseCreate()),
               );
             }
           }
@@ -3399,12 +3384,7 @@ INSTRUCTIONS:
           state.responseInProgress = true;
           state.responseStartedAt = Date.now();
           state.providerWs.send(
-            JSON.stringify({
-              type: "response.create",
-              response: {
-                modalities: ["text", "audio"],
-              },
-            }),
+            JSON.stringify(state.providerInstance.buildResponseCreate()),
           );
         }
       }
@@ -3599,12 +3579,7 @@ INSTRUCTIONS:
                 state.responseInProgress = true;
                 state.responseStartedAt = Date.now();
                 state.providerWs.send(
-                  JSON.stringify({
-                    type: "response.create",
-                    response: {
-                      modalities: ["text", "audio"],
-                    },
-                  }),
+                  JSON.stringify(state.providerInstance.buildResponseCreate()),
                 );
               }
             } else {
@@ -4164,12 +4139,7 @@ async function startAdditionalQuestion(
       state.responseInProgress = true;
       state.responseStartedAt = Date.now();
       state.providerWs.send(
-        JSON.stringify({
-          type: "response.create",
-          response: {
-            modalities: ["text", "audio"],
-          },
-        }),
+        JSON.stringify(state.providerInstance.buildResponseCreate()),
       );
     }
   }
@@ -4692,10 +4662,7 @@ Respond with ONLY the JSON object. No other text.`;
     );
 
     state.providerWs.send(
-      JSON.stringify({
-        type: "response.create",
-        response: { modalities: ["text"] },
-      }),
+      JSON.stringify(state.providerInstance.buildTextOnlyResponseCreate()),
     );
 
     const result = await Promise.race([summaryPromise, timeoutPromise]);
