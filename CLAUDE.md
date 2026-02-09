@@ -26,7 +26,9 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Replit OpenID Connect via Passport, sessions stored in PostgreSQL
 - **Voice**: OpenAI Realtime API (`gpt-realtime-mini`) or xAI Grok (`grok-3-fast`) over WebSocket, switchable via env var
-- **Orchestration**: Barbara (6 configurable use cases) monitors interviews and guides Alvia
+- **Orchestration**: Barbara (8 configurable use cases) monitors interviews and guides Alvia
+- **LLM Usage Tracking**: Billing-grade token tracking with event log + hourly rollups
+- **Transcription Quality**: Real-time noisy environment detection and VAD tuning
 - **Infographics**: Google Gemini API for AI-generated visual summaries
 - **PDF Export**: jsPDF for analytics report generation
 - **Build**: Vite 7.3 (client) + esbuild (server), TypeScript 5.6
