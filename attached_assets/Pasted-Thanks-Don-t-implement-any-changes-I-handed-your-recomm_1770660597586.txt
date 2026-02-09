@@ -1,0 +1,25 @@
+Thanks. Don't implement any changes, I handed your recommendation to Replit to implement, which it did. All good, only issue is that the Title and Longer headings ing the PDF don't wrap      
+  on the page. Propose a fix.                                                                                                                                                                  
+                                                                                                                                                                                                 
+● The issue is straightforward. Looking at the PdfBuilder methods I read earlier:                                                                                                                
+                                                                                                                                                                                                 
+  - addParagraph (line 126) wraps text via this.wrapText(text, this.contentWidth) and iterates over lines                                                                                        
+  - addTitle, addSubtitle, addSectionHeader, and addSubsectionHeader all call this.pdf.text(text, ...) directly with no wrapping
+                                                                                                                                                                                                 
+  The fix: apply the same wrapText → iterate pattern to all four heading methods. For example, addTitle currently does:                                                                          
+
+  this.pdf.text(text, this.margin, this.y);
+  this.y += 10;
+
+  It should do:
+
+  const lines = this.wrapText(text, this.contentWidth);
+  const height = lines.length * 8; // line height appropriate for title font size
+  this.checkPageBreak(height);
+  lines.forEach((line) => {
+    this.pdf.text(line, this.margin, this.y);
+    this.y += 8;
+  });
+
+  Same pattern for addSubtitle, addSectionHeader, and addSubsectionHeader — each using a line height proportional to its font size. The addSectionHeader underline (line 103-105) should also be
+  drawn after the last line rather than at a fixed offset.

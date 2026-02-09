@@ -111,48 +111,67 @@ class PdfBuilder {
   }
 
   addTitle(text: string): this {
-    this.checkPageBreak(15);
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(18);
     this.pdf.setTextColor(...COLORS.text);
-    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
-    this.y += 10;
+    const lines = this.wrapText(text, this.contentWidth);
+    const titleLineHeight = 8;
+    this.checkPageBreak(lines.length * titleLineHeight);
+    lines.forEach((line) => {
+      this.pdf.text(line, this.margin, this.y);
+      this.y += titleLineHeight;
+    });
+    this.y += 2;
     return this;
   }
 
   addSubtitle(text: string): this {
-    this.checkPageBreak(10);
     this.pdf.setFont("helvetica", "normal");
     this.pdf.setFontSize(10);
     this.pdf.setTextColor(...COLORS.muted);
-    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
-    this.y += 8;
+    const lines = this.wrapText(text, this.contentWidth);
+    const subtitleLineHeight = 5;
+    this.checkPageBreak(lines.length * subtitleLineHeight);
+    lines.forEach((line) => {
+      this.pdf.text(line, this.margin, this.y);
+      this.y += subtitleLineHeight;
+    });
+    this.y += 3;
     return this;
   }
 
   addSectionHeader(text: string): this {
-    this.checkPageBreak(15);
     this.y += 5;
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(14);
     this.pdf.setTextColor(...COLORS.primary);
-    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
-    this.y += 8;
+    const lines = this.wrapText(text, this.contentWidth);
+    const sectionLineHeight = 7;
+    this.checkPageBreak(lines.length * sectionLineHeight + 6);
+    lines.forEach((line) => {
+      this.pdf.text(line, this.margin, this.y);
+      this.y += sectionLineHeight;
+    });
     this.pdf.setDrawColor(...COLORS.primary);
     this.pdf.setLineWidth(0.5);
-    this.pdf.line(this.margin, this.y - 2, this.margin + 40, this.y - 2);
+    this.pdf.line(this.margin, this.y, this.margin + 40, this.y);
     this.y += 4;
     return this;
   }
 
   addSubsectionHeader(text: string): this {
-    this.checkPageBreak(12);
     this.y += 3;
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(11);
     this.pdf.setTextColor(...COLORS.text);
-    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
-    this.y += 7;
+    const lines = this.wrapText(text, this.contentWidth);
+    const subLineHeight = 6;
+    this.checkPageBreak(lines.length * subLineHeight);
+    lines.forEach((line) => {
+      this.pdf.text(line, this.margin, this.y);
+      this.y += subLineHeight;
+    });
+    this.y += 1;
     return this;
   }
 
