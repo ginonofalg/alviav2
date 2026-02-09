@@ -18,8 +18,15 @@ import {
   type GeneratedAdditionalQuestion,
   type AdditionalQuestionsResult,
 } from "./barbara-orchestrator";
-import { recordLlmUsageEvent, emptyTokenBucket, addToTokenBucket } from "./llm-usage";
-import type { LLMUsageAttribution, BarbaraTokensByUseCase } from "@shared/schema";
+import {
+  recordLlmUsageEvent,
+  emptyTokenBucket,
+  addToTokenBucket,
+} from "./llm-usage";
+import type {
+  LLMUsageAttribution,
+  BarbaraTokensByUseCase,
+} from "@shared/schema";
 import type {
   PersistedTranscriptEntry,
   PersistedBarbaraGuidance,
@@ -161,7 +168,11 @@ function buildAnalyticsHypothesesRuntimeContext(
       }>)
     : [];
 
-  const allowedRecTypes = new Set(["explore_deeper", "coverage_gap", "needs_probing"]);
+  const allowedRecTypes = new Set([
+    "explore_deeper",
+    "coverage_gap",
+    "needs_probing",
+  ]);
   for (const rec of recommendations) {
     if (!allowedRecTypes.has(rec.type)) continue;
     if (hypotheses.length >= MAX_ANALYTICS_HYPOTHESES) break;
@@ -178,7 +189,10 @@ function buildAnalyticsHypothesesRuntimeContext(
       source: "recommendation",
       priority: rec.priority,
       relatedQuestionIndices: rec.relatedQuestions ?? [],
-      relatedThemes: (rec.relatedThemes ?? []).slice(0, MAX_RELATED_THEMES_PER_HYPOTHESIS),
+      relatedThemes: (rec.relatedThemes ?? []).slice(
+        0,
+        MAX_RELATED_THEMES_PER_HYPOTHESIS,
+      ),
     });
   }
 
@@ -186,7 +200,8 @@ function buildAnalyticsHypothesesRuntimeContext(
     hypotheses.length < MAX_ANALYTICS_HYPOTHESES &&
     analyticsData.contextualRecommendations?.actionItems
   ) {
-    const actionItems = analyticsData.contextualRecommendations.actionItems as Array<{
+    const actionItems = analyticsData.contextualRecommendations
+      .actionItems as Array<{
       title: string;
       description: string;
       priority: "high" | "medium" | "low";
@@ -200,7 +215,10 @@ function buildAnalyticsHypothesesRuntimeContext(
         source: "action_item",
         priority: item.priority,
         relatedQuestionIndices: [],
-        relatedThemes: (item.relatedThemes ?? []).slice(0, MAX_RELATED_THEMES_PER_HYPOTHESIS),
+        relatedThemes: (item.relatedThemes ?? []).slice(
+          0,
+          MAX_RELATED_THEMES_PER_HYPOTHESIS,
+        ),
       });
     }
   }
@@ -264,17 +282,24 @@ function buildCrossInterviewRuntimeContext(
 
   const analyticsData = collection?.analyticsData as any;
 
-  const hasThemes = Array.isArray(analyticsData?.themes) && analyticsData.themes.length > 0;
-  const hasQuestionPerformance = Array.isArray(analyticsData?.questionPerformance) && analyticsData.questionPerformance.length > 0;
+  const hasThemes =
+    Array.isArray(analyticsData?.themes) && analyticsData.themes.length > 0;
+  const hasQuestionPerformance =
+    Array.isArray(analyticsData?.questionPerformance) &&
+    analyticsData.questionPerformance.length > 0;
 
   if (!hasThemes && !hasQuestionPerformance) {
     return { enabled: false, reason: "no_actionable_cross_interview_context" };
   }
 
   const truncateCue = (text: string): string =>
-    text.length <= MAX_CUE_LENGTH ? text : text.slice(0, MAX_CUE_LENGTH - 1) + "\u2026";
+    text.length <= MAX_CUE_LENGTH
+      ? text
+      : text.slice(0, MAX_CUE_LENGTH - 1) + "\u2026";
 
-  let themesByQuestion: Record<number, CompactCrossInterviewTheme[]> | undefined;
+  let themesByQuestion:
+    | Record<number, CompactCrossInterviewTheme[]>
+    | undefined;
   let emergentThemes: CompactCrossInterviewTheme[] | undefined;
 
   if (hasThemes) {
@@ -286,7 +311,9 @@ function buildCrossInterviewRuntimeContext(
       isEmergent?: boolean;
     }>;
 
-    const toCompact = (t: typeof themes[number]): CompactCrossInterviewTheme => ({
+    const toCompact = (
+      t: (typeof themes)[number],
+    ): CompactCrossInterviewTheme => ({
       theme: t.theme,
       prevalence: t.prevalence,
       cue: truncateCue(t.description),
@@ -311,7 +338,9 @@ function buildCrossInterviewRuntimeContext(
       .map(toCompact);
   }
 
-  let qualityInsightsByQuestion: Record<number, CompactQuestionQualityInsight> | undefined;
+  let qualityInsightsByQuestion:
+    | Record<number, CompactQuestionQualityInsight>
+    | undefined;
 
   if (hasQuestionPerformance) {
     const qpEntries = analyticsData.questionPerformance as Array<{
@@ -327,10 +356,12 @@ function buildCrossInterviewRuntimeContext(
     qualityInsightsByQuestion = {};
 
     for (const qp of qpEntries) {
-      if (typeof qp.questionIndex !== "number" || qp.questionIndex < 0) continue;
+      if (typeof qp.questionIndex !== "number" || qp.questionIndex < 0)
+        continue;
       if ((qp.responseCount ?? 0) < MIN_RESPONSE_COUNT_FOR_ALERT) continue;
 
-      const hasLowQuality = qp.avgQualityScore > 0 && qp.avgQualityScore < QUALITY_ALERT_THRESHOLD;
+      const hasLowQuality =
+        qp.avgQualityScore > 0 && qp.avgQualityScore < QUALITY_ALERT_THRESHOLD;
       const hasBriefResponses = qp.responseRichness === "brief";
       const hasNarrowPerspective = qp.perspectiveRange === "narrow";
 
@@ -342,12 +373,20 @@ function buildCrossInterviewRuntimeContext(
           }
         }
       }
-      flagCounts.sort((a, b) => b.count - a.count || a.flag.localeCompare(b.flag));
+      flagCounts.sort(
+        (a, b) => b.count - a.count || a.flag.localeCompare(b.flag),
+      );
       const topFlags = flagCounts.slice(0, MAX_TOP_FLAGS_PER_QUESTION);
 
       const hasRecurringFlags = topFlags.length > 0;
 
-      if (!hasLowQuality && !hasBriefResponses && !hasRecurringFlags && !hasNarrowPerspective) continue;
+      if (
+        !hasLowQuality &&
+        !hasBriefResponses &&
+        !hasRecurringFlags &&
+        !hasNarrowPerspective
+      )
+        continue;
 
       const insight: CompactQuestionQualityInsight = {
         questionIndex: qp.questionIndex,
@@ -367,8 +406,9 @@ function buildCrossInterviewRuntimeContext(
     }
   }
 
-  const hasActionableThemes = themesByQuestion && Object.keys(themesByQuestion).length > 0
-    || (emergentThemes && emergentThemes.length > 0);
+  const hasActionableThemes =
+    (themesByQuestion && Object.keys(themesByQuestion).length > 0) ||
+    (emergentThemes && emergentThemes.length > 0);
   const hasActionableQuality = qualityInsightsByQuestion !== undefined;
 
   if (!hasActionableThemes && !hasActionableQuality) {
@@ -377,7 +417,9 @@ function buildCrossInterviewRuntimeContext(
 
   const snapshotGeneratedAt = analyticsData.generatedAt
     ? new Date(analyticsData.generatedAt).getTime()
-    : (collection.lastAnalyzedAt ? new Date(collection.lastAnalyzedAt).getTime() : null);
+    : collection.lastAnalyzedAt
+      ? new Date(collection.lastAnalyzedAt).getTime()
+      : null;
 
   return {
     enabled: true,
@@ -1496,7 +1538,10 @@ export function handleVoiceInterview(
     responseStartedAt: null,
     lastResponseDoneAt: null,
     crossInterviewRuntimeContext: { enabled: false, reason: "not_initialized" },
-    analyticsHypothesesRuntimeContext: { enabled: false, reason: "not_initialized" },
+    analyticsHypothesesRuntimeContext: {
+      enabled: false,
+      reason: "not_initialized",
+    },
   };
   interviewStates.set(sessionId, state);
 
@@ -1626,12 +1671,17 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.endOfInterviewSummaryEnabled =
       collection.endOfInterviewSummaryEnabled ?? false;
 
-    state.crossInterviewRuntimeContext = buildCrossInterviewRuntimeContext(project, collection);
+    state.crossInterviewRuntimeContext = buildCrossInterviewRuntimeContext(
+      project,
+      collection,
+    );
     if (state.crossInterviewRuntimeContext.enabled) {
       const ctx = state.crossInterviewRuntimeContext;
       const questionCount = Object.keys(ctx.themesByQuestion || {}).length;
       const emergentCount = (ctx.emergentThemes || []).length;
-      const qualityAlertCount = Object.keys(ctx.qualityInsightsByQuestion || {}).length;
+      const qualityAlertCount = Object.keys(
+        ctx.qualityInsightsByQuestion || {},
+      ).length;
       console.log(
         `[CrossInterview] Enabled for session ${sessionId}: ${ctx.priorSessionCount} prior sessions, ${questionCount} questions with themes, ${emergentCount} emergent themes, ${qualityAlertCount} questions with quality alerts`,
       );
@@ -1645,7 +1695,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       text: q.questionText,
       guidance: q.guidance || null,
     }));
-    state.analyticsHypothesesRuntimeContext = buildAnalyticsHypothesesRuntimeContext(project, templateQuestions);
+    state.analyticsHypothesesRuntimeContext =
+      buildAnalyticsHypothesesRuntimeContext(project, templateQuestions);
     if (state.analyticsHypothesesRuntimeContext.enabled) {
       const hCtx = state.analyticsHypothesesRuntimeContext;
       console.log(
@@ -1850,8 +1901,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       console.log(
         `[VoiceInterview] Re-applying VAD eagerness "low" after provider reconnect for session: ${sessionId}`,
       );
-      const vadUpdate =
-        provider.buildTurnDetectionUpdate("low");
+      const vadUpdate = provider.buildTurnDetectionUpdate("low");
       if (vadUpdate) {
         providerWs.send(
           JSON.stringify({
@@ -2462,7 +2512,10 @@ async function handleProviderEvent(
       // Record transcription token usage if reported by the API
       if (event.usage) {
         const txAttribution = buildUsageAttribution(state);
-        const txProvider = state.providerInstance.name === "grok" ? "xai" as const : "openai" as const;
+        const txProvider =
+          state.providerInstance.name === "grok"
+            ? ("xai" as const)
+            : ("openai" as const);
         recordLlmUsageEvent(
           txAttribution,
           txProvider,
@@ -2471,12 +2524,21 @@ async function handleProviderEvent(
           {
             promptTokens: event.usage.input_tokens || 0,
             completionTokens: event.usage.output_tokens || 0,
-            totalTokens: event.usage.total_tokens || (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0),
-            inputAudioTokens: event.usage.input_token_details?.audio_tokens || 0,
+            totalTokens:
+              event.usage.total_tokens ||
+              (event.usage.input_tokens || 0) +
+                (event.usage.output_tokens || 0),
+            inputAudioTokens:
+              event.usage.input_token_details?.audio_tokens || 0,
             outputAudioTokens: 0,
           },
           "success",
-        ).catch(err => console.error("[LLM Usage] Failed to record alvia_transcription event:", err));
+        ).catch((err) =>
+          console.error(
+            "[LLM Usage] Failed to record alvia_transcription event:",
+            err,
+          ),
+        );
       }
       // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
       (async () => {
@@ -2898,10 +2960,12 @@ async function triggerBarbaraAnalysis(
 
     const ctx = state.crossInterviewRuntimeContext;
     if (ctx.enabled) {
-      const questionThemes = ctx.themesByQuestion?.[state.currentQuestionIndex] || [];
+      const questionThemes =
+        ctx.themesByQuestion?.[state.currentQuestionIndex] || [];
       const emergentThemes = ctx.emergentThemes || [];
 
-      const isAdditionalQuestion = state.currentQuestionIndex >= state.questions.length;
+      const isAdditionalQuestion =
+        state.currentQuestionIndex >= state.questions.length;
       const currentQuestionQuality = !isAdditionalQuestion
         ? ctx.qualityInsightsByQuestion?.[state.currentQuestionIndex]
         : undefined;
@@ -2909,7 +2973,11 @@ async function triggerBarbaraAnalysis(
       const upcomingQualityAlerts: CompactQuestionQualityInsight[] = [];
       if (ctx.qualityInsightsByQuestion && !isAdditionalQuestion) {
         const templateQuestionCount = state.questions.length;
-        for (let i = state.currentQuestionIndex + 1; i < templateQuestionCount && upcomingQualityAlerts.length < 3; i++) {
+        for (
+          let i = state.currentQuestionIndex + 1;
+          i < templateQuestionCount && upcomingQualityAlerts.length < 3;
+          i++
+        ) {
           const insight = ctx.qualityInsightsByQuestion[i];
           if (insight) {
             upcomingQualityAlerts.push(insight);
@@ -2917,8 +2985,11 @@ async function triggerBarbaraAnalysis(
         }
       }
 
-      const hasThemeContext = questionThemes.length > 0 || emergentThemes.length > 0;
-      const hasQualityContext = currentQuestionQuality !== undefined || upcomingQualityAlerts.length > 0;
+      const hasThemeContext =
+        questionThemes.length > 0 || emergentThemes.length > 0;
+      const hasQualityContext =
+        currentQuestionQuality !== undefined ||
+        upcomingQualityAlerts.length > 0;
 
       if (hasThemeContext || hasQualityContext) {
         barbaraInput.crossInterviewContext = {
@@ -2926,24 +2997,29 @@ async function triggerBarbaraAnalysis(
           snapshotGeneratedAt: ctx.snapshotGeneratedAt ?? null,
           questionThemes,
           emergentThemes,
-          currentQuestionQuality: currentQuestionQuality ? {
-            questionIndex: currentQuestionQuality.questionIndex,
-            responseCount: currentQuestionQuality.responseCount,
-            avgQualityScore: currentQuestionQuality.avgQualityScore,
-            responseRichness: currentQuestionQuality.responseRichness,
-            avgWordCount: currentQuestionQuality.avgWordCount,
-            topFlags: currentQuestionQuality.topFlags,
-            perspectiveRange: currentQuestionQuality.perspectiveRange,
-          } : undefined,
-          upcomingQualityAlerts: upcomingQualityAlerts.length > 0 ? upcomingQualityAlerts.map((q) => ({
-            questionIndex: q.questionIndex,
-            responseCount: q.responseCount,
-            avgQualityScore: q.avgQualityScore,
-            responseRichness: q.responseRichness,
-            avgWordCount: q.avgWordCount,
-            topFlags: q.topFlags,
-            perspectiveRange: q.perspectiveRange,
-          })) : undefined,
+          currentQuestionQuality: currentQuestionQuality
+            ? {
+                questionIndex: currentQuestionQuality.questionIndex,
+                responseCount: currentQuestionQuality.responseCount,
+                avgQualityScore: currentQuestionQuality.avgQualityScore,
+                responseRichness: currentQuestionQuality.responseRichness,
+                avgWordCount: currentQuestionQuality.avgWordCount,
+                topFlags: currentQuestionQuality.topFlags,
+                perspectiveRange: currentQuestionQuality.perspectiveRange,
+              }
+            : undefined,
+          upcomingQualityAlerts:
+            upcomingQualityAlerts.length > 0
+              ? upcomingQualityAlerts.map((q) => ({
+                  questionIndex: q.questionIndex,
+                  responseCount: q.responseCount,
+                  avgQualityScore: q.avgQualityScore,
+                  responseRichness: q.responseRichness,
+                  avgWordCount: q.avgWordCount,
+                  topFlags: q.topFlags,
+                  perspectiveRange: q.perspectiveRange,
+                }))
+              : undefined,
         };
         console.log(
           `[CrossInterview] Injecting ${questionThemes.length} question themes + ${emergentThemes.length} emergent themes for Q${state.currentQuestionIndex + 1}`,
@@ -2973,7 +3049,10 @@ async function triggerBarbaraAnalysis(
       );
     }
 
-    const analysisPromise = analyzeWithBarbara(barbaraInput, buildUsageAttribution(state));
+    const analysisPromise = analyzeWithBarbara(
+      barbaraInput,
+      buildUsageAttribution(state),
+    );
 
     const guidance = await Promise.race([analysisPromise, timeoutPromise]);
 
@@ -3027,7 +3106,10 @@ async function triggerBarbaraAnalysis(
         state.providerWs.send(
           JSON.stringify({
             type: "session.update",
-            session: state.providerInstance.buildInstructionsUpdate(updatedInstructions),
+            session:
+              state.providerInstance.buildInstructionsUpdate(
+                updatedInstructions,
+              ),
           }),
         );
       }
@@ -3461,7 +3543,8 @@ INSTRUCTIONS:
           state.providerWs.send(
             JSON.stringify({
               type: "session.update",
-              session: state.providerInstance.buildInstructionsUpdate(instructions),
+              session:
+                state.providerInstance.buildInstructionsUpdate(instructions),
             }),
           );
 
@@ -3822,7 +3905,10 @@ Do not attempt to answer any questions or continue the interview.`;
           declineFinalQuestionIdx,
           declineTranscriptSnapshot,
         );
-        state.pendingSummaryPromises.set(declineFinalQuestionIdx, declineSummaryPromise);
+        state.pendingSummaryPromises.set(
+          declineFinalQuestionIdx,
+          declineSummaryPromise,
+        );
       }
 
       // Await all pending summaries (including the final one just triggered)
@@ -4030,27 +4116,30 @@ async function generateAdditionalQuestionsForSession(
   // Wait for any pending summaries to complete
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  const result = await generateAdditionalQuestions({
-    transcriptLog: state.fullTranscriptForPersistence,
-    templateQuestions,
-    questionSummaries: state.questionSummaries.filter(
-      (s): s is QuestionSummary => s != null,
-    ),
-    projectObjective,
-    audienceContext,
-    tone,
-    maxQuestions: state.maxAdditionalQuestions,
-    crossInterviewContext: {
-      enabled: false, // TODO: Implement cross-interview context in future iteration
+  const result = await generateAdditionalQuestions(
+    {
+      transcriptLog: state.fullTranscriptForPersistence,
+      templateQuestions,
+      questionSummaries: state.questionSummaries.filter(
+        (s): s is QuestionSummary => s != null,
+      ),
+      projectObjective,
+      audienceContext,
+      tone,
+      maxQuestions: state.maxAdditionalQuestions,
+      crossInterviewContext: {
+        enabled: false, // TODO: Implement cross-interview context in future iteration
+      },
+      analyticsHypotheses: state.analyticsHypothesesRuntimeContext.enabled
+        ? state.analyticsHypothesesRuntimeContext.hypotheses?.map((h) => ({
+            hypothesis: h.hypothesis,
+            source: h.source,
+            priority: h.priority,
+          }))
+        : undefined,
     },
-    analyticsHypotheses: state.analyticsHypothesesRuntimeContext.enabled
-      ? state.analyticsHypothesesRuntimeContext.hypotheses?.map((h) => ({
-          hypothesis: h.hypothesis,
-          source: h.source,
-          priority: h.priority,
-        }))
-      : undefined,
-  }, buildUsageAttribution(state));
+    buildUsageAttribution(state),
+  );
 
   console.log(
     `[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`,
@@ -4155,7 +4244,7 @@ function buildAQInstructions(
 ): string {
   const respondentAddress = respondentName || "the respondent";
 
-  return `You are Alvia, a warm and professional AI interviewer. You are now in the ADDITIONAL QUESTIONS phase of the interview.
+  return `You are Alvia, a warm and professional AI interviewer. You are continuing the main interview conversation with a few more questions.
 
 CONTEXT:
 - This is additional question ${aqIndex + 1} of ${totalAQs}
@@ -4172,6 +4261,8 @@ GUIDELINES:
 - Don't repeat questions that were already covered in the main interview
 - Keep this portion brief but thorough - aim for 1-2 follow-up probes maximum
 - Acknowledge insights with genuine interest
+- Continue the conversation naturally without announcing a topic change or transition — do not say things like "let's shift gears", "I'd like to move on to", or "now I have some follow-up questions"
+- Use British English, Oxford commas, varied sentence length, and strictly avoid em dashes (—), rhetorical questions, clichés, hedging, buzzwords, and filler transitions
 
 TONE: ${template?.tone || "Professional and conversational"}
 `;
@@ -4513,7 +4604,8 @@ function finalizeAndPersistMetrics(
 
   const realtimeAttribution = buildUsageAttribution(state);
   const providerForUsage = state.providerInstance;
-  const usageProvider = providerForUsage.name === "grok" ? "xai" as const : "openai" as const;
+  const usageProvider =
+    providerForUsage.name === "grok" ? ("xai" as const) : ("openai" as const);
   recordLlmUsageEvent(
     realtimeAttribution,
     usageProvider,
@@ -4527,7 +4619,9 @@ function finalizeAndPersistMetrics(
       outputAudioTokens: tracker.tokens.outputAudioTokens,
     },
     "success",
-  ).catch(err => console.error("[LLM Usage] Failed to record alvia_realtime event:", err));
+  ).catch((err) =>
+    console.error("[LLM Usage] Failed to record alvia_realtime event:", err),
+  );
 
   // Log metrics summary with pause-aware breakdown
   const activeSilencePercent =
@@ -4690,18 +4784,21 @@ async function triggerBarbaraSessionSummary(
       ? await storage.getProject(state.template.projectId)
       : null;
 
-    const result = await generateSessionSummary({
-      transcript: transcriptSnapshot,
-      questionSummaries: summariesSnapshot,
-      templateObjective:
-        state.template?.objective || "General research interview",
-      projectObjective: project?.objective || undefined,
-      strategicContext: state.strategicContext || undefined,
-      questions: state.questions.map((q: any) => ({
-        text: q.questionText,
-        guidance: q.guidance || null,
-      })),
-    }, buildUsageAttribution(state));
+    const result = await generateSessionSummary(
+      {
+        transcript: transcriptSnapshot,
+        questionSummaries: summariesSnapshot,
+        templateObjective:
+          state.template?.objective || "General research interview",
+        projectObjective: project?.objective || undefined,
+        strategicContext: state.strategicContext || undefined,
+        questions: state.questions.map((q: any) => ({
+          text: q.questionText,
+          guidance: q.guidance || null,
+        })),
+      },
+      buildUsageAttribution(state),
+    );
 
     await storage.persistInterviewState(sessionId, {
       barbaraSessionSummary: result,
@@ -4733,7 +4830,9 @@ async function finalizeInterview(
     completedAt: new Date(),
     ...extraPatch,
   });
-  console.log(`[VoiceInterview] Session ${sessionId} marked completed before summary generation`);
+  console.log(
+    `[VoiceInterview] Session ${sessionId} marked completed before summary generation`,
+  );
 
   if (state.endOfInterviewSummaryEnabled) {
     const transcriptSnapshot = [
