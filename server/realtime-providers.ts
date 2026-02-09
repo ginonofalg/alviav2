@@ -94,6 +94,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
 
   buildInstructionsUpdate(instructions: string): Record<string, any> {
     return {
+      type: "realtime",
       instructions: instructions,
     };
   }
@@ -102,6 +103,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     eagerness: "auto" | "low",
   ): Record<string, any> | null {
     return {
+      type: "realtime",
       audio: {
         input: {
           turn_detection: {
@@ -117,6 +119,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
 
   buildTextOnlySessionConfig(instructions: string): Record<string, any> {
     return {
+      type: "realtime",
       instructions: instructions,
       output_modalities: ["text"],
       audio: {
