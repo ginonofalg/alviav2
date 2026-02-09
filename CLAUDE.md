@@ -36,7 +36,7 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 ### Directory Structure
 ```
 client/src/
-  pages/                    # Route components (24 pages total)
+  pages/                    # Route components (25 pages total)
     landing.tsx             # Public landing page with features/CTA
     waitlist.tsx            # Invite-only waitlist form
     dashboard.tsx           # Command center with stats and action items
@@ -58,12 +58,14 @@ client/src/
     interview-welcome.tsx   # Pre-interview welcome (public)
     interview.tsx           # Voice interview UI (public)
     interview-complete.tsx  # Post-interview completion (public)
+    interview-resume.tsx    # Resume interview via token (public)
     interview-review.tsx    # Post-interview review (authenticated)
     review-token.tsx        # Shareable review via 64-char token (public)
     not-found.tsx           # 404 page
   components/
     ui/                     # Radix UI wrappers (shadcn conventions, 47+ primitives)
     analytics/              # Analytics visualization
+      index.tsx                         # Analytics component exports
       ThemeCard.tsx
       InsightPanel.tsx
       RecommendationsPanel.tsx
@@ -79,17 +81,19 @@ client/src/
     app-sidebar.tsx               # Main navigation sidebar
     theme-provider.tsx            # Dark/light theme support
     theme-toggle.tsx              # Theme switcher button
-    hierarchy-nav.tsx             # Breadcrumb navigation
   hooks/                    # useAuth, useToast, useMobile
   lib/                      # queryClient, auth-utils, utilities
 server/
   index.ts                  # Server entry point (~100 lines)
-  routes.ts                 # REST API endpoints (~3000 lines)
-  storage.ts                # DatabaseStorage class (~1550 lines)
-  voice-interview.ts        # WebSocket handler for voice interviews (~2530 lines)
-  barbara-orchestrator.ts   # AI analysis and guidance system (~2730 lines)
-  realtime-providers.ts     # Voice provider abstraction - OpenAI + Grok (~265 lines)
-  infographic-service.ts    # Google Gemini API integration (~200 lines)
+  routes.ts                 # REST API endpoints (~3400 lines)
+  storage.ts                # DatabaseStorage class (~1830 lines)
+  voice-interview.ts        # WebSocket handler for voice interviews (~5140 lines)
+  barbara-orchestrator.ts   # AI analysis and guidance system (~3490 lines)
+  realtime-providers.ts     # Voice provider abstraction - OpenAI + Grok (~370 lines)
+  llm-usage.ts              # LLM usage tracking utilities (~190 lines)
+  usage-maintenance.ts      # Automated cleanup and rollup reconciliation (~100 lines)
+  transcription-quality.ts  # Transcription quality monitoring (~550 lines)
+  infographic-service.ts    # Google Gemini API integration (~210 lines)
   infographic-prompts.ts    # Prompt templates for infographics (~270 lines)
   demo-seed.ts              # Demo project data seeding for new users (~130 lines)
   resume-token.ts           # Interview resume token utilities
@@ -102,8 +106,16 @@ server/
     storage.ts              # Auth data persistence
     index.ts                # Module exports
 shared/
-  schema.ts                 # Drizzle schema - source of truth (~1010 lines)
+  schema.ts                 # Drizzle schema - source of truth (~1300 lines)
   models/auth.ts            # Auth tables (users, sessions)
+docs/
+  pause-duration-tracking-spec.md     # Silence vs pause tracking spec
+  project-template-generation-prompt.md
+proposals/                  # Feature design proposals
+  llm-token-tracking-billing-proposal.md
+  llm-usage-rollup-retention-proposal.md
+  barbara-question-quality-insights-proposal.md
+  voice-interview-reconnection-bugs.md
 scripts/
   seed-test-data/           # Database seeding utility for development
 script/
@@ -116,10 +128,12 @@ script/
 - `workspaces`, `workspaceMembers` - Multi-tenant workspace system
 - `projects` - Contains objective, audience context, tone, consent settings, PII redaction flags, avoidRules, strategicContext, contextType
 - `interviewTemplates`, `questions` - Template structure with conditional logic, question types (open, yes_no, scale, numeric, multi_select)
-- `collections` - Launched templates with analytics data (JSONB), voiceProvider field
+- `collections` - Launched templates with analytics data (JSONB), voiceProvider field, `maxAdditionalQuestions` (0-3), `endOfInterviewSummaryEnabled`
 - `respondents`, `interviewSessions` - Respondent data and session state
-- `segments` - Response storage with transcripts, summaries, key quotes, quality flags
+- `segments` - Response storage with transcripts, summaries, key quotes, quality flags. Nullable `questionId` for additional questions, with `additionalQuestionIndex` and `additionalQuestionText`
 - `redactionMaps` - PII pseudonymization
+- `llmUsageEvents` - Immutable billing ledger for all LLM calls (tokens, latency, attribution by hierarchy level)
+- `llmUsageRollups` - Pre-aggregated hourly usage summaries with unique constraint on dimensions
 - `inviteList` - Allowed platform users (email-based access control)
 - `waitlistEntries` - Waitlist for unauthenticated users with consent tracking
 
@@ -129,14 +143,22 @@ script/
 - `userRoleEnum`: owner, creator, analyst, respondent
 - `contextTypeEnum`: content, product, marketing, cx, other
 - `respondentStatusEnum`: invited, clicked, consented, completed
+- `llmProviderEnum`: openai, xai, gemini
+- `llmUsageStatusEnum`: success, missing_usage, timeout, error
 
 **Session state persistence fields**: `liveTranscript`, `lastBarbaraGuidance`, `questionStates`, `questionSummaries` (all JSONB)
+
+**Additional questions fields**: `additionalQuestions` (JSONB: `AdditionalQuestionsData`), `additionalQuestionPhase` (boolean), `currentAdditionalQuestionIndex`
+
+**Session summary fields**: `alviaSummary` (JSONB: `AlviaSessionSummary`), `barbaraSessionSummary` (JSONB: `BarbaraSessionSummary`)
+
+**Transcription quality**: `transcriptionQualityMetrics` (JSONB: `TranscriptionQualityMetrics`) - quality score 0-100, detected flags, environment check count
 
 **Review fields**: `reviewRatings`, `reviewComments`, `reviewAccessToken`, `researcherNotes`, `reviewFlags`
 
 **Review flags enum**: `needs_review`, `flagged_quality`, `verified`, `excluded`
 
-**Performance metrics fields**: `performanceMetrics` (JSONB) - token usage, latency, speaking time, silence tracking
+**Performance metrics fields**: `performanceMetrics` (JSONB: `RealtimePerformanceMetrics`) - token usage, latency, speaking time, silence tracking, Barbara token breakdown by use case
 
 ### Key Patterns
 
@@ -145,12 +167,15 @@ script/
 **Data hierarchy**: Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment
 
 **Voice interview flow**:
-1. Respondent joins via `/join/:collectionId` (consent screen)
+1. Respondent joins via `/join/:collectionId` (consent screen) or resumes via `/resume/:token`
 2. Interview at `/interview/:sessionId` opens WebSocket to `/ws/interview`
 3. Server bridges audio between client and voice provider (OpenAI or Grok via `realtime-providers.ts`)
 4. After each respondent utterance, Barbara analyzes the transcript and injects guidance to Alvia (probe deeper, move on, acknowledge prior context)
-5. Responses saved as Segments with transcripts, summaries, and extracted values
-6. State persisted every 2 seconds for crash recovery via resume tokens
+5. Transcription quality monitored in real-time; environment checks triggered on quality degradation
+6. Responses saved as Segments with transcripts, summaries, and extracted values
+7. After all template questions: Barbara generates additional questions (0-3) if configured; AQ phase begins
+8. On completion: session summaries generated by both Alvia and Barbara (if enabled)
+9. State persisted every 2 seconds for crash recovery via resume tokens (supports AQ phase resume)
 
 **Voice provider abstraction** (`server/realtime-providers.ts`):
 - `RealtimeProvider` interface abstracts OpenAI and Grok implementations
@@ -159,7 +184,7 @@ script/
 - Provider selected via `REALTIME_PROVIDER` env var (default: "openai")
 
 **Barbara orchestrator** (`server/barbara-orchestrator.ts`):
-- Six configurable use cases: analysis, topicOverlap, summarisation, templateAnalytics, projectAnalytics, templateGeneration
+- Eight configurable use cases: analysis, topicOverlap, summarisation, templateAnalytics, projectAnalytics, templateGeneration, additionalQuestions, sessionSummary
 - Each has: model, verbosity (low|medium|high), reasoning effort (minimal|low|medium|high)
 - Allowed models: gpt-5-mini, gpt-5, gpt-4o, gpt-4o-mini, o1, o1-mini, o1-pro, o3-mini
 - Key functions:
@@ -170,8 +195,11 @@ script/
   - `generateTemplateAnalytics()` - Cross-collection template analytics
   - `generateProjectAnalytics()` - Cross-template project analytics
   - `generateTemplateFromProject()` - AI-generated interview templates
+  - `generateAdditionalQuestions()` - Dynamic follow-up questions at end of interview
+  - `generateSessionSummary()` - End-of-interview summary with themes and engagement
 - Runtime configurable via `/api/barbara/config` endpoints
 - Outputs: guidance actions, question summaries with verbatims, quality scores
+- All LLM calls tracked via `withTrackedLlmCall()` wrapper from `llm-usage.ts`
 
 **Analytics system** (hierarchical):
 - **Collection-level**: `CollectionAnalytics` - themes, keyFindings, questionPerformance, recommendations
@@ -199,8 +227,50 @@ script/
 - QR code generation for easy access
 - Tracks invitation status through lifecycle (invited → clicked → consented → completed)
 
+**LLM usage tracking** (`server/llm-usage.ts`, `server/usage-maintenance.ts`):
+- Billing-grade event log: every LLM call logged to `llmUsageEvents` with full attribution (workspace → project → template → collection → session)
+- 16 tracked use cases: alvia_realtime, alvia_transcription, barbara_analysis, barbara_topic_overlap, barbara_question_summary, barbara_cross_interview_enhanced_analysis, barbara_project_cross_template_analysis, barbara_template_generation, barbara_additional_questions, barbara_session_summary, infographic_* (6 variants)
+- Provider-agnostic normalization: text + audio token split for OpenAI, xAI, and Gemini
+- Hourly rollups in `llmUsageRollups` with unique constraint on (bucket, workspace, project, template, collection, session, provider, model, useCase, status)
+- `withTrackedLlmCall()` wrapper used by Barbara to automatically log usage
+- Automated maintenance: raw events expire after 14 days, rollup reconciliation every 24 hours
+- Usage query endpoints at session, collection, template, and project levels
+
+**Additional questions (AQ) system**:
+- Barbara generates 0-3 dynamic follow-up questions at end of interview based on gaps/themes
+- Configured per collection via `maxAdditionalQuestions` (0-3, default 1)
+- Can use cross-interview context from prior sessions in the same collection
+- Respondent can decline to answer; progress tracked via `additionalQuestionPhase` and `currentAdditionalQuestionIndex`
+- AQs stored as Segments with nullable `questionId`, using `additionalQuestionIndex` and `additionalQuestionText`
+- Full resume support for AQ phase
+
+**End-of-interview session summaries**:
+- Enabled per collection via `endOfInterviewSummaryEnabled`
+- `AlviaSessionSummary`: themes, overall summary, objective satisfaction (covered areas + gaps)
+- `BarbaraSessionSummary`: themes with supporting evidence + sentiment, objective satisfaction with rating, respondent engagement level
+- Manually regenerable via `POST /api/sessions/:id/generate-summary`
+
+**Transcription quality monitoring** (`server/transcription-quality.ts`):
+- Real-time detection of: garbled audio, environment noise, repeated clarification, foreign language hallucination, repeated word glitches
+- Sliding window analysis (last 5 utterances) with quality score 0-100
+- Automatic environment check triggering when quality degrades
+- VAD eagerness reduction on persistent quality issues
+- Metrics persisted to `transcriptionQualityMetrics` JSONB field on session
+
+**Silence and pause tracking** (enhanced `SpeakingTimeMetrics`):
+- Individual `SilenceSegment` records with context (post_alvia, post_respondent, initial) and question index
+- Aggregated `SilenceStats`: count, mean, median, p90, p95, max, breakdown by context
+- Pause-aware metrics: `totalPauseDurationMs`, `activeSilenceMs` (excludes pause time), `activeSessionDurationMs`
+- Distinguishes between paused time (no cost) and active silence (incurs OpenAI cost)
+- Capped at 100 segments for storage efficiency
+
+**Barbara token tracking** (per-session breakdown):
+- `BarbaraTokensByUseCase` tracks prompt/completion/total tokens per Barbara function: analysis, topicOverlap, questionSummary, additionalQuestions, sessionSummary
+- Stored in `performanceMetrics.barbaraTokens` on each session
+
 **Resume/Review system**:
 - Cryptographic resume tokens (32-byte, base64url) for interview recovery with 7-day expiry
+- Dedicated resume page at `/resume/:token` validates token and redirects to consent
 - Shareable review links with access tokens (64-char tokens)
 - 6-dimension rating system: questionClarity, alviaUnderstanding, conversationFlow, comfortLevel, technicalQuality, overallExperience
 
@@ -257,9 +327,20 @@ script/
 **Export**:
 - `GET /api/sessions/:id/export` - Export session data (JSON/CSV)
 
+**Session Summaries**:
+- `POST /api/sessions/:id/generate-summary` - Manually regenerate Barbara session summary
+
+**LLM Usage Tracking**:
+- `GET /api/usage/session/:sessionId` - Session-level usage rollups
+- `GET /api/usage/collection/:collectionId` - Collection-level usage rollups
+- `GET /api/usage/template/:templateId` - Template-level usage rollups
+- `GET /api/usage/project/:projectId` - Project-level usage rollups
+- `GET /api/usage/session/:sessionId/events` - Raw usage events for a session
+- `POST /api/admin/usage/backfill-rollups` - Manual rollup backfill
+
 **Configuration**:
 - `GET /api/barbara/config` - Get current Barbara configuration
-- `PATCH /api/barbara/config/{global,analysis,topicOverlap,summarisation}` - Update Barbara config
+- `PATCH /api/barbara/config/{global,analysis,topicOverlap,summarisation,sessionSummary}` - Update Barbara config
 - `/ws/interview` - WebSocket for live interviews
 
 ### Frontend Routes
@@ -281,16 +362,20 @@ script/
 - `/welcome/:sessionId` - Pre-interview welcome
 - `/interview/:sessionId` - Main voice interview
 - `/interview/complete` - Completion screen
+- `/resume/:token` - Resume interview via token (validates and redirects)
 - `/review/:sessionId` - Review by session ID
 - `/review/:token` - Review by access token (64-char tokens auto-detected)
 
 ### Key Files to Modify
 
-- `shared/schema.ts` - Database tables and relationships
+- `shared/schema.ts` - Database tables, types, and relationships
 - `server/routes.ts` - REST API endpoints
-- `server/voice-interview.ts` - WebSocket + voice provider integration (Alvia)
-- `server/barbara-orchestrator.ts` - Interview orchestrator that guides Alvia
+- `server/voice-interview.ts` - WebSocket + voice provider integration (Alvia), AQ phase, session summaries
+- `server/barbara-orchestrator.ts` - Interview orchestrator that guides Alvia, generates AQs and summaries
 - `server/realtime-providers.ts` - Voice provider abstraction (OpenAI/Grok)
+- `server/llm-usage.ts` - LLM usage tracking and `withTrackedLlmCall()` wrapper
+- `server/usage-maintenance.ts` - Automated cleanup and rollup reconciliation jobs
+- `server/transcription-quality.ts` - Transcription quality monitoring and VAD tuning
 - `server/infographic-service.ts` - Gemini API infographic generation
 - `server/storage.ts` - Database operations and access control
 - `client/src/App.tsx` - Frontend routing
