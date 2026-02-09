@@ -1634,7 +1634,7 @@ export class DatabaseStorage implements IStorage {
           ${event.provider}, ${event.model}, ${event.useCase}, ${event.status},
           1, ${event.promptTokens}, ${event.completionTokens}, ${event.totalTokens},
           ${event.inputAudioTokens}, ${event.outputAudioTokens},
-          ${isError}, ${latency ?? 0}, ${latency}, ${latency},
+          ${isError}, COALESCE(${latency}::integer, 0), ${latency}::integer, ${latency}::integer,
           ${eventTime}, ${eventTime}, now()
         )
         ON CONFLICT (
@@ -1649,16 +1649,16 @@ export class DatabaseStorage implements IStorage {
           input_audio_tokens = llm_usage_rollups.input_audio_tokens + ${event.inputAudioTokens},
           output_audio_tokens = llm_usage_rollups.output_audio_tokens + ${event.outputAudioTokens},
           error_count = llm_usage_rollups.error_count + ${isError},
-          latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}, 0),
+          latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}::integer, 0),
           latency_ms_min = CASE
-            WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_min
-            WHEN llm_usage_rollups.latency_ms_min IS NULL THEN ${latency}
-            ELSE LEAST(llm_usage_rollups.latency_ms_min, ${latency})
+            WHEN ${latency}::integer IS NULL THEN llm_usage_rollups.latency_ms_min
+            WHEN llm_usage_rollups.latency_ms_min IS NULL THEN ${latency}::integer
+            ELSE LEAST(llm_usage_rollups.latency_ms_min, ${latency}::integer)
           END,
           latency_ms_max = CASE
-            WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_max
-            WHEN llm_usage_rollups.latency_ms_max IS NULL THEN ${latency}
-            ELSE GREATEST(llm_usage_rollups.latency_ms_max, ${latency})
+            WHEN ${latency}::integer IS NULL THEN llm_usage_rollups.latency_ms_max
+            WHEN llm_usage_rollups.latency_ms_max IS NULL THEN ${latency}::integer
+            ELSE GREATEST(llm_usage_rollups.latency_ms_max, ${latency}::integer)
           END,
           first_event_at = LEAST(llm_usage_rollups.first_event_at, ${eventTime}),
           last_event_at = GREATEST(llm_usage_rollups.last_event_at, ${eventTime}),
