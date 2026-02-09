@@ -2,30 +2,6 @@ import WebSocket from "ws";
 
 export type RealtimeProviderType = "openai" | "grok";
 
-export interface RealtimeSessionConfig {
-  modalities: string[];
-  instructions: string;
-  voice: string;
-  input_audio_format: string;
-  output_audio_format: string;
-  input_audio_noise_reduction?: {
-    type: string;
-  };
-  input_audio_transcription?: {
-    model: string;
-    language?: string;
-  };
-  turn_detection: {
-    type: string;
-    eagerness?: string;
-    threshold?: number;
-    silence_duration_ms?: number;
-    prefix_padding_ms?: number;
-    create_response?: boolean;
-    interrupt_response?: boolean;
-  };
-}
-
 export interface TokenUsageDetails {
   inputTokens: number;
   outputTokens: number;
@@ -42,7 +18,15 @@ export interface RealtimeProvider {
   getWebSocketUrl(): string;
   getWebSocketHeaders(): Record<string, string>;
 
-  buildSessionConfig(instructions: string): RealtimeSessionConfig;
+  buildSessionConfig(instructions: string): Record<string, any>;
+
+  buildInstructionsUpdate(instructions: string): Record<string, any>;
+
+  buildTurnDetectionUpdate(
+    eagerness: "auto" | "low",
+  ): Record<string, any> | null;
+
+  buildTextOnlySessionConfig(instructions: string): Record<string, any>;
 
   parseTokenUsage(event: any): TokenUsageDetails | null;
 
@@ -72,29 +56,70 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
   getWebSocketHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.apiKey}`,
-      "OpenAI-Beta": "realtime=v1",
     };
   }
 
-  buildSessionConfig(instructions: string): RealtimeSessionConfig {
+  buildSessionConfig(instructions: string): Record<string, any> {
     return {
-      modalities: ["text", "audio"],
+      type: "realtime",
       instructions: instructions,
-      voice: "marin",
-      input_audio_format: "pcm16",
-      output_audio_format: "pcm16",
-      input_audio_noise_reduction: {
-        type: "near_field",
+      output_modalities: ["text", "audio"],
+      audio: {
+        input: {
+          format: { type: "audio/pcm", rate: 24000 },
+          transcription: {
+            model: "gpt-4o-mini-transcribe",
+            language: "en",
+          },
+          noise_reduction: {
+            type: "near_field",
+          },
+          turn_detection: {
+            type: "semantic_vad",
+            eagerness: "auto",
+            create_response: true,
+            interrupt_response: true,
+          },
+        },
+        output: {
+          format: { type: "audio/pcm", rate: 24000 },
+          voice: "marin",
+        },
       },
-      input_audio_transcription: {
-        model: "gpt-4o-mini-transcribe",
-        language: "en",
+    };
+  }
+
+  buildInstructionsUpdate(instructions: string): Record<string, any> {
+    return {
+      instructions: instructions,
+    };
+  }
+
+  buildTurnDetectionUpdate(
+    eagerness: "auto" | "low",
+  ): Record<string, any> | null {
+    return {
+      audio: {
+        input: {
+          turn_detection: {
+            type: "semantic_vad",
+            eagerness: eagerness,
+            create_response: true,
+            interrupt_response: true,
+          },
+        },
       },
-      turn_detection: {
-        type: "semantic_vad",
-        eagerness: "auto",
-        create_response: true,
-        interrupt_response: true,
+    };
+  }
+
+  buildTextOnlySessionConfig(instructions: string): Record<string, any> {
+    return {
+      instructions: instructions,
+      output_modalities: ["text"],
+      audio: {
+        input: {
+          turn_detection: null,
+        },
       },
     };
   }
@@ -154,9 +179,8 @@ export class GrokRealtimeProvider implements RealtimeProvider {
     };
   }
 
-  buildSessionConfig(instructions: string): RealtimeSessionConfig {
-    // Grok valid voices: Ara, Eve, Leo, Sal, Rex, Mika, Valentin
-    const config: RealtimeSessionConfig = {
+  buildSessionConfig(instructions: string): Record<string, any> {
+    return {
       modalities: ["text", "audio"],
       instructions: instructions,
       voice: "Ara",
@@ -175,8 +199,26 @@ export class GrokRealtimeProvider implements RealtimeProvider {
         interrupt_response: true,
       },
     };
+  }
 
-    return config;
+  buildInstructionsUpdate(instructions: string): Record<string, any> {
+    return {
+      instructions: instructions,
+    };
+  }
+
+  buildTurnDetectionUpdate(
+    eagerness: "auto" | "low",
+  ): Record<string, any> | null {
+    return null;
+  }
+
+  buildTextOnlySessionConfig(instructions: string): Record<string, any> {
+    return {
+      modalities: ["text"],
+      instructions: instructions,
+      turn_detection: null,
+    };
   }
 
   parseTokenUsage(event: any): TokenUsageDetails | null {

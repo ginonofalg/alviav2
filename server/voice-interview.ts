@@ -1850,19 +1850,16 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       console.log(
         `[VoiceInterview] Re-applying VAD eagerness "low" after provider reconnect for session: ${sessionId}`,
       );
-      providerWs.send(
-        JSON.stringify({
-          type: "session.update",
-          session: {
-            turn_detection: {
-              type: "semantic_vad",
-              eagerness: "low",
-              create_response: true,
-              interrupt_response: true,
-            },
-          },
-        }),
-      );
+      const vadUpdate =
+        provider.buildTurnDetectionUpdate("low");
+      if (vadUpdate) {
+        providerWs.send(
+          JSON.stringify({
+            type: "session.update",
+            session: vadUpdate,
+          }),
+        );
+      }
     }
 
     // Check if we're resuming an AQ session and need to restore AQ state
@@ -2480,7 +2477,7 @@ async function handleProviderEvent(
             promptTokens: event.usage.input_tokens || 0,
             completionTokens: event.usage.output_tokens || 0,
             totalTokens: event.usage.total_tokens || (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0),
-            inputAudioTokens: 0,
+            inputAudioTokens: event.usage.input_token_details?.audio_tokens || 0,
             outputAudioTokens: 0,
           },
           "success",
@@ -2800,9 +2797,7 @@ Then continue the interview naturally once they acknowledge.`;
     state.providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: {
-          instructions: updatedPrompt,
-        },
+        session: state.providerInstance.buildInstructionsUpdate(updatedPrompt),
       }),
     );
 
@@ -2833,17 +2828,15 @@ function sendVadEagernessUpdate(
     return;
   }
 
+  const vadUpdate = state.providerInstance.buildTurnDetectionUpdate(eagerness);
+  if (!vadUpdate) {
+    return;
+  }
+
   state.providerWs.send(
     JSON.stringify({
       type: "session.update",
-      session: {
-        turn_detection: {
-          type: "semantic_vad",
-          eagerness: eagerness,
-          create_response: true,
-          interrupt_response: true,
-        },
-      },
+      session: vadUpdate,
     }),
   );
 
@@ -3039,9 +3032,7 @@ async function triggerBarbaraAnalysis(
         state.providerWs.send(
           JSON.stringify({
             type: "session.update",
-            session: {
-              instructions: updatedInstructions,
-            },
+            session: state.providerInstance.buildInstructionsUpdate(updatedInstructions),
           }),
         );
       }
@@ -3490,9 +3481,7 @@ INSTRUCTIONS:
           state.providerWs.send(
             JSON.stringify({
               type: "session.update",
-              session: {
-                instructions: instructions,
-              },
+              session: state.providerInstance.buildInstructionsUpdate(instructions),
             }),
           );
 
@@ -4146,9 +4135,7 @@ async function startAdditionalQuestion(
     state.providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: {
-          instructions: aqInstruction,
-        },
+        session: state.providerInstance.buildInstructionsUpdate(aqInstruction),
       }),
     );
 
@@ -4679,16 +4666,12 @@ Respond with ONLY the JSON object. No other text.`;
       );
     });
 
-    const sessionConfig =
-      state.providerInstance.buildSessionConfig(summaryPrompt);
+    const textOnlyConfig =
+      state.providerInstance.buildTextOnlySessionConfig(summaryPrompt);
     state.providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: {
-          ...sessionConfig,
-          modalities: ["text"],
-          turn_detection: null,
-        },
+        session: textOnlyConfig,
       }),
     );
 
