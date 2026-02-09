@@ -68,8 +68,46 @@ class PdfBuilder {
     }
   }
 
+  private sanitizeText(text: string): string {
+    return text
+      .replace(/\u2212/g, "-")
+      .replace(/\u2011/g, "-")
+      .replace(/\u2013/g, "-")
+      .replace(/\u2014/g, "-")
+      .replace(/\u200B/g, "")
+      .replace(/\u200C/g, "")
+      .replace(/\u200D/g, "")
+      .replace(/\uFEFF/g, "")
+      .replace(/\uFB01/g, "fi")
+      .replace(/\uFB02/g, "fl")
+      .replace(/\uFB03/g, "ffi")
+      .replace(/\uFB04/g, "ffl")
+      .replace(/\u2018/g, "'")
+      .replace(/\u2019/g, "'")
+      .replace(/\u201C/g, '"')
+      .replace(/\u201D/g, '"')
+      .replace(/\u2026/g, "...")
+      .replace(/\u2002/g, " ")
+      .replace(/\u2003/g, " ")
+      .replace(/\u2009/g, " ")
+      .replace(/\u200A/g, " ")
+      .replace(/\u00A0/g, " ")
+      .replace(/\u2010/g, "-")
+      .replace(/\u00AD/g, "")
+      .replace(/\u00B7/g, "-")
+      .replace(/\u202F/g, " ")
+      .replace(/\u2060/g, "")
+      .replace(/\u2022/g, "-")
+      .replace(/\u2192/g, "->")
+      .replace(/\u2190/g, "<-")
+      .replace(/\u2264/g, "<=")
+      .replace(/\u2265/g, ">=")
+      .replace(/\u2260/g, "!=")
+      .replace(/[^\x00-\xFF]/g, "");
+  }
+
   private wrapText(text: string, maxWidth: number): string[] {
-    return this.pdf.splitTextToSize(text, maxWidth);
+    return this.pdf.splitTextToSize(this.sanitizeText(text), maxWidth);
   }
 
   addTitle(text: string): this {
@@ -77,7 +115,7 @@ class PdfBuilder {
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(18);
     this.pdf.setTextColor(...COLORS.text);
-    this.pdf.text(text, this.margin, this.y);
+    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
     this.y += 10;
     return this;
   }
@@ -87,7 +125,7 @@ class PdfBuilder {
     this.pdf.setFont("helvetica", "normal");
     this.pdf.setFontSize(10);
     this.pdf.setTextColor(...COLORS.muted);
-    this.pdf.text(text, this.margin, this.y);
+    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
     this.y += 8;
     return this;
   }
@@ -98,7 +136,7 @@ class PdfBuilder {
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(14);
     this.pdf.setTextColor(...COLORS.primary);
-    this.pdf.text(text, this.margin, this.y);
+    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
     this.y += 8;
     this.pdf.setDrawColor(...COLORS.primary);
     this.pdf.setLineWidth(0.5);
@@ -113,7 +151,7 @@ class PdfBuilder {
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(11);
     this.pdf.setTextColor(...COLORS.text);
-    this.pdf.text(text, this.margin, this.y);
+    this.pdf.text(this.sanitizeText(text), this.margin, this.y);
     this.y += 7;
     return this;
   }
@@ -146,7 +184,7 @@ class PdfBuilder {
       const height = lines.length * this.lineHeight;
       this.checkPageBreak(height);
       
-      this.pdf.text("•", this.margin, this.y);
+      this.pdf.text("-", this.margin, this.y);
       lines.forEach((line, idx) => {
         this.pdf.text(line, idx === 0 ? bulletIndent : bulletIndent, this.y);
         this.y += this.lineHeight;
@@ -168,7 +206,7 @@ class PdfBuilder {
       const height = lines.length * this.lineHeight;
       this.checkPageBreak(height);
       
-      this.pdf.text(`${index + 1}.`, this.margin, this.y);
+      this.pdf.text(`${index + 1}.`, this.margin, this.y);  
       lines.forEach((line, idx) => {
         this.pdf.text(line, idx === 0 ? numIndent : numIndent, this.y);
         this.y += this.lineHeight;
@@ -203,7 +241,7 @@ class PdfBuilder {
     if (attribution) {
       this.pdf.setFont("helvetica", "normal");
       this.pdf.setFontSize(9);
-      this.pdf.text(`— ${attribution}`, this.margin + 5, this.y);
+      this.pdf.text(this.sanitizeText(`— ${attribution}`), this.margin + 5, this.y);
       this.y += this.lineHeight;
     }
     this.y += 3;
@@ -215,11 +253,11 @@ class PdfBuilder {
     this.pdf.setFontSize(10);
     this.pdf.setTextColor(...COLORS.muted);
     this.checkPageBreak(this.lineHeight);
-    this.pdf.text(`${label}:`, this.margin, this.y);
+    this.pdf.text(this.sanitizeText(`${label}:`), this.margin, this.y);
     
     this.pdf.setFont("helvetica", "normal");
     this.pdf.setTextColor(...COLORS.text);
-    this.pdf.text(String(value), this.margin + 35, this.y);
+    this.pdf.text(this.sanitizeText(String(value)), this.margin + 35, this.y);
     this.y += this.lineHeight;
     return this;
   }
@@ -249,12 +287,12 @@ class PdfBuilder {
       this.pdf.setFont("helvetica", "bold");
       this.pdf.setFontSize(14);
       this.pdf.setTextColor(...COLORS.primary);
-      this.pdf.text(String(metric.value), x + 3, y + 5);
+      this.pdf.text(this.sanitizeText(String(metric.value)), x + 3, y + 5);
       
       this.pdf.setFont("helvetica", "normal");
       this.pdf.setFontSize(8);
       this.pdf.setTextColor(...COLORS.muted);
-      this.pdf.text(metric.label, x + 3, y + 11);
+      this.pdf.text(this.sanitizeText(metric.label), x + 3, y + 11);
     });
     
     const rows = Math.ceil(metrics.length / cols);
@@ -265,11 +303,12 @@ class PdfBuilder {
   addBadge(text: string, color: [number, number, number] = COLORS.primary): this {
     this.pdf.setFont("helvetica", "bold");
     this.pdf.setFontSize(8);
-    const textWidth = this.pdf.getTextWidth(text) + 4;
+    const sanitized = this.sanitizeText(text).toUpperCase();
+    const textWidth = this.pdf.getTextWidth(sanitized) + 4;
     this.pdf.setFillColor(...color);
     this.pdf.roundedRect(this.margin, this.y - 3, textWidth, 5, 1, 1, "F");
     this.pdf.setTextColor(255, 255, 255);
-    this.pdf.text(text.toUpperCase(), this.margin + 2, this.y);
+    this.pdf.text(sanitized, this.margin + 2, this.y);
     this.y += 6;
     return this;
   }
@@ -281,13 +320,14 @@ class PdfBuilder {
     this.pdf.setFont("helvetica", "normal");
     this.pdf.setFontSize(9);
     this.pdf.setTextColor(...COLORS.muted);
-    this.pdf.text(`${label}:`, this.margin, this.y);
+    const sanitizedLabel = this.sanitizeText(label);
+    this.pdf.text(`${sanitizedLabel}:`, this.margin, this.y);
     
-    let x = this.margin + this.pdf.getTextWidth(`${label}: `);
+    let x = this.margin + this.pdf.getTextWidth(`${sanitizedLabel}: `);
     this.pdf.setFontSize(8);
     
     tags.forEach((tag) => {
-      const tagText = tag;
+      const tagText = this.sanitizeText(tag);
       const tagWidth = this.pdf.getTextWidth(tagText) + 4;
       
       if (x + tagWidth > this.pageWidth - this.margin) {
