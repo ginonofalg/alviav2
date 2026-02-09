@@ -1,0 +1,68 @@
+You're right to push back on Replit's proposal. Real transcription token tracking IS possible - the issue is that your codebase is using the beta Realtime API,    
+  which doesn't include usage in transcription events.
+                                                                                                                                                                     
+  Here's the situation:                                                                                                                                              
+
+  1. Line 75 in realtime-providers.ts sends "OpenAI-Beta": "realtime=v1" - this connects to the beta API
+  2. The beta API does NOT include a usage field in conversation.item.input_audio_transcription.completed events
+  3. The GA API DOES include real token counts in this event, with this structure:
+  {
+    "type": "tokens",
+    "total_tokens": 26,
+    "input_tokens": 17,
+    "input_token_details": { "text_tokens": 1, "audio_tokens": 16 },
+    "output_tokens": 9
+  }
+  4. Your existing code at line 2471 (if (event.usage)) is correctly written for this - it just never fires because the beta API doesn't provide the data
+
+  The fix is to migrate to the GA Realtime API, which is also urgent because the beta is being https://platform.openai.com/docs/deprecations - 18 days from now.
+
+  The migration is relatively small:
+  - Remove the "OpenAI-Beta": "realtime=v1" header
+  - Update model: gpt-realtime-mini → gpt-realtime (the GA model)
+  - Event names: Already handled - your code already has dual case statements for both response.audio.delta / response.output_audio.delta etc.
+  - Session config: May need to add type: "realtime" field
+
+  Your existing transcription tracking code (if (event.usage)) will then start working with real token counts from the gpt-4o-mini-transcribe model, no estimation
+  needed.
+
+  Want me to implement the GA migration?
+
+  Sources:
+  - https://platform.openai.com/docs/guides/realtime-costs
+  - https://platform.openai.com/docs/deprecations
+  - https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/realtime-audio-preview-api-migration-guide?view=foundry-classic
+  - https://community.openai.com/t/realtime-api-why-does-input-audio-transcription-usage-include-text-tokens/1362434
+  - https://platform.openai.com/docs/models/gpt-realtime
+
+✻ Cooked for 6m 20s                                                                                                                                                  
+                                                      
+❯ I'm not talking about the realtime voice model. That's tracking tokens fine. I'm talking about the gpt-4o-mini-transcribe tracking. The transcription model!       
+                                                                                                                                                                     
+● That's exactly what I'm talking about - the gpt-4o-mini-transcribe model specifically.                                                                             
+                                                                                                                                                                     
+  The conversation.item.input_audio_transcription.completed event is the transcription model's output. Your code at voice-interview.ts:2471 tries to read event.usage
+   from that event to track the transcription model's tokens:                                                                                                        
+                  
+  if (event.usage) {  // ← never fires                                                                                                                               
+      ...         
+      state.providerInstance.getTranscriptionModelName(),  // "gpt-4o-mini-transcribe"
+      "alvia_transcription",
+      ...
+
+  The reason it never fires is that the beta Realtime API (OpenAI-Beta: realtime=v1 header on line 75 of realtime-providers.ts) doesn't include usage on that
+  transcription event. The GA API does - with real token counts from gpt-4o-mini-transcribe:
+
+  {
+    "type": "tokens",
+    "total_tokens": 26,
+    "input_tokens": 17,
+    "input_token_details": { "audio_tokens": 16, "text_tokens": 1 },
+    "output_tokens": 9
+  }
+
+  So the fix isn't about the realtime voice model at all - it's that migrating the WebSocket connection from beta to GA unlocks the usage field on the transcription
+  event, which is the only way to get real gpt-4o-mini-transcribe token counts. The existing tracking code is already written correctly for it - it just needs the
+  API to actually send the data.
+
+  Want me to implement the migration? It's primarily removing the beta header and updating the model name in realtime-providers.ts.
