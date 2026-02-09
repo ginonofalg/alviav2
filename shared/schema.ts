@@ -1233,6 +1233,7 @@ export const llmUsageEvents = pgTable("llm_usage_events", {
   index("idx_usage_project").on(table.projectId, table.createdAt),
   index("idx_usage_workspace").on(table.workspaceId, table.createdAt),
   index("idx_usage_provider_model").on(table.provider, table.model, table.createdAt),
+  index("idx_usage_created_at").on(table.createdAt),
 ]);
 
 export const insertLlmUsageEventSchema = createInsertSchema(llmUsageEvents).omit({ id: true, createdAt: true });

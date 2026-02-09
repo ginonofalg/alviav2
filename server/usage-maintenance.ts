@@ -9,6 +9,7 @@ const RECONCILIATION_HOURS_BACK = 48;
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 let reconciliationTimer: ReturnType<typeof setInterval> | null = null;
+let backfillInProgress = false;
 
 async function runCleanup(): Promise<void> {
   console.log("[UsageMaintenance] Starting expired event cleanup...");
@@ -42,8 +43,18 @@ async function runReconciliation(): Promise<void> {
   }
 }
 
+export function isBackfillInProgress(): boolean {
+  return backfillInProgress;
+}
+
 export async function backfillRollups(): Promise<void> {
-  console.log("[UsageMaintenance] Starting one-time rollup backfill from raw events (all-time)...");
+  if (backfillInProgress) {
+    console.warn("[UsageMaintenance] Backfill already in progress, skipping.");
+    throw new Error("Backfill already in progress");
+  }
+
+  backfillInProgress = true;
+  console.log("[UsageMaintenance] Starting one-time rollup backfill from raw events (covers last 365 days)...");
   const start = Date.now();
 
   try {
@@ -52,6 +63,9 @@ export async function backfillRollups(): Promise<void> {
     console.log(`[UsageMaintenance] Backfill complete: ${upserted} rollup rows created/updated in ${durationMs}ms`);
   } catch (err) {
     console.error("[UsageMaintenance] Backfill failed:", err);
+    throw err;
+  } finally {
+    backfillInProgress = false;
   }
 }
 
@@ -63,7 +77,9 @@ export function startUsageMaintenanceJobs(): void {
 
   console.log(`[UsageMaintenance] Starting maintenance jobs (cleanup every ${CLEANUP_INTERVAL_MS / 60000}min, reconciliation every ${RECONCILIATION_INTERVAL_MS / 3600000}h)`);
 
-  runCleanup().catch(() => {});
+  runReconciliation()
+    .then(() => runCleanup())
+    .catch(() => {});
 
   cleanupTimer = setInterval(() => {
     runCleanup().catch(() => {});

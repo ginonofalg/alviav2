@@ -3394,7 +3394,11 @@ export async function registerRoutes(
 
   app.post("/api/admin/usage/backfill-rollups", isAuthenticated, async (req: any, res) => {
     try {
-      const { backfillRollups } = await import("./usage-maintenance");
+      const { backfillRollups, isBackfillInProgress } = await import("./usage-maintenance");
+      if (isBackfillInProgress()) {
+        res.status(409).json({ message: "Backfill already in progress", status: "already_running" });
+        return;
+      }
       res.json({ message: "Backfill started", status: "running" });
       backfillRollups().catch((err: Error) => {
         console.error("[Admin] Backfill failed:", err);

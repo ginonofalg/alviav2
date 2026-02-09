@@ -213,7 +213,6 @@ export interface IStorage {
   // LLM Usage Events
   createLlmUsageEvent(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
   createLlmUsageEvents(events: InsertLlmUsageEvent[]): Promise<LlmUsageEvent[]>;
-  upsertLlmUsageRollup(event: InsertLlmUsageEvent, createdAt?: Date): Promise<void>;
   createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
   getUsageRollupBySession(sessionId: string): Promise<UsageRollup>;
   getUsageRollupByCollection(collectionId: string): Promise<UsageRollup>;
@@ -1606,64 +1605,6 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(llmUsageEvents.createdAt));
   }
 
-  async upsertLlmUsageRollup(event: InsertLlmUsageEvent, createdAt?: Date): Promise<void> {
-    const eventTime = createdAt ?? new Date();
-    const bucketStart = new Date(eventTime);
-    bucketStart.setMinutes(0, 0, 0);
-
-    const wId = event.workspaceId ?? "";
-    const pId = event.projectId ?? "";
-    const tId = event.templateId ?? "";
-    const cId = event.collectionId ?? "";
-    const sId = event.sessionId ?? "";
-    const isError = (event.status === "error" || event.status === "timeout") ? 1 : 0;
-    const latency = event.latencyMs ?? null;
-
-    await db.execute(sql`
-      INSERT INTO llm_usage_rollups (
-        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
-        provider, model, use_case, status,
-        call_count, prompt_tokens, completion_tokens, total_tokens,
-        input_audio_tokens, output_audio_tokens,
-        error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
-        first_event_at, last_event_at, updated_at
-      ) VALUES (
-        ${bucketStart}, ${wId}, ${pId}, ${tId}, ${cId}, ${sId},
-        ${event.provider}, ${event.model}, ${event.useCase}, ${event.status},
-        1, ${event.promptTokens}, ${event.completionTokens}, ${event.totalTokens},
-        ${event.inputAudioTokens}, ${event.outputAudioTokens},
-        ${isError}, ${latency ?? 0}, ${latency}, ${latency},
-        ${eventTime}, ${eventTime}, now()
-      )
-      ON CONFLICT (
-        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
-        provider, model, use_case, status
-      )
-      DO UPDATE SET
-        call_count = llm_usage_rollups.call_count + 1,
-        prompt_tokens = llm_usage_rollups.prompt_tokens + ${event.promptTokens},
-        completion_tokens = llm_usage_rollups.completion_tokens + ${event.completionTokens},
-        total_tokens = llm_usage_rollups.total_tokens + ${event.totalTokens},
-        input_audio_tokens = llm_usage_rollups.input_audio_tokens + ${event.inputAudioTokens},
-        output_audio_tokens = llm_usage_rollups.output_audio_tokens + ${event.outputAudioTokens},
-        error_count = llm_usage_rollups.error_count + ${isError},
-        latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}, 0),
-        latency_ms_min = CASE
-          WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_min
-          WHEN llm_usage_rollups.latency_ms_min IS NULL THEN ${latency}
-          ELSE LEAST(llm_usage_rollups.latency_ms_min, ${latency})
-        END,
-        latency_ms_max = CASE
-          WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_max
-          WHEN llm_usage_rollups.latency_ms_max IS NULL THEN ${latency}
-          ELSE GREATEST(llm_usage_rollups.latency_ms_max, ${latency})
-        END,
-        first_event_at = LEAST(llm_usage_rollups.first_event_at, ${eventTime}),
-        last_event_at = GREATEST(llm_usage_rollups.last_event_at, ${eventTime}),
-        updated_at = now()
-    `);
-  }
-
   async createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent> {
     const now = new Date();
     return await db.transaction(async (tx) => {
@@ -1820,14 +1761,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async reconcileUsageRollups(hoursBack: number): Promise<number> {
-    const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
-    const bucketCutoff = new Date(cutoff);
+    const bucketCutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
     bucketCutoff.setMinutes(0, 0, 0);
-
-    await db.execute(sql`
-      DELETE FROM llm_usage_rollups
-      WHERE bucket_start >= ${bucketCutoff}
-    `);
 
     const result = await db.execute(sql`
       INSERT INTO llm_usage_rollups (
@@ -1860,7 +1795,7 @@ export class DatabaseStorage implements IStorage {
         MAX(created_at) AS last_event_at,
         now() AS updated_at
       FROM llm_usage_events
-      WHERE created_at >= ${cutoff}
+      WHERE created_at >= ${bucketCutoff}
       GROUP BY
         date_trunc('hour', created_at),
         COALESCE(workspace_id, ''),
