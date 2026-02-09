@@ -1,0 +1,45 @@
+Scope reviewed
+  Commits from this morning touching token counting: 92226c6, 4cb2dbf, fc9ef84 (plus wiring in server/index.ts and server/routes.ts).
+
+  Findings (ordered by severity)
+
+  1. Critical: reconciliation drops part of an hour every run (systematic undercount).
+     server/storage.ts:1823 computes cutoff with minutes/seconds, server/storage.ts:1828 deletes rollups from hour-truncated bucketCutoff, but server/
+     storage.ts:1863 rebuilds from created_at >= cutoff (not bucketCutoff).
+     Result: events between bucketCutoff and cutoff get deleted and never reinserted.
+  2. Critical: immediate startup cleanup can permanently erase historical usage before rollups exist.
+     server/index.ts:97 starts jobs on boot; server/usage-maintenance.ts:66 runs cleanup immediately with 14-day retention (server/usage-
+     maintenance.ts:3).
+     Rollup reads now come from llm_usage_rollups (server/storage.ts:1732), so old raw events can be deleted before backfill/reconciliation has
+     materialized rollups.
+  3. High: reconciliation can overwrite concurrent live increments.
+     Reconcile does DELETE + rebuild (server/storage.ts:1827, server/storage.ts:1832) while live writes do transactional increment upserts (server/
+     storage.ts:1667).
+     Reconcile ON CONFLICT DO UPDATE sets absolute values (server/storage.ts:1877) and can clobber writes that arrive after its SELECT snapshot.
+  4. High: maintenance queries likely full-scan llm_usage_events (no created_at index).
+     Cleanup/reconcile filter by created_at (server/storage.ts:1815, server/storage.ts:1863), but event indexes are dimension-prefixed composites only
+     (shared/schema.ts:1230, shared/schema.ts:1235).
+     Risk: heavy hourly/day scans as ledger grows.
+  5. High: backfill endpoint is broadly accessible and unbounded.
+     server/routes.ts:3395 uses only isAuthenticated; any signed-in user can trigger global backfill.
+     No concurrency guard in server/usage-maintenance.ts:45, so repeated calls can stack heavy jobs.
+  6. Medium: “all-time” backfill is actually one year.
+     Log says all-time (server/usage-maintenance.ts:46), but code uses 24 * 365 hours (server/usage-maintenance.ts:50).
+  7. Medium: transcription call counts are understated when provider omits usage.
+     Transcription usage is recorded only if event.usage exists (server/voice-interview.ts:2463), otherwise no missing_usage event is written.
+     This hides missing telemetry and understates per-use-case call volume.
+  8. Low: duplicated rollup upsert implementation increases drift risk.
+     upsertLlmUsageRollup (server/storage.ts:1609) and inline logic in createEventAndUpsertRollup (server/storage.ts:1667) duplicate the same SQL path,
+     but only one is used.
+
+  Testing gap
+
+  - npm run check currently fails due existing unrelated TypeScript errors in other areas, so I could not use typecheck as a regression signal for this
+    token work.
+
+  Natural next steps
+
+  1. Fix reconciliation cutoff mismatch and concurrent overwrite behavior first (server/storage.ts).
+  2. Change startup sequencing: run reconciliation/backfill before any cleanup, and lock down/admin-gate backfill route.
+  3. Add created_at index for llm_usage_events and add focused tests for: cutoff boundary, concurrent writes during reconcile, and missing transcription
+     usage telemetry.
