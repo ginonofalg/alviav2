@@ -1,7 +1,7 @@
 import { 
   workspaces, projects, interviewTemplates, questions, collections,
   respondents, interviewSessions, segments, redactionMaps, workspaceMembers,
-  inviteList, waitlistEntries, llmUsageEvents,
+  inviteList, waitlistEntries, llmUsageEvents, llmUsageRollups,
   type Workspace, type InsertWorkspace, type Project, type InsertProject,
   type InterviewTemplate, type InsertTemplate, type Question, type InsertQuestion,
   type Collection, type InsertCollection, type Respondent, type InsertRespondent,
@@ -213,12 +213,16 @@ export interface IStorage {
   // LLM Usage Events
   createLlmUsageEvent(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
   createLlmUsageEvents(events: InsertLlmUsageEvent[]): Promise<LlmUsageEvent[]>;
+  upsertLlmUsageRollup(event: InsertLlmUsageEvent, createdAt?: Date): Promise<void>;
+  createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
   getUsageRollupBySession(sessionId: string): Promise<UsageRollup>;
   getUsageRollupByCollection(collectionId: string): Promise<UsageRollup>;
   getUsageRollupByTemplate(templateId: string): Promise<UsageRollup>;
   getUsageRollupByProject(projectId: string): Promise<UsageRollup>;
   getUsageRollupByWorkspace(workspaceId: string): Promise<UsageRollup>;
   getUsageEventsBySession(sessionId: string): Promise<LlmUsageEvent[]>;
+  deleteExpiredUsageEvents(retentionDays: number, batchSize: number): Promise<number>;
+  reconcileUsageRollups(hoursBack: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1602,8 +1606,130 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(llmUsageEvents.createdAt));
   }
 
+  async upsertLlmUsageRollup(event: InsertLlmUsageEvent, createdAt?: Date): Promise<void> {
+    const eventTime = createdAt ?? new Date();
+    const bucketStart = new Date(eventTime);
+    bucketStart.setMinutes(0, 0, 0);
+
+    const wId = event.workspaceId ?? "";
+    const pId = event.projectId ?? "";
+    const tId = event.templateId ?? "";
+    const cId = event.collectionId ?? "";
+    const sId = event.sessionId ?? "";
+    const isError = (event.status === "error" || event.status === "timeout") ? 1 : 0;
+    const latency = event.latencyMs ?? null;
+
+    await db.execute(sql`
+      INSERT INTO llm_usage_rollups (
+        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+        provider, model, use_case, status,
+        call_count, prompt_tokens, completion_tokens, total_tokens,
+        input_audio_tokens, output_audio_tokens,
+        error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
+        first_event_at, last_event_at, updated_at
+      ) VALUES (
+        ${bucketStart}, ${wId}, ${pId}, ${tId}, ${cId}, ${sId},
+        ${event.provider}, ${event.model}, ${event.useCase}, ${event.status},
+        1, ${event.promptTokens}, ${event.completionTokens}, ${event.totalTokens},
+        ${event.inputAudioTokens}, ${event.outputAudioTokens},
+        ${isError}, ${latency ?? 0}, ${latency}, ${latency},
+        ${eventTime}, ${eventTime}, now()
+      )
+      ON CONFLICT (
+        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+        provider, model, use_case, status
+      )
+      DO UPDATE SET
+        call_count = llm_usage_rollups.call_count + 1,
+        prompt_tokens = llm_usage_rollups.prompt_tokens + ${event.promptTokens},
+        completion_tokens = llm_usage_rollups.completion_tokens + ${event.completionTokens},
+        total_tokens = llm_usage_rollups.total_tokens + ${event.totalTokens},
+        input_audio_tokens = llm_usage_rollups.input_audio_tokens + ${event.inputAudioTokens},
+        output_audio_tokens = llm_usage_rollups.output_audio_tokens + ${event.outputAudioTokens},
+        error_count = llm_usage_rollups.error_count + ${isError},
+        latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}, 0),
+        latency_ms_min = CASE
+          WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_min
+          WHEN llm_usage_rollups.latency_ms_min IS NULL THEN ${latency}
+          ELSE LEAST(llm_usage_rollups.latency_ms_min, ${latency})
+        END,
+        latency_ms_max = CASE
+          WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_max
+          WHEN llm_usage_rollups.latency_ms_max IS NULL THEN ${latency}
+          ELSE GREATEST(llm_usage_rollups.latency_ms_max, ${latency})
+        END,
+        first_event_at = LEAST(llm_usage_rollups.first_event_at, ${eventTime}),
+        last_event_at = GREATEST(llm_usage_rollups.last_event_at, ${eventTime}),
+        updated_at = now()
+    `);
+  }
+
+  async createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent> {
+    const now = new Date();
+    return await db.transaction(async (tx) => {
+      const [created] = await tx.insert(llmUsageEvents).values(event).returning();
+      const eventTime = created.createdAt ?? now;
+      const bucketStart = new Date(eventTime);
+      bucketStart.setMinutes(0, 0, 0);
+
+      const wId = event.workspaceId ?? "";
+      const pId = event.projectId ?? "";
+      const tId = event.templateId ?? "";
+      const cId = event.collectionId ?? "";
+      const sId = event.sessionId ?? "";
+      const isError = (event.status === "error" || event.status === "timeout") ? 1 : 0;
+      const latency = event.latencyMs ?? null;
+
+      await tx.execute(sql`
+        INSERT INTO llm_usage_rollups (
+          bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+          provider, model, use_case, status,
+          call_count, prompt_tokens, completion_tokens, total_tokens,
+          input_audio_tokens, output_audio_tokens,
+          error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
+          first_event_at, last_event_at, updated_at
+        ) VALUES (
+          ${bucketStart}, ${wId}, ${pId}, ${tId}, ${cId}, ${sId},
+          ${event.provider}, ${event.model}, ${event.useCase}, ${event.status},
+          1, ${event.promptTokens}, ${event.completionTokens}, ${event.totalTokens},
+          ${event.inputAudioTokens}, ${event.outputAudioTokens},
+          ${isError}, ${latency ?? 0}, ${latency}, ${latency},
+          ${eventTime}, ${eventTime}, now()
+        )
+        ON CONFLICT (
+          bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+          provider, model, use_case, status
+        )
+        DO UPDATE SET
+          call_count = llm_usage_rollups.call_count + 1,
+          prompt_tokens = llm_usage_rollups.prompt_tokens + ${event.promptTokens},
+          completion_tokens = llm_usage_rollups.completion_tokens + ${event.completionTokens},
+          total_tokens = llm_usage_rollups.total_tokens + ${event.totalTokens},
+          input_audio_tokens = llm_usage_rollups.input_audio_tokens + ${event.inputAudioTokens},
+          output_audio_tokens = llm_usage_rollups.output_audio_tokens + ${event.outputAudioTokens},
+          error_count = llm_usage_rollups.error_count + ${isError},
+          latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}, 0),
+          latency_ms_min = CASE
+            WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_min
+            WHEN llm_usage_rollups.latency_ms_min IS NULL THEN ${latency}
+            ELSE LEAST(llm_usage_rollups.latency_ms_min, ${latency})
+          END,
+          latency_ms_max = CASE
+            WHEN ${latency} IS NULL THEN llm_usage_rollups.latency_ms_max
+            WHEN llm_usage_rollups.latency_ms_max IS NULL THEN ${latency}
+            ELSE GREATEST(llm_usage_rollups.latency_ms_max, ${latency})
+          END,
+          first_event_at = LEAST(llm_usage_rollups.first_event_at, ${eventTime}),
+          last_event_at = GREATEST(llm_usage_rollups.last_event_at, ${eventTime}),
+          updated_at = now()
+      `);
+
+      return created;
+    });
+  }
+
   private async computeUsageRollup(filterColumn: any, filterValue: string): Promise<UsageRollup> {
-    const events = await db.select().from(llmUsageEvents)
+    const rows = await db.select().from(llmUsageRollups)
       .where(eq(filterColumn, filterValue));
 
     const rollup: UsageRollup = {
@@ -1612,72 +1738,158 @@ export class DatabaseStorage implements IStorage {
       totalTokens: 0,
       totalInputAudioTokens: 0,
       totalOutputAudioTokens: 0,
-      totalCalls: events.length,
+      totalCalls: 0,
       byProvider: {},
       byModel: {},
       byUseCase: {},
       byStatus: {},
     };
 
-    for (const event of events) {
-      rollup.totalPromptTokens += event.promptTokens;
-      rollup.totalCompletionTokens += event.completionTokens;
-      rollup.totalTokens += event.totalTokens;
-      rollup.totalInputAudioTokens += event.inputAudioTokens;
-      rollup.totalOutputAudioTokens += event.outputAudioTokens;
+    for (const row of rows) {
+      rollup.totalPromptTokens += row.promptTokens;
+      rollup.totalCompletionTokens += row.completionTokens;
+      rollup.totalTokens += row.totalTokens;
+      rollup.totalInputAudioTokens += row.inputAudioTokens;
+      rollup.totalOutputAudioTokens += row.outputAudioTokens;
+      rollup.totalCalls += row.callCount;
 
-      const providerKey = event.provider;
+      const providerKey = row.provider;
       if (!rollup.byProvider[providerKey]) {
         rollup.byProvider[providerKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
       }
-      rollup.byProvider[providerKey].promptTokens += event.promptTokens;
-      rollup.byProvider[providerKey].completionTokens += event.completionTokens;
-      rollup.byProvider[providerKey].totalTokens += event.totalTokens;
-      rollup.byProvider[providerKey].calls += 1;
+      rollup.byProvider[providerKey].promptTokens += row.promptTokens;
+      rollup.byProvider[providerKey].completionTokens += row.completionTokens;
+      rollup.byProvider[providerKey].totalTokens += row.totalTokens;
+      rollup.byProvider[providerKey].calls += row.callCount;
 
-      const modelKey = event.model;
+      const modelKey = row.model;
       if (!rollup.byModel[modelKey]) {
         rollup.byModel[modelKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
       }
-      rollup.byModel[modelKey].promptTokens += event.promptTokens;
-      rollup.byModel[modelKey].completionTokens += event.completionTokens;
-      rollup.byModel[modelKey].totalTokens += event.totalTokens;
-      rollup.byModel[modelKey].calls += 1;
+      rollup.byModel[modelKey].promptTokens += row.promptTokens;
+      rollup.byModel[modelKey].completionTokens += row.completionTokens;
+      rollup.byModel[modelKey].totalTokens += row.totalTokens;
+      rollup.byModel[modelKey].calls += row.callCount;
 
-      const useCaseKey = event.useCase;
+      const useCaseKey = row.useCase;
       if (!rollup.byUseCase[useCaseKey]) {
         rollup.byUseCase[useCaseKey] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
       }
-      rollup.byUseCase[useCaseKey].promptTokens += event.promptTokens;
-      rollup.byUseCase[useCaseKey].completionTokens += event.completionTokens;
-      rollup.byUseCase[useCaseKey].totalTokens += event.totalTokens;
-      rollup.byUseCase[useCaseKey].calls += 1;
+      rollup.byUseCase[useCaseKey].promptTokens += row.promptTokens;
+      rollup.byUseCase[useCaseKey].completionTokens += row.completionTokens;
+      rollup.byUseCase[useCaseKey].totalTokens += row.totalTokens;
+      rollup.byUseCase[useCaseKey].calls += row.callCount;
 
-      const statusKey = event.status;
-      rollup.byStatus[statusKey] = (rollup.byStatus[statusKey] || 0) + 1;
+      const statusKey = row.status;
+      rollup.byStatus[statusKey] = (rollup.byStatus[statusKey] || 0) + row.callCount;
     }
 
     return rollup;
   }
 
   async getUsageRollupBySession(sessionId: string): Promise<UsageRollup> {
-    return this.computeUsageRollup(llmUsageEvents.sessionId, sessionId);
+    return this.computeUsageRollup(llmUsageRollups.sessionId, sessionId);
   }
 
   async getUsageRollupByCollection(collectionId: string): Promise<UsageRollup> {
-    return this.computeUsageRollup(llmUsageEvents.collectionId, collectionId);
+    return this.computeUsageRollup(llmUsageRollups.collectionId, collectionId);
   }
 
   async getUsageRollupByTemplate(templateId: string): Promise<UsageRollup> {
-    return this.computeUsageRollup(llmUsageEvents.templateId, templateId);
+    return this.computeUsageRollup(llmUsageRollups.templateId, templateId);
   }
 
   async getUsageRollupByProject(projectId: string): Promise<UsageRollup> {
-    return this.computeUsageRollup(llmUsageEvents.projectId, projectId);
+    return this.computeUsageRollup(llmUsageRollups.projectId, projectId);
   }
 
   async getUsageRollupByWorkspace(workspaceId: string): Promise<UsageRollup> {
-    return this.computeUsageRollup(llmUsageEvents.workspaceId, workspaceId);
+    return this.computeUsageRollup(llmUsageRollups.workspaceId, workspaceId);
+  }
+
+  async deleteExpiredUsageEvents(retentionDays: number, batchSize: number): Promise<number> {
+    const result = await db.execute(sql`
+      DELETE FROM llm_usage_events
+      WHERE id IN (
+        SELECT id FROM llm_usage_events
+        WHERE created_at < now() - make_interval(days => ${retentionDays})
+        LIMIT ${batchSize}
+      )
+    `);
+    return Number(result.rowCount ?? 0);
+  }
+
+  async reconcileUsageRollups(hoursBack: number): Promise<number> {
+    const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+    const bucketCutoff = new Date(cutoff);
+    bucketCutoff.setMinutes(0, 0, 0);
+
+    await db.execute(sql`
+      DELETE FROM llm_usage_rollups
+      WHERE bucket_start >= ${bucketCutoff}
+    `);
+
+    const result = await db.execute(sql`
+      INSERT INTO llm_usage_rollups (
+        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+        provider, model, use_case, status,
+        call_count, prompt_tokens, completion_tokens, total_tokens,
+        input_audio_tokens, output_audio_tokens,
+        error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
+        first_event_at, last_event_at, updated_at
+      )
+      SELECT
+        date_trunc('hour', created_at) AS bucket_start,
+        COALESCE(workspace_id, '') AS workspace_id,
+        COALESCE(project_id, '') AS project_id,
+        COALESCE(template_id, '') AS template_id,
+        COALESCE(collection_id, '') AS collection_id,
+        COALESCE(session_id, '') AS session_id,
+        provider, model, use_case, status,
+        COUNT(*)::integer AS call_count,
+        SUM(prompt_tokens)::integer AS prompt_tokens,
+        SUM(completion_tokens)::integer AS completion_tokens,
+        SUM(total_tokens)::integer AS total_tokens,
+        SUM(input_audio_tokens)::integer AS input_audio_tokens,
+        SUM(output_audio_tokens)::integer AS output_audio_tokens,
+        SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END)::integer AS error_count,
+        SUM(COALESCE(latency_ms, 0))::integer AS latency_ms_sum,
+        MIN(latency_ms) AS latency_ms_min,
+        MAX(latency_ms) AS latency_ms_max,
+        MIN(created_at) AS first_event_at,
+        MAX(created_at) AS last_event_at,
+        now() AS updated_at
+      FROM llm_usage_events
+      WHERE created_at >= ${cutoff}
+      GROUP BY
+        date_trunc('hour', created_at),
+        COALESCE(workspace_id, ''),
+        COALESCE(project_id, ''),
+        COALESCE(template_id, ''),
+        COALESCE(collection_id, ''),
+        COALESCE(session_id, ''),
+        provider, model, use_case, status
+      ON CONFLICT (
+        bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
+        provider, model, use_case, status
+      )
+      DO UPDATE SET
+        call_count = EXCLUDED.call_count,
+        prompt_tokens = EXCLUDED.prompt_tokens,
+        completion_tokens = EXCLUDED.completion_tokens,
+        total_tokens = EXCLUDED.total_tokens,
+        input_audio_tokens = EXCLUDED.input_audio_tokens,
+        output_audio_tokens = EXCLUDED.output_audio_tokens,
+        error_count = EXCLUDED.error_count,
+        latency_ms_sum = EXCLUDED.latency_ms_sum,
+        latency_ms_min = EXCLUDED.latency_ms_min,
+        latency_ms_max = EXCLUDED.latency_ms_max,
+        first_event_at = EXCLUDED.first_event_at,
+        last_event_at = EXCLUDED.last_event_at,
+        updated_at = now()
+    `);
+
+    return Number(result.rowCount ?? 0);
   }
 }
 

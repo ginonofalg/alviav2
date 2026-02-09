@@ -90,7 +90,7 @@ export async function recordLlmUsageEvent(
       latencyMs: metadata?.latencyMs ?? null,
       errorMessage: metadata?.errorMessage ?? null,
     };
-    await storage.createLlmUsageEvent(event);
+    await storage.createEventAndUpsertRollup(event);
   } catch (err) {
     console.error(`[LLM Usage] Failed to record usage event for ${useCase}:`, err);
   }

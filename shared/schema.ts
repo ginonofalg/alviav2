@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, pgEnum, index, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, pgEnum, index, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1238,6 +1238,55 @@ export const llmUsageEvents = pgTable("llm_usage_events", {
 export const insertLlmUsageEventSchema = createInsertSchema(llmUsageEvents).omit({ id: true, createdAt: true });
 export type LlmUsageEvent = typeof llmUsageEvents.$inferSelect;
 export type InsertLlmUsageEvent = z.infer<typeof insertLlmUsageEventSchema>;
+
+export const llmUsageRollups = pgTable("llm_usage_rollups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bucketStart: timestamp("bucket_start").notNull(),
+  workspaceId: varchar("workspace_id").notNull().default(""),
+  projectId: varchar("project_id").notNull().default(""),
+  templateId: varchar("template_id").notNull().default(""),
+  collectionId: varchar("collection_id").notNull().default(""),
+  sessionId: varchar("session_id").notNull().default(""),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  useCase: text("use_case").notNull(),
+  status: text("status").notNull(),
+  callCount: integer("call_count").notNull().default(0),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  inputAudioTokens: integer("input_audio_tokens").notNull().default(0),
+  outputAudioTokens: integer("output_audio_tokens").notNull().default(0),
+  errorCount: integer("error_count").notNull().default(0),
+  latencyMsSum: integer("latency_ms_sum").notNull().default(0),
+  latencyMsMin: integer("latency_ms_min"),
+  latencyMsMax: integer("latency_ms_max"),
+  firstEventAt: timestamp("first_event_at").notNull(),
+  lastEventAt: timestamp("last_event_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("uq_rollup_bucket_dims").on(
+    table.bucketStart,
+    table.workspaceId,
+    table.projectId,
+    table.templateId,
+    table.collectionId,
+    table.sessionId,
+    table.provider,
+    table.model,
+    table.useCase,
+    table.status,
+  ),
+  index("idx_rollup_session").on(table.sessionId),
+  index("idx_rollup_collection").on(table.collectionId),
+  index("idx_rollup_template").on(table.templateId),
+  index("idx_rollup_project").on(table.projectId),
+  index("idx_rollup_workspace").on(table.workspaceId),
+]);
+
+export const insertLlmUsageRollupSchema = createInsertSchema(llmUsageRollups).omit({ id: true, updatedAt: true });
+export type LlmUsageRollup = typeof llmUsageRollups.$inferSelect;
+export type InsertLlmUsageRollup = z.infer<typeof insertLlmUsageRollupSchema>;
 
 export type UsageRollup = {
   totalPromptTokens: number;

@@ -3392,5 +3392,18 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/usage/backfill-rollups", isAuthenticated, async (req: any, res) => {
+    try {
+      const { backfillRollups } = await import("./usage-maintenance");
+      res.json({ message: "Backfill started", status: "running" });
+      backfillRollups().catch((err: Error) => {
+        console.error("[Admin] Backfill failed:", err);
+      });
+    } catch (error) {
+      console.error("Error starting backfill:", error);
+      res.status(500).json({ message: "Failed to start backfill" });
+    }
+  });
+
   return httpServer;
 }
