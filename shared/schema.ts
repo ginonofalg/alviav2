@@ -1166,6 +1166,7 @@ export type AggregatedAnalytics = {
 
 export const LLM_USE_CASES = [
   "alvia_realtime",
+  "alvia_transcription",
   "barbara_analysis",
   "barbara_topic_overlap",
   "barbara_question_summary",

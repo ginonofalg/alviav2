@@ -2466,7 +2466,26 @@ async function handleProviderEvent(
       break;
 
     case "conversation.item.input_audio_transcription.completed":
-      // User's speech transcript (from Whisper)
+      // User's speech transcript (from transcription model)
+      // Record transcription token usage if reported by the API
+      if (event.usage) {
+        const txAttribution = buildUsageAttribution(state);
+        const txProvider = state.providerInstance.name === "grok" ? "xai" as const : "openai" as const;
+        recordLlmUsageEvent(
+          txAttribution,
+          txProvider,
+          state.providerInstance.getTranscriptionModelName(),
+          "alvia_transcription",
+          {
+            promptTokens: event.usage.input_tokens || 0,
+            completionTokens: event.usage.output_tokens || 0,
+            totalTokens: event.usage.total_tokens || (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0),
+            inputAudioTokens: 0,
+            outputAudioTokens: 0,
+          },
+          "success",
+        ).catch(err => console.error("[LLM Usage] Failed to record alvia_transcription event:", err));
+      }
       // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
       (async () => {
         // Track transcription latency (time from speech_stopped to transcription completed)
@@ -4536,11 +4555,12 @@ function finalizeAndPersistMetrics(
   };
 
   const realtimeAttribution = buildUsageAttribution(state);
-  const voiceProvider = state.providerType || "openai";
+  const providerForUsage = state.providerInstance;
+  const usageProvider = providerForUsage.name === "grok" ? "xai" as const : "openai" as const;
   recordLlmUsageEvent(
     realtimeAttribution,
-    voiceProvider === "grok" ? "xai" : "openai",
-    voiceProvider === "grok" ? "grok-3-mini" : "gpt-4o-realtime",
+    usageProvider,
+    providerForUsage.getModelName(),
     "alvia_realtime",
     {
       promptTokens: tracker.tokens.inputTextTokens,

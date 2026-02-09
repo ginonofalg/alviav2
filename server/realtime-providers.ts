@@ -46,6 +46,9 @@ export interface RealtimeProvider {
 
   parseTokenUsage(event: any): TokenUsageDetails | null;
 
+  getModelName(): string;
+  getTranscriptionModelName(): string;
+
   getSampleRate(): number;
 
   supportsSemanticVAD(): boolean;
@@ -108,6 +111,14 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
       inputTextTokens: usage.input_token_details?.text_tokens || 0,
       outputTextTokens: usage.output_token_details?.text_tokens || 0,
     };
+  }
+
+  getModelName(): string {
+    return "gpt-realtime-mini";
+  }
+
+  getTranscriptionModelName(): string {
+    return "gpt-4o-mini-transcribe";
   }
 
   getSampleRate(): number {
@@ -187,6 +198,14 @@ export class GrokRealtimeProvider implements RealtimeProvider {
       inputTextTokens: usage.input_token_details?.text_tokens || 0,
       outputTextTokens: usage.output_token_details?.text_tokens || 0,
     };
+  }
+
+  getModelName(): string {
+    return "grok-3-fast";
+  }
+
+  getTranscriptionModelName(): string {
+    return "whisper-large-v3";
   }
 
   getSampleRate(): number {
