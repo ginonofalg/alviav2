@@ -1,0 +1,109 @@
+Implementation Brief: Alvia Prompt Lifecycle Refactor
+  1. Problem Statement
+	  Alvia’s core instruction block is rebuilt and resent on every session.update, but Instruction 1 currently depends only on questionIndex === 0. This causes
+	  This creates unnatural conversation, prompt ambiguity, and higher token usage.
+	
+	  There is also a critical prompt integrity issue: one path overwrites system instructions using lastAIPrompt + guidance, which can drop core guardrails
+	  entirely.
+	  
+  2. Current Evidence (Code References)
+
+	  - Instruction 1 is static by question index: server/voice-interview.ts:2143
+	  - Full instructions are sent via session.update: server/voice-interview.ts:3120
+	  - Environment quality path overwrites prompt from last utterance: server/voice-interview.ts:2863
+	  - Last-question CTA can conflict with AQ consent flow:
+	      - AQ consent may appear instead: server/voice-interview.ts:3697
+
+  3. Goals
+	  - Make Instruction 1 phase-aware so it only gives opening behavior at interview start.
+	  - Improve instruction clarity and consistency for transitions, completion language, and terminology.
+
+  4. Scope
+
+	  - In scope:
+	      - server/voice-interview.ts prompt construction and update flow.
+	      - Dynamic Instruction 1 replacement logic.
+	      - Environment-check guidance injection fix.
+	      - Prompt clarity edits.
+	  - Out of scope:
+	      - Frontend UI changes.
+
+  5. Functional Requirements
+
+	  1. Dynamic Instruction 1
+	     Use one of these variants based on phase:
+	
+		  - opening_first_turn
+		  - question_start
+		  - follow_up
+		    Continue from the respondent's latest point. Do not re-introduce yourself and do not repeat the full question unless they ask for clarification.
+
+	  2. Phase Derivation
+		 Derive phase from runtime state, not only question index:
+		  - Opening only if first scripted question and Alvia has not yet spoken on this question.
+		  - Follow-up otherwise.
+		  Recommended source of truth:
+		  - state.fullTranscriptForPersistence with speaker === "alvia" and current questionIndex.
+		  - Fallback to recent transcript if needed.
+
+	  3. Fix Environment-Check Prompt Overwrite (P0)
+	    Replace lastAIPrompt + guidance update behavior with full instruction rebuild + appended Barbara guidance, so baseline policies remain intact.
+	    
+	  4. Completion/Transition Clarity
+		 - Update end-of-scripted-question wording so Alvia does not incorrectly announce completion when AQ consent may still occur.
+		 - Use neutral wording like “click the button below to continue” unless completion is explicit.
+		
+	  5. Terminology and Prompt Clarity
+		  - Standardize on “respondent” (not “interviewee”).
+		  - Replace “CURRENT QUESTION TO ASK” with phase-safe wording (“CURRENT QUESTION” / “CURRENT QUESTION FOCUS”).
+		  - Keep no-repeat instruction explicit in follow-up phase.
+
+  6. Implementation Plan
+
+	  1. Add a helper that derives instruction phase from interview state.
+	  
+	  2. Update buildInterviewInstructions(...) to accept instructionPhase (or internally derive with passed state signal).
+	  
+	  3. Replace Instruction 1 line with phase-specific text.
+	  
+	  4. Use the same instruction builder in all update paths:
+	      - Initial connect path.
+	      - Barbara guidance path.
+	      - Next-question path.
+	      - Environment-check path.
+	      
+	  5. Add strategic context section in both normal and resume instruction builders where applicable.
+	  
+	  6. Rewrite last-question CTA text to avoid AQ-flow contradiction.
+	  
+	  7. Run typecheck and smoke test interview flows.
+	  
+  7. Acceptance Criteria
+
+	  1. Alvia introduces herself and summarizes objective only once at start of interview.
+	  2. During same question, guidance updates do not trigger repeat self-intro or full question restatement.
+	  3. Environment-check guidance no longer removes core instruction policies.
+	  4. Strategic context appears in prompt when available.
+	  5. On last scripted question, Alvia uses continuation-safe CTA that does not conflict with AQ consent path.
+	  6. Terminology is consistent (“respondent”) across instruction blocks.
+	  7. npm run check passes.
+
+  8. QA Scenarios
+
+	  1. New interview, first question, initial turn.
+	  2. Same question with Barbara guidance injected mid-question.
+	  3. Move to next question and verify first ask behavior.
+	  4. Trigger transcription quality warning and confirm full prompt integrity remains.
+	  5. Last scripted question with AQ enabled.
+	  6. Last scripted question with AQ disabled.
+	  7. Restored session (buildResumeInstructions) to verify no regression.
+
+  9. Deliverables
+
+	  - Updated server/voice-interview.ts implementing phase-aware Instruction 1 and prompt clarity fixes.
+	  - Short PR notes listing:
+	      - Phase logic used.
+	      - Environment-check fix.
+	      - CTA wording change.
+	      - Strategic context injection behavior.
+	  - Evidence from logs/transcript snippets showing no repeated opening behavior after guidance updates.
