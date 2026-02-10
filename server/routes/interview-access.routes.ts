@@ -149,11 +149,17 @@ export function registerInterviewAccessRoutes(app: Express) {
     }
   });
 
-  app.get("/api/collections/:collectionId/sessions", isAuthenticated, async (req, res) => {
+  app.get("/api/collections/:collectionId/sessions", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);

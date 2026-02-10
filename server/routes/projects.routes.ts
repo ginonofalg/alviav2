@@ -39,11 +39,17 @@ export function registerProjectRoutes(app: Express) {
     }
   });
 
-  app.get("/api/projects/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const project = await storage.getProject(req.params.id);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      const hasAccess = await storage.verifyUserAccessToProject(userId, project.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       const templates = await storage.getTemplatesByProject(project.id);
@@ -106,8 +112,15 @@ export function registerProjectRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+
+      const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const partialSchema = createProjectSchema.partial();
       const parseResult = partialSchema.safeParse(req.body);
       if (!parseResult.success) {

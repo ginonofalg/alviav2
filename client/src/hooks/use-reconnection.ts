@@ -137,13 +137,14 @@ export function useReconnection({
   }, [scheduleReconnect, clearReconnectTimer]);
 
   const onReconnectSuccess = useCallback(() => {
+    clearReconnectTimer();
     clearConnectionTimeout();
     isAttemptInFlightRef.current = false;
     setIsReconnecting(false);
     setReconnectAttempt(0);
     isReconnectingRef.current = false;
     reconnectAttemptRef.current = 0;
-  }, [clearConnectionTimeout]);
+  }, [clearReconnectTimer, clearConnectionTimeout]);
 
   return {
     isReconnecting,
