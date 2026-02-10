@@ -260,6 +260,7 @@ export default function InterviewPage() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track when WebSocket opened for disconnect diagnostics
   const wsOpenTimeRef = useRef<number>(0);
@@ -574,6 +575,7 @@ export default function InterviewPage() {
   const playNextChunk = useCallback((audioContext: AudioContext) => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
+      audioSourceRef.current = null;
       setIsAiSpeaking(false);
       return;
     }
@@ -589,7 +591,21 @@ export default function InterviewPage() {
     source.buffer = audioBuffer;
     source.connect(audioContext.destination);
     source.onended = () => playNextChunk(audioContext);
+    audioSourceRef.current = source;
     source.start();
+  }, []);
+
+  const stopAiPlayback = useCallback(() => {
+    audioQueueRef.current = [];
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.onended = null;
+        audioSourceRef.current.stop();
+      } catch (_e) {}
+      audioSourceRef.current = null;
+    }
+    isPlayingRef.current = false;
+    setIsAiSpeaking(false);
   }, []);
 
   // Stop audio capture - defined early for use in message handlers
@@ -939,7 +955,7 @@ export default function InterviewPage() {
           break;
 
         case "user_speaking_started":
-          setIsAiSpeaking(false);
+          stopAiPlayback();
           break;
 
         case "user_speaking_stopped":
