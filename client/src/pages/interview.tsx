@@ -25,6 +25,8 @@ import {
   Clock,
 } from "lucide-react";
 import { useSilenceDetection } from "@/hooks/use-silence-detection";
+import { useAudioPlayback } from "@/hooks/use-audio-playback";
+import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnection";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import type {
@@ -216,7 +218,14 @@ export default function InterviewPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const {
+    isAiSpeaking,
+    initAudioContext,
+    playAudio,
+    stopAiPlayback,
+    clearSuppression,
+    audioContextRef,
+  } = useAudioPlayback();
   // Refs to track state values - avoids stale closures in callbacks
   const isListeningRef = useRef(false);
   const isPausedRef = useRef(false);
@@ -258,48 +267,43 @@ export default function InterviewPage() {
   const showVadIndicator = import.meta.env.VITE_SHOW_VAD_INDICATOR !== "false";
   
   const wsRef = useRef<WebSocket | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioQueueRef = useRef<Float32Array[]>([]);
-  const isPlayingRef = useRef(false);
-  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const suppressPlaybackRef = useRef(false);
-  const suppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track when WebSocket opened for disconnect diagnostics
   const wsOpenTimeRef = useRef<number>(0);
   const lastHeartbeatSentRef = useRef<number>(0);
   
-  // Reconnection state and refs
-  // Use state for UI display, but refs for logic to avoid stale closures
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAbortedRef = useRef(false);
-  const wasListeningBeforeDisconnectRef = useRef(false);
-  const shouldAutoResumeRef = useRef(false);
   const allowReconnectRef = useRef(true);
   const isUnmountingRef = useRef(false);
-  // Refs to avoid stale closures in WebSocket callbacks
-  const isReconnectingRef = useRef(false);
-  const reconnectAttemptRef = useRef(0);
-  // Token to identify active reconnect attempt; stale closes from old WS instances are ignored
-  const reconnectTokenRef = useRef(0);
-  // Guard to prevent overlapping connection attempts
-  const isAttemptInFlightRef = useRef(false);
-  // Connection timeout timer ref
-  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const CONNECTION_TIMEOUT_MS = 5000; // 5 seconds to establish connection
+  // Forward declaration - will be set after connectWebSocket is defined
+  const connectWebSocketRef = useRef<(() => void) | null>(null);
+
+  const {
+    isReconnecting,
+    reconnectAttempt,
+    isReconnectingRef,
+    reconnectAttemptRef,
+    reconnectTokenRef,
+    reconnectTimeoutRef,
+    wasListeningBeforeDisconnectRef,
+    shouldAutoResumeRef,
+    isAttemptInFlightRef,
+    clearReconnectTimer,
+    clearConnectionTimeout,
+    stopReconnect,
+    scheduleReconnect,
+    startReconnect,
+    onReconnectSuccess,
+  } = useReconnection({
+    wsRef,
+    connectWebSocketRef,
+    allowReconnectRef,
+    isUnmountingRef,
+  });
 
   const HEARTBEAT_INTERVAL_MS = 30_000; // Send heartbeat every 30 seconds
   const SILENCE_THRESHOLD_SECONDS = 30; // Pause audio streaming after 30 seconds of silence
-  
-  // Reconnection constants
-  const RECONNECT_BASE_DELAY_MS = 500;
-  const RECONNECT_MAX_DELAY_MS = 10_000;
-  const RECONNECT_MAX_ATTEMPTS = 6;
-  const RECONNECT_JITTER_PCT = 0.2; // ±20%
 
   // Silence detection - pauses audio streaming to save resources during extended silence
   const handleSilenceStart = useCallback(() => {
@@ -356,127 +360,6 @@ export default function InterviewPage() {
     }
   }, []);
 
-  // Reconnection helper functions
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-  }, []);
-
-  const clearConnectionTimeout = useCallback(() => {
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
-  }, []);
-
-  const stopReconnect = useCallback(() => {
-    clearReconnectTimer();
-    clearConnectionTimeout();
-    setIsReconnecting(false);
-    setReconnectAttempt(0);
-    isReconnectingRef.current = false;
-    reconnectAttemptRef.current = 0;
-    isAttemptInFlightRef.current = false;
-    reconnectAbortedRef.current = true;
-  }, [clearReconnectTimer, clearConnectionTimeout]);
-
-  // Forward declaration - will be set after connectWebSocket is defined
-  const connectWebSocketRef = useRef<(() => void) | null>(null);
-
-  const scheduleReconnect = useCallback((attempt: number, token?: number) => {
-    // Use provided token or current token
-    const activeToken = token ?? reconnectTokenRef.current;
-    
-    if (reconnectAbortedRef.current || !allowReconnectRef.current || isUnmountingRef.current) {
-      console.log("[Interview] Reconnect aborted or not allowed");
-      return;
-    }
-
-    // Ignore stale reconnect requests from old WS instances
-    if (activeToken !== reconnectTokenRef.current) {
-      console.log(`[Interview] Ignoring stale reconnect request (token ${activeToken} vs current ${reconnectTokenRef.current})`);
-      return;
-    }
-
-    if (attempt > RECONNECT_MAX_ATTEMPTS) {
-      console.log("[Interview] Max reconnect attempts reached");
-      setIsReconnecting(false);
-      isReconnectingRef.current = false;
-      reconnectAttemptRef.current = 0;
-      return;
-    }
-
-    // Clear any existing timer to prevent duplicate schedules
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    // Exponential backoff with jitter
-    const base = Math.min(
-      RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1),
-      RECONNECT_MAX_DELAY_MS
-    );
-    const jitter = base * RECONNECT_JITTER_PCT * (Math.random() * 2 - 1);
-    const delay = Math.max(0, base + jitter);
-
-    console.log(`[Interview] Scheduling reconnect attempt ${attempt} in ${Math.round(delay)}ms`);
-    // Update both state (for UI) and ref (for closures)
-    setReconnectAttempt(attempt);
-    reconnectAttemptRef.current = attempt;
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      if (reconnectAbortedRef.current || !allowReconnectRef.current) return;
-      // Verify token still valid before attempting
-      if (activeToken !== reconnectTokenRef.current) return;
-      // Prevent overlapping attempts
-      if (isAttemptInFlightRef.current) {
-        console.log("[Interview] Skipping reconnect - attempt already in flight");
-        return;
-      }
-      
-      console.log(`[Interview] Attempting reconnect #${attempt}`);
-      isAttemptInFlightRef.current = true;
-      
-      // Set connection timeout - if not connected within timeout, force close and retry
-      connectionTimeoutRef.current = setTimeout(() => {
-        if (activeToken !== reconnectTokenRef.current || !isReconnectingRef.current) return;
-        console.log("[Interview] Connection attempt timed out");
-        isAttemptInFlightRef.current = false;
-        // Force close any pending connection
-        if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
-          wsRef.current.close();
-        }
-        // Schedule next attempt
-        scheduleReconnect(attempt + 1, activeToken);
-      }, CONNECTION_TIMEOUT_MS);
-      
-      try {
-        connectWebSocketRef.current?.();
-      } catch (err) {
-        // If WebSocket constructor throws, schedule next attempt
-        console.error("[Interview] connectWebSocket threw error:", err);
-        isAttemptInFlightRef.current = false;
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-        scheduleReconnect(attempt + 1, activeToken);
-      }
-    }, delay);
-  }, []);
-
-  const startReconnect = useCallback(() => {
-    // Clear any existing timer to prevent duplicate schedules
-    clearReconnectTimer();
-    reconnectAbortedRef.current = false;
-    setIsReconnecting(true);
-    isReconnectingRef.current = true;
-    // Increment token to invalidate any stale WS close handlers
-    reconnectTokenRef.current += 1;
-    scheduleReconnect(1, reconnectTokenRef.current);
-  }, [scheduleReconnect, clearReconnectTimer]);
-
   const {
     isPausedDueToSilence,
     secondsOfSilence,
@@ -528,104 +411,6 @@ export default function InterviewPage() {
       setCurrentAQIndex(interviewData.aqState.currentAQIndex);
     }
   }, [interviewData?.aqState]);
-
-  // Initialize audio context
-  const initAudioContext = useCallback(async () => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext ||
-        (window as any).webkitAudioContext)({
-        sampleRate: 24000,
-      });
-    }
-    // Resume the audio context if it's suspended (browsers require user interaction)
-    if (audioContextRef.current.state === "suspended") {
-      await audioContextRef.current.resume();
-    }
-    return audioContextRef.current;
-  }, []);
-
-  // Play audio from base64 PCM16 data
-  const playAudio = useCallback(
-    async (base64Audio: string) => {
-      try {
-        if (suppressPlaybackRef.current) return;
-
-        const binaryString = atob(base64Audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        // Convert PCM16 to Float32
-        const int16Array = new Int16Array(bytes.buffer);
-        const float32Array = new Float32Array(int16Array.length);
-        for (let i = 0; i < int16Array.length; i++) {
-          float32Array[i] = int16Array[i] / 32768.0;
-        }
-
-        audioQueueRef.current.push(float32Array);
-
-        if (!isPlayingRef.current) {
-          // Ensure audio context is ready before starting playback
-          const audioContext = await initAudioContext();
-          if (audioContext.state === "running") {
-            playNextChunk(audioContext);
-          }
-        }
-      } catch (error) {
-        console.error("Error playing audio:", error);
-      }
-    },
-    [initAudioContext],
-  );
-
-  const playNextChunk = useCallback((audioContext: AudioContext) => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      audioSourceRef.current = null;
-      setIsAiSpeaking(false);
-      return;
-    }
-
-    isPlayingRef.current = true;
-    setIsAiSpeaking(true);
-
-    const chunk = audioQueueRef.current.shift()!;
-    const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
-    audioBuffer.copyToChannel(chunk, 0);
-
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.onended = () => playNextChunk(audioContext);
-    audioSourceRef.current = source;
-    source.start();
-  }, []);
-
-  const stopAiPlayback = useCallback(() => {
-    audioQueueRef.current = [];
-    suppressPlaybackRef.current = true;
-    if (suppressTimeoutRef.current) {
-      clearTimeout(suppressTimeoutRef.current);
-    }
-    // Safety net: auto-clear suppression after 10s in the unlikely case where
-    // both audio_done and user_speaking_stopped fail to fire (which would
-    // indicate a deeper bug). Normal clears happen via those event handlers.
-    suppressTimeoutRef.current = setTimeout(() => {
-      suppressPlaybackRef.current = false;
-      suppressTimeoutRef.current = null;
-    }, 10000);
-    if (audioSourceRef.current) {
-      try {
-        audioSourceRef.current.onended = null;
-        audioSourceRef.current.stop();
-        audioSourceRef.current.disconnect();
-      } catch (_e) {}
-      audioSourceRef.current = null;
-    }
-    isPlayingRef.current = false;
-    setIsAiSpeaking(false);
-  }, []);
 
   // Stop audio capture - defined early for use in message handlers
   const stopAudioCapture = useCallback(() => {
@@ -752,10 +537,7 @@ export default function InterviewPage() {
         [1005, 1006, 1011, 1012, 1013].includes(event.code);
       
       // Clear connection timeout and in-flight flag on any close
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
+      clearConnectionTimeout();
       isAttemptInFlightRef.current = false;
       
       if (isUnexpectedClose) {
@@ -868,13 +650,7 @@ export default function InterviewPage() {
           // Use ref to avoid stale closure
           if (isReconnectingRef.current) {
             console.log("[Interview] Reconnection successful");
-            clearReconnectTimer();
-            clearConnectionTimeout();
-            setIsReconnecting(false);
-            setReconnectAttempt(0);
-            isReconnectingRef.current = false;
-            reconnectAttemptRef.current = 0;
-            isAttemptInFlightRef.current = false;
+            onReconnectSuccess();
             
             // Auto-resume audio capture if we were listening before disconnect
             // and the server says we should (awaitingResume indicates restored session)
@@ -904,11 +680,7 @@ export default function InterviewPage() {
           break;
 
         case "audio_done":
-          suppressPlaybackRef.current = false;
-          if (suppressTimeoutRef.current) {
-            clearTimeout(suppressTimeoutRef.current);
-            suppressTimeoutRef.current = null;
-          }
+          clearSuppression();
           break;
 
         case "ai_transcript":
@@ -997,11 +769,7 @@ export default function InterviewPage() {
           // the provider has long since cancelled the interrupted response and
           // all stale audio deltas have been discarded. New audio from the
           // upcoming response should play normally.
-          suppressPlaybackRef.current = false;
-          if (suppressTimeoutRef.current) {
-            clearTimeout(suppressTimeoutRef.current);
-            suppressTimeoutRef.current = null;
-          }
+          clearSuppression();
           break;
 
         case "question_changed":
@@ -1148,7 +916,7 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture, initAudioContext],
+    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, clearSuppression, onReconnectSuccess],
   );
 
   // Track silence pause state in a ref for use in audio processor callback

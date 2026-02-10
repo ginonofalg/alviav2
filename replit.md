@@ -40,6 +40,30 @@ Preferred communication style: Simple, everyday language.
 -   **LLM Usage Tracking**: Dual-write pattern for atomic tracking and aggregated rollups of LLM token usage.
 -   **Phase-Aware Prompt Lifecycle**: Alvia's instructions adapt based on conversational phase to ensure natural flow and context.
 
+## Project Structure (Refactored)
+
+### Shared Types (`shared/types/`)
+Domain types extracted from `shared/schema.ts` into 12 organized modules with barrel re-export. All imports from `@shared/schema` continue to work via re-exports.
+
+### Server Routes (`server/routes/`)
+Routes split from monolithic `routes.ts` into 12 domain modules: analytics, infographic, projects, templates, collections, respondents, sessions, interview-access, interview-flow, review, barbara, usage. Main `routes.ts` handles WebSocket setup, auth middleware, and route registration.
+
+### Storage (`server/storage/types.ts`)
+`IStorage` interface and related types extracted from `storage.ts`. `DatabaseStorage` implementation remains in `storage.ts`.
+
+### Voice Interview (`server/voice-interview/`)
+Pure functions extracted into 5 modules: types, context-builders, metrics, instructions, transcript. Stateful functions (using `interviewStates` Map) remain in main `voice-interview.ts` (reduced from 5,223 to 4,056 lines).
+
+### Frontend Hooks (`client/src/hooks/`)
+- `use-audio-playback.ts`: Audio context, playback queue, play/stop/suppress management
+- `use-reconnection.ts`: WebSocket reconnection with exponential backoff, token-based stale handling
+- `use-silence-detection.ts`: Ambient noise calibration, silence detection (pre-existing)
+
+### Test Framework
+- Vitest with `vitest.config.ts`
+- Tests in `__tests__/` directories
+- 12 tests: 10 resume-token unit tests, 2 smoke tests
+
 ## Known Testing Gaps
 
 -   **Grok Provider Barge-In**: The barge-in (interruption) implementation is provider-agnostic but has only been validated with OpenAI's semantic VAD. Grok's server_vad uses `silence_duration_ms: 800` and `threshold: 0.3`, which may result in slower speech onset detection and more stale audio chunks before cancellation. Manual testing with `REALTIME_PROVIDER=xai` should validate: (1) playback stops promptly on interruption, (2) next response plays correctly, (3) metrics remain accurate, (4) no stale audio leaks through after suppression clears.
