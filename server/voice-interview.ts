@@ -2124,12 +2124,7 @@ function buildInterviewInstructions(
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
-- Current Question: ${questionIndex + 1} of ${totalQuestions}${
-    strategicContext
-      ? `
-- Strategic Context: ${strategicContext}`
-      : ""
-  }
+- Current Question: ${questionIndex + 1} of ${totalQuestions}
 
 RESPONDENT:
 ${nameContext}
@@ -2140,14 +2135,6 @@ CURRENT QUESTION:
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
-  barbaraGuidance
-    ? `
-ORCHESTRATOR'S GUIDANCE (Barbara):
-${barbaraGuidance}
-Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; incorporate this guidance naturally when appropriate, not necessarily immediately.
-`
-    : ""
-}${
   followUpContext?.recommendedFollowUps !== null &&
   followUpContext?.recommendedFollowUps !== undefined
     ? `
@@ -2179,6 +2166,20 @@ INSTRUCTIONS:
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
+- Never use Unicode dashes: — or –.
+- If provided text includes — or –, paraphrase it and replace with commas, periods, or parentheses.
+- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.
+- Before sending your response, check for — or – and rewrite if present.`;
+
+  if (barbaraGuidance) {
+    instructions += `
+
+ORCHESTRATOR'S GUIDANCE (Barbara):
+${barbaraGuidance}
+Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; incorporate this guidance naturally when appropriate, not necessarily immediately.`;
+  }
+
+  instructions += `
 
 ORCHESTRATOR MESSAGES:
 You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
@@ -2265,12 +2266,7 @@ function buildResumeInstructions(state: InterviewState): string {
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
-- Current Question: ${questionIndex + 1} of ${totalQuestions}${
-    strategicContext
-      ? `
-- Strategic Context: ${strategicContext}`
-      : ""
-  }
+- Current Question: ${questionIndex + 1} of ${totalQuestions}
 
 RESPONDENT:
 ${nameContext}
@@ -2284,14 +2280,6 @@ QUESTION STATUS: ${status}
 GUIDANCE FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
-  lastBarbaraGuidance
-    ? `
-ORCHESTRATOR'S GUIDANCE (Barbara):
-${lastBarbaraGuidance}
-Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage, incorporate this guidance naturally when appropriate.
-`
-    : ""
-}${
   recommendedFollowUps !== null && recommendedFollowUps !== undefined
     ? `
 FOLLOW-UP DEPTH GUIDANCE:
@@ -2335,6 +2323,20 @@ RESUME INSTRUCTIONS:
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
+- Never use Unicode dashes: — or –.
+- If provided text includes — or –, paraphrase it and replace with commas, periods, or parentheses.
+- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.
+- Before sending your response, check for — or – and rewrite if present.`;
+
+  if (lastBarbaraGuidance) {
+    instructions += `
+
+ORCHESTRATOR'S GUIDANCE (Barbara):
+${lastBarbaraGuidance}
+Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage, incorporate this guidance naturally when appropriate.`;
+  }
+
+  instructions += `
 
 ORCHESTRATOR MESSAGES:
 You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
