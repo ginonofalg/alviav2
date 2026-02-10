@@ -160,6 +160,7 @@ export interface InterviewState {
   isGeneratingAlviaSummary: boolean;
   alviaSummaryResolve: ((text: string) => void) | null;
   alviaSummaryReject: ((error: Error) => void) | null;
+  alviaSummaryAccumulatedText: string;
   // Track pending summary generation promises to await before completion
   pendingSummaryPromises: Map<number | string, Promise<void>>;
   // Response state tracking - prevents concurrent response.create calls

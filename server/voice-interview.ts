@@ -630,6 +630,7 @@ export function handleVoiceInterview(
     isGeneratingAlviaSummary: false,
     alviaSummaryResolve: null,
     alviaSummaryReject: null,
+    alviaSummaryAccumulatedText: "",
     pendingSummaryPromises: new Map(),
     // Response state tracking - prevents concurrent response.create calls
     responseInProgress: false,
@@ -1334,6 +1335,14 @@ async function handleProviderEvent(
       break;
     }
 
+    case "response.text.delta":
+    case "response.output_text.delta": {
+      if (state.isGeneratingAlviaSummary && event.delta) {
+        state.alviaSummaryAccumulatedText += event.delta;
+      }
+      break;
+    }
+
     case "response.audio_transcript.delta":
     case "response.output_audio_transcript.delta":
       // AI's speech transcript
@@ -1665,8 +1674,12 @@ async function handleProviderEvent(
 
       if (state.isGeneratingAlviaSummary) {
         const responseStatus = event.response?.status;
-        const responseModalities = event.response?.output_modalities;
-        const isTextResponse = responseModalities?.includes("text");
+        const responseModalities =
+          event.response?.output_modalities ??
+          event.response?.modalities;
+        const isTextResponse =
+          responseModalities?.includes("text") ||
+          !responseModalities;
 
         if (!isTextResponse) {
           console.log(
@@ -1697,9 +1710,11 @@ async function handleProviderEvent(
           break;
         }
 
+        const outputItems = event.response?.output ?? [];
         let extractedText: string | undefined;
-        for (const outputItem of event.response?.output ?? []) {
-          if (outputItem?.type === "message" && outputItem?.content) {
+
+        for (const outputItem of outputItems) {
+          if (outputItem?.content) {
             const textContent = outputItem.content.find(
               (c: any) => c.type === "text",
             );
@@ -1708,14 +1723,38 @@ async function handleProviderEvent(
               break;
             }
           }
+          if (outputItem?.text) {
+            extractedText = outputItem.text;
+            break;
+          }
+        }
+
+        if (!extractedText && state.alviaSummaryAccumulatedText) {
+          console.log(
+            `[AlviaSummary] Using accumulated delta text for ${sessionId} (${state.alviaSummaryAccumulatedText.length} chars) — output items had no inline text`,
+          );
+          extractedText = state.alviaSummaryAccumulatedText;
         }
 
         if (extractedText && state.alviaSummaryResolve) {
           state.alviaSummaryResolve(extractedText);
-        } else if (state.alviaSummaryReject) {
-          state.alviaSummaryReject(
-            new Error(`No text content in completed Alvia summary response (${(event.response?.output ?? []).length} output items)`),
+        } else {
+          const outputDiag = outputItems.map((item: any) => ({
+            type: item?.type,
+            role: item?.role,
+            status: item?.status,
+            contentTypes: item?.content?.map((c: any) => c?.type),
+            hasText: !!item?.text,
+            keys: Object.keys(item || {}),
+          }));
+          console.error(
+            `[AlviaSummary] No text found in completed response for ${sessionId}. Output structure: ${JSON.stringify(outputDiag)}, accumulated delta chars: ${state.alviaSummaryAccumulatedText.length}`,
           );
+          if (state.alviaSummaryReject) {
+            state.alviaSummaryReject(
+              new Error(`No text content in completed Alvia summary response (${outputItems.length} output items)`),
+            );
+          }
         }
         state.isGeneratingAlviaSummary = false;
         state.alviaSummaryResolve = null;
@@ -3705,6 +3744,7 @@ async function generateAlviaSummary(sessionId: string): Promise<string | null> {
     }
 
     state.isGeneratingAlviaSummary = true;
+    state.alviaSummaryAccumulatedText = "";
 
     const templateObjective =
       state.template?.objective || "General research interview";
