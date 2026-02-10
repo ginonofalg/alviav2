@@ -1,0 +1,115 @@
+I confirmed the server does allow interruption; the break is in the browser client. I’m checking git history on that exact line to identify when/why this
+  gating was introduced so you can tie it to the behavior change you noticed.
+
+• Ran git blame -L 1148,1164 -- client/src/pages/interview.tsx
+    28d5569d (ginonofalg   2026-01-12 09:44:49 +0000 1149)       const source = audioContext.createMediaStreamSource(stream);
+    … +13 lines
+    28d5569d (ginonofalg   2026-01-12 09:44:49 +0000 1163)         for (let i = 0; i < inputData.length; i++) {
+    28d5569d (ginonofalg   2026-01-12 09:44:49 +0000 1164)           const s = Math.max(-1, Math.min(1, inputData[i]));
+
+• Ran git show --stat --oneline 8aae5801
+     client/src/pages/interview.tsx | 126 +++++++++++++++++++++++++++++++++++++++--
+     server/routes.ts               |  42 ++++++++++++++
+     server/voice-interview.ts      |  69 ++++++++++++++++++++--
+     3 files changed, 225 insertions(+), 12 deletions(-)
+
+• Ran git show -- client/src/pages/interview.tsx | sed -n '1,240p'
+    Author: ginonofalg <44050324-ginonofalg@users.noreply.replit.com>
+    … +222 lines
+       useEffect(() => {
+         return () => {
+• Explored
+  └ Read interview.tsx
+    Search setIsAiSpeaking\(|isAiSpeakingRef\.current\s*=|isAiSpeaking\b in interview.tsx
+    Read interview.tsx
+    Search useSilenceDetection|startSilenceMonitoring|addAudioToSilenceBuffer|silence in interview.tsx
+    Search response\.cancel|conversation\.item\.truncate|response\.interrupted|speech_started|input_audio_buffer\.speech_started in voice-interview.ts
+    Search track\.enabled|enabled\s*=\s*false|getTracks\(|mute|unmute|isListening in interview.tsx
+
+─ Worked for 1m 17s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• I’ve confirmed the exact mechanism: the mic stream stays open, but the client drops outbound audio frames whenever isAiSpeaking is true, so provider-side
+  interrupt_response never gets the user speech. I’m preparing a small fix to allow outbound mic audio during AI speech again (restoring barge-in behavior).
+
+• Explored
+  └ Read use-silence-detection.ts, interview.tsx
+
+• Edited client/src/pages/interview.tsx (+0 -6)
+     217    // Refs to track state values - avoids stale closures in callbacks
+     218 -  const isAiSpeakingRef = useRef(false);
+     218    const isListeningRef = useRef(false);
+         ⋮
+    1101    // Sync refs with state for stable closures in callbacks (ws.onclose, onaudioprocess, etc.)
+    1103 -  useEffect(() => {
+    1104 -    isAiSpeakingRef.current = isAiSpeaking;
+    1105 -  }, [isAiSpeaking]);
+         ⋮
+    1151            return;
+    1157 -        if (isAiSpeakingRef.current) return; // Don't send audio while AI is speaking
+
+
+• I’ve removed the client-side AI-speaking audio gate so mic audio is sent continuously again (except explicit silence-pause mode). I’m running a type check
+• Ran npm run check
+    … +52 lines
+    flag or with a '--target' of 'es2015' or higher.
+
+• Ran git diff -- client/src/pages/interview.tsx
+  └ diff --git a/client/src/pages/interview.tsx b/client/src/pages/interview.tsx
+    index dcc7024..8628968 100644
+    … +27 lines
+             const inputData = e.inputBuffer.getChannelData(0);
+
+
+• Explored
+  └ Read interview.tsx, realtime-providers.ts, voice-interview.ts
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• I’ve applied the fix and verified the key path: the provider already supports interruption, and the server forwards mic audio unless paused; the issue was
+  the client-side drop. I’ll send you a concise root-cause summary plus what changed and what to test next.
+
+• Ran git status --short
+  └  M client/src/pages/interview.tsx
+
+• Client mic frames were deliberately dropped when AI was speaking due to a line synchronization check added in a commit on Feb 5, 2026. This caused the
+  provider not to see speech, making interrupt_response ineffective. The mic was not hardware muted but functionally muted for outbound audio during that
+  time. The recent patch removes that gating.
+
+  Key file changes:
+
+  - client/src/pages/interview.tsx:1149 now always sends audio except during silence pauses.
+  - server/realtime-providers.ts:81 retains interrupt_response set to true.
+  - server/voice-interview.ts:3275 continues to forward audio unless paused or awaiting resume.
+
+  Testing notes:
+
+  - npm run check fails due to unrelated, pre-existing type errors in analytics/routes/barbara; no errors originate from the updated client file.
+
+  Next steps to verify:
+
+  - Restart the development server and confirm interruptions behave correctly.
+  - If delays persist, try clearing any queued playback; a follow-up patch may be needed.
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• You’re right to question this. Root cause was client-side, not interrupt_response.
+
+  - interrupt_response: true is still correctly set (server/realtime-providers.ts:81).
+  - Server still forwards incoming mic audio to the provider unless paused (server/voice-interview.ts:3275).
+  - But the browser client had a hard gate dropping mic frames while Alvia was speaking, so your interruption never reached provider VAD (client/src/pages/
+    interview.tsx, previously at the onaudioprocess block).
+
+  So: the mic was not OS-muted, but it was effectively muted for outbound streaming while Alvia talked.
+
+  I removed that gate in client/src/pages/interview.tsx:1149, so barge-in should work again.
+
+  Note on “what changed”: this behavior likely became noticeable after the Feb 5, 2026 refactor that made that AI-speaking gate reliably active.
+
+  Validation:
+
+  - Ran npm run check; it fails due pre-existing unrelated TypeScript errors in other files (ProjectAnalyticsView, server/routes.ts, server/barbara-
+    orchestrator.ts, etc.), not from this interview-page change.
+
+  Next step:
+
+  1. Restart and test a live interview by speaking over Alvia mid-sentence; she should now cut off/respond to interruption.

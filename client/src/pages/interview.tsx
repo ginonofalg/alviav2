@@ -215,7 +215,6 @@ export default function InterviewPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   // Refs to track state values - avoids stale closures in callbacks
-  const isAiSpeakingRef = useRef(false);
   const isListeningRef = useRef(false);
   const isPausedRef = useRef(false);
   const isTextOnlyModeRef = useRef(false);
@@ -1101,9 +1100,6 @@ export default function InterviewPage() {
 
   // Sync refs with state for stable closures in callbacks (ws.onclose, onaudioprocess, etc.)
   useEffect(() => {
-    isAiSpeakingRef.current = isAiSpeaking;
-  }, [isAiSpeaking]);
-  useEffect(() => {
     isListeningRef.current = isListening;
   }, [isListening]);
   useEffect(() => {
@@ -1153,8 +1149,6 @@ export default function InterviewPage() {
       processor.onaudioprocess = (e) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
           return;
-        // Use ref instead of state to avoid stale closure - always reflects current value
-        if (isAiSpeakingRef.current) return; // Don't send audio while AI is speaking
 
         const inputData = e.inputBuffer.getChannelData(0);
 
