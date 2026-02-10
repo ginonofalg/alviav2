@@ -73,6 +73,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
           transcription: {
             model: "gpt-4o-mini-transcribe",
             language: "en",
+            prompt: `STRICTLY AVOID em dashes '—', use ';' or ',' instead`,
           },
           noise_reduction: {
             type: "near_field",
