@@ -452,6 +452,7 @@ interface InterviewState {
   clientWs: WebSocket | null;
   isConnected: boolean;
   lastAIPrompt: string;
+  alviaHasSpokenOnCurrentQuestion: boolean;
   isPaused: boolean;
   // Pause duration tracking for accurate silence metrics
   pauseStartedAt: number | null;
@@ -1483,6 +1484,7 @@ export function handleVoiceInterview(
     clientWs: clientWs,
     isConnected: false,
     lastAIPrompt: "",
+    alviaHasSpokenOnCurrentQuestion: false,
     isPaused: false,
     // Pause duration tracking
     pauseStartedAt: null,
@@ -1808,8 +1810,16 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
         }
       }
 
+      // Derive alviaHasSpokenOnCurrentQuestion from restored transcript
+      state.alviaHasSpokenOnCurrentQuestion =
+        state.fullTranscriptForPersistence.some(
+          (entry) =>
+            entry.speaker === "alvia" &&
+            entry.questionIndex === state.currentQuestionIndex,
+        );
+
       console.log(
-        `[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}`,
+        `[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}, alviaSpoken=${state.alviaHasSpokenOnCurrentQuestion}`,
       );
     } else {
       // Initialize metrics for first question (new session)
@@ -1880,6 +1890,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         state.questions,
         { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
         state.strategicContext,
+        state.alviaHasSpokenOnCurrentQuestion,
       );
     }
 
@@ -2089,6 +2100,7 @@ function buildInterviewInstructions(
     recommendedFollowUps: number | null;
   },
   strategicContext?: string | null,
+  alviaHasSpokenOnCurrentQuestion?: boolean,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -2117,7 +2129,7 @@ INTERVIEW CONTEXT:
 RESPONDENT:
 ${nameContext}
 
-CURRENT QUESTION TO ASK:
+CURRENT QUESTION:
 "${currentQuestion?.questionText || "Please share your thoughts."}"
 
 GUIDANCE FOR THIS QUESTION:
@@ -2138,9 +2150,16 @@ UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be 
 ${upcomingQuestions}
 `
       : ""
+  }${
+    strategicContext
+      ? `
+STRATEGIC CONTEXT:
+${strategicContext}
+`
+      : ""
   }
 INSTRUCTIONS:
-1. ${questionIndex === 0 ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the first question.` : "Ask the current question naturally."}
+1. ${questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the first question.` : `Continue from the respondent's latest point. Do not re-introduce yourself and do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
@@ -2148,9 +2167,9 @@ INSTRUCTIONS:
 6. Be encouraging and conversational, matching the ${tone} tone.
 7. Keep responses concise, this is a voice conversation.
 8. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up
+9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
 10. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-11. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
+11. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
@@ -2280,6 +2299,13 @@ UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be 
 ${upcomingQuestions}
 `
       : ""
+  }${
+    strategicContext
+      ? `
+STRATEGIC CONTEXT:
+${strategicContext}
+`
+      : ""
   }`;
 
   if (barbaraSuggestedMoveOn) {
@@ -2305,7 +2331,7 @@ RESUME INSTRUCTIONS:
 9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
 11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up the interview naturally. Tell the respondent they can "click the Complete Interview button below" to finish.
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
@@ -2501,6 +2527,7 @@ async function handleProviderEvent(
       // Store the last AI prompt for resume functionality
       if (event.transcript) {
         state.lastAIPrompt = event.transcript;
+        state.alviaHasSpokenOnCurrentQuestion = true;
         // Add to transcript log (both in-memory and persistence buffer)
         addTranscriptEntry(state, {
           speaker: "alvia",
@@ -2860,18 +2887,34 @@ Then continue the interview naturally once they acknowledge.`;
   } as PersistedBarbaraGuidance;
 
   if (state.providerWs?.readyState === WebSocket.OPEN) {
-    const basePrompt = state.lastAIPrompt || "";
-    const updatedPrompt = `${basePrompt}\n\n${guidanceMessage}`;
+    const currentQuestion = state.questions[state.currentQuestionIndex];
+    const metrics = state.questionMetrics.get(state.currentQuestionIndex);
+    const recommendedFollowUps =
+      currentQuestion?.recommendedFollowUps ??
+      state.template?.defaultRecommendedFollowUps ??
+      null;
+    const updatedInstructions = buildInterviewInstructions(
+      state.template,
+      currentQuestion,
+      state.currentQuestionIndex,
+      state.questions.length,
+      guidanceMessage,
+      state.respondentInformalName,
+      state.questions,
+      { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+      state.strategicContext,
+      state.alviaHasSpokenOnCurrentQuestion,
+    );
 
     state.providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: state.providerInstance.buildInstructionsUpdate(updatedPrompt),
+        session: state.providerInstance.buildInstructionsUpdate(updatedInstructions),
       }),
     );
 
     console.log(
-      `[TranscriptionQuality] Injected environment check guidance for session ${sessionId}`,
+      `[TranscriptionQuality] Injected environment check guidance via full instruction rebuild for session ${sessionId}`,
     );
   }
 
@@ -3105,6 +3148,7 @@ async function triggerBarbaraAnalysis(
           state.questions,
           { followUpCount: metrics.followUpCount, recommendedFollowUps },
           state.strategicContext,
+          state.alviaHasSpokenOnCurrentQuestion,
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
@@ -3509,6 +3553,7 @@ INSTRUCTIONS:
 
         // Immediately move to next question (don't wait for summary)
         state.currentQuestionIndex++;
+        state.alviaHasSpokenOnCurrentQuestion = false;
         const nextQuestion = state.questions[state.currentQuestionIndex];
 
         // Initialize metrics for new question
@@ -3548,6 +3593,7 @@ INSTRUCTIONS:
             recommendedFollowUps,
           },
           state.strategicContext,
+          state.alviaHasSpokenOnCurrentQuestion,
         );
 
         if (state.providerWs.readyState === WebSocket.OPEN) {
