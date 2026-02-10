@@ -56,6 +56,7 @@ interface TranscriptEntry {
   text: string;
   timestamp: number;
   isStreaming?: boolean;
+  interrupted?: boolean;
 }
 
 function WaveformVisualizer({
@@ -184,9 +185,11 @@ function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
                   entry.speaker === "alvia"
                     ? "bg-muted text-foreground"
                     : "bg-primary text-primary-foreground"
-                }`}
+                } ${entry.interrupted ? "opacity-70" : ""}`}
               >
-                <p className="text-sm leading-relaxed">{entry.text}</p>
+                <p className="text-sm leading-relaxed">
+                  {entry.text}{entry.interrupted ? "..." : ""}
+                </p>
                 <span className="text-xs opacity-70 mt-1 block">
                   {new Date(entry.timestamp).toLocaleTimeString([], {
                     hour: "2-digit",
@@ -545,6 +548,8 @@ export default function InterviewPage() {
   const playAudio = useCallback(
     async (base64Audio: string) => {
       try {
+        if (suppressPlaybackRef.current) return;
+
         const binaryString = atob(base64Audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -557,8 +562,6 @@ export default function InterviewPage() {
         for (let i = 0; i < int16Array.length; i++) {
           float32Array[i] = int16Array[i] / 32768.0;
         }
-
-        if (suppressPlaybackRef.current) return;
 
         audioQueueRef.current.push(float32Array);
 
@@ -605,10 +608,13 @@ export default function InterviewPage() {
     if (suppressTimeoutRef.current) {
       clearTimeout(suppressTimeoutRef.current);
     }
+    // Safety net: auto-clear suppression after 10s in the unlikely case where
+    // both audio_done and user_speaking_stopped fail to fire (which would
+    // indicate a deeper bug). Normal clears happen via those event handlers.
     suppressTimeoutRef.current = setTimeout(() => {
       suppressPlaybackRef.current = false;
       suppressTimeoutRef.current = null;
-    }, 2000);
+    }, 10000);
     if (audioSourceRef.current) {
       try {
         audioSourceRef.current.onended = null;
@@ -973,9 +979,24 @@ export default function InterviewPage() {
 
         case "user_speaking_started":
           stopAiPlayback();
+          setTranscript((prev) => {
+            // Find the last Alvia entry (streaming or finalized) and mark interrupted
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].speaker === "alvia") {
+                const updated = [...prev];
+                updated[i] = { ...updated[i], interrupted: true };
+                return updated;
+              }
+            }
+            return prev;
+          });
           break;
 
         case "user_speaking_stopped":
+          // Safe to clear suppression: by the time the user finishes speaking,
+          // the provider has long since cancelled the interrupted response and
+          // all stale audio deltas have been discarded. New audio from the
+          // upcoming response should play normally.
           suppressPlaybackRef.current = false;
           if (suppressTimeoutRef.current) {
             clearTimeout(suppressTimeoutRef.current);

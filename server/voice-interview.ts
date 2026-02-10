@@ -2762,6 +2762,17 @@ async function handleProviderEvent(
       recordSilenceSegment(state.metricsTracker, state, now);
       state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
 
+      // Mark the last AI transcript entry as interrupted for persistence
+      if (state.fullTranscriptForPersistence.length > 0) {
+        const lastEntry =
+          state.fullTranscriptForPersistence[
+            state.fullTranscriptForPersistence.length - 1
+          ];
+        if (lastEntry.speaker === "alvia") {
+          lastEntry.interrupted = true;
+        }
+      }
+
       clientWs?.send(JSON.stringify({ type: "user_speaking_started" }));
       break;
     }

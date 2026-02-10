@@ -177,6 +177,7 @@ export interface TranscriptEntry {
   text: string;
   timestamp: number;
   questionIndex: number;
+  interrupted?: boolean;
 }
 
 export interface QuestionMetrics {

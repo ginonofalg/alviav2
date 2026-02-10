@@ -451,6 +451,7 @@ export type PersistedTranscriptEntry = {
   text: string;
   timestamp: number;
   questionIndex: number;
+  interrupted?: boolean;
 };
 
 export type PersistedBarbaraGuidance = {

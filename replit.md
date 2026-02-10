@@ -40,6 +40,10 @@ Preferred communication style: Simple, everyday language.
 -   **LLM Usage Tracking**: Dual-write pattern for atomic tracking and aggregated rollups of LLM token usage.
 -   **Phase-Aware Prompt Lifecycle**: Alvia's instructions adapt based on conversational phase to ensure natural flow and context.
 
+## Known Testing Gaps
+
+-   **Grok Provider Barge-In**: The barge-in (interruption) implementation is provider-agnostic but has only been validated with OpenAI's semantic VAD. Grok's server_vad uses `silence_duration_ms: 800` and `threshold: 0.3`, which may result in slower speech onset detection and more stale audio chunks before cancellation. Manual testing with `REALTIME_PROVIDER=xai` should validate: (1) playback stops promptly on interruption, (2) next response plays correctly, (3) metrics remain accurate, (4) no stale audio leaks through after suppression clears.
+
 ## External Dependencies
 
 -   **PostgreSQL Database**: Primary data storage.
