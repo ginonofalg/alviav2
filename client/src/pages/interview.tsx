@@ -261,6 +261,8 @@ export default function InterviewPage() {
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const suppressPlaybackRef = useRef(false);
+  const suppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track when WebSocket opened for disconnect diagnostics
   const wsOpenTimeRef = useRef<number>(0);
@@ -556,6 +558,8 @@ export default function InterviewPage() {
           float32Array[i] = int16Array[i] / 32768.0;
         }
 
+        if (suppressPlaybackRef.current) return;
+
         audioQueueRef.current.push(float32Array);
 
         if (!isPlayingRef.current) {
@@ -597,10 +601,19 @@ export default function InterviewPage() {
 
   const stopAiPlayback = useCallback(() => {
     audioQueueRef.current = [];
+    suppressPlaybackRef.current = true;
+    if (suppressTimeoutRef.current) {
+      clearTimeout(suppressTimeoutRef.current);
+    }
+    suppressTimeoutRef.current = setTimeout(() => {
+      suppressPlaybackRef.current = false;
+      suppressTimeoutRef.current = null;
+    }, 2000);
     if (audioSourceRef.current) {
       try {
         audioSourceRef.current.onended = null;
         audioSourceRef.current.stop();
+        audioSourceRef.current.disconnect();
       } catch (_e) {}
       audioSourceRef.current = null;
     }
@@ -885,7 +898,11 @@ export default function InterviewPage() {
           break;
 
         case "audio_done":
-          // Audio stream complete for this response
+          suppressPlaybackRef.current = false;
+          if (suppressTimeoutRef.current) {
+            clearTimeout(suppressTimeoutRef.current);
+            suppressTimeoutRef.current = null;
+          }
           break;
 
         case "ai_transcript":
@@ -959,6 +976,11 @@ export default function InterviewPage() {
           break;
 
         case "user_speaking_stopped":
+          suppressPlaybackRef.current = false;
+          if (suppressTimeoutRef.current) {
+            clearTimeout(suppressTimeoutRef.current);
+            suppressTimeoutRef.current = null;
+          }
           break;
 
         case "question_changed":

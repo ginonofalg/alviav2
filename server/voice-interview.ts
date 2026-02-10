@@ -2744,6 +2744,20 @@ async function handleProviderEvent(
         state.questionIndexAtSpeechStart = state.currentQuestionIndex;
       }
 
+      // Flush dangling Alvia speaking metrics on barge-in:
+      // If the user interrupts while Alvia is mid-speech, response.audio.done
+      // may not fire for the cancelled response, leaving currentResponseStartAt
+      // dangling. Accumulate partial speaking time and update silence tracking now.
+      if (state.metricsTracker.alviaSpeaking.currentResponseStartAt !== null) {
+        const elapsed =
+          now - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
+        state.metricsTracker.alviaSpeaking.totalMs += elapsed;
+        state.metricsTracker.alviaSpeaking.turnCount++;
+        state.metricsTracker.alviaSpeaking.currentResponseStartAt = null;
+        state.metricsTracker.silenceTracking.lastAlviaEndAt = now;
+        state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
+      }
+
       // Record silence segment that just ended (respondent starting to speak)
       recordSilenceSegment(state.metricsTracker, state, now);
       state.metricsTracker.silenceTracking.lastSpeechStartAt = now;
