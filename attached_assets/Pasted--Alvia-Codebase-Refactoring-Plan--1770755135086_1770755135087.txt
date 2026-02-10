@@ -1,0 +1,478 @@
+ Alvia Codebase Refactoring Plan                                                                                                                                                         
+                                                        
+ Context
+
+ The Alvia codebase has grown organically and now has several monolithic files that make safe changes difficult: voice-interview.ts (5,222 lines), barbara-orchestrator.ts (3,492
+ lines), routes.ts (3,413 lines), interview.tsx (2,158 lines), storage.ts (1,831 lines), and schema.ts (1,305 lines). Type-checking is currently broken (30 errors from npm run check),
+ and there are zero tests. This refactor decomposes these files into focused modules without changing any behavior, establishes a green type-check baseline, and adds a test safety net.
+
+ ---
+ Rollback Strategy
+
+ Each phase is a self-contained PR with its own verification gate. If any phase introduces a regression:
+ 1. Each phase's final step is npm run check + npm run build + (after Phase 1) npm run test
+ 2. If verification fails mid-phase, revert the PR — no partial merges
+ 3. Phases are designed so no phase depends on an incomplete prior phase
+ 4. After Phase 1 (test setup), integration smoke tests catch wiring mistakes in Phases 2-5
+ 5. The dev server (npm run dev) should be tested after each phase as an additional manual gate
+
+ ---
+ Phase 0: Green Type-Check Baseline
+
+ Goal: Fix all 30 tsc errors so npm run check becomes a reliable merge gate.
+
+ 0a. Fix tsconfig.json — Add target: "ES2020" (fixes 5 errors)
+
+ No target field exists (defaults to ES3), causing TS2802 errors when iterating Set and Map. The 5 affected locations:
+ - server/voice-interview.ts:1011 — Set<string> iteration
+ - server/voice-interview.ts:1012 — Set<string> iteration (2 errors on this line)
+ - server/voice-interview.ts:5062 — Map<string, InterviewState> iteration
+ - server/barbara-orchestrator.ts:1885 — Set<string> iteration
+
+ Fix: Add "target": "ES2020" to compilerOptions in tsconfig.json. Since the project uses esbuild for production builds and tsx for dev, this has zero runtime impact — it simply tells
+ tsc that Set/Map iteration is valid.
+
+ File: tsconfig.json
+
+ 0b. Fix routes.ts:2334 — Add optional parameter to getTokenExpiryDate() (fixes 1 error)
+
+ The call getTokenExpiryDate(7 * 24 * 60 * 60 * 1000) passes a TTL argument, but the function signature takes zero parameters (it hardcodes 7 days internally). Simply removing the
+ argument would silently change the contract — callers expect to control the TTL.
+
+ Fix: Add an optional ttlMs parameter to getTokenExpiryDate() in server/resume-token.ts:
+ export function getTokenExpiryDate(ttlMs?: number): Date {
+   const expiry = new Date();
+   if (ttlMs) {
+     expiry.setTime(expiry.getTime() + ttlMs);
+   } else {
+     expiry.setDate(expiry.getDate() + TOKEN_EXPIRY_DAYS);
+   }
+   return expiry;
+ }
+ This preserves existing zero-arg behavior (7-day default) while supporting the explicit TTL at the call site.
+
+ Files: server/resume-token.ts, server/routes.ts:2334 (no change needed at call site)
+
+ 0c. Fix routes.ts Barbara config type errors (fixes 5 errors)
+
+ The Zod schema at routes.ts:3154-3165 uses ALLOWED_MODELS as unknown as [string, ...string[]] which discards the literal union type. After safeParse, model becomes string | undefined
+ instead of the AllowedModel literal union.
+
+ The 5 affected locations:
+ - Line 3187: updateBarbaraConfig(parseResult.data) — expects Partial<BarbaraConfig>, gets widened types
+ - Lines 3204, 3221, 3238, 3255: update*Config(parseResult.data) — expects Partial<BarbaraUseCaseConfig>, gets widened types
+
+ Fix: Remove the as unknown cast and properly type the Zod enum:
+ const barbaraUseCaseConfigSchema = z.object({
+   model: z.enum(ALLOWED_MODELS).optional(),
+   verbosity: z.enum(["low", "medium", "high"] as const).optional(),
+   reasoningEffort: z.enum(["low", "medium", "high"] as const).optional(),
+ });
+ ALLOWED_MODELS is already as const in barbara-orchestrator.ts:14-23, so z.enum(ALLOWED_MODELS) should work directly. If the readonly tuple doesn't satisfy Zod's type constraint, the
+ minimal fix is to cast only after validation: parseResult.data as Partial<BarbaraUseCaseConfig>.
+
+ File: server/routes.ts lines 3154-3158, 3187, 3204, 3221, 3238, 3255
+
+ 0d. Fix ProjectAnalyticsView.tsx (fixes 19 errors)
+
+ All 19 errors: 'analytics' is possibly 'undefined' at lines 490-595. The variable analytics is used inside a rendering branch where the type system cannot prove it's defined.
+
+ Fix: Add a null guard before the section that dereferences analytics:
+ if (!analytics) return null;
+
+ File: client/src/components/analytics/ProjectAnalyticsView.tsx
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run dev → server starts, landing page loads
+
+ ---
+ Phase 1: Test Setup + Initial Safety Net
+
+ Goal: Establish a test framework and write initial tests before the structural refactoring begins. This provides a safety net for Phases 2-6.
+
+ Moved up from the original Phase 6 position per critique feedback: having tests before restructuring catches wiring mistakes early.
+
+ 1a. Add vitest
+
+ - Add vitest as devDependency
+ - Create vitest.config.ts with path aliases (@/* → client/src/*, @shared/* → shared/*)
+ - Add "test": "vitest run" script to package.json
+
+ 1b. Unit tests for pure functions
+
+ File: server/__tests__/resume-token.test.ts
+ - generateResumeToken() returns base64url string of correct length (43 chars)
+ - hashToken() returns hex string, is deterministic for same input
+ - getTokenExpiryDate() returns date 7 days in future (zero-arg)
+ - getTokenExpiryDate(ttlMs) returns correct expiry for custom TTL
+ - isTokenExpired() returns true for past dates, false for future dates
+
+ 1c. Integration smoke tests
+
+ File: server/__tests__/smoke.test.ts
+
+ Basic wiring tests that catch routing/import mistakes in Phases 2-5:
+ - Server starts without errors
+ - GET /api/auth/user returns 401 when unauthenticated
+ - GET /api/projects returns 401 when unauthenticated
+ - GET /api/barbara/config returns 401 when unauthenticated
+ - Static file serving returns 200 for known assets
+
+ These tests import the Express app directly (no full server start) and use supertest or direct handler invocation.
+
+ Verification
+
+ - npm run test → all tests pass
+ - npm run check → 0 errors
+
+ ---
+ Phase 2: Extract Domain Types from shared/schema.ts
+
+ Goal: Move non-Drizzle domain types (lines ~431-1207) into shared/types/ files. Keep schema.ts for table definitions, relations, enums, insert schemas, and LLM usage tables. This is
+ zero-risk since types have no runtime behavior.
+
+ New files
+
+ shared/types/
+   index.ts                     # Barrel re-export
+   interview-state.ts           # PersistedTranscriptEntry, PersistedBarbaraGuidance, PersistedQuestionState, QualityFlag, SessionReviewFlag
+   transcription-quality.ts     # TranscriptionQualityFlag, UtteranceQualityFlags, TranscriptionQualitySignals, TranscriptionQualityMetrics
+   performance-metrics.ts       # TokenUsage, LatencyMetrics, SilenceContext, SilenceSegment, SilenceStats, SpeakingTimeMetrics, BarbaraTokenBucket, BarbaraTokensByUseCase,
+ RealtimePerformanceMetrics
+   question-types.ts            # KeyQuote, ExtractedValues, VerbatimStatement, QuestionSummary, GeneratedAdditionalQuestion, AdditionalQuestionsData
+   session-summary.ts           # AlviaSessionSummary, BarbaraSessionSummary
+   collection-analytics.ts      # EnhancedTheme, KeyFinding, ConsensusPoint, DivergencePoint, Recommendation, CollectionAnalytics, etc.
+   template-analytics.ts        # CollectionPerformanceSummary, QuestionConsistency, TemplateAnalytics, etc.
+   project-analytics.ts         # TemplatePerformanceSummary, CrossTemplateTheme, ProjectAnalytics, etc.
+   aggregated-analytics.ts      # AggregatedAnalytics, StalenessStatus, ProjectSummaryWithAnalytics, etc.
+   review.ts                    # ReviewRatings, RATING_DIMENSIONS, SessionWithRespondent
+   llm-usage.ts                 # LLM_USE_CASES, LLMUseCase, LLMUsageAttribution, NormalizedTokenUsage, UsageRollup
+
+ Backward compatibility
+
+ Add export * from "./types" at the bottom of schema.ts. All existing import ... from "@shared/schema" statements continue to work — no import path updates needed across the 36+
+ consuming files.
+
+ Cross-type dependencies form a clean DAG
+
+ - template-analytics.ts imports from collection-analytics.ts
+ - project-analytics.ts imports from collection-analytics.ts + template-analytics.ts
+ - aggregated-analytics.ts imports from all three analytics levels
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run test → all pass
+
+ ---
+ Phase 3: Split server/routes.ts into Domain Modules
+
+ Goal: Decompose the 77-handler registerRoutes() into domain-grouped route modules. Add tiny helpers to eliminate repeated boilerplate.
+
+ New files
+
+ server/routes/
+   helpers.ts              # asyncHandler, requireAccess, typed request helpers
+   dashboard.ts            # 4 routes: /api/dashboard/*, /api/analytics
+   analytics-refresh.ts    # ~10 routes: analytics refresh + cascade + dependencies
+   infographics.ts         # 6 routes: /api/*/infographic/*
+   projects.ts             # 4 routes: /api/projects CRUD
+   templates.ts            # 6 routes: /api/templates CRUD + generate
+   collections.ts          # 5 routes: /api/collections CRUD
+   respondents.ts          # 4 routes: /api/respondents + bulk
+   sessions.ts             # 14 routes: /api/sessions CRUD + notes/flags/export
+   interview.ts            # 5 routes: public interview flow + token-based
+   review.ts               # 7 routes: review + segments
+   barbara-config.ts       # 6 routes: /api/barbara/config/* + generate-summary
+   usage.ts                # 6 routes: /api/usage/* + admin backfill
+
+ Route helper pattern (server/routes/helpers.ts)
+
+ export function asyncHandler(
+   fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+ ): RequestHandler;
+
+ export async function requireAccess(
+   userId: string,
+   level: "project" | "template" | "collection" | "session",
+   entityId: string,
+ ): Promise<boolean>;
+
+ Each module exports a registration function
+
+ // server/routes/projects.ts
+ export function registerProjectRoutes(app: Express): void {
+   app.get("/api/projects", isAuthenticated, asyncHandler(async (req: any, res) => {
+     // ... existing handler body, unchanged
+   }));
+ }
+
+ routes.ts becomes ~80 lines of composition
+
+ export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+   await setupAuth(app);
+   registerAuthRoutes(app);
+   // WebSocket stays here — needs httpServer
+   const wss = new WebSocketServer({ server: httpServer, path: "/ws/interview" });
+   wss.on("connection", (ws, req) => handleVoiceInterview(ws, req));
+   // Register all route groups
+   registerDashboardRoutes(app);
+   registerAnalyticsRefreshRoutes(app);
+   registerProjectRoutes(app);
+   // ... etc
+   return httpServer;
+ }
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run test → all pass (smoke tests catch wiring mistakes)
+ - Manual: exercise dashboard, project CRUD, interview flow, analytics refresh, Barbara config
+
+ ---
+ Phase 4: Split server/storage.ts into Repository Modules
+
+ Goal: Break 82-method DatabaseStorage into focused repository modules using thin wrapper delegation. The IStorage interface, class, and storage singleton export remain unchanged from
+ consumers' perspective.
+
+ New files
+
+ server/storage/
+   workspace-repo.ts        # 3 methods
+   project-repo.ts          # 5 methods
+   template-repo.ts         # 6 methods
+   question-repo.ts         # 7 methods
+   collection-repo.ts       # 7 methods
+   respondent-repo.ts       # 8 methods
+   session-repo.ts          # 15 methods
+   segment-repo.ts          # 4 methods
+   stats-repo.ts            # 3 methods
+   analytics-repo.ts        # 1 method
+   access-repo.ts           # 4 methods
+   invite-repo.ts           # 4 methods
+   usage-repo.ts            # 10 methods
+
+ Delegation pattern: thin wrapper methods (not direct assignment)
+
+ Per critique feedback, use explicit wrapper methods rather than getProject = projectRepo.getProject assignment (which loses this context and makes the class feel like unnecessary
+ indirection):
+
+ // server/storage.ts
+ import * as projectRepo from "./storage/project-repo";
+
+ export class DatabaseStorage implements IStorage {
+   async getProject(id: string) {
+     return projectRepo.getProject(id);
+   }
+   async getProjectsByUser(userId: string) {
+     return projectRepo.getProjectsByUser(userId);
+   }
+   // ...
+ }
+
+ Each repo module exports standalone async functions that use the shared db instance:
+ // server/storage/project-repo.ts
+ import { db } from "../db";
+ export async function getProject(id: string): Promise<Project | undefined> {
+   const [project] = await db.select().from(projects).where(eq(projects.id, id));
+   return project;
+ }
+
+ Cross-method references
+
+ Methods like getCollectionsByUser() that currently call this.getProjectsByUser() will import the dependency function directly from the relevant repo module. Since these are stateless
+ DB queries, direct imports work identically.
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run test → all pass
+ - Manual: CRUD operations, dashboard stats, interview state persistence
+
+ ---
+ Phase 5: Extract server/voice-interview.ts Pure Functions
+
+ Goal: Reduce from 5,222 to ~2,700 lines by extracting functions into focused sub-modules. Keep handleVoiceInterview() as the single entry point.
+
+ Risk Level: HIGH. This file manages real-time WebSocket state. Extracting functions that currently access the module-level interviewStates Map requires changing function signatures to
+  accept state as parameters — this is an API change across the file, not just a move. Proceed carefully with each extraction verified independently.
+
+ New files
+
+ server/voice-interview/
+   types.ts                  # InterviewState, MetricsTracker, constants, runtime context types
+   metrics.ts                # createEmptyMetricsTracker, recordSilenceSegment, calculateSilenceStats, finalizeAndPersistMetrics
+   instructions.ts           # buildInterviewInstructions, buildOverlapInstruction, buildResumeInstructions, buildAQInstructions
+   transcript.ts             # sanitizeAlviaTranscript, addTranscriptEntry, detectQuestionRepeat, jaccardSimilarity
+   context-builders.ts       # buildCrossInterviewRuntimeContext, buildAnalyticsHypothesesRuntimeContext
+   persistence.ts            # flushPersist, persistBarbaraGuidance, updateQuestionState, persistNextQuestion, generateAndPersistSummary
+   additional-questions.ts   # generateAdditionalQuestionsForSession, startAdditionalQuestion, persistAQTranscript, generateAndPersistAQSummary
+   session-lifecycle.ts      # generateAlviaSummary, triggerBarbaraSessionSummary, finalizeInterview, cleanupSession, watchdog functions
+
+ Extraction order (safest first, one sub-step at a time)
+
+ 1. types.ts — Type-only, zero risk
+ 2. metrics.ts — Pure math/computation, no state access
+ 3. instructions.ts — Pure string builders, no state access
+ 4. transcript.ts — Pure utilities, no state access
+ 5. context-builders.ts — Pure data transformers, no state access
+ 6. persistence.ts — Requires signature changes: functions currently access interviewStates Map via closure; refactored to accept InterviewState as a parameter
+ 7. additional-questions.ts — Requires signature changes: same pattern as persistence
+ 8. session-lifecycle.ts — Requires signature changes: watchdog functions access the Map; refactored to accept state + callbacks
+
+ What stays in voice-interview.ts (~2,700 lines)
+
+ - interviewStates Map (module state)
+ - handleVoiceInterview() — entry point (~580 lines)
+ - initializeInterview() (~210 lines)
+ - connectToRealtimeProvider() (~240 lines)
+ - handleProviderEvent() (~530 lines)
+ - triggerBarbaraAnalysis() (~250 lines)
+ - handleClientMessage() (~900 lines)
+ - Small helpers that access module state: safeSend, isCurrentConnection, canCreateResponse
+
+ Additional tests (added during this phase)
+
+ File: server/voice-interview/__tests__/transcript.test.ts
+ - sanitizeAlviaTranscript() replaces em-dashes with semicolons
+ - addTranscriptEntry() respects MAX_TRANSCRIPT_IN_MEMORY limit
+ - jaccardSimilarity() returns expected values for known inputs
+ - detectQuestionRepeat() catches duplicate questions
+
+ File: server/voice-interview/__tests__/metrics.test.ts
+ - calculateSilenceStats() computes correct mean, median, p90
+ - createEmptyMetricsTracker() returns zeroed tracker
+
+ File: server/voice-interview/__tests__/instructions.test.ts
+ - buildInterviewInstructions() includes question text, objective, tone
+ - buildResumeInstructions() includes transcript context
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run test → all pass (new unit tests + existing smoke tests)
+ - Critical end-to-end: join → consent → interview → Barbara guidance → AQ phase → completion → summary
+ - Test: reconnection via resume token
+ - Test: watchdog timeout on idle session
+
+ ---
+ Phase 6: Decompose client/src/pages/interview.tsx into Hooks
+
+ Goal: Reduce from 2,158 lines (23 useState, 28 useRef) to ~700 lines by extracting focused custom hooks.
+
+ Risk Level: HIGH. React hooks have strict rules about call order. With 28 useRefs being distributed across 4 hooks, callback identity and stale closure bugs are a real concern.
+
+ New hooks
+
+ client/src/hooks/
+   use-interview-audio.ts          # Audio capture + playback
+   use-interview-reconnection.ts   # Reconnection with exponential backoff
+   use-interview-aq.ts             # Additional questions phase state
+   use-interview-socket.ts         # WebSocket connection, heartbeat, message dispatch
+
+ Hook dependencies
+
+ useInterviewAudio         — standalone, no hook dependencies
+ useInterviewReconnection  — takes connectWebSocket callback
+ useInterviewAQ            — takes interviewData
+ useInterviewSocket        — takes audio, reconnection, and AQ hooks
+
+ Ref stability strategy
+
+ Per critique feedback, special attention to refs shared across hooks:
+
+ 1. Refs that stay within a single hook (e.g., audioQueueRef stays in useInterviewAudio) — no stability concern
+ 2. Refs shared between hooks (e.g., wsRef used by both socket and audio) — owned by useInterviewSocket, passed to useInterviewAudio via parameter
+ 3. Callbacks passed between hooks — wrapped in useCallback with explicit dependency arrays; dependencies minimized by using refs for values that change frequently but shouldn't
+ trigger re-renders
+ 4. State mirrors (useState + useRef for the same value, e.g., isListening + isListeningRef) — each pair stays together in the same hook to avoid sync bugs
+
+ Resulting interview.tsx (~700 lines)
+
+ - Hook initialization (~50 lines)
+ - Remaining local state: readyPhase, confirmDialog, textInput, isTextOnlyMode (~20 lines)
+ - User interaction handlers (~200 lines)
+ - UI rendering (~400 lines, unchanged)
+
+ Verification
+
+ - npm run check → 0 errors
+ - npm run build → succeeds
+ - npm run test → all pass
+ - Full interview flow: start → speak → transcript → pause/resume → disconnect/reconnect → AQ → complete
+ - Verify: reconnection exponential backoff works after network drop
+ - Verify: audio doesn't double after reconnect
+ - Verify: silence detection still triggers
+
+ ---
+ Future: barbara-orchestrator.ts
+
+ At 3,492 lines, barbara-orchestrator.ts is the second-largest file. It is explicitly excluded from this refactor because:
+ - It is self-contained with clean function exports and no shared mutable state
+ - Its 8 use cases are already logically separated by function
+ - Refactoring risks breaking finely-tuned LLM prompt logic
+ - It has a single type error (fixed in Phase 0a)
+
+ When a future refactor is warranted, the natural split follows its 8 use cases:
+ server/barbara/
+   config.ts               # Configuration types, defaults, getters/setters
+   analysis.ts             # analyzeWithBarbara (real-time guidance)
+   topic-overlap.ts        # detectTopicOverlap
+   summarisation.ts        # generateQuestionSummary, generateCrossInterviewAnalysis
+   template-analytics.ts   # generateTemplateAnalytics
+   project-analytics.ts    # generateProjectAnalytics
+   template-generation.ts  # generateTemplateFromProject
+   additional-questions.ts # generateAdditionalQuestions
+   session-summary.ts      # generateSessionSummary
+
+ ---
+ Execution Order
+ ┌───────┬──────────────────────────────────────────┬────────┬────────────────────────┐
+ │ Phase │               Description                │  Risk  │       Depends On       │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 0     │ Fix 30 TypeScript errors                 │ LOW    │ —                      │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 1     │ Add vitest + initial tests + smoke tests │ LOW    │ Phase 0                │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 2     │ Extract domain types to shared/types/    │ LOW    │ Phase 0                │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 3     │ Split routes.ts into 13 domain modules   │ MEDIUM │ Phases 0, 1            │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 4     │ Split storage.ts into 13 repo modules    │ MEDIUM │ Phases 0, 1            │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 5     │ Extract voice-interview.ts functions     │ HIGH   │ Phases 0, 1, ideally 2 │
+ ├───────┼──────────────────────────────────────────┼────────┼────────────────────────┤
+ │ 6     │ Decompose interview.tsx into 4 hooks     │ HIGH   │ Phases 0, 1            │
+ └───────┴──────────────────────────────────────────┴────────┴────────────────────────┘
+ Each phase is its own PR. Phases 2-6 target different files and can technically run in parallel after Phase 1, but recommended serial order is 0 → 1 → 2 → 3 → 4 → 5 → 6 (ascending
+ risk, each building confidence from the test safety net).
+
+ ---
+ Key Files Reference
+ ┌──────────────────────────────────────────────────────────┬───────┬──────────────────┐
+ │                           File                           │ Lines │      Phase       │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ tsconfig.json                                            │ 23    │ 0a               │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ server/resume-token.ts                                   │ 22    │ 0b               │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ server/routes.ts                                         │ 3,413 │ 0c, 3            │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ client/src/components/analytics/ProjectAnalyticsView.tsx │ ~600  │ 0d               │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ shared/schema.ts                                         │ 1,305 │ 2                │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ server/storage.ts                                        │ 1,831 │ 4                │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ server/voice-interview.ts                                │ 5,222 │ 5                │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ client/src/pages/interview.tsx                           │ 2,158 │ 6                │
+ ├──────────────────────────────────────────────────────────┼───────┼──────────────────┤
+ │ server/barbara-orchestrator.ts                           │ 3,492 │ 0a only (future) │
