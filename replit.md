@@ -2,7 +2,7 @@
 
 ## Overview
 
-Alvia is a voice-based AI interview platform for qualitative research at scale. It leverages OpenAI's GPT-4o Real-time API for natural voice conversations, automatically transcribing and analyzing responses. The platform features consent management, PII redaction, cross-interview analysis, and an advanced analytics system providing insights at Collection, Template, and Project levels. It also includes an invitation system for respondent recruitment and a strategic context feature for tailored analytics recommendations, aiming to transform qualitative research through AI-driven efficiency and insight generation.
+Alvia is a voice-based AI interview platform designed for scalable qualitative research. It utilizes OpenAI's GPT-4o Real-time API for natural voice conversations, automating transcription and analysis of responses. Key features include consent management, PII redaction, sophisticated cross-interview analysis, and an advanced analytics system that delivers insights at Collection, Template, and Project levels. The platform also provides an invitation system for respondent recruitment and a strategic context feature to offer tailored analytics recommendations. Alvia aims to enhance qualitative research efficiency and insight generation through AI.
 
 ## User Preferences
 
@@ -11,54 +11,39 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Tech Stack
-- **Frontend**: React 18 (TypeScript, Wouter, TanStack React Query, Radix UI, Tailwind CSS)
-- **Backend**: Express.js with WebSockets
-- **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Replit OpenID Connect via Passport.js
-- **Voice Processing**: OpenAI Realtime GA API (`gpt-realtime-mini`) with multi-provider support (Grok/xAI via `grok-3-fast`)
-- **Infographic Generation**: Gemini API (`gemini-3-pro-image-preview`)
+-   **Frontend**: React 18 (TypeScript, Wouter, TanStack React Query, Radix UI, Tailwind CSS)
+-   **Backend**: Express.js with WebSockets
+-   **Database**: PostgreSQL with Drizzle ORM
+-   **Authentication**: Replit OpenID Connect via Passport.js
+-   **Voice Processing**: OpenAI Realtime GA API (`gpt-realtime-mini`), with multi-provider support (Grok/xAI via `grok-3-fast`)
+-   **Infographic Generation**: Gemini API (`gemini-3-pro-image-preview`)
 
-### Data Model Hierarchy
-The system organizes data hierarchically: **Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment**.
-
-### Key Design Patterns
-- **Storage Abstraction**: Centralized database operations via `DatabaseStorage`.
-- **Real-time Communication**: WebSocket server for live voice interview sessions.
-- **Form Validation**: Zod schemas integrated with react-hook-form.
-- **API Pattern**: REST endpoints with authentication middleware.
-- **Component Library**: shadcn/ui.
-- **Lag-by-one-turn guidance**: Asynchronous AI guidance for next response.
-- **Hybrid Barbara Prompt Strategy**: Barbara receives question summaries for older questions and raw transcript only for the current + previous 2 questions (configurable via `RECENT_TRANSCRIPT_QUESTION_WINDOW`). This replaces the previous full-transcript dump approach, reducing prompt size from O(interview_length) to O(current_question_window) per call. `MAX_TRANSCRIPT_IN_MEMORY` set to 50 as a safety cap. Token estimation and actual usage are logged per Barbara call.
-- **Multi-Level Analytics System**: Analytics generated at Collection, Template, and Project levels, with AI-powered cross-template synthesis at the Project level.
-- **Strategic Context Integration**: Enables tailored analytics recommendations based on user-provided business context.
-- **Aggregated Analytics Command Center**: Centralized dashboard for cross-project insights and analytics health.
-- **Respondent Invitation System**: Supports single and bulk invitations with tracking.
-- **Session Hygiene System**: Automatic cleanup of abandoned sessions using heartbeat, idle, and max age timeouts.
-- **Session Detail Page Enhancements**: Provides comprehensive tools for researchers including export, notes, flagging, and navigation.
-- **Project-Level Infographics**: Extends infographic generation to the project level, alongside collection-level support.
-- **PDF Export for Analytics**: Comprehensive PDF export for project and collection analytics with smart page breaks and consistent styling.
-- **Analytics Cascade Refresh**: Streamlined UX for refreshing analytics dependencies (collections, templates, projects) via a single "Refresh All" action.
-- **Data Isolation**: Enforced ownership verification across all data hierarchies (User → Workspace → Project → Template → Collection → Session) for secure multi-tenancy.
-- **Auto-Generate Template Feature**: AI-powered generation of interview templates from project metadata using GPT-5.
-- **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface to support switching between different real-time voice API providers (e.g., OpenAI, Grok). Researchers select the provider at the Collection level during creation; respondents automatically use the collection's configured provider. OpenAI provider uses GA API (no beta header); Grok uses beta-compatible format. Provider methods `buildSessionConfig()`, `buildInstructionsUpdate()`, `buildTurnDetectionUpdate()`, and `buildTextOnlySessionConfig()` encapsulate format differences. OpenAI GA session config uses nested `audio.input`/`audio.output` structure with `type: "realtime"`.
-- **Demo Project Auto-Seeding**: New users automatically receive a demo project ("Alvia Demo — Your Coffee Ritual") with a pre-configured template and 6 questions on first login. Implemented via `server/demo-seed.ts` called from the auth verification callback.
-- **Invite-Only Waitlist System**: Gating mechanism for public launch. Only users with emails in the `invite_list` table can access the platform. Non-invited authenticated users see a waitlist form to submit their information (name, email, consent preferences). Controlled by `INVITE_ONLY_MODE` environment variable (defaults to true; set to "false" to disable gating). Database tables: `invite_list` (invited emails) and `waitlist_entries` (waitlist submissions). To invite users: `INSERT INTO invite_list (email) VALUES ('user@example.com');`
-- **Additional Questions Feature**: AI-powered follow-up questions generated by Barbara (AI analyst) after completing template questions. Configurable per collection (0-3 questions, default 1). Includes opt-in consent dialog, loading states during Barbara's analysis, and dedicated AQ navigation UI. WebSocket protocol extended with new message types for AQ flow. Controlled by `ADDITIONAL_QUESTIONS_ENABLED` environment variable (defaults to true; set to "false" to disable). AQ segments stored in session's `additionalQuestions` JSONB field and displayed separately in review page with "AQ" badges.
-- **Silent Ambient Calibration**: Automatic microphone calibration when silence monitoring starts. Measures ambient noise during AnalyserNode warmup period (first 2.5s) and computes a dynamic silence detection threshold using formula: `clamp(baseline × 3.0, 0.005, 0.12)`. Includes safeguards for high variance environments, background tab throttling, and fallback to hardcoded threshold (0.01) on failure. Calibration results sent to server for diagnostics. Implementation in `client/src/hooks/use-silence-detection.ts`.
-- **Enhanced Transcription Quality Handling**: Environment check triggers on first foreign language hallucination (not 2+). Re-triggering enabled after 5-utterance cooldown when quality issues persist. Implemented via guard reset logic in `server/voice-interview.ts` and reduced cooldown in `server/transcription-quality.ts`.
-- **WebSocket Connection Cleanup**: Uses `removeAllListeners()` before `close()` for instant cleanup of orphaned provider/client connections, preventing stale event processing. ConnectionId guards remain as secondary safety net.
-- **Session Duration Tracking**: `totalDurationMs` now centrally computed in `finalizeAndPersistMetrics` and persisted to database for data integrity.
-- **LLM Usage Rollup System** (2026-02-09): Dual-write pattern for LLM token tracking. Each usage event write atomically inserts a raw event AND upserts an aggregated rollup row into `llm_usage_rollups` (hourly buckets by attribution + provider/model/use_case/status dimensions). Usage API reads (`/api/usage/*`) now query the rollup table instead of scanning raw events. Raw events retained for 14 days with hourly batch cleanup. Daily reconciliation job re-aggregates the last 48 hours to heal any missed upserts. Key files: `server/llm-usage.ts` (dual-write entry point), `server/storage.ts` (upsert + rollup reads), `server/usage-maintenance.ts` (cleanup + reconciliation jobs), `shared/schema.ts` (rollup table schema).
-- **Dynamic VAD Eagerness Adjustment**: Mid-session adjustment of OpenAI's semantic VAD eagerness. When `shortUtteranceStreak >= 4` with no recent quality issues (foreign language, incoherence, or repeated-word glitches in last 5 utterances), eagerness is reduced from "auto" to "low". Expanded veto ensures VAD only drops when short utterances are the sole signal—not during transcription quality failures. Restored to "auto" after 10 consecutive good utterances (≥3 words, no recent quality issues). Skips short-utterance tracking for yes_no, scale, and numeric question types. Re-applies eagerness setting after provider reconnect. Tracked via `vadEagernessReduced`, `consecutiveGoodUtterances`, and `recentUtteranceQuality` in TranscriptionQualitySignals. Only applies to OpenAI (Grok uses server_vad). Implementation in `server/voice-interview.ts:sendVadEagernessUpdate()` and `server/transcription-quality.ts`.
-- **Dual-Perspective End-of-Interview Summary**: Optional feature (controlled per collection via `endOfInterviewSummaryEnabled`, default off) that generates two independent session summaries when an interview completes: (1) **Alvia's summary** — uses the realtime API's audio-informed context via a text-only response with 30s timeout, capturing conversational nuances; (2) **Barbara's analytical summary** — generated asynchronously from text transcripts using `generateSessionSummary()` in `server/barbara-orchestrator.ts`. Both summaries include themes, overall assessment, and objective satisfaction analysis. The feature is triggered via a unified `finalizeInterview()` function that consolidates all 7 completion paths. Manual Barbara summary regeneration available via `POST /api/sessions/:id/generate-summary`. Frontend: collection toggle in create/edit forms, side-by-side summary cards in session-detail Summary tab. Schema: `alviaSummary` and `barbaraSessionSummary` JSONB columns on `interviewSessions`.
-- **Cross-Interview Context Injection**: Low-overhead system that provides Barbara (AI analyst) with theme context and question quality insights from prior interviews in the same collection during live steering. A snapshot is built once at session start from `collection.analyticsData` — no hot-path DB queries. Themes are inverted from `relatedQuestions` arrays into a `themesByQuestion` mapping for efficient per-question lookup. Hard caps enforced: 3 themes per question, 2 emergent themes, 120-char cue truncation. Question quality insights extracted from `questionPerformance` with low-signal guardrails: `MIN_RESPONSE_COUNT_FOR_ALERT=2`, `QUALITY_ALERT_THRESHOLD=65`, `MIN_FLAG_COUNT_FOR_ALERT=2`. Only questions with actionable issues (low quality score, brief responses, recurring flags, narrow perspective) are surfaced. Dual-source gating enables context when either themes or quality insights are available (no longer requires themes). Instructions placed in system prompt with bias guardrails (treat as hypotheses, neutral phrasing); data snapshot and quality block conditionally injected into user prompt. AQ-safe: quality lookups skip additional-question indexes. Controlled by project-level `crossInterviewContext` boolean and `crossInterviewThreshold` (minimum completed sessions). Graceful fallback when feature is disabled, threshold unmet, or analytics data missing. Types: `CompactCrossInterviewTheme`, `CompactQuestionQualityInsight`, `CompactFlagCount`, `CrossInterviewRuntimeContext` in `server/voice-interview.ts`. Builder: `buildCrossInterviewRuntimeContext()`. Prompt helpers: `buildCrossInterviewSnapshotBlock()` and `buildQuestionQualityInsightsBlock()` in `server/barbara-orchestrator.ts`.
-- **Analytics-Guided Hypothesis Testing**: Feeds project-level analytics recommendations back into live interviews as testable hypotheses for Barbara. Extracts hypotheses from three sources: recommendations (explore_deeper, coverage_gap, needs_probing types), contextual action items, and strategic insights. Each hypothesis includes text, source type, priority (high/medium/low), and relatedQuestions/relatedThemes for relevance mapping. Precomputed at session start from project analytics — no hot-path DB queries. Guard chain: feature toggle (`analyticsGuidedHypotheses`), analytics existence check, minimum session threshold (`analyticsHypothesesMinSessions`, default 5). Hard caps: 8 hypotheses max, 150-char truncation. Injected into Barbara's per-utterance analysis with `isCurrentQuestionRelevant` filtering, and into Additional Questions generation. System prompt instructs Barbara to treat as optional exploration opportunities with neutral phrasing. Types: `CompactAnalyticsHypothesis`, `AnalyticsHypothesesRuntimeContext` in `server/voice-interview.ts`. Builder: `buildAnalyticsHypothesesRuntimeContext()`. Prompt helper: `buildAnalyticsHypothesesBlock()` in `server/barbara-orchestrator.ts`. Frontend: toggle + threshold in project create/edit Advanced Settings.
-- **Automatic WebSocket Reconnection System**: Comprehensive client-side reconnection for handling network interruptions during voice interviews. Features: exponential backoff (500ms base, 10s max, ±20% jitter), 6 max attempts, 5s connection timeout watchdog, token-based stale close prevention, attempt-in-flight guard to prevent overlapping connections. Auto-resumes audio capture after successful reconnect if user was listening before disconnect. Server includes `awaitingResume` and `isPaused` flags in connected payload for proper state sync. UI shows "Reconnecting... (Attempt N of 6)" indicator during reconnection. Network online events trigger reconnection if disconnected. Session termination or unmount stops reconnection cleanly. Implementation in `client/src/pages/interview.tsx`.
+### Design Patterns and Features
+-   **Data Model**: Hierarchical structure: Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment.
+-   **Data Management**: Centralized database operations, real-time WebSocket communication, Zod for form validation, REST API with authentication middleware.
+-   **AI Guidance**: Lag-by-one-turn guidance and a hybrid Barbara Prompt Strategy optimize AI response generation by focusing on recent transcript segments.
+-   **Analytics**: Multi-level analytics system (Collection, Template, Project) with AI-powered cross-template synthesis and strategic context integration for tailored recommendations.
+-   **User Experience**: shadcn/ui component library, comprehensive session detail pages, project-level infographics, and PDF export for analytics.
+-   **Data Integrity and Security**: Data isolation enforces ownership verification across all hierarchies (User → Workspace → Project → Template → Collection → Session).
+-   **Interview Management**: Respondent invitation system with tracking, automatic cleanup of abandoned sessions, and AI-powered generation of interview templates from project metadata.
+-   **Advanced AI Features**:
+    -   **Multi-Provider Realtime Voice Support**: Abstracted `RealtimeProvider` interface for switching between OpenAI and Grok APIs, configurable per collection.
+    -   **Additional Questions**: AI-powered follow-up questions generated by Barbara, configurable per collection.
+    -   **Silent Ambient Calibration**: Automatic microphone calibration for dynamic silence detection.
+    -   **Enhanced Transcription Quality Handling**: Adaptive mechanisms to address foreign language hallucinations and transcription issues.
+    -   **Dynamic VAD Eagerness Adjustment**: Mid-session adjustment of OpenAI's semantic VAD eagerness based on utterance patterns.
+    -   **Dual-Perspective End-of-Interview Summary**: Generates two independent session summaries (Alvia's audio-informed and Barbara's analytical) upon interview completion.
+    -   **Cross-Interview Context Injection**: Provides Barbara with theme context and question quality insights from prior interviews to enhance live steering.
+    -   **Analytics-Guided Hypothesis Testing**: Feeds project-level analytics recommendations into live interviews as testable hypotheses for Barbara.
+-   **Platform Features**: Demo project auto-seeding for new users, invite-only waitlist system.
+-   **Robustness**: Automatic WebSocket reconnection with exponential backoff and UI indicators.
+-   **LLM Usage Tracking**: Dual-write pattern for atomic tracking and aggregated rollups of LLM token usage.
+-   **Phase-Aware Prompt Lifecycle**: Alvia's instructions adapt based on conversational phase to ensure natural flow and context.
 
 ## External Dependencies
 
-- **PostgreSQL Database**: Primary data store.
-- **OpenAI API**: For GPT-4o Real-time voice interviews, GPT-based interview guidance, and analytics processing.
-- **Gemini API**: For infographic generation.
-- **Replit Authentication**: OpenID Connect for user authentication.
-- **xAI Grok API**: For alternative real-time voice processing (requires `XAI_API_KEY` secret).
+-   **PostgreSQL Database**: Primary data storage.
+-   **OpenAI API**: For GPT-4o Real-time voice interviews, GPT-based interview guidance, and analytics processing.
+-   **Gemini API**: Used for infographic generation.
+-   **Replit Authentication**: Utilized for user authentication via OpenID Connect.
+-   **xAI Grok API**: Alternative real-time voice processing provider.
