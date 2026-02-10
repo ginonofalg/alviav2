@@ -10,9 +10,13 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export function getTokenExpiryDate(): Date {
+export function getTokenExpiryDate(ttlMs?: number): Date {
   const expiry = new Date();
-  expiry.setDate(expiry.getDate() + TOKEN_EXPIRY_DAYS);
+  if (ttlMs) {
+    expiry.setTime(expiry.getTime() + ttlMs);
+  } else {
+    expiry.setDate(expiry.getDate() + TOKEN_EXPIRY_DAYS);
+  }
   return expiry;
 }
 

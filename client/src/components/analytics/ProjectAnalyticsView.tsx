@@ -483,7 +483,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : analytics ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList data-testid="tabs-list" className="flex-wrap h-auto gap-1">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
@@ -601,7 +601,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
             )}
           </TabsContent>
         </Tabs>
-      )}
+      ) : null}
     </div>
   );
 }

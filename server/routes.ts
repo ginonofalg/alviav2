@@ -19,6 +19,8 @@ import {
   updateTemplateAnalyticsConfig,
   updateProjectAnalyticsConfig,
   ALLOWED_MODELS,
+  type BarbaraConfig,
+  type BarbaraUseCaseConfig,
   generateCrossInterviewAnalysis,
   generateTemplateAnalytics,
   generateProjectAnalytics,
@@ -3184,7 +3186,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const updatedConfig = updateBarbaraConfig(parseResult.data);
+      const updatedConfig = updateBarbaraConfig(parseResult.data as Partial<BarbaraConfig>);
       res.json(updatedConfig);
     } catch (error) {
       console.error("Error updating Barbara config:", error);
@@ -3201,7 +3203,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const updatedConfig = updateAnalysisConfig(parseResult.data);
+      const updatedConfig = updateAnalysisConfig(parseResult.data as Partial<BarbaraUseCaseConfig>);
       res.json(updatedConfig);
     } catch (error) {
       console.error("Error updating analysis config:", error);
@@ -3218,7 +3220,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const updatedConfig = updateTopicOverlapConfig(parseResult.data);
+      const updatedConfig = updateTopicOverlapConfig(parseResult.data as Partial<BarbaraUseCaseConfig>);
       res.json(updatedConfig);
     } catch (error) {
       console.error("Error updating topic overlap config:", error);
@@ -3235,7 +3237,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const updatedConfig = updateSummarisationConfig(parseResult.data);
+      const updatedConfig = updateSummarisationConfig(parseResult.data as Partial<BarbaraUseCaseConfig>);
       res.json(updatedConfig);
     } catch (error) {
       console.error("Error updating summarisation config:", error);
@@ -3252,7 +3254,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: errorMessage });
       }
 
-      const updatedConfig = updateSessionSummaryConfig(parseResult.data);
+      const updatedConfig = updateSessionSummaryConfig(parseResult.data as Partial<BarbaraUseCaseConfig>);
       res.json(updatedConfig);
     } catch (error) {
       console.error("Error updating session summary config:", error);
