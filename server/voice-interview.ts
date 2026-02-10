@@ -2124,7 +2124,12 @@ function buildInterviewInstructions(
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
-- Current Question: ${questionIndex + 1} of ${totalQuestions}
+- Current Question: ${questionIndex + 1} of ${totalQuestions}${
+    strategicContext
+      ? `
+- Strategic Context: ${strategicContext}`
+      : ""
+  }
 
 RESPONDENT:
 ${nameContext}
@@ -2150,13 +2155,6 @@ UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be 
 ${upcomingQuestions}
 `
       : ""
-  }${
-    strategicContext
-      ? `
-STRATEGIC CONTEXT:
-${strategicContext}
-`
-      : ""
   }
 INSTRUCTIONS:
 1. ${questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the first question.` : `Continue from the respondent's latest point. Do not re-introduce yourself and do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`}
@@ -2173,10 +2171,9 @@ INSTRUCTIONS:
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
-- Never use Unicode dashes: — or –.
-- If provided text includes — or –, paraphrase it and replace with commas, periods, or parentheses.
-- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.
-- Before sending your response, check for — or – and rewrite if present.`;
+- Never use Unicode dashes (em dashes): — or –.
+- If provided text includes — or –, paraphrase it and replace with commas, full stops, or parentheses.
+- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.`;
 
   if (barbaraGuidance) {
     instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
@@ -2271,7 +2268,12 @@ function buildResumeInstructions(state: InterviewState): string {
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
-- Current Question: ${questionIndex + 1} of ${totalQuestions}
+- Current Question: ${questionIndex + 1} of ${totalQuestions}${
+    strategicContext
+      ? `
+- Strategic Context: ${strategicContext}`
+      : ""
+  }
 
 RESPONDENT:
 ${nameContext}
@@ -2297,13 +2299,6 @@ You've asked ${followUpCount} so far. This is guidance, not a strict limit.
       ? `
 UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be covered later):
 ${upcomingQuestions}
-`
-      : ""
-  }${
-    strategicContext
-      ? `
-STRATEGIC CONTEXT:
-${strategicContext}
 `
       : ""
   }`;
@@ -2335,10 +2330,9 @@ RESUME INSTRUCTIONS:
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
-- Never use Unicode dashes: — or –.
-- If provided text includes — or –, paraphrase it and replace with commas, periods, or parentheses.
-- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.
-- Before sending your response, check for — or – and rewrite if present.`;
+- Never use Unicode dashes (em dashes): — or –.
+- If provided text includes — or –, paraphrase it and replace with commas, full stops, or parentheses.
+- Do not quote Objective, Question, or Guidance verbatim; express them in your own words.`;
 
   if (lastBarbaraGuidance) {
     instructions += `\n\nORCHESTRATOR'S GUIDANCE (Barbara):
@@ -2909,7 +2903,8 @@ Then continue the interview naturally once they acknowledge.`;
     state.providerWs.send(
       JSON.stringify({
         type: "session.update",
-        session: state.providerInstance.buildInstructionsUpdate(updatedInstructions),
+        session:
+          state.providerInstance.buildInstructionsUpdate(updatedInstructions),
       }),
     );
 
@@ -4323,10 +4318,9 @@ GUIDELINES:
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
-- Never use Unicode dashes: — or –.
-- If provided text includes — or –, paraphrase it and replace with commas, periods, or parentheses.
+- Never use Unicode dashes (em dashes): — or –.
+- If provided text includes — or –, paraphrase it and replace with commas, full stops, or parentheses.
 - Do not quote Objective, Question, or Guidance verbatim; express them in your own words.
-- Before sending your response, check for — or – and rewrite if present.
 
 TONE: ${template?.tone || "Professional and conversational"}
 `;
