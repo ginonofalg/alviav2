@@ -1,0 +1,135 @@
+Review the fixes that Codex and Replit just applied around audio barge-in. Critique and identify any gaps, issues, problems with what's been done.         
+                                                                                                                                                      
+● I'll start by examining the recent commits related to audio barge-in and then review the actual code changes.                                              
+                                                                                                                                                             
+● Bash(git log --oneline -10)
+  ⎿  9f794e8 Saved progress at the end of the loop                                                                                                           
+     d5ee569 Add ability to interrupt AI audio playback during interviews
+     38fa0ed Transitioned from Plan to Build mode                                                                                                            
+     … +7 lines (ctrl+o to expand)                    
+                                                                                                                                                             
+● Bash(git log --oneline --all | head -20)                                                                                                                   
+  ⎿  9f794e8 Saved progress at the end of the loop    
+     c463d61 Saved progress at the end of the loop                                                                                                           
+     d5ee569 Add ability to interrupt AI audio playback during interviews                                                                                    
+     … +17 lines (ctrl+o to expand)                   
+                                                                                                                                                             
+● Bash(git diff d5ee569^..9f794e8 --stat)                                                                                                                    
+  ⎿   client/src/pages/interview.tsx | 18 +++++++++++++++++-
+      1 file changed, 17 insertions(+), 1 deletion(-)                                                                                                        
+                                                                                                                                                             
+● Bash(git show d5ee569 --stat)                       
+  ⎿  commit d5ee569777a9d29885dfc30b58dd7d512f2222ea                                                                                                         
+     Author: ginonofalg <44050324-ginonofalg@users.noreply.replit.com>                                                                                       
+     Date:   Tue Feb 10 10:05:35 2026 +0000                                                                                                                  
+     … +16 lines (ctrl+o to expand)                                                                                                                          
+                                                                                                                                                             
+● Bash(git diff d5ee569^..9f794e8 -- client/src/pages/interview.tsx)                                                                                         
+  ⎿  diff --git a/client/src/pages/interview.tsx b/client/src/pages/interview.tsx
+     index 8628968..967b1dd 100644                                                                                                                           
+     --- a/client/src/pages/interview.tsx                                                                                                                    
+     … +50 lines (ctrl+o to expand)                   
+                                                                                                                                                             
+● Now let me look at the full context of the audio handling code to understand the broader picture.                                                          
+                                                      
+● Searched for 7 patterns, read 1 file (ctrl+o to expand)                                                                                                    
+                                                                                                                                                             
+● Now let me check the server-side handling — does the server send a response.cancel to the OpenAI Realtime API when the user starts speaking?
+                                                                                                                                                             
+● Searched for 3 patterns, read 1 file (ctrl+o to expand)     
+                                                                                                                                                             
+● Let me check how the OpenAI Realtime API handles interruption natively, and whether the server-side VAD config includes auto-cancellation.
+                                                                                                                                                             
+● Read 1 file (ctrl+o to expand)                   
+                                                                                                                                                             
+● Now let me check the metrics tracking to see if the barge-in scenario is handled correctly there.
+                                                                                                                                                             
+● Read 2 files (ctrl+o to expand)    
+                                                                                                                                                             
+● Now let me check whether audio chunks continue arriving from the server after the user starts speaking (i.e., whether the server-side response is also
+  cancelled).                                                                                                                                                
+                                                                                                                                                             
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)                                                                                                     
+                                                      
+● Now I have a comprehensive picture. Here's my critique:                                                                                                    
+                                                                                                                                                             
+  ---
+  Barge-In Implementation Review                                                                                                                             
+                  
+  What was done                                                                                                                                              
+                                                                                                                                                             
+  The change is in a single file (client/src/pages/interview.tsx, +17/-1 lines):
+
+  1. Added audioSourceRef to track the currently playing AudioBufferSourceNode
+  2. Created stopAiPlayback() — clears the audio queue, stops the current source node, resets state
+  3. Changed the user_speaking_started handler from setIsAiSpeaking(false) to stopAiPlayback()
+
+  What works correctly
+
+  - Queue drain: audioQueueRef.current = [] prevents buffered chunks from playing after interruption
+  - Immediate stop: audioSourceRef.current.stop() cuts off the currently-playing audio buffer mid-playback
+  - Callback cleanup: Setting onended = null before stop() prevents the chain reaction where playNextChunk would be called on end
+  - Error swallowing: The try/catch around stop() is appropriate — calling stop() on an already-stopped source throws
+  - State reset: Both isPlayingRef and setIsAiSpeaking are properly reset
+
+  Gaps and issues
+
+  1. No server-side response cancellation (the biggest gap)
+
+  The client stops playing audio, but the server keeps forwarding audio chunks. The OpenAI Realtime API has interrupt_response: true configured (line 85 of
+  realtime-providers.ts), so the API itself handles cancellation when it detects speech via VAD. However, the server continues to forward
+  response.audio.delta events to the client between the moment the user starts speaking and when OpenAI's VAD fires input_audio_buffer.speech_started. Those
+  chunks arrive on the client, get decoded and pushed into audioQueueRef via playAudio(), and are immediately discarded on the next stopAiPlayback() call —
+  but only if user_speaking_started arrives after the audio chunks. There's a race condition: new audio chunks arriving after stopAiPlayback() but before the
+   server's speech_started event could re-fill the queue and start playback again (since isPlayingRef is now false, playAudio will call playNextChunk for the
+   new chunk).
+
+  2. playAudio continues to queue chunks after barge-in
+
+  After stopAiPlayback() clears the queue and stops playback, the WebSocket onmessage handler continues to call playAudio() for every "audio" message that
+  arrives. Since isPlayingRef.current was just set to false, the very next audio delta that arrives will trigger playNextChunk again — restarting playback of
+   audio the user is trying to interrupt. The client has no "suppress incoming audio" flag.
+
+  3. Alvia speaking-time metrics will be wrong on interruption
+
+  On the server (voice-interview.ts:2464-2471), currentResponseStartAt is set when the first audio delta arrives. It's only accumulated in
+  response.audio.done (voice-interview.ts:2487-2492). When barge-in triggers input_audio_buffer.speech_started and OpenAI cancels the response, the
+  response.audio.done event may fire with a truncated response or may not fire at all (the cancelled response emits response.done with status: "cancelled"
+  but may skip the audio.done sub-event). This could leave currentResponseStartAt dangling, causing the next response's speaking time to be over-counted or a
+   metrics leak.
+
+  4. Silence tracking may record phantom silence
+
+  When barge-in happens, recordSilenceSegment() is called at speech_started (line 2748) using lastAlviaEndAt as the start point. But if Alvia was mid-speech
+  when interrupted, lastAlviaEndAt hasn't been updated (that happens in response.audio.done). The silence segment will use a stale lastAlviaEndAt from the
+  previous response, creating an inflated silence duration.
+
+  5. source.disconnect() not called
+
+  The stopAiPlayback function calls source.stop() but not source.disconnect(). While stop() ends playback, the node remains connected to
+  audioContext.destination. In a long interview with many interruptions, this could accumulate disconnected-but-not-garbage-collected source nodes. It's
+  minor — browsers handle this — but disconnect() is the clean pattern.
+
+  6. playNextChunk is missing from stopAiPlayback's dependency array (non-issue, but notable)
+
+  stopAiPlayback has an empty dependency array [], which is correct since it only accesses refs. But playAudio at line 1108 doesn't include stopAiPlayback in
+   its dependency array either — this is fine since stopAiPlayback is stable (empty deps), but it's a fragile assumption if the function is later modified.
+
+  7. No user-facing indication of interruption
+
+  The barge-in silently cuts audio. There's no transcript marker or visual feedback that the AI was interrupted. The AI transcript will contain a partial
+  sentence from the server's response.audio_transcript.done (which fires with whatever was generated before cancellation), and this partial text may appear
+  confusing in the transcript history.
+
+  8. Grok provider: same issue, different VAD
+
+  The Grok provider uses server_vad with interrupt_response: true. The same client-side fix applies, but Grok's VAD has a higher silence_duration_ms (800ms)
+  and different sensitivity. The barge-in behavior will feel noticeably different between providers — the Grok VAD may take longer to detect speech and stop
+  the response, meaning more audio arrives on the client post-interruption.
+
+  Summary
+
+  The fix solves the most visible symptom (AI audio keeps playing while the user talks) but is client-side only and has a race condition where audio chunks
+  arriving between stopAiPlayback() and the server ceasing to send them can restart playback. The core fix needed is either (a) a client-side "suppressed"
+  flag that prevents playAudio from starting new playback until a response boundary, or (b) the server proactively stopping audio forwarding upon
+  speech_started. The metrics tracking on the server is also not interrupt-aware.
