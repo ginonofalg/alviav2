@@ -849,6 +849,13 @@ const WS_PING_INTERVAL_MS = 30_000; // Send ws.ping() every 30s to keep connecti
 
 const interviewStates = new Map<string, InterviewState>();
 
+function sanitizeAlviaTranscript(text: string): string {
+  return text
+    .replace(/\s*[\u2014\u2013]\s*/g, "; ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function addTranscriptEntry(
   state: InterviewState,
   entry: TranscriptEntry,
@@ -2507,21 +2514,26 @@ async function handleProviderEvent(
       clientWs?.send(
         JSON.stringify({
           type: "ai_transcript",
-          delta: event.delta,
+          delta: event.delta
+            ? event.delta.replace(/[\u2014\u2013]/g, ";")
+            : event.delta,
         }),
       );
       break;
 
     case "response.audio_transcript.done":
-    case "response.output_audio_transcript.done":
+    case "response.output_audio_transcript.done": {
+      const cleanedTranscript = event.transcript
+        ? sanitizeAlviaTranscript(event.transcript)
+        : event.transcript;
       // Store the last AI prompt for resume functionality
-      if (event.transcript) {
-        state.lastAIPrompt = event.transcript;
+      if (cleanedTranscript) {
+        state.lastAIPrompt = cleanedTranscript;
         state.alviaHasSpokenOnCurrentQuestion = true;
         // Add to transcript log (both in-memory and persistence buffer)
         addTranscriptEntry(state, {
           speaker: "alvia",
-          text: event.transcript,
+          text: cleanedTranscript,
           timestamp: Date.now(),
           questionIndex: state.currentQuestionIndex,
         });
@@ -2531,10 +2543,11 @@ async function handleProviderEvent(
       clientWs?.send(
         JSON.stringify({
           type: "ai_transcript_done",
-          transcript: event.transcript,
+          transcript: cleanedTranscript,
         }),
       );
       break;
+    }
 
     case "conversation.item.input_audio_transcription.completed":
       // User's speech transcript (from transcription model)
