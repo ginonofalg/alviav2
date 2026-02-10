@@ -1,0 +1,12 @@
+export { registerAnalyticsRoutes } from "./analytics.routes";
+export { registerInfographicRoutes } from "./infographic.routes";
+export { registerProjectRoutes } from "./projects.routes";
+export { registerTemplateRoutes } from "./templates.routes";
+export { registerCollectionRoutes } from "./collections.routes";
+export { registerRespondentRoutes } from "./respondents.routes";
+export { registerSessionRoutes } from "./sessions.routes";
+export { registerInterviewAccessRoutes } from "./interview-access.routes";
+export { registerInterviewFlowRoutes } from "./interview-flow.routes";
+export { registerReviewRoutes } from "./review.routes";
+export { registerBarbaraRoutes } from "./barbara.routes";
+export { registerUsageRoutes } from "./usage.routes";
