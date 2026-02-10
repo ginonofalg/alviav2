@@ -1664,14 +1664,57 @@ async function handleProviderEvent(
       }
 
       if (state.isGeneratingAlviaSummary) {
-        const textItem = event.response?.output?.[0]?.content?.find(
-          (c: any) => c.type === "text",
-        );
-        if (textItem?.text && state.alviaSummaryResolve) {
-          state.alviaSummaryResolve(textItem.text);
+        const responseStatus = event.response?.status;
+        const responseModalities = event.response?.output_modalities;
+        const isTextResponse = responseModalities?.includes("text");
+
+        if (!isTextResponse) {
+          console.log(
+            `[AlviaSummary] Ignoring stale non-text response.done for ${sessionId} (modalities: ${JSON.stringify(responseModalities)}, status: ${responseStatus})`,
+          );
+          break;
+        }
+
+        if (responseStatus === "cancelled" || responseStatus === "failed") {
+          console.error(
+            `[AlviaSummary] Summary response ${responseStatus} for ${sessionId} — rejecting`,
+          );
+          if (state.alviaSummaryReject) {
+            state.alviaSummaryReject(
+              new Error(`Alvia summary response ${responseStatus}`),
+            );
+          }
+          state.isGeneratingAlviaSummary = false;
+          state.alviaSummaryResolve = null;
+          state.alviaSummaryReject = null;
+          break;
+        }
+
+        if (responseStatus !== "completed") {
+          console.warn(
+            `[AlviaSummary] Unexpected response status for ${sessionId}: ${responseStatus} — waiting for completed`,
+          );
+          break;
+        }
+
+        let extractedText: string | undefined;
+        for (const outputItem of event.response?.output ?? []) {
+          if (outputItem?.type === "message" && outputItem?.content) {
+            const textContent = outputItem.content.find(
+              (c: any) => c.type === "text",
+            );
+            if (textContent?.text) {
+              extractedText = textContent.text;
+              break;
+            }
+          }
+        }
+
+        if (extractedText && state.alviaSummaryResolve) {
+          state.alviaSummaryResolve(extractedText);
         } else if (state.alviaSummaryReject) {
           state.alviaSummaryReject(
-            new Error("No text content in Alvia summary response"),
+            new Error(`No text content in completed Alvia summary response (${(event.response?.output ?? []).length} output items)`),
           );
         }
         state.isGeneratingAlviaSummary = false;
@@ -1688,14 +1731,21 @@ async function handleProviderEvent(
       const errorCode = event.error?.code;
       const errorMessage = event.error?.message || "Voice service error";
 
-      // Handle specific recoverable errors gracefully
       if (errorCode === "conversation_already_has_active_response") {
-        // This error means we tried to create a response while one was in progress
-        // Log but don't change responseInProgress - the active response will finish and trigger response.done
         console.warn(
           `[VoiceInterview] Response already in progress for ${sessionId}, waiting for response.done`,
         );
-        // Don't send error to client - this is recoverable
+        if (state.isGeneratingAlviaSummary && state.alviaSummaryReject) {
+          console.error(
+            `[AlviaSummary] Summary response.create rejected — active response collision for ${sessionId}`,
+          );
+          state.alviaSummaryReject(
+            new Error("Cannot create summary response: active response in progress"),
+          );
+          state.isGeneratingAlviaSummary = false;
+          state.alviaSummaryResolve = null;
+          state.alviaSummaryReject = null;
+        }
         break;
       }
 
@@ -3591,6 +3641,37 @@ function finalizeAndPersistMetrics(
     });
 }
 
+async function waitForResponseIdle(
+  state: InterviewState,
+  sessionId: string,
+  maxWaitMs: number = 5000,
+): Promise<boolean> {
+  if (!state.responseInProgress) return true;
+
+  console.log(
+    `[AlviaSummary] Waiting for active response to complete before summary for ${sessionId}`,
+  );
+
+  const pollInterval = 100;
+  const deadline = Date.now() + maxWaitMs;
+
+  while (state.responseInProgress && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+  }
+
+  if (state.responseInProgress) {
+    console.warn(
+      `[AlviaSummary] Timed out waiting for response idle after ${maxWaitMs}ms for ${sessionId}`,
+    );
+    return false;
+  }
+
+  console.log(
+    `[AlviaSummary] Response idle achieved for ${sessionId}, proceeding with summary`,
+  );
+  return true;
+}
+
 async function generateAlviaSummary(sessionId: string): Promise<string | null> {
   const state = interviewStates.get(sessionId);
   if (
@@ -3598,15 +3679,31 @@ async function generateAlviaSummary(sessionId: string): Promise<string | null> {
     !state.providerWs ||
     state.providerWs.readyState !== WebSocket.OPEN
   ) {
-    console.log(
-      `[AlviaSummary] Cannot generate - no active provider WS for ${sessionId}`,
+    console.warn(
+      `[AlviaSummary] Cannot generate — provider WS not open for ${sessionId} (state: ${state ? "exists" : "missing"}, ws: ${state?.providerWs ? state.providerWs.readyState : "null"})`,
     );
     return null;
   }
 
   const ALVIA_SUMMARY_TIMEOUT_MS = 30000;
+  const RESPONSE_IDLE_WAIT_MS = 5000;
 
   try {
+    const isIdle = await waitForResponseIdle(state, sessionId, RESPONSE_IDLE_WAIT_MS);
+    if (!isIdle) {
+      console.error(
+        `[AlviaSummary] Aborting summary — response still in progress after ${RESPONSE_IDLE_WAIT_MS}ms for ${sessionId}`,
+      );
+      return null;
+    }
+
+    if (!state.providerWs || state.providerWs.readyState !== WebSocket.OPEN) {
+      console.warn(
+        `[AlviaSummary] Provider WS closed while waiting for idle for ${sessionId}`,
+      );
+      return null;
+    }
+
     state.isGeneratingAlviaSummary = true;
 
     const templateObjective =
@@ -3640,7 +3737,7 @@ Respond with ONLY the JSON object. No other text.`;
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(
-        () => reject(new Error("Alvia summary timed out")),
+        () => reject(new Error("Alvia summary timed out after 30s")),
         ALVIA_SUMMARY_TIMEOUT_MS,
       );
     });
@@ -3674,13 +3771,18 @@ Respond with ONLY the JSON object. No other text.`;
       JSON.stringify(state.providerInstance.buildTextOnlyResponseCreate()),
     );
 
+    console.log(
+      `[AlviaSummary] Summary request sent for ${sessionId}, waiting for response...`,
+    );
+
     const result = await Promise.race([summaryPromise, timeoutPromise]);
     console.log(
       `[AlviaSummary] Generated summary for ${sessionId} (${result.length} chars)`,
     );
     return result;
   } catch (error) {
-    console.error(`[AlviaSummary] Failed for ${sessionId}:`, error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[AlviaSummary] Failed for ${sessionId}: ${errorMsg}`);
     state.isGeneratingAlviaSummary = false;
     state.alviaSummaryResolve = null;
     state.alviaSummaryReject = null;
