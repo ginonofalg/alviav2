@@ -1,0 +1,29 @@
+Findings
+
+  1. Critical: Project IDOR on read/update
+     server/routes/projects.routes.ts:42 and server/routes/projects.routes.ts:109 allow any authenticated user to fetch or modify a project by ID without
+     verifyUserAccessToProject. In a multi-tenant setup this is cross-workspace data exposure/modification.
+  2. High: Usage/billing endpoints lack tenant authorization
+     server/routes/usage.routes.ts:6, server/routes/usage.routes.ts:19, server/routes/usage.routes.ts:32, server/routes/usage.routes.ts:45, and server/routes/
+     usage.routes.ts:58 only check existence, not ownership. Any authenticated user with an ID can read usage rollups/events.
+  3. High: Collection sessions endpoint leaks respondent/session metadata
+     server/routes/interview-access.routes.ts:152 returns sessions plus respondent names without verifyUserAccessToCollection. This exposes interview metadata
+     across tenants if collection IDs are known.
+  4. Medium: Reconnection state regression after hook extraction
+     client/src/hooks/use-reconnection.ts:139 (onReconnectSuccess) no longer clears reconnectTimeoutRef. The page logic treats non-null reconnectTimeoutRef as
+     “pending reconnect” at client/src/pages/interview.tsx:578 and client/src/pages/interview.tsx:1084, which can suppress fallback/online reconnect paths in
+     edge cases.
+  5. Low: Refactor lacks behavior-level tests for the changed surfaces
+     Current tests (server/__tests__/smoke.test.ts:3, server/__tests__/resume-token.test.ts:9) do not cover route authorization or reconnect state transitions
+     introduced by module/hook extraction.
+
+  Assumptions / Notes
+
+  1. I’m assuming no hidden DB-level RLS is enforcing tenant boundaries for these route paths.
+  2. I compared route signatures pre/post split: endpoint count and paths are preserved, so most of this refactor is mechanical.
+  3. The auth gaps above appear to be carried forward from pre-refactor code, but they remain critical risks in the refactored structure.
+
+  Validation run
+
+  - npm run check passed.
+  - npx vitest run passed (12/12).
