@@ -61,7 +61,7 @@ export function OnboardingFieldGuide({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="flex items-center justify-between gap-4 p-4">
           <CollapsibleTrigger asChild>
-            <button className="flex items-center gap-2 text-left flex-1">
+            <button type="button" className="flex items-center gap-2 text-left flex-1" data-testid={`button-toggle-guide-${guideKey}`}>
               <Lightbulb className="w-4 h-4 text-primary shrink-0" />
               <span className="text-sm font-medium">{title}</span>
               <ChevronDown

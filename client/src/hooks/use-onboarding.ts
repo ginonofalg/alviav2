@@ -19,11 +19,12 @@ export function useOnboarding() {
 
   const state: OnboardingState = rawState ?? { ...DEFAULT_ONBOARDING_STATE };
 
-  const { data: stats } = useQuery<DashboardStats>({
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
     enabled: isAuthenticated && !state.completedAt,
   });
 
+  const statsResolved = !statsLoading || !!stats;
   const existingUserHasData = isExistingUserWithoutOnboarding && (stats?.projectCount ?? 0) > 1;
 
   const hasProject = (stats?.projectCount ?? 0) > 0;
@@ -72,7 +73,8 @@ export function useOnboarding() {
     updateMutation.mutate(partial);
   };
 
-  const isOnboarding = !state.completedAt && !existingUserHasData;
+  const waitingForStats = isExistingUserWithoutOnboarding && !statsResolved;
+  const isOnboarding = !state.completedAt && !existingUserHasData && !waitingForStats;
   const showWelcome = isOnboarding && !state.welcomeCompleted;
   const showDashboardCard = isOnboarding && !state.dashboardGuideHidden && !allComplete;
   const showProjectGuide = isOnboarding && !state.projectGuideShown;
