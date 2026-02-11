@@ -70,22 +70,25 @@ export function WelcomeDialog() {
   const { showWelcome, updateOnboarding } = useOnboarding();
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
+  const [dismissed, setDismissed] = useState(false);
   const [, navigate] = useLocation();
 
   const { data: projects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: showWelcome,
+    enabled: showWelcome && !dismissed,
   });
 
   const demoProject = projects?.find((p) =>
-    p.name.toLowerCase().includes("demo")
+    p.name.toLowerCase().includes("demo"),
   );
 
   const handleComplete = () => {
+    setDismissed(true);
     updateOnboarding({ welcomeCompleted: true, testMode: false });
   };
 
   const handleExploreDemo = () => {
+    setDismissed(true);
     updateOnboarding({ welcomeCompleted: true, testMode: false });
     if (demoProject) {
       navigate(`/projects/${demoProject.id}`);
@@ -97,19 +100,20 @@ export function WelcomeDialog() {
     setStep(next);
   };
 
-  if (!showWelcome) return null;
+  if (!showWelcome || dismissed) return null;
 
   return (
-    <Dialog open={showWelcome} onOpenChange={(open) => !open && handleComplete()}>
+    <Dialog
+      open={showWelcome && !dismissed}
+      onOpenChange={(open) => !open && handleComplete()}
+    >
       <DialogContent
         className="sm:max-w-lg p-0 gap-0 overflow-hidden"
         data-testid="welcome-dialog"
       >
         <div className="p-6 pb-0">
           <DialogHeader>
-            <DialogTitle className="text-xl">
-              {SLIDES[step].title}
-            </DialogTitle>
+            <DialogTitle className="text-xl">{SLIDES[step].title}</DialogTitle>
             <DialogDescription className="sr-only">
               Get started with Alvia - step {step + 1} of {SLIDES.length}
             </DialogDescription>
@@ -221,7 +225,7 @@ function SlideWelcome() {
       </div>
       <p className="text-muted-foreground leading-relaxed">
         Alvia is a voice-based interview platform that lets you conduct research
-        at scale. Real conversations, real insights — not just form responses.
+        at scale. Real conversations, real insights, not just form responses.
       </p>
     </div>
   );
@@ -238,9 +242,9 @@ function SlideTeam() {
           <span className="font-medium">Alvia</span>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Your AI interviewer. She conducts voice conversations, adapts
-          follow-ups in real-time, and captures nuance that surveys miss. Shaped
-          by your Research Objective and Interview Objective.
+          Your AI interviewer. She conducts voice conversations, follows up on
+          interesting threads in real-time, and knows when to go deeper to
+          capture nuance that surveys miss.
         </p>
       </div>
       <div className="space-y-3 p-4 rounded-md bg-muted/50">
@@ -252,8 +256,8 @@ function SlideTeam() {
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
           Your research orchestrator. She monitors every interview, guides Alvia
-          on when to probe or move on, and generates analytics. Uses your Target
-          Audience and Strategic Context.
+          on when to probe or move on, and generates analytics, all shaped by
+          your Research Objective and Strategic Context.
         </p>
       </div>
     </div>
@@ -270,7 +274,7 @@ function SlideHowItWorks() {
     {
       icon: FileText,
       label: "Template",
-      desc: "Create interview questions with guidance for each",
+      desc: "Create interview questions with guidance on what you really want to understand",
     },
     {
       icon: Play,
