@@ -461,6 +461,27 @@ Optional:
 - `ISSUER_URL` - OIDC issuer URL (default: `https://replit.com/oidc`)
 - `BASE_URL` - Base URL for generated links (defaults to request protocol/host)
 
+## Code Size Guidelines
+
+**File size limits** — enforce these when adding new functionality:
+- **Hard limit: 500 lines** for any new file. If a new file would exceed this, split it before committing.
+- **Soft limit: 1,000 lines** for existing files. If a change pushes an existing file past 1,000 lines, extract a module in the same PR.
+- **Watch list**: `voice-interview.ts` (4,200), `barbara-orchestrator.ts` (3,490), `storage.ts` (1,630) — these files must **only shrink**, never grow. Any new logic for these domains goes into their respective module directories (`server/voice-interview/`, `server/routes/`, `server/storage/`).
+
+**Where to put new code:**
+- New API endpoints → create or extend a file in `server/routes/*.routes.ts`
+- New voice interview features → add a module under `server/voice-interview/` and import it from `voice-interview.ts`
+- New Barbara use cases → consider a file under a `server/barbara/` directory if `barbara-orchestrator.ts` would grow
+- New storage queries → add to `storage.ts` but consider grouping into `server/storage/*.ts` modules if adding more than 3 related methods
+- New shared types → add to the appropriate file under `shared/types/`
+- New React hooks → one hook per file in `client/src/hooks/`
+
+**Refactoring triggers** — if you notice any of these, extract before adding:
+- A function longer than 80 lines
+- A switch/case with more than 10 branches
+- More than 3 closely-related functions that could be a module
+- Repeated patterns across files (create a shared utility)
+
 ## Design System
 
 Reference `design_guidelines.md` for UI patterns. Key points:
