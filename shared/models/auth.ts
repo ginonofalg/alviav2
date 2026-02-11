@@ -20,6 +20,7 @@ export interface OnboardingState {
   templateGuideShown: boolean;
   collectionGuideShown: boolean;
   completedAt: string | null;
+  testMode?: boolean;
 }
 
 export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
@@ -29,6 +30,7 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
   templateGuideShown: false,
   collectionGuideShown: false,
   completedAt: null,
+  testMode: false,
 };
 
 // User storage table.

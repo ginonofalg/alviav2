@@ -19,9 +19,11 @@ export function useOnboarding() {
 
   const state: OnboardingState = rawState ?? { ...DEFAULT_ONBOARDING_STATE };
 
+  const inTestMode = !!state.testMode;
+
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
-    enabled: isAuthenticated && !state.completedAt,
+    enabled: isAuthenticated && (inTestMode || !state.completedAt),
   });
 
   const statsResolved = !statsLoading || !!stats;
@@ -74,12 +76,12 @@ export function useOnboarding() {
   };
 
   const waitingForStats = isExistingUserWithoutOnboarding && !statsResolved;
-  const isOnboarding = !state.completedAt && !existingUserHasData && !waitingForStats;
-  const showWelcome = isOnboarding && !state.welcomeCompleted;
-  const showDashboardCard = isOnboarding && !state.dashboardGuideHidden && !allComplete;
-  const showProjectGuide = isOnboarding && !state.projectGuideShown;
-  const showTemplateGuide = isOnboarding && !state.templateGuideShown;
-  const showCollectionGuide = isOnboarding && !state.collectionGuideShown;
+  const isOnboarding = inTestMode || (!state.completedAt && !existingUserHasData && !waitingForStats);
+  const showWelcome = isOnboarding && (inTestMode || !state.welcomeCompleted);
+  const showDashboardCard = isOnboarding && (inTestMode || (!state.dashboardGuideHidden && !allComplete));
+  const showProjectGuide = isOnboarding && (inTestMode || !state.projectGuideShown);
+  const showTemplateGuide = isOnboarding && (inTestMode || !state.templateGuideShown);
+  const showCollectionGuide = isOnboarding && (inTestMode || !state.collectionGuideShown);
 
   return {
     state,
