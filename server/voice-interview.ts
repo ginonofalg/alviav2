@@ -1410,6 +1410,7 @@ async function handleProviderEvent(
             outputAudioTokens: 0,
           },
           "success",
+          { rawUsage: event.usage },
         ).catch((err) =>
           console.error(
             "[LLM Usage] Failed to record alvia_transcription event:",
@@ -1667,9 +1668,22 @@ async function handleProviderEvent(
           tokenUsage.inputTextTokens;
         state.metricsTracker.tokens.outputTextTokens +=
           tokenUsage.outputTextTokens;
+        state.metricsTracker.tokens.rawResponses.push(event.response?.usage);
         console.log(
           `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
         );
+
+        recordLlmUsageEvent(
+          buildUsageAttribution(state),
+          state.providerInstance.name === "grok" ? ("xai" as const) : ("openai" as const),
+          state.providerInstance.getModelName(),
+          "alvia_realtime",
+          { promptTokens: tokenUsage.inputTextTokens, completionTokens: tokenUsage.outputTextTokens,
+            totalTokens: tokenUsage.inputTokens + tokenUsage.outputTokens,
+            inputAudioTokens: tokenUsage.inputAudioTokens, outputAudioTokens: tokenUsage.outputAudioTokens },
+          "success",
+          { rawUsage: event.response?.usage },
+        ).catch((err) => console.error("[LLM Usage] Failed to record per-response alvia_realtime:", err));
       }
 
       if (state.isGeneratingAlviaSummary) {
@@ -3606,26 +3620,8 @@ function finalizeAndPersistMetrics(
     barbaraTokens: tracker.barbaraTokens,
   };
 
-  const realtimeAttribution = buildUsageAttribution(state);
-  const providerForUsage = state.providerInstance;
-  const usageProvider =
-    providerForUsage.name === "grok" ? ("xai" as const) : ("openai" as const);
-  recordLlmUsageEvent(
-    realtimeAttribution,
-    usageProvider,
-    providerForUsage.getModelName(),
-    "alvia_realtime",
-    {
-      promptTokens: tracker.tokens.inputTextTokens,
-      completionTokens: tracker.tokens.outputTextTokens,
-      totalTokens: tracker.tokens.inputTokens + tracker.tokens.outputTokens,
-      inputAudioTokens: tracker.tokens.inputAudioTokens,
-      outputAudioTokens: tracker.tokens.outputAudioTokens,
-    },
-    "success",
-  ).catch((err) =>
-    console.error("[LLM Usage] Failed to record alvia_realtime event:", err),
-  );
+  // Per-response alvia_realtime usage events are now written in the response.done handler.
+  // The in-memory token accumulation above is retained for performanceMetrics persistence.
 
   // Log metrics summary with pause-aware breakdown
   const activeSilencePercent =

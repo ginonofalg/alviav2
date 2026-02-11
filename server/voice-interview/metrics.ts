@@ -11,6 +11,7 @@ export function createEmptyMetricsTracker(): MetricsTracker {
       outputAudioTokens: 0,
       inputTextTokens: 0,
       outputTextTokens: 0,
+      rawResponses: [],
     },
     latency: {
       transcriptionLatencies: [],

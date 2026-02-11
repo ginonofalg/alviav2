@@ -257,6 +257,7 @@ export interface MetricsTracker {
     outputAudioTokens: number;
     inputTextTokens: number;
     outputTextTokens: number;
+    rawResponses: unknown[];
   };
   // Latency tracking
   latency: {
