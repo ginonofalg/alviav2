@@ -15,6 +15,7 @@ Alvia is a voice-based AI interview platform built with TypeScript. It enables r
 | Build for production | `npm run build` |
 | Start production | `npm run start` |
 | Push DB schema | `npm run db:push` |
+| Run tests | `npx vitest` |
 
 The dev server runs on port 5000 with Vite HMR for the frontend.
 
@@ -31,6 +32,7 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 - **Transcription Quality**: Real-time noisy environment detection and VAD tuning
 - **Infographics**: Google Gemini API for AI-generated visual summaries
 - **PDF Export**: jsPDF for analytics report generation
+- **Testing**: Vitest for server-side unit tests
 - **Build**: Vite 7.3 (client) + esbuild (server), TypeScript 5.6
 
 ### Directory Structure
@@ -63,7 +65,10 @@ client/src/
     review-token.tsx        # Shareable review via 64-char token (public)
     not-found.tsx           # 404 page
   components/
-    ui/                     # Radix UI wrappers (shadcn conventions, 47+ primitives)
+    ui/                     # Radix UI wrappers (shadcn conventions, 48 primitives)
+      hierarchy-nav.tsx           # Breadcrumb navigation for data hierarchy
+      sidebar.tsx                 # Radix UI sidebar primitive
+      ...                         # 46 other shadcn/Radix primitives
     analytics/              # Analytics visualization
       index.tsx                         # Analytics component exports
       ThemeCard.tsx
@@ -81,13 +86,42 @@ client/src/
     app-sidebar.tsx               # Main navigation sidebar
     theme-provider.tsx            # Dark/light theme support
     theme-toggle.tsx              # Theme switcher button
-  hooks/                    # useAuth, useToast, useMobile
+  hooks/
+    use-auth.ts                   # Authentication hook
+    use-toast.ts                  # Toast notifications
+    use-mobile.tsx                # Mobile detection
+    use-audio-playback.ts         # Audio playback queue, AI speaking state, barge-in suppression
+    use-reconnection.ts           # WebSocket reconnection with exponential backoff
+    use-silence-detection.ts      # Client-side silence detection with ambient noise calibration
   lib/                      # queryClient, auth-utils, utilities
 server/
   index.ts                  # Server entry point (~100 lines)
-  routes.ts                 # REST API endpoints (~3400 lines)
-  storage.ts                # DatabaseStorage class (~1830 lines)
-  voice-interview.ts        # WebSocket handler for voice interviews (~5140 lines)
+  routes.ts                 # Route registration entry point (~50 lines)
+  routes/                   # Modular route handlers (~3330 lines total)
+    index.ts                    # Exports all route registration functions
+    analytics.routes.ts         # Dashboard stats, analytics, aggregated analytics (~940 lines)
+    projects.routes.ts          # Project CRUD (~140 lines)
+    templates.routes.ts         # Template CRUD, generation (~220 lines)
+    collections.routes.ts       # Collection CRUD, analytics refresh (~165 lines)
+    sessions.routes.ts          # Session CRUD, export, summary generation (~310 lines)
+    respondents.routes.ts       # Respondent management, bulk invite (~150 lines)
+    interview-access.routes.ts  # Public interview data access (~190 lines)
+    interview-flow.routes.ts    # Start interview, resume by token (~330 lines)
+    review.routes.ts            # Review submission, link generation (~260 lines)
+    infographic.routes.ts       # Collection & project infographic generation (~340 lines)
+    barbara.routes.ts           # Barbara config endpoints (~190 lines)
+    usage.routes.ts             # LLM usage tracking queries (~110 lines)
+  storage.ts                # DatabaseStorage class (~1630 lines)
+  storage/
+    types.ts                    # IStorage interface definitions (~200 lines)
+  voice-interview.ts        # WebSocket handler for voice interviews (~4200 lines)
+  voice-interview/           # Extracted voice interview modules (~1270 lines total)
+    index.ts                    # Re-exports
+    types.ts                    # InterviewState, MetricsTracker, constants (~315 lines)
+    context-builders.ts         # Cross-interview context, analytics hypotheses (~330 lines)
+    instructions.ts             # Prompt building logic (~260 lines)
+    metrics.ts                  # Silence tracking, metrics calculation (~185 lines)
+    transcript.ts               # Transcript management utilities (~180 lines)
   barbara-orchestrator.ts   # AI analysis and guidance system (~3490 lines)
   realtime-providers.ts     # Voice provider abstraction - OpenAI + Grok (~370 lines)
   llm-usage.ts              # LLM usage tracking utilities (~190 lines)
@@ -100,14 +134,30 @@ server/
   db.ts                     # Drizzle DB connection
   vite.ts                   # Vite integration utilities
   static.ts                 # Static file serving
+  __tests__/                # Server-side tests (Vitest)
+    resume-token.test.ts        # Resume token utility tests
+    smoke.test.ts               # Module import smoke tests
   replit_integrations/auth/ # OIDC authentication (~300 lines)
     replitAuth.ts           # Passport OIDC strategy setup
     routes.ts               # Auth routes (/api/auth/user, invite-status, waitlist)
     storage.ts              # Auth data persistence
     index.ts                # Module exports
 shared/
-  schema.ts                 # Drizzle schema - source of truth (~1300 lines)
+  schema.ts                 # Drizzle schema - source of truth (~510 lines)
   models/auth.ts            # Auth tables (users, sessions)
+  types/                    # Extracted TypeScript types (~700 lines total)
+    index.ts                    # Re-exports all types
+    interview-state.ts          # Persisted interview state types
+    transcription-quality.ts    # Quality metrics and flags
+    performance-metrics.ts      # Token usage, latency, speaking time, silence tracking
+    question-types.ts           # Question-related types
+    session-summary.ts          # Alvia and Barbara summary types
+    collection-analytics.ts     # Collection-level analytics types
+    template-analytics.ts       # Template-level analytics types
+    project-analytics.ts        # Project-level analytics types
+    aggregated-analytics.ts     # Command center analytics types
+    review.ts                   # Review rating types
+    llm-usage.ts                # LLM usage tracking types (16 use cases)
 docs/
   pause-duration-tracking-spec.md     # Silence vs pause tracking spec
   project-template-generation-prompt.md
@@ -120,6 +170,7 @@ scripts/
   seed-test-data/           # Database seeding utility for development
 script/
   build.ts                  # Production build script (esbuild + Vite)
+vitest.config.ts            # Vitest test configuration
 ```
 
 ### Database Schema
@@ -170,12 +221,15 @@ script/
 1. Respondent joins via `/join/:collectionId` (consent screen) or resumes via `/resume/:token`
 2. Interview at `/interview/:sessionId` opens WebSocket to `/ws/interview`
 3. Server bridges audio between client and voice provider (OpenAI or Grok via `realtime-providers.ts`)
-4. After each respondent utterance, Barbara analyzes the transcript and injects guidance to Alvia (probe deeper, move on, acknowledge prior context)
-5. Transcription quality monitored in real-time; environment checks triggered on quality degradation
-6. Responses saved as Segments with transcripts, summaries, and extracted values
-7. After all template questions: Barbara generates additional questions (0-3) if configured; AQ phase begins
-8. On completion: session summaries generated by both Alvia and Barbara (if enabled)
-9. State persisted every 2 seconds for crash recovery via resume tokens (supports AQ phase resume)
+4. Client-side hooks manage audio playback (`use-audio-playback`), WebSocket reconnection (`use-reconnection`), and silence detection (`use-silence-detection`)
+5. After each respondent utterance, Barbara analyzes the transcript and injects guidance to Alvia (probe deeper, move on, acknowledge prior context)
+6. Transcription quality monitored in real-time; environment checks triggered on quality degradation
+7. Respondent can interrupt (barge-in) AI audio playback; interrupted segments are tracked
+8. Responses saved as Segments with transcripts, summaries, and extracted values
+9. After all template questions: Barbara generates additional questions (0-3) if configured; AQ phase begins
+10. On completion: session summaries generated by both Alvia and Barbara (if enabled)
+11. State persisted every 2 seconds for crash recovery via resume tokens (supports AQ phase resume)
+12. WebSocket reconnection with exponential backoff; connection watchdog with heartbeat/ping intervals
 
 **Voice provider abstraction** (`server/realtime-providers.ts`):
 - `RealtimeProvider` interface abstracts OpenAI and Grok implementations
@@ -280,7 +334,7 @@ script/
 - Authenticated but uninvited users see waitlist page
 - Controlled via `INVITE_ONLY_MODE` env var (default: true)
 
-**Database operations**: All queries go through `DatabaseStorage` class in `server/storage.ts`. Schema definitions in `shared/schema.ts` generate types via `drizzle-zod`.
+**Database operations**: All queries go through `DatabaseStorage` class in `server/storage.ts`, implementing the `IStorage` interface defined in `server/storage/types.ts`. Schema definitions in `shared/schema.ts` generate types via `drizzle-zod`. Complex types are organized in `shared/types/`.
 
 **API validation**: Zod schemas shared between client form validation and server input validation.
 
@@ -369,8 +423,10 @@ script/
 ### Key Files to Modify
 
 - `shared/schema.ts` - Database tables, types, and relationships
-- `server/routes.ts` - REST API endpoints
+- `shared/types/` - TypeScript type definitions (analytics, metrics, summaries, etc.)
+- `server/routes/` - Modular REST API endpoints (add new routes as `*.routes.ts`)
 - `server/voice-interview.ts` - WebSocket + voice provider integration (Alvia), AQ phase, session summaries
+- `server/voice-interview/` - Extracted voice interview modules (types, context, instructions, metrics, transcript)
 - `server/barbara-orchestrator.ts` - Interview orchestrator that guides Alvia, generates AQs and summaries
 - `server/realtime-providers.ts` - Voice provider abstraction (OpenAI/Grok)
 - `server/llm-usage.ts` - LLM usage tracking and `withTrackedLlmCall()` wrapper
@@ -378,9 +434,11 @@ script/
 - `server/transcription-quality.ts` - Transcription quality monitoring and VAD tuning
 - `server/infographic-service.ts` - Gemini API infographic generation
 - `server/storage.ts` - Database operations and access control
+- `server/storage/types.ts` - IStorage interface definition
 - `client/src/App.tsx` - Frontend routing
 - `client/src/pages/interview.tsx` - Voice interview UI
 - `client/src/pages/analytics.tsx` - Command center analytics
+- `client/src/hooks/` - Custom hooks (audio playback, reconnection, silence detection)
 - `client/src/components/analytics/` - Analytics visualization components
 - `client/src/components/InfographicGenerator.tsx` - Infographic UI
 - `client/src/components/InvitationManager.tsx` - Respondent invitations
