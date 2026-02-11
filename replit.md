@@ -51,5 +51,9 @@ Added a hybrid onboarding system for new users:
 - **Welcome Dialog**: 4-slide step-based dialog shown once on first login (`client/src/components/onboarding/WelcomeDialog.tsx`). Covers platform intro, AI team (Alvia/Barbara), workflow, and first steps. Includes "Explore the Demo" CTA that links to the auto-seeded demo project.
 - **Dashboard Onboarding Card**: Progress checklist above dashboard stats grid (`client/src/components/onboarding/OnboardingDashboardCard.tsx`). 4 milestones: explore demo, create project, add template, launch collection. Milestones derived from actual data counts. Dismissable.
 - **Contextual Field Guides**: Collapsible banners on creation pages (`client/src/components/onboarding/OnboardingFieldGuide.tsx`) explaining which fields matter most for AI quality. Shown on project-new, template-builder (create mode only), and collection-new pages.
-- **State**: `onboardingState` JSONB column on users table stores dismissal flags only. Milestones derived from dashboard stats. Hook: `client/src/hooks/use-onboarding.ts`. API: `PATCH /api/auth/onboarding`.
+- **State**: `onboardingState` JSONB column on users table stores dismissal flags and explicit milestone flags (`firstProjectCreated`, `firstTemplateCreated`, `firstCollectionCreated`). Milestones use a hybrid approach: explicit flags OR count-based thresholds (>1 for projects/templates to account for demo seed data). `completedAt` is auto-set when all 4 milestones are satisfied. Hook: `client/src/hooks/use-onboarding.ts`. API: `PATCH /api/auth/onboarding`.
+- **Milestone tracking**: Creation pages (project-new, template-builder, collection-new) call `updateOnboarding()` in their `onSuccess` callbacks to set explicit milestone flags.
+- **Animations**: Framer Motion slide transitions in WelcomeDialog, collapse/expand animation on OnboardingFieldGuide.
+- **Reset onboarding**: Available in Settings page to re-trigger the full onboarding flow.
 - **Existing user handling**: Users with no `onboardingState` but >1 project are treated as existing users and skip onboarding.
+- **Icons**: Alvia = Mic, Barbara = Eye (monitoring/orchestration).
