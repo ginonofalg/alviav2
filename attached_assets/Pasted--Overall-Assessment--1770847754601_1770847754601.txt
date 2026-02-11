@@ -1,0 +1,41 @@
+  Overall Assessment                                                                                                                                        
+                                                                                                                                                            
+  The implementation is well-structured — clean code, good test IDs, uses existing UI primitives correctly, respects file size limits, and follows the      
+  hybrid architecture (welcome dialog + dashboard card + field guides). But there are meaningful bugs and omissions.                                        
+                                                                                                                                                            
+  Critical Bugs
+
+  1. Milestone logic is broken due to demo seed data. The demo project auto-creates 1 project + 1 template on first login. The milestones check projectCount
+   > 0 and templateCount > 0, so steps 1 ("Explore demo") and 3 ("Add template") are immediately marked as done before the user does anything. Only
+  projectCreated correctly uses > 1. This means a new user sees 3 of 4 steps already complete, defeating the purpose of the progressive checklist.
+
+  2. testMode field exists in the TypeScript interface but isn't in the Zod API validation schema, so attempts to set it via the API silently fail. The
+  {testMode: false} in handleComplete() is dead code.
+
+  3. Barbara uses the Search icon in the welcome dialog instead of BarChart3 (which is imported but unused). This conflicts with the "Explore the demo" step
+   which also uses Search.
+
+  Key Omissions from the Plan
+
+  4. No explicit milestone tracking on creation mutations. The plan called for calling updateOnboarding({ firstProjectCreated: true }) in the onSuccess
+  callbacks of creation pages. This was not implemented — milestones are derived purely from count-based stats, which is why the demo data conflation bug
+  exists.
+
+  5. completedAt is never set. The field exists in the interface but nothing ever writes a timestamp to it. The onboarding never formally "completes" in the
+   database.
+
+  6. No Framer Motion animations. The plan called for slide transitions in the welcome dialog and collapse animations on the field guides. Neither was
+  implemented — transitions are instant.
+
+  Design Gaps
+
+  7. Dashboard card step 3 links to /templates (list) instead of template creation within a project. The user has to figure out how to create one from
+  there.
+
+  8. "Meet Your AI Team" grid uses grid-cols-2 without a responsive breakpoint. Will be squeezed on mobile — should be grid-cols-1 sm:grid-cols-2.
+
+  9. No "Reset onboarding" in settings — no way to re-trigger the flow for testing or review.
+
+  10. No tests were added for the onboarding hook's non-trivial logic (milestone computation, existing user detection, optimistic updates).
+
+  ---
