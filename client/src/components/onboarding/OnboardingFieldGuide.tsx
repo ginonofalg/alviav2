@@ -1,11 +1,7 @@
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { Lightbulb, ChevronDown, X } from "lucide-react";
 
@@ -58,55 +54,66 @@ export function OnboardingFieldGuide({
       className="border-primary/20 bg-primary/5"
       data-testid={`field-guide-${guideKey}`}
     >
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="flex items-center justify-between gap-4 p-4">
-          <CollapsibleTrigger asChild>
-            <button type="button" className="flex items-center gap-2 text-left flex-1" data-testid={`button-toggle-guide-${guideKey}`}>
-              <Lightbulb className="w-4 h-4 text-primary shrink-0" />
-              <span className="text-sm font-medium">{title}</span>
-              <ChevronDown
-                className={`w-4 h-4 text-muted-foreground transition-transform ${
-                  isOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleDismiss}
-            data-testid={`button-dismiss-guide-${guideKey}`}
+      <div className="flex items-center justify-between gap-4 p-4">
+        <button
+          type="button"
+          className="flex items-center gap-2 text-left flex-1"
+          onClick={() => setIsOpen(!isOpen)}
+          data-testid={`button-toggle-guide-${guideKey}`}
+        >
+          <Lightbulb className="w-4 h-4 text-primary shrink-0" />
+          <span className="text-sm font-medium">{title}</span>
+          <ChevronDown
+            className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleDismiss}
+          data-testid={`button-dismiss-guide-${guideKey}`}
+        >
+          <X className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
           >
-            <X className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-        <CollapsibleContent>
-          <CardContent className="pt-0 pb-4 space-y-3">
-            {items.map((item, i) => (
-              <div key={i} className="space-y-0.5">
-                <p className="text-sm font-medium">{item.field}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {item.impact}
-                </p>
-              </div>
-            ))}
-            {tip && (
-              <div className="pt-1 border-t border-primary/10">
-                <p className="text-xs text-muted-foreground italic">{tip}</p>
-              </div>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-muted-foreground"
-              onClick={handleDismiss}
-              data-testid={`button-gotit-guide-${guideKey}`}
-            >
-              Got it, don't show again
-            </Button>
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
+            <CardContent className="pt-0 pb-4 space-y-3">
+              {items.map((item, i) => (
+                <div key={i} className="space-y-0.5">
+                  <p className="text-sm font-medium">{item.field}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {item.impact}
+                  </p>
+                </div>
+              ))}
+              {tip && (
+                <div className="pt-1 border-t border-primary/10">
+                  <p className="text-xs text-muted-foreground italic">{tip}</p>
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={handleDismiss}
+                data-testid={`button-gotit-guide-${guideKey}`}
+              >
+                Got it, don't show again
+              </Button>
+            </CardContent>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Card>
   );
 }

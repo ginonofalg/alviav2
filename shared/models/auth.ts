@@ -21,6 +21,9 @@ export interface OnboardingState {
   collectionGuideShown: boolean;
   completedAt: string | null;
   testMode?: boolean;
+  firstProjectCreated?: boolean;
+  firstTemplateCreated?: boolean;
+  firstCollectionCreated?: boolean;
 }
 
 export const DEFAULT_ONBOARDING_STATE: OnboardingState = {

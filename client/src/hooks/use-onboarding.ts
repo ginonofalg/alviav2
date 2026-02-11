@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -13,6 +14,7 @@ interface DashboardStats {
 export function useOnboarding() {
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
+  const completedAtSetRef = useRef(false);
 
   const rawState = user?.onboardingState as OnboardingState | null | undefined;
   const isExistingUserWithoutOnboarding = !rawState && isAuthenticated;
@@ -29,15 +31,11 @@ export function useOnboarding() {
   const statsResolved = !statsLoading || !!stats;
   const existingUserHasData = isExistingUserWithoutOnboarding && (stats?.projectCount ?? 0) > 1;
 
-  const hasProject = (stats?.projectCount ?? 0) > 0;
-  const hasTemplate = (stats?.templateCount ?? 0) > 0;
-  const hasCollection = (stats?.collectionCount ?? 0) > 0;
-
   const milestones = {
-    demoExplored: hasProject,
-    projectCreated: (stats?.projectCount ?? 0) > 1,
-    templateCreated: hasTemplate,
-    collectionCreated: hasCollection,
+    demoExplored: (stats?.projectCount ?? 0) > 0,
+    projectCreated: !!state.firstProjectCreated || (stats?.projectCount ?? 0) > 1,
+    templateCreated: !!state.firstTemplateCreated || (stats?.templateCount ?? 0) > 1,
+    collectionCreated: !!state.firstCollectionCreated || (stats?.collectionCount ?? 0) > 0,
   };
 
   const completedCount = Object.values(milestones).filter(Boolean).length;
@@ -74,6 +72,13 @@ export function useOnboarding() {
   const updateOnboarding = (partial: Partial<OnboardingState>) => {
     updateMutation.mutate(partial);
   };
+
+  useEffect(() => {
+    if (allComplete && !state.completedAt && !inTestMode && !completedAtSetRef.current && statsResolved) {
+      completedAtSetRef.current = true;
+      updateOnboarding({ completedAt: new Date().toISOString() });
+    }
+  }, [allComplete, state.completedAt, inTestMode, statsResolved]);
 
   const waitingForStats = isExistingUserWithoutOnboarding && !statsResolved;
   const isOnboarding = inTestMode || (!state.completedAt && !existingUserHasData && !waitingForStats);

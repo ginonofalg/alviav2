@@ -99,6 +99,10 @@ export function registerAuthRoutes(app: Express): void {
     templateGuideShown: z.boolean().optional(),
     collectionGuideShown: z.boolean().optional(),
     completedAt: z.string().nullable().optional(),
+    testMode: z.boolean().optional(),
+    firstProjectCreated: z.boolean().optional(),
+    firstTemplateCreated: z.boolean().optional(),
+    firstCollectionCreated: z.boolean().optional(),
   });
 
   app.patch("/api/auth/onboarding", isAuthenticated, async (req: any, res) => {

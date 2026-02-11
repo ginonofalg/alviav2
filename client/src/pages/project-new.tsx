@@ -32,6 +32,7 @@ import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { OnboardingFieldGuide } from "@/components/onboarding";
+import { useOnboarding } from "@/hooks/use-onboarding";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(100),
@@ -63,6 +64,7 @@ const CONTEXT_TYPES = [
 export default function NewProjectPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { updateOnboarding } = useOnboarding();
   const [step, setStep] = useState(1);
 
   const form = useForm<ProjectFormData>({
@@ -106,6 +108,7 @@ export default function NewProjectPage() {
         title: "Project created",
         description: "Your project has been created successfully.",
       });
+      updateOnboarding({ firstProjectCreated: true });
       navigate(`/projects/${data.id}`);
     },
     onError: (error: Error) => {

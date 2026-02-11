@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Dialog,
   DialogContent,
@@ -12,11 +13,11 @@ import { Button } from "@/components/ui/button";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import {
   Mic,
-  BarChart3,
-  Search,
+  Eye,
   FolderKanban,
   FileText,
   Play,
+  BarChart3,
   ArrowRight,
   ArrowLeft,
   CheckCircle2,
@@ -50,9 +51,25 @@ const SLIDES = [
   },
 ] as const;
 
+const slideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 80 : -80,
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction > 0 ? -80 : 80,
+    opacity: 0,
+  }),
+};
+
 export function WelcomeDialog() {
   const { showWelcome, updateOnboarding } = useOnboarding();
   const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [, navigate] = useLocation();
 
   const { data: projects } = useQuery<Project[]>({
@@ -75,6 +92,11 @@ export function WelcomeDialog() {
     }
   };
 
+  const goToStep = (next: number) => {
+    setDirection(next > step ? 1 : -1);
+    setStep(next);
+  };
+
   if (!showWelcome) return null;
 
   return (
@@ -94,11 +116,23 @@ export function WelcomeDialog() {
           </DialogHeader>
         </div>
 
-        <div className="p-6 min-h-[280px]">
-          {step === 0 && <SlideWelcome />}
-          {step === 1 && <SlideTeam />}
-          {step === 2 && <SlideHowItWorks />}
-          {step === 3 && <SlideFirstSteps />}
+        <div className="p-6 min-h-[280px] overflow-hidden relative">
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={step}
+              custom={direction}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+            >
+              {step === 0 && <SlideWelcome />}
+              {step === 1 && <SlideTeam />}
+              {step === 2 && <SlideHowItWorks />}
+              {step === 3 && <SlideFirstSteps />}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         <div className="flex items-center justify-between gap-4 p-4 border-t bg-muted/30">
@@ -123,7 +157,7 @@ export function WelcomeDialog() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setStep(step - 1)}
+                onClick={() => goToStep(step - 1)}
                 data-testid="button-welcome-back"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
@@ -142,7 +176,7 @@ export function WelcomeDialog() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => setStep(step + 1)}
+                  onClick={() => goToStep(step + 1)}
                   data-testid="button-welcome-next"
                 >
                   Next
@@ -195,7 +229,7 @@ function SlideWelcome() {
 
 function SlideTeam() {
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div className="space-y-3 p-4 rounded-md bg-muted/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
@@ -212,7 +246,7 @@ function SlideTeam() {
       <div className="space-y-3 p-4 rounded-md bg-muted/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
-            <Search className="w-4 h-4 text-primary" />
+            <Eye className="w-4 h-4 text-primary" />
           </div>
           <span className="font-medium">Barbara</span>
         </div>

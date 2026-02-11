@@ -13,14 +13,19 @@ import {
   Download,
   Trash2,
   Moon,
-  Sun
+  Sun,
+  RotateCcw
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
+import { useOnboarding } from "@/hooks/use-onboarding";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const { updateOnboarding, state: onboardingState } = useOnboarding();
+  const { toast } = useToast();
 
   const userInitials = user?.firstName && user?.lastName 
     ? `${user.firstName[0]}${user.lastName[0]}` 
@@ -180,6 +185,56 @@ export default function SettingsPage() {
               </p>
             </div>
             <Switch data-testid="switch-weekly-digest" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <RotateCcw className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle>Onboarding</CardTitle>
+              <CardDescription>Review the getting started guide</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-base">Reset onboarding</Label>
+              <p className="text-sm text-muted-foreground">
+                Show the welcome guide and getting started checklist again
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                updateOnboarding({
+                  welcomeCompleted: false,
+                  dashboardGuideHidden: false,
+                  projectGuideShown: false,
+                  templateGuideShown: false,
+                  collectionGuideShown: false,
+                  completedAt: null,
+                  testMode: false,
+                  firstProjectCreated: false,
+                  firstTemplateCreated: false,
+                  firstCollectionCreated: false,
+                });
+                toast({
+                  title: "Onboarding reset",
+                  description: "The getting started guide will appear on your dashboard.",
+                });
+              }}
+              data-testid="button-reset-onboarding"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
+            </Button>
           </div>
         </CardContent>
       </Card>

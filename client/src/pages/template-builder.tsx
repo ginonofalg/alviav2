@@ -48,6 +48,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import type { Project, InterviewTemplate, Question } from "@shared/schema";
 import { OnboardingFieldGuide } from "@/components/onboarding";
+import { useOnboarding } from "@/hooks/use-onboarding";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
   open: MessageSquare,
@@ -322,6 +323,7 @@ export default function TemplateBuilderPage() {
   const projectIdFromParams = params.projectId;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { updateOnboarding } = useOnboarding();
 
   const { data: existingTemplate, isLoading: templateLoading } =
     useQuery<TemplateWithQuestions>({
@@ -418,10 +420,12 @@ export default function TemplateBuilderPage() {
       queryClient.invalidateQueries({
         queryKey: ["/api/projects", projectId, "templates"],
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({
         title: "Template created",
         description: "Your interview template has been created successfully.",
       });
+      updateOnboarding({ firstTemplateCreated: true });
       navigate(`/templates/${data.id}`);
     },
     onError: (error: Error) => {

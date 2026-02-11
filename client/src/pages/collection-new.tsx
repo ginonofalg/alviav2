@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { InterviewTemplate, Question } from "@shared/schema";
 import { OnboardingFieldGuide } from "@/components/onboarding";
+import { useOnboarding } from "@/hooks/use-onboarding";
 
 interface TemplateWithQuestions extends InterviewTemplate {
   questions?: Question[];
@@ -51,6 +52,7 @@ type CollectionFormData = z.infer<typeof collectionFormSchema>;
 export default function CollectionNewPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { updateOnboarding } = useOnboarding();
   
   const searchParams = new URLSearchParams(window.location.search);
   const templateId = searchParams.get("templateId");
@@ -86,10 +88,12 @@ export default function CollectionNewPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/collections"] });
       queryClient.invalidateQueries({ queryKey: ["/api/templates", templateId, "collections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       toast({
         title: "Collection launched",
         description: "Your collection is now live and ready to accept responses.",
       });
+      updateOnboarding({ firstCollectionCreated: true });
       navigate(`/collections/${data.id}`);
     },
     onError: (error: Error) => {

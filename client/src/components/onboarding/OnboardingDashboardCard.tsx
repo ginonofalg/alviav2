@@ -9,7 +9,7 @@ import {
   FolderKanban,
   FileText,
   Play,
-  Search,
+  Eye,
   ArrowRight,
   X,
   CheckCircle2,
@@ -40,7 +40,7 @@ export function OnboardingDashboardCard() {
   const steps = [
     {
       key: "demoExplored",
-      icon: Search,
+      icon: Eye,
       title: "Explore the demo project",
       description: "See how Alvia structures a research project with questions and guidance",
       done: milestones.demoExplored,
@@ -66,8 +66,15 @@ export function OnboardingDashboardCard() {
       title: "Add an interview template",
       description: "Build interview questions with guidance for Alvia",
       done: milestones.templateCreated,
-      action: () => navigate("/templates"),
-      actionLabel: "Templates",
+      action: () => {
+        const userProject = projects?.find((p) => !p.name.toLowerCase().includes("demo"));
+        if (userProject) {
+          navigate(`/projects/${userProject.id}/templates/new`);
+        } else {
+          navigate("/projects/new");
+        }
+      },
+      actionLabel: "New Template",
       enabled: milestones.projectCreated,
     },
     {
