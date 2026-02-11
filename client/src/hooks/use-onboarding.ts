@@ -77,11 +77,11 @@ export function useOnboarding() {
 
   const waitingForStats = isExistingUserWithoutOnboarding && !statsResolved;
   const isOnboarding = inTestMode || (!state.completedAt && !existingUserHasData && !waitingForStats);
-  const showWelcome = isOnboarding && (inTestMode || !state.welcomeCompleted);
-  const showDashboardCard = isOnboarding && (inTestMode || (!state.dashboardGuideHidden && !allComplete));
-  const showProjectGuide = isOnboarding && (inTestMode || !state.projectGuideShown);
-  const showTemplateGuide = isOnboarding && (inTestMode || !state.templateGuideShown);
-  const showCollectionGuide = isOnboarding && (inTestMode || !state.collectionGuideShown);
+  const showWelcome = isOnboarding && !state.welcomeCompleted;
+  const showDashboardCard = isOnboarding && !state.dashboardGuideHidden && !allComplete;
+  const showProjectGuide = isOnboarding && !state.projectGuideShown;
+  const showTemplateGuide = isOnboarding && !state.templateGuideShown;
+  const showCollectionGuide = isOnboarding && !state.collectionGuideShown;
 
   return {
     state,

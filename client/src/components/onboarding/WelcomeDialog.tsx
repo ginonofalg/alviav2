@@ -13,6 +13,7 @@ import { useOnboarding } from "@/hooks/use-onboarding";
 import {
   Mic,
   BarChart3,
+  Search,
   FolderKanban,
   FileText,
   Play,
@@ -64,11 +65,11 @@ export function WelcomeDialog() {
   );
 
   const handleComplete = () => {
-    updateOnboarding({ welcomeCompleted: true });
+    updateOnboarding({ welcomeCompleted: true, testMode: false });
   };
 
   const handleExploreDemo = () => {
-    updateOnboarding({ welcomeCompleted: true });
+    updateOnboarding({ welcomeCompleted: true, testMode: false });
     if (demoProject) {
       navigate(`/projects/${demoProject.id}`);
     }
@@ -211,7 +212,7 @@ function SlideTeam() {
       <div className="space-y-3 p-4 rounded-md bg-muted/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
-            <BarChart3 className="w-4 h-4 text-primary" />
+            <Search className="w-4 h-4 text-primary" />
           </div>
           <span className="font-medium">Barbara</span>
         </div>
@@ -252,17 +253,17 @@ function SlideHowItWorks() {
   return (
     <div className="space-y-3">
       {steps.map((s, i) => (
-        <div key={i} className="flex items-start gap-3">
-          <div className="flex items-center gap-2 shrink-0 w-28">
-            <span className="text-xs font-medium text-muted-foreground w-4">
-              {i + 1}.
-            </span>
-            <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
-              <s.icon className="w-3.5 h-3.5 text-primary" />
-            </div>
-            <span className="text-sm font-medium">{s.label}</span>
+        <div key={i} className="flex items-center gap-3">
+          <span className="text-xs font-medium text-muted-foreground w-4 shrink-0 text-center">
+            {i + 1}.
+          </span>
+          <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+            <s.icon className="w-3.5 h-3.5 text-primary" />
           </div>
-          <p className="text-sm text-muted-foreground pt-0.5">{s.desc}</p>
+          <div className="min-w-0">
+            <span className="text-sm font-medium">{s.label}</span>
+            <p className="text-sm text-muted-foreground">{s.desc}</p>
+          </div>
         </div>
       ))}
     </div>
