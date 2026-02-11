@@ -573,6 +573,7 @@ export class DatabaseStorage implements IStorage {
   // Stats
   async getDashboardStats(userId: string): Promise<{
     projectCount: number;
+    templateCount: number;
     collectionCount: number;
     sessionCount: number;
     completedSessions: number;
@@ -580,11 +581,15 @@ export class DatabaseStorage implements IStorage {
     const projectList = await this.getProjectsByUser(userId);
     const projectCount = projectList.length;
 
+    let templateCount = 0;
     let collectionCount = 0;
     let sessionCount = 0;
     let completedSessions = 0;
 
     for (const project of projectList) {
+      const templateList = await this.getTemplatesByProject(project.id);
+      templateCount += templateList.length;
+
       const collectionList = await this.getCollectionsByProject(project.id);
       collectionCount += collectionList.length;
       
@@ -595,7 +600,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    return { projectCount, collectionCount, sessionCount, completedSessions };
+    return { projectCount, templateCount, collectionCount, sessionCount, completedSessions };
   }
 
   async getEnhancedDashboardStats(userId: string): Promise<{
