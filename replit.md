@@ -43,3 +43,13 @@ Preferred communication style: Simple, everyday language.
 -   **PostgreSQL**: The primary database for all application data.
 -   **Replit OpenID Connect**: For user authentication.
 -   **jsPDF**: For generating PDF exports of analytics reports.
+
+## Recent Changes
+
+### Guided Onboarding Flow (February 2026)
+Added a hybrid onboarding system for new users:
+- **Welcome Dialog**: 4-slide step-based dialog shown once on first login (`client/src/components/onboarding/WelcomeDialog.tsx`). Covers platform intro, AI team (Alvia/Barbara), workflow, and first steps. Includes "Explore the Demo" CTA that links to the auto-seeded demo project.
+- **Dashboard Onboarding Card**: Progress checklist above dashboard stats grid (`client/src/components/onboarding/OnboardingDashboardCard.tsx`). 4 milestones: explore demo, create project, add template, launch collection. Milestones derived from actual data counts. Dismissable.
+- **Contextual Field Guides**: Collapsible banners on creation pages (`client/src/components/onboarding/OnboardingFieldGuide.tsx`) explaining which fields matter most for AI quality. Shown on project-new, template-builder (create mode only), and collection-new pages.
+- **State**: `onboardingState` JSONB column on users table stores dismissal flags only. Milestones derived from dashboard stats. Hook: `client/src/hooks/use-onboarding.ts`. API: `PATCH /api/auth/onboarding`.
+- **Existing user handling**: Users with no `onboardingState` but >1 project are treated as existing users and skip onboarding.

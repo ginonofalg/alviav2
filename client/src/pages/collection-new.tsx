@@ -29,6 +29,7 @@ import { ArrowLeft, Play, Users, Calendar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { InterviewTemplate, Question } from "@shared/schema";
+import { OnboardingFieldGuide } from "@/components/onboarding";
 
 interface TemplateWithQuestions extends InterviewTemplate {
   questions?: Question[];
@@ -218,6 +219,25 @@ export default function CollectionNewPage() {
           </p>
         </div>
       </div>
+
+      <OnboardingFieldGuide
+        guideKey="collection"
+        title="Tips for launching collections"
+        items={[
+          {
+            field: "Additional Questions (0-3)",
+            impact: "After scripted questions, Barbara generates dynamic follow-ups to explore gaps. More = richer data.",
+          },
+          {
+            field: "End-of-Interview Summary",
+            impact: "Barbara generates per-session insights that feed into collection and project analytics.",
+          },
+          {
+            field: "Target Responses",
+            impact: "Sets your collection goal. Analytics become more reliable with more completed interviews.",
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader>

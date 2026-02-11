@@ -47,6 +47,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import type { Project, InterviewTemplate, Question } from "@shared/schema";
+import { OnboardingFieldGuide } from "@/components/onboarding";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
   open: MessageSquare,
@@ -517,6 +518,28 @@ export default function TemplateBuilderPage() {
           </p>
         </div>
       </div>
+
+      {!isEditMode && (
+        <OnboardingFieldGuide
+          guideKey="template"
+          title="Tips for effective interview templates"
+          items={[
+            {
+              field: "Interview Objective",
+              impact: "THE most important field. Alvia uses it to introduce the interview; Barbara uses it to judge follow-up quality.",
+            },
+            {
+              field: "Question Guidance",
+              impact: "Alvia's briefing for each question — tells her what a good answer looks like and what to probe for.",
+            },
+            {
+              field: "Follow-up Depth",
+              impact: "Controls how many probing questions Alvia attempts before Barbara signals to move on.",
+            },
+          ]}
+          tip="Use 'Generate Template' on your project page to auto-create questions from your research objectives."
+        />
+      )}
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

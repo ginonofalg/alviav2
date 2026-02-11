@@ -31,6 +31,7 @@ import { ArrowLeft, Shield, Settings2, Mic, Target, Sparkles, ChevronRight } fro
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
+import { OnboardingFieldGuide } from "@/components/onboarding";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(100),
@@ -135,6 +136,29 @@ export default function NewProjectPage() {
           </p>
         </div>
       </div>
+
+      <OnboardingFieldGuide
+        guideKey="project"
+        title="Tips for better research projects"
+        items={[
+          {
+            field: "Research Objective",
+            impact: "Alvia uses this to introduce and steer interviews. Barbara uses it to evaluate responses. Be specific — vague objectives produce vague interviews.",
+          },
+          {
+            field: "Description",
+            impact: "Powers AI template generation. A clear description produces more relevant auto-generated questions.",
+          },
+          {
+            field: "Target Audience",
+            impact: "Barbara tailors follow-up probes and session summaries to match your respondent profile.",
+          },
+          {
+            field: "Strategic Context (Step 3)",
+            impact: "Makes your analytics actionable — Barbara generates recommendations specific to your business goals.",
+          },
+        ]}
+      />
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

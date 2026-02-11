@@ -22,6 +22,7 @@ import {
   BarChart3
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { OnboardingDashboardCard } from "@/components/onboarding";
 
 interface EnrichedSession {
   id: string;
@@ -457,6 +458,8 @@ export default function DashboardPage() {
           </Button>
         </Link>
       </div>
+
+      <OnboardingDashboardCard />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

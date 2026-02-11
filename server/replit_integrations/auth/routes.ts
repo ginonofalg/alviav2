@@ -4,6 +4,7 @@ import { isAuthenticated } from "./replitAuth";
 import { storage } from "../../storage";
 import { insertWaitlistEntrySchema } from "@shared/schema";
 import { z } from "zod";
+import type { OnboardingState } from "@shared/models/auth";
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
@@ -88,6 +89,33 @@ export function registerAuthRoutes(app: Express): void {
     } catch (error) {
       console.error("Error adding to waitlist:", error);
       res.status(500).json({ message: "Failed to add to waitlist" });
+    }
+  });
+
+  const onboardingSchema = z.object({
+    welcomeCompleted: z.boolean().optional(),
+    dashboardGuideHidden: z.boolean().optional(),
+    projectGuideShown: z.boolean().optional(),
+    templateGuideShown: z.boolean().optional(),
+    collectionGuideShown: z.boolean().optional(),
+    completedAt: z.string().nullable().optional(),
+  });
+
+  app.patch("/api/auth/onboarding", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const parsed = onboardingSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Validation failed",
+          errors: parsed.error.flatten().fieldErrors,
+        });
+      }
+      const updated = await authStorage.updateOnboardingState(userId, parsed.data as Partial<OnboardingState>);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating onboarding state:", error);
+      res.status(500).json({ message: "Failed to update onboarding state" });
     }
   });
 }

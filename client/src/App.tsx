@@ -9,6 +9,7 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WelcomeDialog } from "@/components/onboarding";
 
 import LandingPage from "@/pages/landing";
 import WaitlistPage from "@/pages/waitlist";
@@ -56,6 +57,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
           </main>
         </SidebarInset>
       </div>
+      <WelcomeDialog />
     </SidebarProvider>
   );
 }
