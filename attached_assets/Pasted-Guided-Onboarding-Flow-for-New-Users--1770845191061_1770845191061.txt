@@ -1,0 +1,235 @@
+Guided Onboarding Flow for New Users                                                                                                                       
+                                                        
+ Context
+
+ New users signing up to Alvia currently land on a dashboard with minimal guidance. A demo project ("Alvia Demo — Your Coffee Ritual") is auto-seeded, but
+ there's no narrative introduction to the platform, no explanation of the data hierarchy (Project → Template → Collection → Session), and no guidance on
+ which form fields matter most for interview/analytics quality. This plan adds a hybrid onboarding system: a welcome dialog for narrative framing +
+ contextual field guides on creation pages + a dashboard progress card.
+
+ ---
+ Approach: Hybrid Onboarding (Welcome Dialog + Contextual Guides + Dashboard Card)
+
+ Why hybrid? A separate wizard route teaches concepts in isolation. Purely contextual tooltips lack narrative arc. The hybrid approach uses a short welcome
+  dialog (4 slides) for framing, then contextual guidance on the actual pages where users create things — learning while doing.
+
+ State persistence: DB-backed via a new onboardingState JSONB column on the users table. Survives browser clears, works cross-device, queryable for
+ analytics.
+
+ ---
+ Onboarding Content Design
+
+ Part 1: Welcome Dialog (4-slide carousel, shown once on first login)
+
+ Slide 1 — "Welcome to Alvia"
+ - Mic icon + heading
+ - "Alvia is a voice-based interview platform that lets you conduct research at scale. Real conversations, real insights — not just form responses."
+
+ Slide 2 — "Meet Your AI Team"
+ - Two-column layout:
+   - Alvia (Mic icon): "Your AI interviewer. She conducts voice conversations, adapts follow-ups in real-time, and captures nuance that surveys miss.
+ Shaped by your Research Objective and Interview Objective."
+   - Barbara (BarChart3 icon): "Your research orchestrator. She monitors every interview, guides Alvia on when to probe or move on, and generates
+ analytics. Uses your Target Audience and Strategic Context."
+
+ Slide 3 — "How It Works"
+ - 4 numbered steps:
+   a. Project (FolderKanban) — "Define your research goals, audience, and strategic context"
+   b. Template (FileText) — "Create interview questions with guidance for each"
+   c. Collection (Play) — "Launch a collection and invite respondents"
+   d. Analyse (BarChart3) — "Review transcripts, summaries, and cross-interview themes"
+
+ Slide 4 — "Your First Steps"
+ - Checklist preview: Explore demo → Create project → Build template → Launch collection
+ - Primary CTA: "Let's Get Started" → dashboard
+ - Secondary CTA: "Explore the Demo First" → demo project detail page
+
+ Part 2: Dashboard Onboarding Card (shown until dismissed or all milestones met)
+
+ A prominent card above the stats grid with a 4-step progress checklist:
+ 1. "Explore the demo project" — link to demo project
+ 2. "Create your first project" — link to /projects/new
+ 3. "Add an interview template" — active after project creation
+ 4. "Launch a collection" — active after template creation
+
+ Each step shows status (pending/current/done), description, and CTA. Dismissable via "Hide this guide".
+
+ Part 3: Contextual Field Guides (collapsible banner on creation pages, shown once each)
+
+ Project Creation Guide (/projects/new):
+ - Research Objective: "Alvia uses this to introduce and steer interviews. Barbara uses it to evaluate responses. Be specific — vague objectives produce
+ vague interviews."
+ - Description: "Powers AI template generation. A clear description produces more relevant auto-generated questions."
+ - Target Audience: "Barbara tailors follow-up probes and session summaries to match your respondent profile."
+ - Strategic Context (Step 3): "Makes your analytics actionable — Barbara generates recommendations specific to your business goals."
+
+ Template Builder Guide (/projects/:projectId/templates/new, create mode only):
+ - Interview Objective: "THE most important field. Alvia uses it to introduce the interview; Barbara uses it to judge follow-up quality."
+ - Question Guidance: "Alvia's briefing for each question — tells her what a good answer looks like and what to probe for."
+ - Follow-up Depth: "Controls how many probing questions Alvia attempts before Barbara signals to move on."
+ - Tip: "Use 'Generate Template' on your project page to auto-create questions from your research objectives."
+
+ Collection Launch Guide (/collections/new):
+ - Additional Questions (0-3): "After scripted questions, Barbara generates dynamic follow-ups to explore gaps. More = richer data."
+ - End-of-Interview Summary: "Barbara generates per-session insights that feed into collection and project analytics."
+ - Target Responses: "Sets your collection goal. Analytics become more reliable with more completed interviews."
+
+ ---
+ Implementation Plan
+
+ Step 1: Database Schema — Add onboarding state to users table
+
+ File: shared/models/auth.ts (+5 lines)
+ - Add onboardingState JSONB column to the users table (nullable, defaults to null — null means "new user, show everything")
+
+ Run: npm run db:push to apply schema change
+
+ Step 2: Backend — Add onboarding API endpoint
+
+ File: server/replit_integrations/auth/storage.ts (+15 lines)
+ - Add updateOnboardingState(userId, partial) method that reads existing state, merges the partial update, and writes back
+
+ File: server/replit_integrations/auth/routes.ts (+30 lines)
+ - Add PATCH /api/auth/onboarding endpoint
+   - Accepts partial OnboardingState body
+   - Calls authStorage.updateOnboardingState()
+   - Returns updated state
+   - Protected by isAuthenticated
+
+ Step 3: Frontend Hook — use-onboarding.ts
+
+ New file: client/src/hooks/use-onboarding.ts (~100 lines)
+ - Reads onboardingState from the user object (already fetched by use-auth.ts)
+ - Provides computed properties: isOnboarding, currentStep, progress (0-4)
+ - Exposes updateOnboarding(partial) via React Query mutation (optimistic update + PATCH call)
+ - Handles null state as "default new user" (all flags false)
+
+ Step 4: Welcome Dialog Component
+
+ New file: client/src/components/onboarding/WelcomeDialog.tsx (~220 lines)
+ - Uses existing Dialog + Carousel + CarouselContent/CarouselItem components
+ - 4 slides with Framer Motion entrance animations
+ - Step indicator dots + Next/Skip/Get Started buttons
+ - On completion or skip: calls updateOnboarding({ welcomeCompleted: true })
+ - "Explore the Demo" CTA finds demo project and navigates to its detail page
+
+ New file: client/src/components/onboarding/index.ts (~5 lines)
+ - Re-exports all onboarding components
+
+ Modified: client/src/App.tsx (+5 lines)
+ - Import and render <WelcomeDialog /> inside AuthenticatedLayout, after the <main> tag
+ - Dialog self-gates based on useOnboarding().welcomeCompleted
+
+ Step 5: Dashboard Onboarding Card
+
+ New file: client/src/components/onboarding/OnboardingDashboardCard.tsx (~180 lines)
+ - Card with 4-step vertical progress list
+ - Each step: icon, title, description, status badge, CTA button
+ - Progress bar at top showing completion (0-100%)
+ - "Hide this guide" link → updateOnboarding({ dashboardGuideHidden: true })
+ - Checks actual data (projects count, templates count, collections count) to auto-detect milestones
+
+ Modified: client/src/pages/dashboard.tsx (+10 lines)
+ - Import OnboardingDashboardCard
+ - Render above stats grid when isOnboarding && !dashboardGuideHidden
+
+ Step 6: Contextual Field Guide Component
+
+ New file: client/src/components/onboarding/OnboardingFieldGuide.tsx (~120 lines)
+ - Reusable collapsible Card component
+ - Props: guideKey (project/template/collection), title, items: { field, impact }[]
+ - Lightbulb icon, bg-primary/5 background to distinguish from form fields
+ - "Got it, don't show again" dismiss → updateOnboarding({ [guideKey + 'GuideShown']: true })
+ - Framer Motion collapse animation on dismiss
+
+ Modified: client/src/pages/project-new.tsx (+15 lines)
+ - Add <OnboardingFieldGuide> above the form with project-specific content
+ - In create mutation onSuccess: call updateOnboarding({ firstProjectCreated: true })
+
+ Modified: client/src/pages/template-builder.tsx (+15 lines)
+ - Add <OnboardingFieldGuide> above the form (create mode only, not edit mode)
+ - In create mutation onSuccess: call updateOnboarding({ firstTemplateCreated: true })
+
+ Modified: client/src/pages/collection-new.tsx (+15 lines)
+ - Add <OnboardingFieldGuide> above the form
+ - In create mutation onSuccess: call updateOnboarding({ firstCollectionCreated: true })
+
+ Step 7: Auto-complete detection
+
+ In the use-onboarding hook: when all three milestones are true and completedAt is null, automatically set completedAt to the current timestamp. This marks
+  the onboarding as fully complete.
+
+ ---
+ Onboarding State Shape
+
+ interface OnboardingState {
+   welcomeCompleted: boolean;
+   dashboardGuideHidden: boolean;
+   projectGuideShown: boolean;
+   templateGuideShown: boolean;
+   collectionGuideShown: boolean;
+   firstProjectCreated: boolean;
+   firstTemplateCreated: boolean;
+   firstCollectionCreated: boolean;
+   completedAt: string | null; // ISO timestamp
+ }
+
+ ---
+ Files Summary
+ ┌──────────────────────────────────────────────────────────────┬────────┬────────────┐
+ │                             File                             │ Action │ Est. Lines │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ shared/models/auth.ts                                        │ Modify │ +5         │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ server/replit_integrations/auth/storage.ts                   │ Modify │ +15        │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ server/replit_integrations/auth/routes.ts                    │ Modify │ +30        │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/hooks/use-onboarding.ts                           │ Create │ ~100       │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/components/onboarding/index.ts                    │ Create │ ~5         │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/components/onboarding/WelcomeDialog.tsx           │ Create │ ~220       │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/components/onboarding/OnboardingDashboardCard.tsx │ Create │ ~180       │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/components/onboarding/OnboardingFieldGuide.tsx    │ Create │ ~120       │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/App.tsx                                           │ Modify │ +5         │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/pages/dashboard.tsx                               │ Modify │ +10        │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/pages/project-new.tsx                             │ Modify │ +15        │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/pages/template-builder.tsx                        │ Modify │ +15        │
+ ├──────────────────────────────────────────────────────────────┼────────┼────────────┤
+ │ client/src/pages/collection-new.tsx                          │ Modify │ +15        │
+ └──────────────────────────────────────────────────────────────┴────────┴────────────┘
+ All new files well under the 500-line hard limit. No existing file pushed past 1,000 lines.
+
+ ---
+ Reusable Existing Components
+
+ - Dialog, DialogContent, DialogHeader, DialogTitle — from client/src/components/ui/dialog.tsx
+ - Carousel, CarouselContent, CarouselItem — from client/src/components/ui/carousel.tsx
+ - Card, CardHeader, CardTitle, CardContent — from client/src/components/ui/card.tsx
+ - Button (variants: default, ghost, outline) — from client/src/components/ui/button.tsx
+ - Progress — from client/src/components/ui/progress.tsx
+ - Badge — from client/src/components/ui/badge.tsx
+ - Separator — from client/src/components/ui/separator.tsx
+ - Lucide icons: Mic, BarChart3, FolderKanban, FileText, Play, Lightbulb, CheckCircle2, Circle, ChevronRight, X
+ - Framer Motion (motion from framer-motion) — already used on landing page
+ - React Query mutations — pattern from use-auth.ts
+
+ ---
+ Verification
+
+ 1. Schema: Run npm run db:push — confirm onboardingState column added to users table
+ 2. API: Test PATCH /api/auth/onboarding with partial state updates; verify GET /api/auth/user returns onboardingState
+ 3. Welcome Dialog: Log in as a new user (or clear onboarding state) → dialog appears with 4 slides → "Get Started" dismisses it permanently
+ 4. Dashboard Card: After dismissing welcome, dashboard shows onboarding progress card → links work → "Hide" dismisses it
+ 5. Field Guides: Navigate to /projects/new → guide banner visible → dismiss persists on reload
+ 6. Milestones: Create project → dashboard card step 2 shows complete → create template → step 3 complete → launch collection → onboarding marked complete,
+  card auto-hides
+ 7. Type check: npm run check passes
+ 8. Existing tests: npx vitest passes (no regression)
