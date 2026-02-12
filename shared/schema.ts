@@ -226,6 +226,7 @@ export const interviewSessions = pgTable("interview_sessions", {
   currentAdditionalQuestionIndex: integer("current_additional_question_index"), // Which AQ is currently being asked (0-based)
   alviaSummary: jsonb("alvia_summary"),
   barbaraSessionSummary: jsonb("barbara_session_summary"),
+  barbaraGuidanceLog: jsonb("barbara_guidance_log"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),

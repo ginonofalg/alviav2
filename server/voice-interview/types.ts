@@ -17,6 +17,7 @@ import type {
   PersistedTranscriptEntry,
   PersistedBarbaraGuidance,
   PersistedQuestionState,
+  BarbaraGuidanceLogEntry,
   SilenceSegment,
   SilenceContext,
   TranscriptionQualitySignals,
@@ -130,6 +131,7 @@ export interface InterviewState {
   // Persistence state
   fullTranscriptForPersistence: PersistedTranscriptEntry[]; // Complete transcript history - never truncated
   lastBarbaraGuidance: PersistedBarbaraGuidance | null;
+  barbaraGuidanceLog: BarbaraGuidanceLogEntry[];
   questionStates: PersistedQuestionState[];
   questionSummaries: QuestionSummary[]; // Index-based: questionSummaries[questionIndex] = summary
   pendingPersistTimeout: ReturnType<typeof setTimeout> | null;

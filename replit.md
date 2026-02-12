@@ -57,3 +57,10 @@ Added a hybrid onboarding system for new users:
 - **Reset onboarding**: Available in Settings page to re-trigger the full onboarding flow.
 - **Existing user handling**: Users with no `onboardingState` but >1 project are treated as existing users and skip onboarding.
 - **Icons**: Alvia = Mic, Barbara = Eye (monitoring/orchestration).
+
+### Barbara Guidance Log (February 2026)
+Added Phase 1 of guidance effectiveness tracking:
+- **Schema**: `barbaraGuidanceLog` JSONB column on `interviewSessions` table. Stores an append-only array of `BarbaraGuidanceLogEntry` objects.
+- **Types**: `BarbaraGuidanceAction` union type and `BarbaraGuidanceLogEntry` type in `shared/types/interview-state.ts`. Each entry captures: index, action, messageSummary (truncated to 500 chars), confidence, injected (confidence > 0.6 and action !== "none"), timestamp, questionIndex, triggerTurnIndex.
+- **Integration**: Log entries are appended in `persistBarbaraGuidance()` and the environment check guidance path in `voice-interview.ts`. Included in both debounced persistence and direct Barbara guidance persistence calls. Restored from DB on session resume.
+- **Backward compatibility**: Existing sessions have `null` for the column. Restore logic handles this gracefully (treats as `[]`).

@@ -31,6 +31,7 @@ import type {
   PersistedTranscriptEntry,
   PersistedBarbaraGuidance,
   PersistedQuestionState,
+  BarbaraGuidanceLogEntry,
   QuestionSummary as PersistedQuestionSummary,
   RealtimePerformanceMetrics,
   TokenUsage,
@@ -156,6 +157,7 @@ async function flushPersist(sessionId: string): Promise<void> {
   const patch: InterviewStatePatch = {
     liveTranscript: state.fullTranscriptForPersistence,
     lastBarbaraGuidance: state.lastBarbaraGuidance,
+    barbaraGuidanceLog: state.barbaraGuidanceLog,
     questionStates: state.questionStates,
     questionSummaries: normalizedSummaries,
     currentQuestionIndex: persistableQuestionIndex,
@@ -198,6 +200,18 @@ async function persistBarbaraGuidance(
 
   state.lastBarbaraGuidance = persistedGuidance;
 
+  const logEntry: BarbaraGuidanceLogEntry = {
+    index: state.barbaraGuidanceLog.length,
+    action: guidance.action,
+    messageSummary: guidance.message.slice(0, 500),
+    confidence: guidance.confidence,
+    injected: guidance.confidence > 0.6 && guidance.action !== "none",
+    timestamp: Date.now(),
+    questionIndex: state.currentQuestionIndex,
+    triggerTurnIndex: Math.max(0, state.fullTranscriptForPersistence.length - 1),
+  };
+  state.barbaraGuidanceLog.push(logEntry);
+
   if (guidance.action === "suggest_next_question") {
     const questionState = state.questionStates.find(
       (qs) => qs.questionIndex === state.currentQuestionIndex,
@@ -216,6 +230,7 @@ async function persistBarbaraGuidance(
     // Persist with all relevant fields to avoid overwriting concurrent summary persistence
     await storage.persistInterviewState(sessionId, {
       lastBarbaraGuidance: persistedGuidance,
+      barbaraGuidanceLog: state.barbaraGuidanceLog,
       questionStates: state.questionStates,
       questionSummaries: normalizedSummaries,
     });
@@ -602,6 +617,7 @@ export function handleVoiceInterview(
     // Persistence state
     fullTranscriptForPersistence: [], // Complete transcript history - never truncated
     lastBarbaraGuidance: null,
+    barbaraGuidanceLog: [],
     questionStates: [],
     questionSummaries: [], // Index-based array for question summaries
     pendingPersistTimeout: null,
@@ -846,6 +862,11 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       if (session.lastBarbaraGuidance) {
         state.lastBarbaraGuidance =
           session.lastBarbaraGuidance as PersistedBarbaraGuidance;
+      }
+
+      // Restore Barbara guidance log
+      if (session.barbaraGuidanceLog && Array.isArray(session.barbaraGuidanceLog)) {
+        state.barbaraGuidanceLog = session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[];
       }
 
       // Restore question states
@@ -1842,6 +1863,17 @@ Then continue the interview naturally once they acknowledge.`;
     timestamp: Date.now(),
     questionIndex: state.currentQuestionIndex,
   } as PersistedBarbaraGuidance;
+
+  state.barbaraGuidanceLog.push({
+    index: state.barbaraGuidanceLog.length,
+    action: environmentGuidance.action,
+    messageSummary: environmentGuidance.message.slice(0, 500),
+    confidence: environmentGuidance.confidence,
+    injected: environmentGuidance.confidence > 0.6 && environmentGuidance.action !== "none",
+    timestamp: Date.now(),
+    questionIndex: state.currentQuestionIndex,
+    triggerTurnIndex: Math.max(0, state.fullTranscriptForPersistence.length - 1),
+  });
 
   if (state.providerWs?.readyState === WebSocket.OPEN) {
     const currentQuestion = state.questions[state.currentQuestionIndex];

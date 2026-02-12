@@ -6,12 +6,32 @@ export type PersistedTranscriptEntry = {
   interrupted?: boolean;
 };
 
+export type BarbaraGuidanceAction =
+  | "probe_followup"
+  | "suggest_next_question"
+  | "acknowledge_prior"
+  | "confirm_understanding"
+  | "suggest_environment_check"
+  | "time_reminder"
+  | "none";
+
 export type PersistedBarbaraGuidance = {
-  action: "acknowledge_prior" | "probe_followup" | "suggest_next_question" | "time_reminder" | "suggest_environment_check" | "confirm_understanding" | "none";
+  action: BarbaraGuidanceAction;
   message: string;
   confidence: number;
   timestamp: number;
   questionIndex: number;
+};
+
+export type BarbaraGuidanceLogEntry = {
+  index: number;
+  action: BarbaraGuidanceAction;
+  messageSummary: string;
+  confidence: number;
+  injected: boolean;
+  timestamp: number;
+  questionIndex: number;
+  triggerTurnIndex: number;
 };
 
 export type PersistedQuestionState = {
