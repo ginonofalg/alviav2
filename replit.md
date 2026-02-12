@@ -2,7 +2,7 @@
 
 ## Overview
 
-Alvia is a TypeScript-based, voice-powered AI interview platform designed for researchers. It facilitates AI-driven interviews with real-time transcription. Alvia (the AI interviewer) conducts conversations using advanced AI voice APIs, while Barbara (the orchestrator) provides real-time guidance by monitoring transcripts. The platform includes robust analytics, LLM usage tracking, and a flexible architecture to support various research needs. The project aims to revolutionize qualitative research by enabling scalable, consistent, and data-rich interviewing experiences.
+Alvia is a TypeScript-based, voice-powered AI interview platform designed for researchers. It facilitates AI-driven interviews with real-time transcription. Alvia (the AI interviewer) conducts conversations using advanced AI voice APIs, while Barbara (the orchestrator) provides real-time guidance by monitoring transcripts. The platform includes robust analytics, LLM usage tracking, and a flexible architecture to support various research needs. The project aims to revolutionize qualitative research by enabling scalable, consistent, and data-rich interviewing experiences. Check CLAUDE.md for further details of architecture and code rules.
 
 ## User Preferences
 

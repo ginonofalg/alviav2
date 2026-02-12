@@ -43,9 +43,8 @@ import type {
   TranscriptionQualitySignals,
   AlviaSessionSummary,
   QualityFlag,
-  PersistedTranscriptEntry as PersistedTranscriptEntryType,
 } from "@shared/schema";
-import { scoreGuidanceAdherence, computeAdherenceSummary } from "./guidance-adherence";
+import { createGuidanceLogEntry, scoreAndPersistAdherence } from "./voice-interview/guidance-tracking";
 import {
   createEmptyQualitySignals,
   updateQualitySignals,
@@ -202,17 +201,7 @@ async function persistBarbaraGuidance(
 
   state.lastBarbaraGuidance = persistedGuidance;
 
-  const logEntry: BarbaraGuidanceLogEntry = {
-    index: state.barbaraGuidanceLog.length,
-    action: guidance.action,
-    messageSummary: guidance.message.slice(0, 500),
-    confidence: guidance.confidence,
-    injected: guidance.confidence > 0.6 && guidance.action !== "none",
-    timestamp: Date.now(),
-    questionIndex: state.currentQuestionIndex,
-    triggerTurnIndex: Math.max(0, state.fullTranscriptForPersistence.length - 1),
-  };
-  state.barbaraGuidanceLog.push(logEntry);
+  state.barbaraGuidanceLog.push(createGuidanceLogEntry(state, guidance));
 
   if (guidance.action === "suggest_next_question") {
     const questionState = state.questionStates.find(
@@ -1866,16 +1855,7 @@ Then continue the interview naturally once they acknowledge.`;
     questionIndex: state.currentQuestionIndex,
   } as PersistedBarbaraGuidance;
 
-  state.barbaraGuidanceLog.push({
-    index: state.barbaraGuidanceLog.length,
-    action: environmentGuidance.action,
-    messageSummary: environmentGuidance.message.slice(0, 500),
-    confidence: environmentGuidance.confidence,
-    injected: environmentGuidance.confidence > 0.6 && environmentGuidance.action !== "none",
-    timestamp: Date.now(),
-    questionIndex: state.currentQuestionIndex,
-    triggerTurnIndex: Math.max(0, state.fullTranscriptForPersistence.length - 1),
-  });
+  state.barbaraGuidanceLog.push(createGuidanceLogEntry(state, environmentGuidance));
 
   if (state.providerWs?.readyState === WebSocket.OPEN) {
     const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -3994,25 +3974,7 @@ async function finalizeInterview(
     }
   }
 
-  if (state.barbaraGuidanceLog.length > 0) {
-    try {
-      const transcriptForScoring = state.fullTranscriptForPersistence as PersistedTranscriptEntryType[];
-      const scoredLog = scoreGuidanceAdherence(state.barbaraGuidanceLog, transcriptForScoring);
-      const adherenceSummary = computeAdherenceSummary(scoredLog);
-
-      await storage.persistInterviewState(sessionId, {
-        barbaraGuidanceLog: scoredLog,
-        guidanceAdherenceSummary: adherenceSummary,
-      });
-      console.log(
-        `[GuidanceAdherence] Scored ${scoredLog.length} entries for ${sessionId}: ` +
-        `${adherenceSummary.followedCount} followed, ${adherenceSummary.partiallyFollowedCount} partial, ` +
-        `${adherenceSummary.notFollowedCount} not followed (rate: ${(adherenceSummary.overallAdherenceRate * 100).toFixed(1)}%)`,
-      );
-    } catch (adherenceError) {
-      console.error(`[GuidanceAdherence] Error scoring adherence for ${sessionId}:`, adherenceError);
-    }
-  }
+  await scoreAndPersistAdherence(sessionId, state);
 
   cleanupSession(sessionId, "completed");
 }

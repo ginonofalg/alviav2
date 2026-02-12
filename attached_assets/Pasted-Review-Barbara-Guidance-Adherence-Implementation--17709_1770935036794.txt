@@ -1,0 +1,112 @@
+Review: Barbara Guidance Adherence Implementation                                                                                                                                             
+                                                                                                                                                                                                
+  TypeScript Compilation: PASS                                                                                                                                                                  
+                                                                                                                                                                                                
+  npm run check passes cleanly — no type errors.
+
+  New Files: PASS
+
+  Both new files are within the 500-line hard limit:
+  - server/guidance-adherence.ts — 318 lines
+  - client/src/components/guidance-effectiveness.tsx — 339 lines
+
+  CLAUDE.md Violations Found
+
+  1. server/voice-interview.ts grew by +48 lines (4200 → 4248)
+
+  Severity: CRITICAL — CLAUDE.md states this file is on the watch list and "must only shrink, never grow. Any new logic for these domains goes into their respective module directories
+  (server/voice-interview/)."
+
+  The added code falls into two categories:
+  - Guidance log entry construction — duplicated in two places (lines ~202-214 and ~1866-1876), same 10-line object literal copied verbatim
+  - Finalization scoring — 20-line block at end of finalizeInterview()
+
+  2. server/storage.ts grew by +6 lines (1638 → 1644)
+
+  Severity: MODERATE — Also on the watch list with the same "must only shrink" rule. The change is minimal (adding two if branches to persistInterviewState) but still violates the letter of
+  the guideline.
+
+  Code Quality Issue
+
+  3. Duplicated guidance log entry construction
+
+  The same object literal for creating a BarbaraGuidanceLogEntry appears twice in voice-interview.ts — once in persistBarbaraGuidance() (~line 202) and again in the environment quality handler
+   (~line 1866). This violates the CLAUDE.md refactoring trigger: "Repeated patterns across files (create a shared utility)" — and in this case it's repeated within the same file.
+
+  4. Redundant type alias
+
+  Line 46 of voice-interview.ts imports:
+  PersistedTranscriptEntry as PersistedTranscriptEntryType,
+  This alias is only used once (line ~3997) and is unnecessary — PersistedTranscriptEntry is already imported on line 31. The alias exists because the same name was already imported, but both
+  refer to the exact same type from @shared/schema.
+
+  ---
+  Proposed Remedies
+
+  Here are targeted fixes you can pass to Replit, organized by priority:
+
+  Fix 1 — Extract guidance tracking to server/voice-interview/guidance-tracking.ts (resolves violations #1 and #3)
+
+  Create a new module with:
+  // server/voice-interview/guidance-tracking.ts
+  import type { BarbaraGuidanceLogEntry } from "@shared/schema";
+  import type { InterviewState } from "./types";
+
+  export function createGuidanceLogEntry(
+    state: InterviewState,
+    guidance: { action: string; message: string; confidence: number },
+  ): BarbaraGuidanceLogEntry {
+    return {
+      index: state.barbaraGuidanceLog.length,
+      action: guidance.action as BarbaraGuidanceLogEntry["action"],
+      messageSummary: guidance.message.slice(0, 500),
+      confidence: guidance.confidence,
+      injected: guidance.confidence > 0.6 && guidance.action !== "none",
+      timestamp: Date.now(),
+      questionIndex: state.currentQuestionIndex,
+      triggerTurnIndex: Math.max(0, state.fullTranscriptForPersistence.length - 1),
+    };
+  }
+
+  export function scoreAndPersistAdherence(/* params */) {
+    // Move the 20-line finalizeInterview block here
+  }
+
+  Then replace both duplicated blocks in voice-interview.ts with:
+  state.barbaraGuidanceLog.push(createGuidanceLogEntry(state, guidance));
+
+  This would net-reduce voice-interview.ts by ~30 lines (removing ~48 added, adding ~3 import + call lines).
+
+  Fix 2 — Remove the redundant type alias (resolves #4)
+
+  In voice-interview.ts, remove line 46:
+  -  PersistedTranscriptEntry as PersistedTranscriptEntryType,
+  And at line ~3997 change:
+  -  const transcriptForScoring = state.fullTranscriptForPersistence as PersistedTranscriptEntryType[];
+  +  const transcriptForScoring = state.fullTranscriptForPersistence as PersistedTranscriptEntry[];
+
+  (Both names already resolve to the same type from @shared/schema.)
+
+  Fix 3 — storage.ts growth (resolves #2)
+
+  The 6-line addition is borderline — it follows the exact same if (patch.X !== undefined) pattern used for every other field. It's the minimal way to wire up persistence. If Replit wants to
+  be strict, the persistInterviewState method could be refactored to use a field-mapping loop instead of individual if blocks (which would shrink the file overall), but that's a larger
+  refactor. For now, flagging it as a known minor violation is sufficient.
+
+  ---
+  Summary
+  ┌────────────────────────────────────────────────┬────────────┬──────────────────────────────────────────────────────────────────┐
+  │                     Issue                      │  Severity  │                            Fix Effort                            │
+  ├────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+  │ voice-interview.ts grew +48 lines (watch list) │ Critical   │ Extract to server/voice-interview/guidance-tracking.ts (~15 min) │
+  ├────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Duplicate log entry construction (2 places)    │ Moderate   │ Same fix as above                                                │
+  ├────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+  │ storage.ts grew +6 lines (watch list)          │ Low        │ Acceptable; flag for future refactor                             │
+  ├────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Redundant PersistedTranscriptEntryType alias   │ Low        │ 2-line change (~2 min)                                           │
+  ├────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Type check / runtime errors                    │ None found │ —                                                                │
+  └────────────────────────────────────────────────┴────────────┴──────────────────────────────────────────────────────────────────┘
+  The implementation is functionally correct and well-structured. The main issue is that it added code directly into watch-list files instead of using the module directories that exist for
+  exactly this purpose.
