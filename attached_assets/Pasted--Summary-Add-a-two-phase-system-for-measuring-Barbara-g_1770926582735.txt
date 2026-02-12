@@ -1,0 +1,421 @@
+### Summary
+
+Add a two-phase system for measuring Barbara guidance effectiveness:
+
+1. **Phase 1 (schema change):** Persist a compact guidance log per session,
+   capturing every guidance event with its action, confidence, and timestamp.
+   This is a single JSONB column addition — no new tables, no migration
+   complexity.
+
+2. **Phase 2 (analysis):** Build a read-time analysis module that compares
+   persisted guidance actions against subsequent Alvia behavior, producing
+   genuine uptake metrics at session and collection levels.
+
+Phase 1 is a prerequisite. Without it, uptake measurement is speculative.
+
+### Goals
+
+- Quantify how often Barbara's guidance is reflected in Alvia's subsequent
+  behavior, at session and collection levels.
+- Distinguish between: guidance generated, guidance injected (met confidence
+  threshold), and guidance apparently followed.
+- Provide per-action breakdown with honest confidence indicators.
+- Keep computation fast enough for dashboard use (<500ms for sessions, <2s for
+  collections up to 100 sessions).
+
+### Non-Goals
+
+- Proving causal influence (Alvia may have done the same thing without guidance).
+- Modifying the voice interview loop's runtime behavior.
+- Building client UI (separate effort).
+
+---
+
+### Phase 1: Persist Guidance History
+
+#### Schema Change
+
+Add one JSONB column to `interviewSessions`:
+
+```typescript
+// shared/schema.ts
+barbaraGuidanceLog: jsonb("barbara_guidance_log")
+  .$type<BarbaraGuidanceLogEntry[]>()
+  .default([]),
+```
+
+#### New Type
+
+```typescript
+// shared/types/barbara-guidance-uptake.ts
+
+export type BarbaraGuidanceLogEntry = {
+  /** Monotonic index within the session */
+  index: number;
+  /** Barbara's recommended action */
+  action: BarbaraGuidanceAction;
+  /** Barbara's guidance message (truncated to 500 chars for storage) */
+  messageSummary: string;
+  /** Barbara's confidence in the recommendation (0-1) */
+  confidence: number;
+  /** Whether guidance met injection threshold (confidence > 0.6, action !== "none") */
+  injected: boolean;
+  /** Unix timestamp (ms) when guidance was generated */
+  timestamp: number;
+  /** Which template question was active */
+  questionIndex: number;
+  /** Index of the respondent turn that triggered this analysis */
+  triggerTurnIndex: number;
+};
+
+export type BarbaraGuidanceAction =
+  | "probe_followup"
+  | "suggest_next_question"
+  | "acknowledge_prior"
+  | "confirm_understanding"
+  | "suggest_environment_check"
+  | "time_reminder"
+  | "none";
+```
+
+#### Storage Cost
+
+Each entry is ~200 bytes JSON. A 30-minute interview with 40 respondent turns
+produces ~40 entries = ~8KB. This is negligible compared to `liveTranscript`
+(typically 20-50KB) and `questionSummaries` (10-30KB) already stored as JSONB.
+
+#### Implementation
+
+Modify `persistBarbaraGuidance()` in `server/voice-interview.ts` (~10 lines):
+
+```typescript
+// Instead of overwriting lastBarbaraGuidance, also append to log
+const logEntry: BarbaraGuidanceLogEntry = {
+  index: state.barbaraGuidanceLog.length,
+  action: guidance.action,
+  messageSummary: guidance.message.slice(0, 500),
+  confidence: guidance.confidence,
+  injected: guidance.confidence > 0.6 && guidance.action !== "none",
+  timestamp: Date.now(),
+  questionIndex: state.currentQuestionIndex,
+  triggerTurnIndex: state.fullTranscriptForPersistence.length - 1,
+};
+
+state.barbaraGuidanceLog.push(logEntry);
+```
+
+Add `barbaraGuidanceLog` to the `InterviewStatePatch` type and the existing
+`persistInterviewState()` call. The existing 2-second debounced persistence
+handles this automatically — no new persistence path needed.
+
+`lastBarbaraGuidance` continues to exist for resume support. The log is
+append-only and only read at analysis time.
+
+#### Backward Compatibility
+
+Sessions recorded before this change will have `barbaraGuidanceLog: null` or
+`[]`. The analysis module handles this gracefully by falling back to a
+"insufficient data" response. No backfill needed — the metric only applies to
+new sessions.
+
+---
+
+### Phase 2: Analysis Module
+
+#### New File: `server/analytics/barbara-guidance-uptake.ts`
+
+Target: <400 lines. Pure functions, no side effects, no database access.
+
+##### Core Functions
+
+```typescript
+/**
+ * Build the full uptake analysis for a single session.
+ */
+export function analyzeSessionGuidanceUptake(
+  guidanceLog: BarbaraGuidanceLogEntry[],
+  transcript: PersistedTranscriptEntry[],
+  questionCount: number,
+): SessionGuidanceUptakeResult
+
+/**
+ * Aggregate session-level results into collection-level metrics.
+ */
+export function aggregateCollectionUptake(
+  sessionResults: SessionGuidanceUptakeResult[],
+): CollectionGuidanceUptakeResult
+```
+
+##### Analysis Logic
+
+For each guidance log entry where `injected === true`:
+
+1. **Find the target Alvia turn.** Starting from `triggerTurnIndex + 1`, find
+   the next transcript entry where `speaker === "alvia"`. If no Alvia turn
+   exists within 3 entries, mark as `no_response` (session may have ended or
+   disconnected).
+
+2. **Score uptake by action type.** Each action has specific textual signals in
+   the subsequent Alvia turn:
+
+   | Action | Evidence in Alvia's response |
+   |--------|------------------------------|
+   | `probe_followup` | Contains a question that references specific respondent content from the current turn (not a template question) |
+   | `suggest_next_question` | Transitions to next template question or explicitly offers to move on |
+   | `acknowledge_prior` | References a prior answer before posing a new question |
+   | `confirm_understanding` | Paraphrases respondent content and asks for confirmation |
+   | `suggest_environment_check` | Mentions audio, hearing, noise, or asks respondent to adjust |
+   | `time_reminder` | References time, pacing, remaining questions |
+
+   Each evidence check returns a boolean. The scoring is binary per entry:
+   **matched** or **not matched**. No fractional scores — this avoids false
+   precision.
+
+3. **Handle ambiguity honestly.** If the Alvia turn is too short (<10 words) or
+   contains multiple signals, mark as `ambiguous` rather than forcing a match.
+
+##### Why This Is Not Circular
+
+With the guidance log, the analysis knows what Barbara *actually recommended*
+(from `logEntry.action`) independently of what Alvia did. It then checks whether
+Alvia's behavior is consistent with that recommendation. The recommendation
+and the behavior are separate data sources:
+
+- **Recommendation source:** `barbaraGuidanceLog[i].action` (written by Barbara
+  before Alvia responds)
+- **Behavior source:** `liveTranscript[targetTurnIndex].text` (written by Alvia
+  after receiving the guidance)
+
+This is a genuine comparison, not inference from the same data.
+
+#### Response Types
+
+```typescript
+// shared/types/barbara-guidance-uptake.ts
+
+export type GuidanceUptakeEntry = {
+  /** Index in the guidance log */
+  guidanceIndex: number;
+  /** The action Barbara recommended */
+  action: BarbaraGuidanceAction;
+  /** Barbara's confidence */
+  confidence: number;
+  /** Index of the Alvia turn evaluated */
+  alviaTurnIndex: number | null;
+  /** Uptake result */
+  result: "matched" | "not_matched" | "ambiguous" | "no_response";
+  /** Which evidence signal was detected (if matched) */
+  evidenceSignal?: string;
+};
+
+export type SessionGuidanceUptakeResult = {
+  sessionId: string;
+  /** Total guidance events generated by Barbara */
+  totalGuidanceEvents: number;
+  /** Events where guidance met injection threshold */
+  injectedCount: number;
+  /** Events where action was "none" (no intervention needed) */
+  noActionCount: number;
+  /** Of injected guidance, how many appear followed */
+  matchedCount: number;
+  /** Of injected guidance, how many were not followed */
+  notMatchedCount: number;
+  /** Of injected guidance, how many were ambiguous */
+  ambiguousCount: number;
+  /** Of injected guidance, Alvia didn't respond in time */
+  noResponseCount: number;
+  /**
+   * Apparent uptake rate: matchedCount / injectedCount.
+   * Only counts guidance that was actually injected (confidence > 0.6).
+   * null if injectedCount === 0.
+   */
+  apparentUptakeRate: number | null;
+  /** Breakdown by action type */
+  byAction: Record<BarbaraGuidanceAction, {
+    injected: number;
+    matched: number;
+    notMatched: number;
+    ambiguous: number;
+  }>;
+  /** Per-entry detail (optional, controlled by query param) */
+  entries?: GuidanceUptakeEntry[];
+  /** Data quality indicator */
+  dataQuality: "full" | "partial" | "insufficient";
+  /** Human-readable caveat */
+  caveat: string;
+};
+
+export type CollectionGuidanceUptakeResult = {
+  collectionId: string;
+  sessionCount: number;
+  /** Sessions with sufficient data for analysis */
+  analyzableSessionCount: number;
+  /** Aggregate across all analyzable sessions */
+  aggregate: {
+    totalInjected: number;
+    totalMatched: number;
+    apparentUptakeRate: number | null;
+    byAction: Record<BarbaraGuidanceAction, {
+      injected: number;
+      matched: number;
+    }>;
+  };
+  /** Distribution of per-session uptake rates */
+  distribution: {
+    min: number | null;
+    median: number | null;
+    max: number | null;
+    p25: number | null;
+    p75: number | null;
+  };
+  /** Per-session summaries (sessionId + uptake rate + data quality) */
+  sessions: Array<{
+    sessionId: string;
+    apparentUptakeRate: number | null;
+    injectedCount: number;
+    matchedCount: number;
+    dataQuality: "full" | "partial" | "insufficient";
+  }>;
+  caveat: string;
+};
+```
+
+#### Endpoints
+
+Place in a new file: `server/routes/analytics.guidance.routes.ts`.
+
+These are interview quality analytics, not LLM usage metrics. They belong under
+`/api/analytics/`, not `/api/usage/`.
+
+```
+GET /api/analytics/sessions/:sessionId/guidance-uptake
+GET /api/analytics/collections/:collectionId/guidance-uptake
+```
+
+Query parameters:
+- `detail=true` — include per-entry breakdown in session response
+- (Collection endpoint) `limit=N` — cap number of sessions analyzed (default 100)
+
+Access control: reuse existing `verifyUserAccessToSession` /
+`verifyUserAccessToCollection` from `storage.ts`.
+
+#### Storage Methods Needed
+
+One new method to avoid the N+1 problem at collection level:
+
+```typescript
+// server/storage/types.ts
+getSessionsWithGuidanceLogByCollection(
+  collectionId: string
+): Promise<Array<{
+  id: string;
+  barbaraGuidanceLog: BarbaraGuidanceLogEntry[] | null;
+  liveTranscript: PersistedTranscriptEntry[] | null;
+  questionCount: number;  // derived from template
+}>>
+```
+
+This is a single query joining `interviewSessions` with the template's question
+count, selecting only the two JSONB columns needed. Far more efficient than
+loading full session objects.
+
+#### Performance
+
+**Session-level:** One DB read (session row with two JSONB columns). In-memory
+analysis of ~40 guidance entries against ~80 transcript entries. Sub-50ms.
+
+**Collection-level:** One DB query returning guidance logs and transcripts for
+all sessions. Analysis is O(sessions * avg_guidance_entries). For 100 sessions
+with 40 entries each: 4,000 comparisons. Sub-500ms including DB read.
+
+**Safeguard:** The `limit` query parameter caps collection analysis. Sessions
+without `barbaraGuidanceLog` are counted as "insufficient" and skipped quickly.
+
+---
+
+### Testing Strategy
+
+#### Unit Tests (`server/__tests__/barbara-guidance-uptake.test.ts`)
+
+**Scoring tests (one per action type):**
+- `probe_followup`: Alvia asks "You mentioned X — can you tell me more?" → matched
+- `probe_followup`: Alvia asks next template question → not_matched
+- `suggest_next_question`: Alvia says "Let's move to the next topic" → matched
+- `suggest_next_question`: Alvia asks follow-up on current topic → not_matched
+- `acknowledge_prior`: Alvia says "Earlier you said X, and now..." → matched
+- `confirm_understanding`: Alvia says "So if I understand correctly, you..." → matched
+- `suggest_environment_check`: Alvia says "I'm having trouble hearing..." → matched
+- `time_reminder`: Alvia says "We have a few questions left..." → matched
+
+**Edge cases:**
+- Empty guidance log → `dataQuality: "insufficient"`, null rates
+- Empty transcript → `dataQuality: "insufficient"`
+- All guidance has `action: "none"` → `injectedCount: 0`, null uptake rate
+- All guidance below confidence threshold → `injectedCount: 0`
+- Alvia turn too short → `ambiguous`
+- Guidance at end of session with no subsequent Alvia turn → `no_response`
+- Multiple guidance events before same Alvia turn → each evaluated independently
+
+**Aggregation tests:**
+- Mixed sessions (some full, some insufficient) → only full/partial counted
+- Distribution calculation with odd/even session counts
+- Zero analyzable sessions → null distribution values
+
+#### Integration Tests
+
+- 404 on missing session/collection
+- 403 on unauthorized access
+- Response conforms to type schema
+- `detail=true` includes entries array
+- `detail=false` omits entries array
+- `limit` parameter caps session count
+
+---
+
+### Risks and Mitigations
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Textual evidence matching has false positives/negatives | Medium | Binary scoring + "ambiguous" category + caveat text. Iterate heuristics with real data. |
+| JSONB column growth on very long interviews | Low | Entries are ~200 bytes each. 100-turn interview = 20KB. Cap at 200 entries (safety valve). |
+| Guidance log adds to persistence payload | Low | Append-only, serialized with existing debounced persist. No additional DB writes. |
+| Old sessions lack guidance log | Expected | `dataQuality: "insufficient"` response. No backfill attempted. |
+| Heuristic drift as Alvia's prompt style changes | Medium | Centralized evidence rules in one module. Fixture-based regression tests. |
+| Large collection analysis slow | Low | `limit` parameter + skip insufficient sessions. Single optimized query. |
+
+---
+
+### Implementation Order
+
+1. Add `BarbaraGuidanceLogEntry` type to `shared/types/barbara-guidance-uptake.ts`
+2. Add `barbaraGuidanceLog` column to schema, run `db:push`
+3. Add `barbaraGuidanceLog` to `InterviewStatePatch` and `persistInterviewState`
+4. Modify `persistBarbaraGuidance()` to append to log
+5. Add response types to `shared/types/barbara-guidance-uptake.ts`
+6. Implement `analyzeSessionGuidanceUptake()` and `aggregateCollectionUptake()`
+7. Add `getSessionsWithGuidanceLogByCollection()` to storage
+8. Add route handlers in `server/routes/analytics.guidance.routes.ts`
+9. Register routes in `server/routes/index.ts`
+10. Write unit and integration tests
+
+Steps 1-4 can ship independently as a data-collection release. Steps 5-10
+build the analysis layer on top.
+
+---
+
+### Comparison: Codex Proposal vs. This Proposal
+
+| Aspect | Codex Proposal | This Proposal |
+|--------|---------------|---------------|
+| Schema changes | None | One JSONB column |
+| Knows what Barbara recommended | No (infers from behavior) | Yes (from guidance log) |
+| Circular inference risk | Fatal — infers recommendation from the behavior being measured | None — recommendation and behavior are independent data sources |
+| Handles `action: "none"` | Counts all analysis events | Separates "none" from injected guidance |
+| Handles confidence threshold | Ignores it | Tracks `injected` flag based on threshold |
+| Guidance history | Lost after session (only last guidance persisted) | Full append-only log |
+| Endpoint location | `/api/usage/` (wrong domain) | `/api/analytics/` (correct domain) |
+| Collection query strategy | Per-session queries (N+1) | Single optimized query |
+| Scoring approach | Fractional scores (0-1) with 0.6 threshold | Binary match/not-match + ambiguous category |
+| Backward compat | Claims full compat but can't produce valid results | Graceful degradation with "insufficient" quality flag |
+| Caching | None (v1) | Not needed at target perf; can add if needed |
+| Lines of new code | ~500 (analysis module) | ~400 (analysis) + ~30 (schema/persistence) |
