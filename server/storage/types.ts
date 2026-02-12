@@ -11,7 +11,7 @@ import type {
   WaitlistEntry, InsertWaitlistEntry,
   AlviaSessionSummary, BarbaraSessionSummary,
   LlmUsageEvent, InsertLlmUsageEvent, UsageRollup,
-  BarbaraGuidanceLogEntry
+  BarbaraGuidanceLogEntry, GuidanceAdherenceSummary
 } from "@shared/schema";
 
 export interface InterviewStatePatch {
@@ -32,6 +32,7 @@ export interface InterviewStatePatch {
   alviaSummary?: AlviaSessionSummary;
   barbaraSessionSummary?: BarbaraSessionSummary;
   barbaraGuidanceLog?: BarbaraGuidanceLogEntry[];
+  guidanceAdherenceSummary?: GuidanceAdherenceSummary;
 }
 
 export interface EnrichedSession extends InterviewSession {

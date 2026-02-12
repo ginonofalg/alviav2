@@ -487,6 +487,9 @@ export class DatabaseStorage implements IStorage {
     if (patch.barbaraGuidanceLog !== undefined) {
       updateData.barbaraGuidanceLog = patch.barbaraGuidanceLog;
     }
+    if (patch.guidanceAdherenceSummary !== undefined) {
+      updateData.guidanceAdherenceSummary = patch.guidanceAdherenceSummary;
+    }
 
     if (Object.keys(updateData).length === 0) {
       return this.getSession(id);

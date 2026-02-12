@@ -72,7 +72,9 @@ import type {
   TranscriptionQualityMetrics,
   AlviaSessionSummary,
   BarbaraSessionSummary,
+  BarbaraGuidanceLogEntry,
 } from "@shared/schema";
+import { GuidanceEffectivenessCard } from "@/components/guidance-effectiveness";
 import { format, formatDuration, intervalToDuration } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -1028,6 +1030,12 @@ export default function SessionDetailPage() {
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Full Transcript
               </TabsTrigger>
+              {Array.isArray(session.barbaraGuidanceLog) && (session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[]).length > 0 && (
+                <TabsTrigger value="guidance" data-testid="tab-guidance">
+                  <Eye className="w-4 h-4 mr-2" />
+                  Guidance
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="summary" className="space-y-4">
@@ -1694,6 +1702,12 @@ export default function SessionDetailPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {Array.isArray(session.barbaraGuidanceLog) && (session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[]).length > 0 && (
+              <TabsContent value="guidance" className="space-y-4">
+                <GuidanceEffectivenessCard sessionId={session.id} />
+              </TabsContent>
+            )}
           </Tabs>
 
           {session.closingComments && (

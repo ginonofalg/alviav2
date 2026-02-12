@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { isAuthenticated } from "../replit_integrations/auth";
 import { storage } from "../storage";
 import { generateResumeToken, hashToken, getTokenExpiryDate } from "../resume-token";
+import { scoreGuidanceAdherence, computeAdherenceSummary } from "../guidance-adherence";
+import type { BarbaraGuidanceLogEntry, PersistedTranscriptEntry } from "@shared/schema";
 import { z } from "zod";
 
 export function registerSessionRoutes(app: Express) {
@@ -302,6 +304,67 @@ export function registerSessionRoutes(app: Express) {
     } catch (error) {
       console.error("Error generating resume link:", error);
       res.status(500).json({ message: "Failed to generate resume link" });
+    }
+  });
+
+  app.get("/api/sessions/:id/guidance-effectiveness", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const session = await storage.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const guidanceLog = (session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[] | null) || [];
+      
+      if (guidanceLog.length === 0) {
+        return res.json({
+          scoredLog: [],
+          summary: null,
+          hasData: false,
+        });
+      }
+
+      if (session.guidanceAdherenceSummary && guidanceLog.some(e => e.adherence)) {
+        return res.json({
+          scoredLog: guidanceLog,
+          summary: session.guidanceAdherenceSummary,
+          hasData: true,
+        });
+      }
+
+      const transcript = (session.liveTranscript as PersistedTranscriptEntry[] | null) || [];
+      if (transcript.length === 0) {
+        return res.json({
+          scoredLog: guidanceLog,
+          summary: null,
+          hasData: true,
+          unscored: true,
+          reason: "No transcript available for scoring",
+        });
+      }
+
+      const scoredLog = scoreGuidanceAdherence(guidanceLog, transcript);
+      const summary = computeAdherenceSummary(scoredLog);
+
+      await storage.persistInterviewState(req.params.id, {
+        barbaraGuidanceLog: scoredLog,
+        guidanceAdherenceSummary: summary,
+      });
+
+      res.json({
+        scoredLog,
+        summary,
+        hasData: true,
+      });
+    } catch (error) {
+      console.error("Error fetching guidance effectiveness:", error);
+      res.status(500).json({ message: "Failed to fetch guidance effectiveness" });
     }
   });
 }

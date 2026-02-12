@@ -43,7 +43,9 @@ import type {
   TranscriptionQualitySignals,
   AlviaSessionSummary,
   QualityFlag,
+  PersistedTranscriptEntry as PersistedTranscriptEntryType,
 } from "@shared/schema";
+import { scoreGuidanceAdherence, computeAdherenceSummary } from "./guidance-adherence";
 import {
   createEmptyQualitySignals,
   updateQualitySignals,
@@ -3989,6 +3991,26 @@ async function finalizeInterview(
         `[SessionSummary] Error during summary generation for ${sessionId}:`,
         error,
       );
+    }
+  }
+
+  if (state.barbaraGuidanceLog.length > 0) {
+    try {
+      const transcriptForScoring = state.fullTranscriptForPersistence as PersistedTranscriptEntryType[];
+      const scoredLog = scoreGuidanceAdherence(state.barbaraGuidanceLog, transcriptForScoring);
+      const adherenceSummary = computeAdherenceSummary(scoredLog);
+
+      await storage.persistInterviewState(sessionId, {
+        barbaraGuidanceLog: scoredLog,
+        guidanceAdherenceSummary: adherenceSummary,
+      });
+      console.log(
+        `[GuidanceAdherence] Scored ${scoredLog.length} entries for ${sessionId}: ` +
+        `${adherenceSummary.followedCount} followed, ${adherenceSummary.partiallyFollowedCount} partial, ` +
+        `${adherenceSummary.notFollowedCount} not followed (rate: ${(adherenceSummary.overallAdherenceRate * 100).toFixed(1)}%)`,
+      );
+    } catch (adherenceError) {
+      console.error(`[GuidanceAdherence] Error scoring adherence for ${sessionId}:`, adherenceError);
     }
   }
 

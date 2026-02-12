@@ -23,6 +23,8 @@ export type PersistedBarbaraGuidance = {
   questionIndex: number;
 };
 
+export type GuidanceAdherenceResult = "followed" | "partially_followed" | "not_followed" | "not_applicable" | "unscored";
+
 export type BarbaraGuidanceLogEntry = {
   index: number;
   action: BarbaraGuidanceAction;
@@ -32,6 +34,27 @@ export type BarbaraGuidanceLogEntry = {
   timestamp: number;
   questionIndex: number;
   triggerTurnIndex: number;
+  adherence?: GuidanceAdherenceResult;
+  adherenceReason?: string;
+  alviaResponseSnippet?: string;
+};
+
+export type GuidanceAdherenceSummary = {
+  totalGuidanceEvents: number;
+  injectedCount: number;
+  scoredCount: number;
+  followedCount: number;
+  partiallyFollowedCount: number;
+  notFollowedCount: number;
+  notApplicableCount: number;
+  overallAdherenceRate: number;
+  byAction: Record<BarbaraGuidanceAction, {
+    total: number;
+    injected: number;
+    followed: number;
+    adherenceRate: number;
+  }>;
+  computedAt: number;
 };
 
 export type PersistedQuestionState = {

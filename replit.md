@@ -64,3 +64,12 @@ Added Phase 1 of guidance effectiveness tracking:
 - **Types**: `BarbaraGuidanceAction` union type and `BarbaraGuidanceLogEntry` type in `shared/types/interview-state.ts`. Each entry captures: index, action, messageSummary (truncated to 500 chars), confidence, injected (confidence > 0.6 and action !== "none"), timestamp, questionIndex, triggerTurnIndex.
 - **Integration**: Log entries are appended in `persistBarbaraGuidance()` and the environment check guidance path in `voice-interview.ts`. Included in both debounced persistence and direct Barbara guidance persistence calls. Restored from DB on session resume.
 - **Backward compatibility**: Existing sessions have `null` for the column. Restore logic handles this gracefully (treats as `[]`).
+
+### Barbara Guidance Adherence — Phase 2 (February 2026)
+Added adherence scoring to measure how well Alvia follows Barbara's real-time guidance:
+- **Scoring Engine**: `server/guidance-adherence.ts` — action-type-specific heuristic scoring. Each action type has tailored detection logic (keyword matching, question-index tracking, transition language detection).
+- **Types**: `GuidanceAdherenceResult` union (`followed | partially_followed | not_followed | not_applicable | unscored`) and `GuidanceAdherenceSummary` in `shared/types/interview-state.ts`. Extended `BarbaraGuidanceLogEntry` with optional `adherence`, `adherenceReason`, `alviaResponseSnippet` fields.
+- **Schema**: `guidanceAdherenceSummary` JSONB column on `interviewSessions` table. Stores per-session summary with overall adherence rate, by-action breakdowns, and counts.
+- **Integration**: Scoring runs automatically in `finalizeInterview()` after summaries are generated. Also available on-demand via API for retroactive scoring of existing sessions.
+- **API**: `GET /api/sessions/:id/guidance-effectiveness` — returns scored log + summary. Lazily scores on first access if not yet computed.
+- **UI**: `client/src/components/guidance-effectiveness.tsx` — Guidance tab on session detail page shows overall adherence rate, per-action breakdown grid, and detailed log with adherence badges and Alvia response snippets.

@@ -227,6 +227,7 @@ export const interviewSessions = pgTable("interview_sessions", {
   alviaSummary: jsonb("alvia_summary"),
   barbaraSessionSummary: jsonb("barbara_session_summary"),
   barbaraGuidanceLog: jsonb("barbara_guidance_log"),
+  guidanceAdherenceSummary: jsonb("guidance_adherence_summary"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
