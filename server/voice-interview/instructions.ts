@@ -46,13 +46,13 @@ ${nameContext}
 CURRENT QUESTION:
 "${currentQuestion?.questionText || "Please share your thoughts."}"
 
-GUIDANCE FOR THIS QUESTION:
+STEER FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
   followUpContext?.recommendedFollowUps !== null &&
   followUpContext?.recommendedFollowUps !== undefined
     ? `
-FOLLOW-UP DEPTH GUIDANCE:
+FOLLOW-UP DEPTH:
 The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? "" : "s"} for this question.
 You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit.
 `
@@ -70,13 +70,14 @@ INSTRUCTIONS:
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
 4. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
-5. Use the GUIDANCE FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the GUIDANCE. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
-6. Be encouraging and conversational, matching the ${tone} tone.
-7. Keep responses concise, this is a voice conversation.
-8. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-9. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-10. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-11. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
+5. Use the STEER FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the STEER. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+6. You may want to incorporate BARBARA'S GUIDANCE into your follow-up question. Remember, this is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; only incorporate this guidance naturally if appropriate, and never repeat a question.
+7. Be encouraging and conversational, matching the ${tone} tone.
+8. Keep responses concise, this is a voice conversation.
+9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
+11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.`;
@@ -84,7 +85,7 @@ STYLE POLICY (IMPORTANT):
   if (barbaraGuidance) {
     instructions += `
 
-ORCHESTRATOR'S GUIDANCE (Barbara):
+BARBARA'S GUIDANCE:
 ${barbaraGuidance}
 Note: This guidance is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; incorporate this guidance naturally when appropriate, not necessarily immediately.`;
   }
@@ -187,12 +188,12 @@ ${transcriptSummary || "(No previous conversation recorded)"}
 CURRENT QUESTION: "${currentQuestion?.questionText || "Please share your thoughts."}"
 QUESTION STATUS: ${status}
 
-GUIDANCE FOR THIS QUESTION:
+STEER FOR THIS QUESTION:
 ${guidance || "Listen carefully and probe for more details when appropriate."}
 ${
   recommendedFollowUps !== null && recommendedFollowUps !== undefined
     ? `
-FOLLOW-UP DEPTH GUIDANCE:
+FOLLOW-UP DEPTH:
 The researcher recommends approximately ${recommendedFollowUps} follow-up probe${recommendedFollowUps === 1 ? "" : "s"} for this question.
 You've asked ${followUpCount} so far. This is guidance, not a strict limit.
 `
@@ -223,13 +224,14 @@ RESUME INSTRUCTIONS:
 3. Listen to the respondent's answer carefully.
 4. Ask follow-up questions if the answer is too brief or unclear.
 5. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
-6. Use the GUIDANCE FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the GUIDANCE. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
-7. Be encouraging and conversational, matching the ${tone} tone.
-8. Keep responses concise, this is a voice conversation.
-9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
+6. Use the STEER FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the STEER. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+7. You may want to incorporate BARBARA'S GUIDANCE into your follow-up question. Remember, this is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; only incorporate this guidance naturally if appropriate, and never repeat a question.
+8. Be encouraging and conversational, matching the ${tone} tone.
+9. Keep responses concise, this is a voice conversation.
+10. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+11. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
+12. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+13. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.`;
@@ -237,7 +239,7 @@ STYLE POLICY (IMPORTANT):
   if (lastBarbaraGuidance) {
     instructions += `
 
-ORCHESTRATOR'S GUIDANCE (Barbara):
+BARBARA'S GUIDANCE:
 ${lastBarbaraGuidance}
 Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage, incorporate this guidance naturally when appropriate.`;
   }
