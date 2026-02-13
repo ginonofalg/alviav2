@@ -10,3 +10,4 @@ export { registerInterviewFlowRoutes } from "./interview-flow.routes";
 export { registerReviewRoutes } from "./review.routes";
 export { registerBarbaraRoutes } from "./barbara.routes";
 export { registerUsageRoutes } from "./usage.routes";
+export { registerGuidanceRoutes } from "./guidance.routes";
