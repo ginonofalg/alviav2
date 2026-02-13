@@ -1,0 +1,128 @@
+Tighten Guidance Adherence Scoring                                                                                                                                             
+                                                        
+ Context
+
+ The current guidance adherence scoring in server/guidance-adherence.ts produces inflated scores. Three root causes:
+
+ 1. probe_followup — scores "followed" when Alvia's response contains any question with generic words like "what" or "how". No check that Alvia's probe relates to what Barbara
+  actually suggested.
+ 2. suggest_next_question — allows 4 transcript entries for the question to advance. Too generous.
+ 3. containsKeywords uses substring matching — "right" matches "alright", "what" matches "whatever", etc. across all scorers.
+
+ Changes
+
+ 1. Fix substring false positives in containsKeywords (server/guidance-adherence.ts)
+
+ Switch from lower.includes(kw) to regex word boundaries:
+
+ function containsKeywords(text: string, keywords: string[]): boolean {
+   const lower = text.toLowerCase();
+   return keywords.some((kw) => new RegExp(`\\b${kw}\\b`).test(lower));
+ }
+
+ \bright\b matches "right" but not "alright". Works for multi-word phrases too.
+
+ 2. Extract text utilities → server/voice-interview/text-utils.ts (NEW, ~90 lines)
+
+ getKeywords() and jaccardSimilarity() are currently scoped inside detectQuestionRepeat in transcript.ts (lines 37-168). Extract them as exports, plus add:
+
+ - overlapCoefficient(a, b) — intersection.size / Math.min(a.size, b.size). Better than Jaccard for asymmetric text lengths (Barbara's terse guidance vs Alvia's longer
+ conversational response).
+ - INTERVIEW_META_STOPWORDS — supplementary set filtering Barbara's instruction language ("probe", "respondent", "deeper", "ask", "conversation", etc.) so only topic words
+ remain.
+
+ getKeywords() gains an optional extraStopwords parameter. Without it, behavior is identical to current.
+
+ 3. Update server/voice-interview/index.ts
+
+ Add export * from "./text-utils" to the barrel.
+
+ 4. Refactor server/voice-interview/transcript.ts
+
+ Replace the inline getKeywords/jaccardSimilarity definitions (lines 37-168) with imports from ./text-utils. Pure refactor — detectQuestionRepeat behavior unchanged. File
+ drops from ~181 to ~50 lines.
+
+ 5. Tighten scoreProbeFollowup in server/guidance-adherence.ts
+
+ Add topical relevance check using keyword overlap between Barbara's messageSummary and Alvia's response:
+
+ Barbara keywords = getKeywords(messageSummary, INTERVIEW_META_STOPWORDS)
+ Alvia keywords   = getKeywords(firstResponse.text)
+ overlap          = overlapCoefficient(barbaraKeywords, alviaKeywords)
+
+ If Barbara yields < 2 keywords → skip topical check (graceful fallback)
+ ┌───────┬────────────────┬───────────────────────────┬─────────────────────────────────────────┐
+ │ Has ? │ Has probe word │ Topically relevant (≥30%) │                 Result                  │
+ ├───────┼────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+ │ yes   │ yes            │ yes (or skipped)          │ followed                                │
+ ├───────┼────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+ │ yes   │ yes            │ no                        │ partially_followed (new — was followed) │
+ ├───────┼────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+ │ yes   │ no             │ any                       │ partially_followed                      │
+ ├───────┼────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+ │ no    │ yes            │ any                       │ partially_followed                      │
+ ├───────┼────────────────┼───────────────────────────┼─────────────────────────────────────────┤
+ │ no    │ no             │ any                       │ not_followed                            │
+ └───────┴────────────────┴───────────────────────────┴─────────────────────────────────────────┘
+ The partially_followed reason string includes the overlap percentage for diagnostics.
+
+ Constants (tunable, module-level):
+ - TOPICAL_RELEVANCE_THRESHOLD = 0.3
+ - MIN_KEYWORDS_FOR_TOPICAL_CHECK = 2
+
+ Pass BarbaraGuidanceLogEntry into scoreProbeFollowup (currently only receives alviaResponses). Update the scoreEntry switch to pass entry.
+
+ 6. Tighten scoreSuggestNextQuestion in server/guidance-adherence.ts
+
+ Change the "followed" threshold from 4 to 2 transcript entries:
+
+ const MAX_TURNS_FOR_FOLLOWED = 2;  // was effectively 4
+
+ turnsUntilChange counts entries from both speakers, so 2 entries ≈ 1 respondent turn + 1 Alvia turn. The question must advance on Alvia's very next response.
+
+ 7. New tests → server/__tests__/guidance-adherence.test.ts (NEW, ~180 lines)
+
+ scoreProbeFollowup:
+ - Barbara says "explore challenges with team collaboration", Alvia asks about challenges/team → followed
+ - Same guidance, Alvia asks about the weather → partially_followed (probe structure, no topical overlap)
+ - Barbara's messageSummary yields <2 keywords after filtering → structural check only
+ - No question, no probe words → not_followed
+
+ scoreSuggestNextQuestion:
+ - Question advances within 2 entries → followed
+ - Question advances at entry 3 → partially_followed (was followed)
+ - No advancement + transition language → partially_followed
+ - No advancement, no transition → not_followed
+
+ containsKeywords word boundaries:
+ - "right" does NOT match "alright" or "brighter"
+ - "right" DOES match "that's right"
+ - "tell me more" matches "could you tell me more about that"
+
+ 8. Update server/__tests__/guidance-aggregation.test.ts
+
+ The re-scoring test (line 84-98) uses messageSummary: "Test guidance" with zero topic overlap to the Alvia text. Fix the fixtures:
+ - messageSummary → "Probe deeper into the challenges the respondent faces with team collaboration"
+ - text → "Can you tell me more about those challenges? Why do you think they affect your team?"
+
+ Files modified
+ ┌───────────────────────────────────────────────┬────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                     File                      │ Action │                                               Notes                                                │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/guidance-adherence.ts                  │ Edit   │ Word-boundary fix, import text-utils, rewrite scoreProbeFollowup, tighten scoreSuggestNextQuestion │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview/text-utils.ts          │ NEW    │ ~90 lines — getKeywords, jaccardSimilarity, overlapCoefficient, stopwords                          │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview/index.ts               │ Edit   │ Add 1 export line                                                                                  │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview/transcript.ts          │ Edit   │ Remove ~130 inline lines, import from text-utils                                                   │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/__tests__/guidance-adherence.test.ts   │ NEW    │ ~180 lines — unit tests for all three changes                                                      │
+ ├───────────────────────────────────────────────┼────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/__tests__/guidance-aggregation.test.ts │ Edit   │ Update fixture defaults for topical relevance                                                      │
+ └───────────────────────────────────────────────┴────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Verification
+
+ 1. npx vitest — all tests pass (existing + new)
+ 2. npm run check — TypeScript compiles cleanly
+ 3. Review partially_followed reason strings include overlap percentages
