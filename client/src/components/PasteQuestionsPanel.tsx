@@ -252,11 +252,13 @@ export function PasteQuestionsPanel({
   return (
     <Card data-testid="paste-questions-panel-preview">
       <CardContent className="pt-6 space-y-4">
-        {result?.suggestedObjective && !templateObjective && !objectiveApplied && (
+        {result?.suggestedObjective && !objectiveApplied && (
           <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-md" data-testid="suggested-objective-banner">
             <Lightbulb className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
             <div className="flex-1 min-w-0 space-y-1">
-              <p className="text-xs font-medium">Suggested objective from your pasted content:</p>
+              <p className="text-xs font-medium">
+                {templateObjective ? "Refined interview objective:" : "Suggested interview objective:"}
+              </p>
               <p className="text-xs text-muted-foreground italic">{result.suggestedObjective}</p>
             </div>
             <Button
@@ -266,7 +268,7 @@ export function PasteQuestionsPanel({
               onClick={handleApplyObjective}
               data-testid="button-apply-objective"
             >
-              Apply
+              {templateObjective ? "Update" : "Apply"}
             </Button>
           </div>
         )}

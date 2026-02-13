@@ -99,7 +99,11 @@ Parse the user's pasted text into individual interview questions. For each quest
    - "medium": Reasonable interpretation but some ambiguity in type or intent
    - "low": Ambiguous text that could be interpreted multiple ways
 6. CHECK for semantic overlap with existing template questions. Flag possibleDuplicate=true and set duplicateOf to the existing question text it resembles.
-7. EXTRACT objective from preamble if present — if the pasted text includes context like "This survey aims to understand..." and ${templateObjective ? "the template already has an objective, skip this" : "the template has no objective yet, extract a suggestedObjective"}.
+7. SYNTHESIZE a template interview objective — Generate a concise, research-focused objective for this interview template by combining:
+   - The project's research objective and strategic context (from PROJECT CONTEXT above)
+   - The themes and topics covered by the parsed questions
+   - Any preamble or research context found in the pasted text
+   The objective should be 1-2 sentences describing what this specific interview template aims to discover or measure.${templateObjective ? `\n   The template currently has this objective: "${templateObjective}" — generate a refined/improved version that incorporates the parsed questions' themes. Only suggest a new one if it meaningfully improves on the existing one.` : "\n   The template has no objective yet — always generate one."}
 
 HANDLING MESSY INPUT:
 - Numbered lists, bullet points, tables — extract just the questions
@@ -111,7 +115,7 @@ HANDLING MESSY INPUT:
 
 OUTPUT FORMAT (JSON):
 {
-  ${!templateObjective ? '"suggestedObjective": "extracted objective from preamble context (only if preamble contains research context)",' : ""}
+  "suggestedObjective": "synthesized interview objective based on project context and parsed questions",
   "questions": [
     {
       "originalText": "the raw text that was interpreted as this question",
