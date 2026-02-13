@@ -1,0 +1,88 @@
+ ## Realtime Token Reporting Reconciliation Plan (gpt-realtime-mini)
+
+  ### Summary
+
+  Fix the discrepancy by making realtime reporting semantics explicit and non-ambiguous:
+
+  1. Keep promptTokens/completionTokens as text-only (your chosen contract).
+  2. Add and expose canonical totals for realtime (input total, output total, and cached input where available) so OpenAI parity comparisons use the right fields.
+  3. Split “requests” into two metrics: turn events vs session requests equivalent to stop false mismatch alarms.
+  4. Apply forward-fix only (no historical rewrite), with a clear cutoff date in docs/UI.
+
+  ### Validated Root Causes (from code)
+
+  1. alvia_realtime writes text-only into prompt/completion in server/voice-interview.ts:1712 and server/voice-interview.ts:1713.
+  2. Full I/O totals are available separately (totalTokens, inputAudioTokens, outputAudioTokens) in server/voice-interview.ts:1714–server/voice-interview.ts:1716.
+  3. Parser already reads both text and audio components from realtime usage in server/realtime-providers.ts:156–server/realtime-providers.ts:161.
+  4. Shared usage contract currently lacks first-class fields for cached/explicit input-vs-output totals in shared/types/llm-usage.ts:34.
+
+  ### Public API / Type Changes
+
+  1. Extend NormalizedTokenUsage with additive fields (non-breaking):
+      - inputTokensTotal?: number
+      - outputTokensTotal?: number
+      - inputCachedTokens?: number
+  2. Extend DB tables and rollups (forward-only defaults = 0):
+      - llm_usage_events: input_tokens_total, output_tokens_total, input_cached_tokens
+      - llm_usage_rollups: same three aggregate columns
+  3. Extend UsageRollup response with explicit totals:
+      - totalInputTokens
+      - totalOutputTokens
+      - realtimeSessionCount (distinct session count for realtime comparisons)
+  ### Implementation Plan
+
+  4. Normalize realtime usage shape
+      - Update TokenUsageDetails in server/realtime-providers.ts to include cached input extraction from known OpenAI paths in response.usage.
+      - Keep defensive fallback to 0 for absent fields.
+  5. Record consistent realtime event payload
+      - In server/voice-interview.ts response.done handler, continue:
+          - promptTokens = inputTextTokens
+          - completionTokens = outputTextTokens
+      - Additionally write:
+          - inputTokensTotal = tokenUsage.inputTokens
+          - outputTokensTotal = tokenUsage.outputTokens
+          - inputCachedTokens = parsed cached value
+      - Include requestId from realtime response ID if present for traceability.
+  6. Persist and roll up new metrics
+      - Update shared/schema.ts and Drizzle types.
+      - Update server/storage.ts:
+          - insert/upsert paths (createEventAndUpsertRollup)
+          - reconciliation rollup SQL (reconcileUsageRollups)
+          - aggregate builder (computeUsageRollup) with new totals.
+      - Ensure all non-realtime paths still compile with defaults.
+  7. Clarify request semantics
+      - Keep existing callCount as turn/event count.
+      - Add realtime-specific session request equivalent in rollup query (COUNT(DISTINCT session_id) where model/useCase is realtime).
+      - Update usage endpoint output shape and API docs to distinguish both.
+  8. Reporting contract update
+      - Update docs/labels:
+          - prompt/completion = text-only for realtime
+          - input/output total = OpenAI-comparable totals
+      - Add reconciliation notes with cutoff date: forward-fix starts at deploy timestamp.
+
+  ### Test Cases and Scenarios
+
+  9. Unit: realtime usage parsing
+      - Input: mocked response.done usage with text/audio/cached details.
+      - Assert parsed totals and cached extraction are correct.
+  10. Unit: event recording mapping
+      - Verify alvia_realtime writes:
+          - text-only prompt/completion
+          - total input/output fields
+          - audio fields unchanged.
+  11. Unit: rollup aggregation
+      - Multiple events aggregate new total/cached columns correctly.
+  12. Integration: /api/usage/*
+      - Response includes both text-only and total metrics; no schema regressions for non-realtime models.
+  13. Acceptance (Feb 13 parity check)
+      - For realtime model:
+          - compare OpenAI input/output against DB totalInputTokens/totalOutputTokens (not prompt/completion).
+          - compare requests against realtimeSessionCount, not turn events.
+      - Expected: large prior gaps collapse; remaining delta within small tolerance for in-flight/session-window timing.
+
+  ### Assumptions and Defaults
+
+  14. Keep prompt/completion text-only for realtime (locked by your decision).
+  15. Forward-fix only; no historical backfill.
+  16. OpenAI “requests” for realtime are treated as session-level equivalents; DB callCount remains per response.done.
+  17. Cached token extraction is best-effort and defaults to 0 when provider omits those fields.
