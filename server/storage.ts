@@ -1434,12 +1434,17 @@ export class DatabaseStorage implements IStorage {
       const isError = (event.status === "error" || event.status === "timeout") ? 1 : 0;
       const latency = event.latencyMs ?? null;
 
+      const inputTotalVal = event.inputTokensTotal ?? 0;
+      const outputTotalVal = event.outputTokensTotal ?? 0;
+      const cachedVal = event.inputCachedTokens ?? 0;
+
       await tx.execute(sql`
         INSERT INTO llm_usage_rollups (
           bucket_start, workspace_id, project_id, template_id, collection_id, session_id,
           provider, model, use_case, status,
           call_count, prompt_tokens, completion_tokens, total_tokens,
           input_audio_tokens, output_audio_tokens,
+          input_tokens_total, output_tokens_total, input_cached_tokens,
           error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
           first_event_at, last_event_at, updated_at
         ) VALUES (
@@ -1447,6 +1452,7 @@ export class DatabaseStorage implements IStorage {
           ${event.provider}, ${event.model}, ${event.useCase}, ${event.status},
           1, ${event.promptTokens}, ${event.completionTokens}, ${event.totalTokens},
           ${event.inputAudioTokens}, ${event.outputAudioTokens},
+          ${inputTotalVal}, ${outputTotalVal}, ${cachedVal},
           ${isError}, COALESCE(${latency}::integer, 0), ${latency}::integer, ${latency}::integer,
           ${eventTime}, ${eventTime}, now()
         )
@@ -1461,6 +1467,9 @@ export class DatabaseStorage implements IStorage {
           total_tokens = llm_usage_rollups.total_tokens + ${event.totalTokens},
           input_audio_tokens = llm_usage_rollups.input_audio_tokens + ${event.inputAudioTokens},
           output_audio_tokens = llm_usage_rollups.output_audio_tokens + ${event.outputAudioTokens},
+          input_tokens_total = llm_usage_rollups.input_tokens_total + ${inputTotalVal},
+          output_tokens_total = llm_usage_rollups.output_tokens_total + ${outputTotalVal},
+          input_cached_tokens = llm_usage_rollups.input_cached_tokens + ${cachedVal},
           error_count = llm_usage_rollups.error_count + ${isError},
           latency_ms_sum = llm_usage_rollups.latency_ms_sum + COALESCE(${latency}::integer, 0),
           latency_ms_min = CASE
@@ -1492,6 +1501,9 @@ export class DatabaseStorage implements IStorage {
       totalTokens: 0,
       totalInputAudioTokens: 0,
       totalOutputAudioTokens: 0,
+      totalInputTokensTotal: 0,
+      totalOutputTokensTotal: 0,
+      totalInputCachedTokens: 0,
       totalCalls: 0,
       byProvider: {},
       byModel: {},
@@ -1505,6 +1517,9 @@ export class DatabaseStorage implements IStorage {
       rollup.totalTokens += row.totalTokens;
       rollup.totalInputAudioTokens += row.inputAudioTokens;
       rollup.totalOutputAudioTokens += row.outputAudioTokens;
+      rollup.totalInputTokensTotal += row.inputTokensTotal;
+      rollup.totalOutputTokensTotal += row.outputTokensTotal;
+      rollup.totalInputCachedTokens += row.inputCachedTokens;
       rollup.totalCalls += row.callCount;
 
       const providerKey = row.provider;
@@ -1583,6 +1598,7 @@ export class DatabaseStorage implements IStorage {
         provider, model, use_case, status,
         call_count, prompt_tokens, completion_tokens, total_tokens,
         input_audio_tokens, output_audio_tokens,
+        input_tokens_total, output_tokens_total, input_cached_tokens,
         error_count, latency_ms_sum, latency_ms_min, latency_ms_max,
         first_event_at, last_event_at, updated_at
       )
@@ -1600,6 +1616,9 @@ export class DatabaseStorage implements IStorage {
         SUM(total_tokens)::integer AS total_tokens,
         SUM(input_audio_tokens)::integer AS input_audio_tokens,
         SUM(output_audio_tokens)::integer AS output_audio_tokens,
+        SUM(COALESCE(input_tokens_total, 0))::integer AS input_tokens_total,
+        SUM(COALESCE(output_tokens_total, 0))::integer AS output_tokens_total,
+        SUM(COALESCE(input_cached_tokens, 0))::integer AS input_cached_tokens,
         SUM(CASE WHEN status IN ('error','timeout') THEN 1 ELSE 0 END)::integer AS error_count,
         SUM(COALESCE(latency_ms, 0))::integer AS latency_ms_sum,
         MIN(latency_ms) AS latency_ms_min,
@@ -1628,6 +1647,9 @@ export class DatabaseStorage implements IStorage {
         total_tokens = EXCLUDED.total_tokens,
         input_audio_tokens = EXCLUDED.input_audio_tokens,
         output_audio_tokens = EXCLUDED.output_audio_tokens,
+        input_tokens_total = EXCLUDED.input_tokens_total,
+        output_tokens_total = EXCLUDED.output_tokens_total,
+        input_cached_tokens = EXCLUDED.input_cached_tokens,
         error_count = EXCLUDED.error_count,
         latency_ms_sum = EXCLUDED.latency_ms_sum,
         latency_ms_min = EXCLUDED.latency_ms_min,

@@ -1714,9 +1714,15 @@ async function handleProviderEvent(
             totalTokens: tokenUsage.inputTokens + tokenUsage.outputTokens,
             inputAudioTokens: tokenUsage.inputAudioTokens,
             outputAudioTokens: tokenUsage.outputAudioTokens,
+            inputTokensTotal: tokenUsage.inputTokens,
+            outputTokensTotal: tokenUsage.outputTokens,
+            inputCachedTokens: tokenUsage.inputCachedTokens,
           },
           "success",
-          { rawUsage: event.response?.usage },
+          {
+            rawUsage: event.response?.usage,
+            requestId: event.response?.id ?? undefined,
+          },
         ).catch((err) =>
           console.error(
             "[LLM Usage] Failed to record per-response alvia_realtime:",

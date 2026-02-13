@@ -9,6 +9,7 @@ export interface TokenUsageDetails {
   outputAudioTokens: number;
   inputTextTokens: number;
   outputTextTokens: number;
+  inputCachedTokens: number;
 }
 
 export interface RealtimeProvider {
@@ -159,6 +160,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
       outputAudioTokens: usage.output_token_details?.audio_tokens || 0,
       inputTextTokens: usage.input_token_details?.text_tokens || 0,
       outputTextTokens: usage.output_token_details?.text_tokens || 0,
+      inputCachedTokens: usage.input_token_details?.cached_tokens || 0,
     };
   }
 
@@ -281,6 +283,7 @@ export class GrokRealtimeProvider implements RealtimeProvider {
       outputAudioTokens: usage.output_token_details?.audio_tokens || 0,
       inputTextTokens: usage.input_token_details?.text_tokens || 0,
       outputTextTokens: usage.output_token_details?.text_tokens || 0,
+      inputCachedTokens: usage.input_token_details?.cached_tokens || 0,
     };
   }
 

@@ -38,6 +38,9 @@ export type NormalizedTokenUsage = {
   totalTokens: number;
   inputAudioTokens: number;
   outputAudioTokens: number;
+  inputTokensTotal?: number;
+  outputTokensTotal?: number;
+  inputCachedTokens?: number;
 };
 
 export type UsageRollup = {
@@ -46,6 +49,9 @@ export type UsageRollup = {
   totalTokens: number;
   totalInputAudioTokens: number;
   totalOutputAudioTokens: number;
+  totalInputTokensTotal: number;
+  totalOutputTokensTotal: number;
+  totalInputCachedTokens: number;
   totalCalls: number;
   byProvider: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }>;
   byModel: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }>;
