@@ -253,19 +253,20 @@ export function PasteQuestionsPanel({
     <Card data-testid="paste-questions-panel-preview">
       <CardContent className="pt-6 space-y-4">
         {result?.suggestedObjective && !objectiveApplied && (
-          <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-md" data-testid="suggested-objective-banner">
-            <Lightbulb className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-            <div className="flex-1 min-w-0 space-y-1">
-              <p className="text-xs font-medium">
+          <div className="flex items-start gap-4 p-4 bg-muted/50 rounded-md" data-testid="suggested-objective-banner">
+            <Lightbulb className="w-5 h-5 mt-0.5 text-muted-foreground flex-shrink-0" />
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <p className="text-sm font-medium">
                 {templateObjective ? "Refined interview objective:" : "Suggested interview objective:"}
               </p>
-              <p className="text-xs text-muted-foreground italic">{result.suggestedObjective}</p>
+              <p className="text-sm text-muted-foreground italic leading-relaxed">{result.suggestedObjective}</p>
             </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleApplyObjective}
+              className="flex-shrink-0"
               data-testid="button-apply-objective"
             >
               {templateObjective ? "Update" : "Apply"}
@@ -273,7 +274,7 @@ export function PasteQuestionsPanel({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm font-medium" data-testid="text-parsed-count">
             {editedQuestions.length} question{editedQuestions.length !== 1 ? "s" : ""} parsed
             {selectedCount < editedQuestions.length && ` (${selectedCount} selected)`}
@@ -290,12 +291,13 @@ export function PasteQuestionsPanel({
           </div>
         </div>
 
-        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
           {editedQuestions.map((q, index) => (
             <ParsedQuestionCard
               key={index}
               question={q}
               index={index}
+              totalCount={editedQuestions.length}
               selected={selectedIndices.has(index)}
               onToggle={() => toggleQuestion(index)}
               onUpdate={(updates) => updateQuestion(index, updates)}
@@ -303,7 +305,7 @@ export function PasteQuestionsPanel({
           ))}
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-2 border-t">
+        <div className="flex items-center justify-between gap-4 pt-3 border-t">
           <Button type="button" variant="ghost" size="sm" onClick={() => { setResult(null); }} data-testid="button-back-to-input">
             Back
           </Button>
@@ -331,12 +333,14 @@ export function PasteQuestionsPanel({
 function ParsedQuestionCard({
   question,
   index,
+  totalCount,
   selected,
   onToggle,
   onUpdate,
 }: {
   question: ParsedQuestion;
   index: number;
+  totalCount: number;
   selected: boolean;
   onToggle: () => void;
   onUpdate: (updates: Partial<ParsedQuestion>) => void;
@@ -345,7 +349,7 @@ function ParsedQuestionCard({
 
   return (
     <div
-      className={`border rounded-md p-3 space-y-2 transition-opacity ${!selected ? "opacity-50" : ""}`}
+      className={`border rounded-md p-4 space-y-3 transition-opacity ${!selected ? "opacity-50" : ""}`}
       data-testid={`parsed-question-card-${index}`}
     >
       <div className="flex items-start gap-3">
@@ -355,13 +359,18 @@ function ParsedQuestionCard({
           className="mt-1"
           data-testid={`checkbox-question-${index}`}
         />
-        <div className="flex-1 min-w-0 space-y-2">
-          <Input
-            value={question.questionText}
-            onChange={(e) => onUpdate({ questionText: e.target.value })}
-            className="text-sm"
-            data-testid={`input-question-text-${index}`}
-          />
+        <div className="flex-1 min-w-0 space-y-3">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              Question {index + 1} of {totalCount}
+            </p>
+            <Input
+              value={question.questionText}
+              onChange={(e) => onUpdate({ questionText: e.target.value })}
+              className="text-sm"
+              data-testid={`input-question-text-${index}`}
+            />
+          </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             <Select
@@ -421,13 +430,16 @@ function ParsedQuestionCard({
             )}
           </div>
 
-          <Textarea
-            value={question.guidance}
-            onChange={(e) => onUpdate({ guidance: e.target.value })}
-            placeholder="Interviewer guidance..."
-            className="text-xs min-h-[48px] resize-none"
-            data-testid={`textarea-guidance-${index}`}
-          />
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Interviewer guidance</p>
+            <Textarea
+              value={question.guidance}
+              onChange={(e) => onUpdate({ guidance: e.target.value })}
+              placeholder="Guidance for the AI interviewer..."
+              className="text-xs min-h-[56px] resize-none"
+              data-testid={`textarea-guidance-${index}`}
+            />
+          </div>
 
           {question.questionType === "scale" && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -468,7 +480,7 @@ function ParsedQuestionCard({
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="mt-1 p-2 bg-muted/50 rounded text-xs text-muted-foreground italic" data-testid={`text-original-${index}`}>
+              <div className="mt-1.5 p-3 bg-muted/50 rounded text-xs text-muted-foreground italic leading-relaxed" data-testid={`text-original-${index}`}>
                 {question.originalText}
               </div>
             </CollapsibleContent>
