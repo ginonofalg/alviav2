@@ -1,0 +1,157 @@
+ ## Debug Aggregation for Barbara Guidance + Alvia Adherence (Collection/Template/Project)
+
+  ### Summary
+
+  Add a backend-only debug aggregation capability that rolls up Barbara guidance behavior and Alvia adherence across collection, template, and project scopes, with optional
+  date filtering.
+  It will reuse existing session-level guidance data (barbaraGuidanceLog, guidanceAdherenceSummary, liveTranscript) and compute missing adherence in-memory on read (no DB
+  writes), so this is safe for debugging recent behavior changes.
+
+  ### Goals and Success Criteria
+
+  - Provide aggregate visibility for:
+      - Barbara guidance output patterns (action mix, confidence, injection rate).
+      - Alvia adherence to Barbara instructions (overall and by action).
+  - Support hierarchy scopes:
+      - Collection
+      - Template
+      - Project
+  - Support optional date window for “recent changes” debugging.
+  - Return summary + by-action + top session diagnostics.
+  - No schema migration required.
+  - No growth in watchlist files (server/storage.ts, server/voice-interview.ts, server/barbara-orchestrator.ts).
+
+  ### API/Interface Additions
+
+  - New authenticated debug endpoints:
+      - GET /api/guidance/collection/:collectionId
+      - GET /api/guidance/template/:templateId
+      - GET /api/guidance/project/:projectId
+  - Query params (all optional):
+      - from (ISO datetime): lower bound for guidance event timestamp.
+      - to (ISO datetime): upper bound for guidance event timestamp.
+      - topN (int, default 10, max 50): number of top problematic/best sessions returned.
+  - Response shape (new shared type):
+      - scope: { level: "collection" | "template" | "project", id: string }
+      - window: { from?: string, to?: string }
+      - coverage:
+          - sessions visited/included
+          - sessions with guidance
+          - sessions with scored guidance
+          - sessions with unscored guidance
+          - guidance events total/in-window/scored/unscored
+      - barbara:
+          - total events
+          - injected count/rate
+          - confidence avg/min/max (for in-window events)
+          - action distribution counts
+      - alviaAdherence:
+          - followed / partial / not followed / not applicable / unscored counts
+          - weighted adherence rate (same weighting as current logic)
+          - per-action adherence metrics
+      - topSessions:
+          - lowestAdherence[] and highestAdherence[], each item including:
+              - sessionId, collectionId, status
+              - scoredEvents, totalEvents, adherenceRate
+              - notFollowedCount, injectedCount
+              - firstGuidanceAt, lastGuidanceAt
+
+  ### Implementation Design
+
+  1. Create shared aggregation types
+
+  - File: shared/types/interview-state.ts
+  - Add types for:
+      - endpoint response
+      - scope enum
+      - coverage stats
+      - session diagnostic row
+  - Keep types colocated with existing guidance/adherence types.
+
+  2. Create pure aggregation module
+
+  - New file: server/guidance-aggregation.ts
+  - Responsibilities:
+      - Filter guidance events by timestamp window (from/to).
+      - Ensure scoring per session:
+          - If log entries already scored, use them.
+          - If missing scores and transcript exists, call existing scoreGuidanceAdherence(...) in-memory.
+          - If no transcript, mark as unscored coverage.
+      - Aggregate Barbara metrics (events/actions/confidence/injection).
+      - Aggregate Alvia adherence metrics using existing scoring semantics.
+      - Compute per-action rollups.
+      - Build/rank topSessions diagnostics.
+  - No persistence calls.
+
+  3. Add route module for hierarchy endpoints
+
+  - New file: server/routes/guidance.routes.ts
+  - Route behavior:
+      - Auth via isAuthenticated.
+      - Access control:
+          - collection endpoint → verifyUserAccessToCollection
+          - template endpoint → verifyUserAccessToTemplate
+          - project endpoint → verifyUserAccessToProject
+      - Session loading via existing storage methods only:
+          - collection: getSessionsByCollection
+          - template: getCollectionsByTemplate + per-collection sessions
+          - project: getTemplatesByProject + collections + sessions
+      - Parse and validate query params (from, to, topN) with zod in-route.
+  4. Wire route registration
+  - Update server/routes/index.ts to export registerGuidanceRoutes.
+  - Update server/routes.ts to register guidance routes.
+
+  5. No DB/storage mutation
+
+  - Do not modify schema.
+  - Do not add storage methods to server/storage.ts.
+  - Do not write back rescored summaries.
+
+  ### Edge Cases / Failure Modes
+
+  - Sessions with no guidance logs:
+      - counted in visited coverage; excluded from event metrics.
+  - Guidance logs with no transcript:
+      - counted as unscored coverage.
+  - Mixed scored + unscored entries in a session:
+      - aggregate scored entries; report unscored counts explicitly.
+  - Invalid date params:
+      - return 400 with validation message.
+  - from > to:
+      - return 400.
+  - Very large scopes:
+      - controlled payload via topN cap.
+      - in-memory aggregation remains O(total events).
+
+  ### Test Plan
+
+  Add unit tests for server/guidance-aggregation.ts (Vitest):
+
+  1. Aggregates fully scored logs correctly (overall + by action).
+  2. Re-scores unscored logs when transcript exists (no persistence).
+  3. Keeps unscored coverage when transcript missing.
+  4. Applies date window at event level correctly.
+  5. Ranks top sessions correctly (lowest/highest adherence).
+  6. Handles zero-data scopes without errors.
+
+  Optional route-level smoke tests (if lightweight in current setup):
+
+  - 404 + 403 branches for each scope endpoint.
+  - successful response shape for one happy path.
+
+  ### Acceptance Criteria
+
+  - New endpoints return deterministic aggregate payloads for collection/template/project.
+  - Output includes both Barbara behavior and Alvia adherence metrics.
+  - Date-window filtering works for recent-change debugging.
+  - No writes occur during aggregation requests.
+  - Existing session-level endpoint /api/sessions/:id/guidance-effectiveness remains unchanged.
+  - npm run check and relevant tests pass.
+
+  ### Assumptions and Defaults
+
+  - “Alvia adherence to instructions” is interpreted as adherence to Barbara guidance instructions (existing scoring model).
+  - Debug capability is backend API only in v1 (no UI changes).
+  - Scope “all levels now” means collection/template/project (session already exists).
+  - Default topN=10, capped at 50.
+  - Default window is all-time when from/to omitted.
