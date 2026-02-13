@@ -6,7 +6,7 @@ function makeEntry(overrides: Partial<BarbaraGuidanceLogEntry> = {}): BarbaraGui
   return {
     index: 0,
     action: "probe_followup",
-    messageSummary: "Test guidance",
+    messageSummary: "Probe deeper into the challenges the respondent faces with team collaboration",
     confidence: 0.8,
     injected: true,
     timestamp: 1000,
@@ -19,7 +19,7 @@ function makeEntry(overrides: Partial<BarbaraGuidanceLogEntry> = {}): BarbaraGui
 function makeTranscriptEntry(overrides: Partial<PersistedTranscriptEntry> = {}): PersistedTranscriptEntry {
   return {
     speaker: "alvia",
-    text: "Can you tell me more about that? Why do you think so?",
+    text: "Can you tell me more about those challenges? Why do you think they affect your team collaboration?",
     timestamp: 1100,
     questionIndex: 0,
     ...overrides,
@@ -87,7 +87,7 @@ describe("guidance-aggregation", () => {
       ];
       const transcript: PersistedTranscriptEntry[] = [
         makeTranscriptEntry({ speaker: "respondent", text: "I think it is great", timestamp: 900 }),
-        makeTranscriptEntry({ speaker: "alvia", text: "Can you tell me more about that? Why do you think so?", timestamp: 1100 }),
+        makeTranscriptEntry({ speaker: "alvia", text: "Can you tell me more about those challenges? Why do you think they affect your team collaboration?", timestamp: 1100 }),
       ];
       const session = makeSession({ barbaraGuidanceLog: log, liveTranscript: transcript });
       const result = aggregateGuidance([session], defaultScope, noWindow, 10);

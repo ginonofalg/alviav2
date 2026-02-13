@@ -5,9 +5,13 @@ import type {
   GuidanceAdherenceSummary,
   PersistedTranscriptEntry,
 } from "@shared/schema";
+import { getKeywords, overlapCoefficient, INTERVIEW_META_STOPWORDS } from "./voice-interview/text-utils";
 
 const SNIPPET_MAX_LENGTH = 200;
 const MAX_TURNS_LOOKAHEAD = 4;
+const TOPICAL_RELEVANCE_THRESHOLD = 0.3;
+const MIN_KEYWORDS_FOR_TOPICAL_CHECK = 2;
+const MAX_TURNS_FOR_FOLLOWED = 2;
 
 function truncateSnippet(text: string): string {
   if (text.length <= SNIPPET_MAX_LENGTH) return text;
@@ -36,10 +40,11 @@ function containsQuestionMark(text: string): boolean {
 
 function containsKeywords(text: string, keywords: string[]): boolean {
   const lower = text.toLowerCase();
-  return keywords.some((kw) => lower.includes(kw));
+  return keywords.some((kw) => new RegExp(`\\b${kw}\\b`).test(lower));
 }
 
 function scoreProbeFollowup(
+  entry: BarbaraGuidanceLogEntry,
   alviaResponses: PersistedTranscriptEntry[],
 ): { result: GuidanceAdherenceResult; reason: string } {
   if (alviaResponses.length === 0) {
@@ -54,16 +59,30 @@ function scoreProbeFollowup(
     "specific", "deeper", "further", "expand",
   ]);
 
-  if (hasQuestion && hasProbeWords) {
-    return { result: "followed", reason: "Alvia asked a follow-up question with probing language" };
+  if (!hasQuestion && !hasProbeWords) {
+    return { result: "not_followed", reason: "Alvia's response did not include follow-up probing" };
   }
-  if (hasQuestion) {
-    return { result: "partially_followed", reason: "Alvia asked a question, but without clear probing language" };
+
+  if (!hasQuestion || !hasProbeWords) {
+    const detail = hasQuestion
+      ? "asked a question, but without clear probing language"
+      : "used probing language but did not ask a direct question";
+    return { result: "partially_followed", reason: `Alvia ${detail}` };
   }
-  if (hasProbeWords) {
-    return { result: "partially_followed", reason: "Alvia used probing language but did not ask a direct question" };
+
+  const barbaraKeywords = getKeywords(entry.messageSummary, INTERVIEW_META_STOPWORDS);
+  if (barbaraKeywords.size < MIN_KEYWORDS_FOR_TOPICAL_CHECK) {
+    return { result: "followed", reason: "Alvia asked a follow-up question with probing language (topical check skipped — too few guidance keywords)" };
   }
-  return { result: "not_followed", reason: "Alvia's response did not include follow-up probing" };
+
+  const alviaKeywords = getKeywords(firstResponse.text);
+  const overlap = overlapCoefficient(barbaraKeywords, alviaKeywords);
+
+  if (overlap >= TOPICAL_RELEVANCE_THRESHOLD) {
+    return { result: "followed", reason: `Alvia asked a topically relevant follow-up question (overlap: ${Math.round(overlap * 100)}%)` };
+  }
+
+  return { result: "partially_followed", reason: `Alvia asked a probing question but on a different topic (overlap: ${Math.round(overlap * 100)}%)` };
 }
 
 function scoreSuggestNextQuestion(
@@ -82,7 +101,7 @@ function scoreSuggestNextQuestion(
     const turnsUntilChange = laterEntries.findIndex(
       (t) => t.questionIndex > entry.questionIndex,
     );
-    if (turnsUntilChange <= 4) {
+    if (turnsUntilChange <= MAX_TURNS_FOR_FOLLOWED) {
       return { result: "followed", reason: `Question advanced within ${turnsUntilChange + 1} turn(s) of guidance` };
     }
     return { result: "partially_followed", reason: `Question eventually advanced but took ${turnsUntilChange + 1} turns` };
@@ -223,7 +242,7 @@ function scoreEntry(
 
   switch (entry.action) {
     case "probe_followup":
-      scoring = scoreProbeFollowup(alviaResponses);
+      scoring = scoreProbeFollowup(entry, alviaResponses);
       break;
     case "suggest_next_question":
       scoring = scoreSuggestNextQuestion(entry, transcript);
