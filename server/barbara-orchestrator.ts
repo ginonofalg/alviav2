@@ -1,8 +1,17 @@
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { BarbaraSessionSummary } from "@shared/schema";
-import { withTrackedLlmCall, makeBarbaraUsageExtractor, type TrackedLlmResult } from "./llm-usage";
-import type { LLMUsageAttribution, NormalizedTokenUsage, LLMUsageStatus, LLMUseCase } from "@shared/schema";
+import {
+  withTrackedLlmCall,
+  makeBarbaraUsageExtractor,
+  type TrackedLlmResult,
+} from "./llm-usage";
+import type {
+  LLMUsageAttribution,
+  NormalizedTokenUsage,
+  LLMUsageStatus,
+  LLMUseCase,
+} from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -269,7 +278,9 @@ export async function analyzeWithBarbara(
     const systemPrompt = buildBarbaraSystemPrompt();
     const userPrompt = buildBarbaraUserPrompt(input);
 
-    const estimatedInputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+    const estimatedInputTokens = Math.ceil(
+      (systemPrompt.length + userPrompt.length) / 4,
+    );
     console.log(
       `[Barbara] Prompt estimate: ~${estimatedInputTokens} input tokens (system: ${systemPrompt.length} chars, user: ${userPrompt.length} chars)`,
     );
@@ -405,7 +416,10 @@ You may receive hypotheses derived from project-level analytics. When present:
 
 function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
   const ctx = input.crossInterviewContext;
-  if (!ctx || (ctx.questionThemes.length === 0 && ctx.emergentThemes.length === 0)) {
+  if (
+    !ctx ||
+    (ctx.questionThemes.length === 0 && ctx.emergentThemes.length === 0)
+  ) {
     return "";
   }
 
@@ -419,18 +433,24 @@ function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
   if (ctx.questionThemes.length > 0) {
     lines.push("Themes most relevant to CURRENT QUESTION:");
     for (const t of ctx.questionThemes) {
-      lines.push(`  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`);
+      lines.push(
+        `  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`,
+      );
     }
   }
 
   if (ctx.emergentThemes.length > 0) {
     lines.push("Emergent themes from prior interviews:");
     for (const t of ctx.emergentThemes) {
-      lines.push(`  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`);
+      lines.push(
+        `  - Theme: ${t.theme} (prevalence: ${t.prevalence}%) — ${t.cue}`,
+      );
     }
   }
 
-  lines.push("Instruction: If not clearly relevant, ignore this snapshot and continue with current-question guidance.");
+  lines.push(
+    "Instruction: If not clearly relevant, ignore this snapshot and continue with current-question guidance.",
+  );
   lines.push("");
 
   return lines.join("\n");
@@ -438,7 +458,9 @@ function buildCrossInterviewSnapshotBlock(input: BarbaraAnalysisInput): string {
 
 const MAX_UPCOMING_QUALITY_ALERTS = 3;
 
-function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string {
+function buildQuestionQualityInsightsBlock(
+  input: BarbaraAnalysisInput,
+): string {
   const ctx = input.crossInterviewContext;
   if (!ctx) return "";
 
@@ -448,20 +470,29 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
   if (!current && (!upcoming || upcoming.length === 0)) return "";
 
   const FLAG_CORRECTIVE_GUIDANCE: Record<QualityFlag, string> = {
-    incomplete: "Encourage elaboration — e.g. 'Can you tell me more about that?' or 'What else comes to mind?'",
-    low_engagement: "Try a warmer, more conversational tone; reframe the question around personal experience rather than abstract opinion.",
-    ambiguous: "Ask clarifying follow-ups to ground the response in specifics — e.g. 'Could you give me an example?'",
-    off_topic: "Gently redirect back to the question's core intent without dismissing what the respondent shared.",
-    distress_cue: "Acknowledge the respondent's feelings before proceeding — e.g. 'I appreciate you sharing that.'",
-    contradiction: "Ask the respondent to clarify the differences in their statements; invite them to walk through their reasoning.",
+    incomplete:
+      "Encourage elaboration — e.g. 'Can you tell me more about that?' or 'What else comes to mind?'",
+    low_engagement:
+      "Try a warmer, more conversational tone; reframe the question around personal experience rather than abstract opinion.",
+    ambiguous:
+      "Ask clarifying follow-ups to ground the response in specifics — e.g. 'Could you give me an example?'",
+    off_topic:
+      "Gently redirect back to the question's core intent without dismissing what the respondent shared.",
+    distress_cue:
+      "Acknowledge the respondent's feelings before proceeding — e.g. 'I appreciate you sharing that.'",
+    contradiction:
+      "Ask the respondent to clarify the differences in their statements; invite them to walk through their reasoning.",
   };
 
-  const formatFlags = (flags: Array<{ flag: QualityFlag; count: number }>): string =>
-    flags.map((f) => `${f.flag}\u00d7${f.count}`).join(", ");
+  const formatFlags = (
+    flags: Array<{ flag: QualityFlag; count: number }>,
+  ): string => flags.map((f) => `${f.flag}\u00d7${f.count}`).join(", ");
 
   const MAX_FLAG_GUIDANCE_LINES = 3;
 
-  const buildFlagGuidance = (flags: Array<{ flag: QualityFlag; count: number }>): string[] => {
+  const buildFlagGuidance = (
+    flags: Array<{ flag: QualityFlag; count: number }>,
+  ): string[] => {
     if (flags.length === 0) return [];
     return flags
       .filter((f) => FLAG_CORRECTIVE_GUIDANCE[f.flag])
@@ -469,8 +500,13 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
       .map((f) => `  → ${f.flag}: ${FLAG_CORRECTIVE_GUIDANCE[f.flag]}`);
   };
 
-  const formatAlert = (q: NonNullable<typeof current>, prefix: string): string => {
-    const parts = [`${prefix} (n=${q.responseCount}): quality ${q.avgQualityScore}/100`];
+  const formatAlert = (
+    q: NonNullable<typeof current>,
+    prefix: string,
+  ): string => {
+    const parts = [
+      `${prefix} (n=${q.responseCount}): quality ${q.avgQualityScore}/100`,
+    ];
     parts.push(`richness ${q.responseRichness} (${q.avgWordCount} words)`);
     if (q.topFlags.length > 0) {
       parts.push(`flags ${formatFlags(q.topFlags)}`);
@@ -494,10 +530,14 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
       lines.push(...flagGuidance);
     }
     if (current.perspectiveRange === "narrow") {
-      lines.push("  → narrow perspective: Encourage the respondent to consider alternative viewpoints or contexts.");
+      lines.push(
+        "  → narrow perspective: Encourage the respondent to consider alternative viewpoints or contexts.",
+      );
     }
     if (current.responseRichness === "brief") {
-      lines.push("  → brief responses: Allow longer pauses before moving on; use prompts like 'Take your time' to invite deeper reflection.");
+      lines.push(
+        "  → brief responses: Allow longer pauses before moving on; use prompts like 'Take your time' to invite deeper reflection.",
+      );
     }
   }
 
@@ -508,7 +548,9 @@ function buildQuestionQualityInsightsBlock(input: BarbaraAnalysisInput): string 
     }
   }
 
-  lines.push("Note: Historical patterns only. Prioritize this respondent's live signals.");
+  lines.push(
+    "Note: Historical patterns only. Prioritize this respondent's live signals.",
+  );
   lines.push("");
 
   return lines.join("\n");
@@ -555,7 +597,10 @@ function buildAnalyticsHypothesesBlock(input: BarbaraAnalysisInput): string {
 const RECENT_TRANSCRIPT_QUESTION_WINDOW = 2;
 
 function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
-  const recentWindowStart = Math.max(0, input.currentQuestionIndex - RECENT_TRANSCRIPT_QUESTION_WINDOW);
+  const recentWindowStart = Math.max(
+    0,
+    input.currentQuestionIndex - RECENT_TRANSCRIPT_QUESTION_WINDOW,
+  );
   const recentTranscript = input.transcriptLog
     .filter((entry) => entry.questionIndex >= recentWindowStart)
     .map(
@@ -601,7 +646,12 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
     .join("\n\n");
 
   const summariesForRecentQuestions = input.previousQuestionSummaries
-    .filter((s) => s && s.questionIndex >= recentWindowStart && s.questionIndex < input.currentQuestionIndex)
+    .filter(
+      (s) =>
+        s &&
+        s.questionIndex >= recentWindowStart &&
+        s.questionIndex < input.currentQuestionIndex,
+    )
     .map(
       (s) => `Q${s.questionIndex + 1}: ${s.questionText}
   Response Summary: ${s.respondentSummary}
@@ -749,7 +799,9 @@ Does the upcoming question's topic overlap with what the respondent has already 
           max_completion_tokens: 200,
           reasoning_effort: config.reasoningEffort,
           verbosity: config.verbosity,
-        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
       },
       extractUsage: makeBarbaraUsageExtractor(config.model),
     });
@@ -1916,7 +1968,7 @@ export async function generateTemplateAnalytics(
   }
 
   const themeMap = new Map<string, ThemeAggregation>();
-  
+
   // Build a map from theme IDs to theme names for resolving relatedThemes in key findings
   const themeIdToNameMap = new Map<string, string>();
 
@@ -2026,7 +2078,7 @@ export async function generateTemplateAnalytics(
         ...f,
         // Resolve theme IDs to actual theme names
         relatedThemes: (f.relatedThemes || []).map(
-          (themeId) => themeIdToNameMap.get(themeId) || themeId
+          (themeId) => themeIdToNameMap.get(themeId) || themeId,
         ),
         sourceCollectionId: c.collection.id,
         sourceCollectionName: c.collection.name,
@@ -2715,7 +2767,9 @@ Pay special attention to the verbatims provided - use them to support your insig
           max_completion_tokens: 20000,
           reasoning_effort: config.reasoningEffort,
           verbosity: config.verbosity,
-        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
       },
       extractUsage: makeBarbaraUsageExtractor(config.model),
     });
@@ -3149,7 +3203,9 @@ export async function generateAdditionalQuestions(
           max_completion_tokens: 20000,
           reasoning_effort: config.reasoningEffort,
           verbosity: config.verbosity,
-        } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+        } as Parameters<
+          typeof openai.chat.completions.create
+        >[0])) as ChatCompletion;
       },
       extractUsage: makeBarbaraUsageExtractor(config.model),
     });
@@ -3263,7 +3319,7 @@ WHEN TO SUGGEST QUESTIONS:
 - Interesting tangents the respondent hinted at but weren't followed up
 - Gaps between the research objective and what was actually discussed
 - Contradictions or ambiguities that could benefit from clarification
-- Gaps between the strategic business context and what was discussed — questions that would yield actionable insights for the stated business objective
+- Gaps between the strategic context and what was discussed; questions that would yield actionable insights for the stated objective
 ${crossInterviewSection}${analyticsHypothesesSection}
 ${input.avoidRules?.length ? `\nTOPICS TO AVOID:\nThe following topics must not be addressed in additional questions:\n${input.avoidRules.map((r) => `- ${r}`).join("\n")}\n` : ""}
 WHEN TO RETURN ZERO QUESTIONS:
@@ -3345,11 +3401,13 @@ function buildAdditionalQuestionsUserPrompt(
   let analyticsHypothesesText = "";
   if (input.analyticsHypotheses?.length) {
     analyticsHypothesesText = `\n\n=== PROJECT ANALYTICS HYPOTHESES ===\n`;
-    analyticsHypothesesText += "These hypotheses from project-level analytics may warrant testing:\n";
+    analyticsHypothesesText +=
+      "These hypotheses from project-level analytics may warrant testing:\n";
     for (const h of input.analyticsHypotheses) {
       analyticsHypothesesText += `- [${h.priority}] ${h.hypothesis}\n`;
     }
-    analyticsHypothesesText += "\nConsider these when generating additional questions, but only if they add genuine value and weren't already covered.";
+    analyticsHypothesesText +=
+      "\nConsider these when generating additional questions, but only if they add genuine value and weren't already covered.";
   }
 
   return `=== RESEARCH OBJECTIVE ===
@@ -3360,13 +3418,19 @@ ${input.audienceContext || "General audience"}
 
 === INTERVIEW TONE ===
 ${input.tone || "Professional and conversational"}
-${input.contextType ? `\n=== CONTEXT TYPE ===\n${{
-    content: "Content Strategy (newsletters, blogs, social media)",
-    product: "Product Development (features, roadmap)",
-    marketing: "Marketing Campaign (campaigns, targeting)",
-    cx: "Customer Experience (support, onboarding)",
-    other: "Custom Business Context",
-  }[input.contextType] || input.contextType}` : ""}
+${
+  input.contextType
+    ? `\n=== CONTEXT TYPE ===\n${
+        {
+          content: "Content Strategy (newsletters, blogs, social media)",
+          product: "Product Development (features, roadmap)",
+          marketing: "Marketing Campaign (campaigns, targeting)",
+          cx: "Customer Experience (support, onboarding)",
+          other: "Custom Business Context",
+        }[input.contextType] || input.contextType
+      }`
+    : ""
+}
 ${input.strategicContext ? `\n=== STRATEGIC CONTEXT ===\n${input.strategicContext}` : ""}
 
 === ORIGINAL TEMPLATE QUESTIONS ===
@@ -3400,11 +3464,17 @@ export async function generateSessionSummary(
   const config = barbaraConfig.sessionSummary;
 
   const transcriptText = input.transcript
-    .map((e) => `[${e.speaker === "alvia" ? "Interviewer" : "Respondent"}] ${e.text}`)
+    .map(
+      (e) =>
+        `[${e.speaker === "alvia" ? "Interviewer" : "Respondent"}] ${e.text}`,
+    )
     .join("\n");
 
   const summariesText = input.questionSummaries
-    .map((s) => `Q${s.questionIndex + 1} (${s.questionText}): ${s.respondentSummary}`)
+    .map(
+      (s) =>
+        `Q${s.questionIndex + 1} (${s.questionText}): ${s.respondentSummary}`,
+    )
     .join("\n\n");
 
   const questionsText = input.questions
