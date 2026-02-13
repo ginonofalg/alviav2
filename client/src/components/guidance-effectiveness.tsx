@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Eye,
   CheckCircle2,
@@ -280,57 +279,55 @@ export function GuidanceEffectivenessCard({ sessionId }: GuidanceEffectivenessPr
             <h4 className="text-sm font-medium text-muted-foreground">
               Guidance Log ({injectedEntries.length} injected event{injectedEntries.length !== 1 ? "s" : ""})
             </h4>
-            <ScrollArea className="max-h-[400px]">
-              <div className="space-y-2">
-                {injectedEntries.map((entry, idx) => {
-                  const ActionIcon = ACTION_ICONS[entry.action] || Eye;
-                  return (
-                    <div
-                      key={entry.index ?? idx}
-                      className="p-3 rounded-md border space-y-2"
-                      data-testid={`guidance-entry-${entry.index ?? idx}`}
-                    >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <ActionIcon className="w-4 h-4 shrink-0 text-muted-foreground" />
-                          <span className="text-sm font-medium truncate">
-                            {ACTION_LABELS[entry.action] || entry.action}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            Q{entry.questionIndex + 1}
-                          </span>
-                        </div>
-                        <AdherenceBadge adherence={entry.adherence} />
+            <div className="space-y-2">
+              {injectedEntries.map((entry, idx) => {
+                const ActionIcon = ACTION_ICONS[entry.action] || Eye;
+                return (
+                  <div
+                    key={entry.index ?? idx}
+                    className="p-3 rounded-md border space-y-2"
+                    data-testid={`guidance-entry-${entry.index ?? idx}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ActionIcon className="w-4 h-4 shrink-0 text-muted-foreground" />
+                        <span className="text-sm font-medium truncate">
+                          {ACTION_LABELS[entry.action] || entry.action}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Q{entry.questionIndex + 1}
+                        </span>
                       </div>
-
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <p className="text-xs text-muted-foreground line-clamp-2 cursor-help">
-                            {entry.messageSummary}
-                          </p>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-sm">
-                          <p className="text-xs">{entry.messageSummary}</p>
-                        </TooltipContent>
-                      </Tooltip>
-
-                      {entry.adherenceReason && (
-                        <p className="text-xs text-muted-foreground/70 italic">
-                          {entry.adherenceReason}
-                        </p>
-                      )}
-
-                      {entry.alviaResponseSnippet && (
-                        <div className="text-xs bg-muted/50 rounded p-2">
-                          <span className="font-medium">Alvia's response: </span>
-                          <span className="text-muted-foreground">{entry.alviaResponseSnippet}</span>
-                        </div>
-                      )}
+                      <AdherenceBadge adherence={entry.adherence} />
                     </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-xs text-muted-foreground line-clamp-2 cursor-help">
+                          {entry.messageSummary}
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-sm">
+                        <p className="text-xs">{entry.messageSummary}</p>
+                      </TooltipContent>
+                    </Tooltip>
+
+                    {entry.adherenceReason && (
+                      <p className="text-xs text-muted-foreground/70 italic">
+                        {entry.adherenceReason}
+                      </p>
+                    )}
+
+                    {entry.alviaResponseSnippet && (
+                      <div className="text-xs bg-muted/50 rounded p-2">
+                        <span className="font-medium">Alvia's response: </span>
+                        <span className="text-muted-foreground">{entry.alviaResponseSnippet}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </CardContent>
