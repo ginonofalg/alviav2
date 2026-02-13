@@ -1,0 +1,160 @@
+Proposal: Fix AQ Generation Context Gaps and Alvia Orchestrator Handling                                                                                              
+                                                        
+ Context
+
+ Two issues have been identified in the Additional Questions (AQ) system, plus several related gaps discovered during investigation.
+
+ Issue 1 — Strategic context missing from AQ generation. When Barbara generates additional questions, she receives the research objective, audience context, and tone
+ — but NOT the project's strategicContext, contextType, or avoidRules. This means AQs are generated without awareness of the business context that should be shaping
+ them. By contrast, session summary generation (generateSessionSummary) already includes strategicContext successfully.
+
+ Issue 2 — Alvia says "Of course..." before asking AQs. The [ORCHESTRATOR: ...] injection pattern is used to deliver AQs to Alvia, but buildAQInstructions() is
+ missing the ORCHESTRATOR MESSAGES guidance section that exists in both buildInterviewInstructions() and buildResumeInstructions(). Without it, Alvia treats the
+ orchestrator message as something to acknowledge rather than silently follow.
+
+ Bonus finding — strategicContext is a dead parameter. Both buildInterviewInstructions() and buildResumeInstructions() accept strategicContext but never interpolate
+ it into the prompt string. It's passed at 4 call sites but has zero effect. While not part of the AQ fix, this is worth noting.
+
+ ---
+ Fix 1: Add Strategic Context to AQ Generation
+
+ 1a. Extend AdditionalQuestionsInput interface
+
+ File: server/barbara-orchestrator.ts (line ~3073)
+
+ Add three fields to the interface:
+
+ export interface AdditionalQuestionsInput {
+   // ... existing fields ...
+   strategicContext?: string | null;    // NEW
+   contextType?: string | null;         // NEW
+   avoidRules?: string[] | null;        // NEW
+ }
+
+ 1b. Pass fields from voice-interview.ts call site
+
+ File: server/voice-interview.ts (lines ~3153-3174)
+
+ state.strategicContext is already populated (set at line 775 from the project). Add it to the input object passed to generateAdditionalQuestions():
+
+ const result = await generateAdditionalQuestions(
+   {
+     // ... existing fields ...
+     strategicContext: state.strategicContext,       // NEW — already on state
+     contextType: state.template?.contextType,      // NEW — need to verify template has this
+     avoidRules: state.template?.avoidRules,         // NEW — need to verify template has this
+   },
+   buildUsageAttribution(state),
+ );
+
+ Note: contextType and avoidRules live on the projects table, not interviewTemplates. The code currently reads state.template which is the template record. Need to
+ verify whether the project is joined/available at this point, or whether contextType/avoidRules need to be loaded from the project (similar to how
+ state.strategicContext is loaded at line 775). If they're not on state, load them at the same place strategicContext is loaded (line 775) and store them on state.
+
+ 1c. Add to Barbara's AQ system prompt
+
+ File: server/barbara-orchestrator.ts, function buildAdditionalQuestionsSystemPrompt() (line ~3230)
+
+ Add a new entry to the WHEN TO SUGGEST QUESTIONS list:
+
+ - Gaps between the strategic business context and what was discussed — questions that would yield actionable insights for the stated business objective
+
+ Add a new WHEN TO RETURN ZERO QUESTIONS entry if avoidRules are present:
+
+ TOPICS TO AVOID:
+ The following topics must not be addressed in additional questions:
+ ${avoidRules.map(r => `- ${r}`).join('\n')}
+
+ 1d. Add to Barbara's AQ user prompt
+
+ File: server/barbara-orchestrator.ts, function buildAdditionalQuestionsUserPrompt() (line ~3284)
+
+ Insert a new section after === INTERVIEW TONE ===, mirroring the pattern used in session summary generation (line 3439):
+
+ ${input.contextType ? `\n=== CONTEXT TYPE ===\n${contextTypeLabel}` : ""}
+ ${input.strategicContext ? `\n=== STRATEGIC CONTEXT ===\n${input.strategicContext}` : ""}
+
+ Use the same contextTypeLabel mapping already in the file (line ~2527):
+ const contextTypeLabel = {
+   content: "Content & Media",
+   product: "Product Development",
+   marketing: "Marketing & Brand",
+   cx: "Customer Experience",
+   other: "General Research",
+ }[input.contextType] || input.contextType;
+
+ ---
+ Fix 2: Add ORCHESTRATOR MESSAGES Section to AQ Instructions
+
+ 2a. Add the missing section to buildAQInstructions()
+
+ File: server/voice-interview.ts, function buildAQInstructions() (lines 3272-3305)
+
+ Append the same ORCHESTRATOR MESSAGES block that exists in buildInterviewInstructions() (instructions.ts lines 95-103) and buildResumeInstructions() (instructions.ts
+  lines 249-257):
+
+ ORCHESTRATOR MESSAGES:
+ You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
+ - DO NOT read them aloud or acknowledge receiving them
+ - DO NOT respond as if the respondent said them
+ - Simply follow the guidance naturally as if it were your own thought
+ - Seamlessly continue the conversation with the respondent
+ - The guidance may be based on a slightly earlier point in the conversation, use your judgment on timing
+
+ Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.
+
+ 2b. Rephrase the orchestrator injection text
+
+ File: server/voice-interview.ts (line ~3250)
+
+ Current text:
+ [ORCHESTRATOR: This is additional question ${aqIndex + 1} of ${state.additionalQuestions.length}. Ask this question in a natural, conversational way:
+ "${aq.questionText}"]
+
+ The phrase "Ask this question in a natural, conversational way" invites Alvia to acknowledge the request ("Of course, I'd be happy to ask that"). Change to a more
+ directive phrasing that frames it as Alvia's own next action:
+
+ [ORCHESTRATOR: Transition naturally to asking: "${aq.questionText}"]
+
+ This removes the meta-instruction ("Ask this question") and replaces it with a directive that positions the question as something Alvia is already doing, not being
+ asked to do.
+
+ ---
+ Files to Modify
+ ┌────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────┐
+ │                  File                  │                                       Change                                       │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts (~3073) │ Add strategicContext, contextType, avoidRules to AdditionalQuestionsInput          │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts (~3230) │ Add strategic context guidance to system prompt                                    │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts (~3284) │ Add strategic context section to user prompt                                       │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts (~3153)      │ Pass strategicContext, contextType, avoidRules from state to AQ input              │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts (~3272)      │ Add ORCHESTRATOR MESSAGES block to buildAQInstructions()                           │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts (~3250)      │ Rephrase orchestrator injection text                                               │
+ ├────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts (~775)       │ Load contextType and avoidRules from project onto state (if not already available) │
+ └────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────┘
+ ---
+ Verification
+
+ 1. Type check: npm run check — ensure no TypeScript errors from the interface changes
+ 2. AQ generation prompt: Set DEBUG_BARBARA_PROMPTS=true and run an interview to completion. Verify the AQ prompt includes the === STRATEGIC CONTEXT === section when
+ the project has strategic context set.
+ 3. "Of course" fix: Run an interview to the AQ phase. Verify Alvia transitions directly into asking the question without acknowledgment phrases like "Of course",
+ "Sure", "I'd be happy to".
+ 4. Avoid rules: Create a project with avoidRules set, run to AQ phase, verify generated AQs don't touch avoided topics.
+ 5. No strategic context: Verify AQ generation still works cleanly when strategicContext is null (the conditional sections should simply not appear).
+
+ ---
+ Out of Scope (noted for future)
+
+ - Dead strategicContext parameter in buildInterviewInstructions() and buildResumeInstructions() — both accept it but never use it. This means Alvia herself has no
+ awareness of strategic context during the main interview, only Barbara does (for analytics). Consider whether Alvia should know about it.
+ - strategicContext missing from real-time Barbara analysis (analyzeWithBarbara) — the BarbaraAnalysisInput interface doesn't include it, so Barbara's real-time
+ guidance during the interview is also unaware of strategic context. Only session summaries and analytics use it today.
+ - avoidRules unused everywhere in the interview flow — defined in the schema and accepted by the projects API, but never passed to Barbara or Alvia for any use case.
+  The AQ fix above would be the first place it's actually enforced.
