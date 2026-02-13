@@ -75,3 +75,12 @@ Added adherence scoring to measure how well Alvia follows Barbara's real-time gu
 - **Integration**: Scoring runs automatically in `finalizeInterview()` after summaries are generated. Also available on-demand via API for retroactive scoring of existing sessions.
 - **API**: `GET /api/sessions/:id/guidance-effectiveness` — returns scored log + summary. Lazily scores on first access if not yet computed.
 - **UI**: `client/src/components/guidance-effectiveness.tsx` — Guidance tab on session detail page shows overall adherence rate, per-action breakdown grid, and detailed log with adherence badges and Alvia response snippets.
+
+### Paste-to-Questions Feature (February 2026)
+Added a "Paste Questions" feature to the template builder page:
+- **Purpose**: Lets users paste unstructured text (survey questions, research briefs, documents) and have an LLM parse them into structured interview questions with voice-optimized phrasing, interviewer guidance, and question type detection.
+- **Backend**: `server/question-parser.ts` — LLM prompt construction with project context enrichment, conversational rephrasing rules, question type detection (scale/yes_no/multi_select/numeric/open), confidence scoring, and deduplication logic. `server/routes/parse-questions.routes.ts` — `POST /api/projects/:projectId/parse-questions` endpoint.
+- **Frontend**: `client/src/components/PasteQuestionsPanel.tsx` — Inline collapsible panel with two-step flow: input (textarea) → preview/edit (per-question cards with checkbox selection, editable fields, confidence badges, duplicate warnings, suggested objective extraction).
+- **Integration**: Panel rendered inline in `template-builder.tsx` between Questions header and question list. "Paste Questions" button next to "Add Question". Smart blank-question handling replaces empty default question on import.
+- **LLM tracking**: New `barbara_question_parsing` use case in `shared/types/llm-usage.ts`. Tracked via `withTrackedLlmCall()` with attribution to project.
+- **Features**: Per-question accept/reject, original-vs-rephrased comparison, confidence indicators (high/medium/low), deduplication warnings, objective extraction from preamble, editable preview, append/replace mode toggle.

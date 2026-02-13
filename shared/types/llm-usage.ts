@@ -15,6 +15,7 @@ export const LLM_USE_CASES = [
   "infographic_project_summary",
   "infographic_project_themes",
   "infographic_project_insights",
+  "barbara_question_parsing",
 ] as const;
 
 export type LLMUseCase = typeof LLM_USE_CASES[number];

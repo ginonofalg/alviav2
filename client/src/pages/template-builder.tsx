@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -43,12 +43,14 @@ import {
   Hash,
   List,
   Save,
+  ClipboardPaste,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import type { Project, InterviewTemplate, Question } from "@shared/schema";
 import { OnboardingFieldGuide } from "@/components/onboarding";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import { PasteQuestionsPanel } from "@/components/PasteQuestionsPanel";
 
 const questionTypeIcons: Record<string, React.ElementType> = {
   open: MessageSquare,
@@ -484,6 +486,49 @@ export default function TemplateBuilderPage() {
     });
   };
 
+  const [showPastePanel, setShowPastePanel] = useState(false);
+
+  const handlePasteImport = (questions: Array<{
+    questionText: string;
+    questionType: "open" | "yes_no" | "scale" | "numeric" | "multi_select";
+    guidance: string;
+    scaleMin?: number;
+    scaleMax?: number;
+    multiSelectOptions?: string[];
+    timeHintSeconds: number;
+    recommendedFollowUps: number;
+  }>, mode: "append" | "replace") => {
+    const mapped = questions.map(q => ({
+      questionText: q.questionText,
+      questionType: q.questionType,
+      guidance: q.guidance,
+      scaleMin: q.scaleMin,
+      scaleMax: q.scaleMax,
+      multiSelectOptions: q.multiSelectOptions,
+      timeHintSeconds: q.timeHintSeconds,
+      recommendedFollowUps: q.recommendedFollowUps,
+      isRequired: true,
+    }));
+
+    if (mode === "replace") {
+      replace(mapped);
+    } else {
+      const currentQuestions = form.getValues("questions");
+      const isOnlyDefaultBlank = currentQuestions.length === 1
+        && currentQuestions[0].questionText.trim() === "";
+
+      if (isOnlyDefaultBlank) {
+        replace(mapped);
+      } else {
+        mapped.forEach(q => append(q));
+      }
+    }
+  };
+
+  const handleSuggestObjective = (objective: string) => {
+    form.setValue("objective", objective);
+  };
+
   const isPending = createTemplate.isPending || updateTemplate.isPending;
   const backLink = isEditMode
     ? `/templates/${templateId}`
@@ -699,24 +744,45 @@ export default function TemplateBuilderPage() {
           </Card>
 
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <h2 className="text-lg font-semibold">Questions</h2>
                 <p className="text-sm text-muted-foreground">
                   Add and configure your interview questions
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addQuestion}
-                data-testid="button-add-question"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Question
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowPastePanel(!showPastePanel)}
+                  data-testid="button-paste-questions"
+                >
+                  <ClipboardPaste className="w-4 h-4 mr-2" />
+                  {showPastePanel ? "Cancel" : "Paste Questions"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addQuestion}
+                  data-testid="button-add-question"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Question
+                </Button>
+              </div>
             </div>
+
+            {showPastePanel && projectId && (
+              <PasteQuestionsPanel
+                projectId={projectId}
+                existingQuestions={fields.map(f => ({ questionText: ((f as any).questionText || "").trim() })).filter(q => q.questionText.length > 0)}
+                templateObjective={form.getValues("objective") || ""}
+                onImport={handlePasteImport}
+                onSuggestObjective={handleSuggestObjective}
+                onClose={() => setShowPastePanel(false)}
+              />
+            )}
 
             <div className="space-y-4">
               {fields.map((field, index) => (

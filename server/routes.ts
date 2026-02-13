@@ -17,6 +17,7 @@ import {
   registerBarbaraRoutes,
   registerUsageRoutes,
   registerGuidanceRoutes,
+  registerParseQuestionsRoutes,
 } from "./routes/index";
 
 export async function registerRoutes(
@@ -50,6 +51,7 @@ export async function registerRoutes(
   registerBarbaraRoutes(app);
   registerUsageRoutes(app);
   registerGuidanceRoutes(app);
+  registerParseQuestionsRoutes(app);
 
   return httpServer;
 }
