@@ -43,6 +43,7 @@ export function registerParseQuestionsRoutes(app: Express) {
       const { rawText, existingQuestions, templateObjective } = parseResult.data;
 
       const usageContext: LLMUsageAttribution = {
+        workspaceId: project.workspaceId,
         projectId,
       };
 
