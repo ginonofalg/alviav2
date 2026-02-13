@@ -33,7 +33,7 @@ export function buildInterviewInstructions(
         .join("\n")
     : "";
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a British accent. You are polite, encouraging, but also firm and challenge when necessary.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
@@ -172,7 +172,7 @@ export function buildResumeInstructions(state: InterviewState): string {
   // Last Barbara guidance from before disconnection
   const lastBarbaraGuidance = state.lastBarbaraGuidance?.message;
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview, in a British accent. You are polite, encouraging, but also firm and challenge when necessary.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}

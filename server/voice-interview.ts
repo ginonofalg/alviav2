@@ -44,7 +44,10 @@ import type {
   AlviaSessionSummary,
   QualityFlag,
 } from "@shared/schema";
-import { createGuidanceLogEntry, scoreAndPersistAdherence } from "./voice-interview/guidance-tracking";
+import {
+  createGuidanceLogEntry,
+  scoreAndPersistAdherence,
+} from "./voice-interview/guidance-tracking";
 import {
   createEmptyQualitySignals,
   updateQualitySignals,
@@ -117,7 +120,6 @@ function isCurrentConnection(sessionId: string, connectionId: string): boolean {
 }
 
 const interviewStates = new Map<string, InterviewState>();
-
 
 function scheduleDebouncedPersist(sessionId: string): void {
   const state = interviewStates.get(sessionId);
@@ -862,8 +864,12 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       }
 
       // Restore Barbara guidance log
-      if (session.barbaraGuidanceLog && Array.isArray(session.barbaraGuidanceLog)) {
-        state.barbaraGuidanceLog = session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[];
+      if (
+        session.barbaraGuidanceLog &&
+        Array.isArray(session.barbaraGuidanceLog)
+      ) {
+        state.barbaraGuidanceLog =
+          session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[];
       }
 
       // Restore question states
@@ -1202,7 +1208,6 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   });
 }
 
-
 async function handleProviderEvent(
   sessionId: string,
   connectionId: string,
@@ -1485,9 +1490,12 @@ async function handleProviderEvent(
           if (
             qualityResult.shouldTriggerEnvironmentCheck &&
             state.transcriptionQualitySignals.environmentCheckTriggered &&
-            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >= 5 &&
-            state.transcriptionQualitySignals.environmentCheckCount < MAX_ENVIRONMENT_CHECKS &&
-            state.transcriptionQualitySignals.consecutiveGoodUtterances < GOOD_UTTERANCE_RECOVERY_THRESHOLD
+            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >=
+              5 &&
+            state.transcriptionQualitySignals.environmentCheckCount <
+              MAX_ENVIRONMENT_CHECKS &&
+            state.transcriptionQualitySignals.consecutiveGoodUtterances <
+              GOOD_UTTERANCE_RECOVERY_THRESHOLD
           ) {
             state.transcriptionQualitySignals.environmentCheckTriggered = false;
           }
@@ -1695,25 +1703,34 @@ async function handleProviderEvent(
 
         recordLlmUsageEvent(
           buildUsageAttribution(state),
-          state.providerInstance.name === "grok" ? ("xai" as const) : ("openai" as const),
+          state.providerInstance.name === "grok"
+            ? ("xai" as const)
+            : ("openai" as const),
           state.providerInstance.getModelName(),
           "alvia_realtime",
-          { promptTokens: tokenUsage.inputTextTokens, completionTokens: tokenUsage.outputTextTokens,
+          {
+            promptTokens: tokenUsage.inputTextTokens,
+            completionTokens: tokenUsage.outputTextTokens,
             totalTokens: tokenUsage.inputTokens + tokenUsage.outputTokens,
-            inputAudioTokens: tokenUsage.inputAudioTokens, outputAudioTokens: tokenUsage.outputAudioTokens },
+            inputAudioTokens: tokenUsage.inputAudioTokens,
+            outputAudioTokens: tokenUsage.outputAudioTokens,
+          },
           "success",
           { rawUsage: event.response?.usage },
-        ).catch((err) => console.error("[LLM Usage] Failed to record per-response alvia_realtime:", err));
+        ).catch((err) =>
+          console.error(
+            "[LLM Usage] Failed to record per-response alvia_realtime:",
+            err,
+          ),
+        );
       }
 
       if (state.isGeneratingAlviaSummary) {
         const responseStatus = event.response?.status;
         const responseModalities =
-          event.response?.output_modalities ??
-          event.response?.modalities;
+          event.response?.output_modalities ?? event.response?.modalities;
         const isTextResponse =
-          responseModalities?.includes("text") ||
-          !responseModalities;
+          responseModalities?.includes("text") || !responseModalities;
 
         if (!isTextResponse) {
           console.log(
@@ -1786,7 +1803,9 @@ async function handleProviderEvent(
           );
           if (state.alviaSummaryReject) {
             state.alviaSummaryReject(
-              new Error(`No text content in completed Alvia summary response (${outputItems.length} output items)`),
+              new Error(
+                `No text content in completed Alvia summary response (${outputItems.length} output items)`,
+              ),
             );
           }
         }
@@ -1813,7 +1832,9 @@ async function handleProviderEvent(
             `[AlviaSummary] Summary response.create rejected — active response collision for ${sessionId}`,
           );
           state.alviaSummaryReject(
-            new Error("Cannot create summary response: active response in progress"),
+            new Error(
+              "Cannot create summary response: active response in progress",
+            ),
           );
           state.isGeneratingAlviaSummary = false;
           state.alviaSummaryResolve = null;
@@ -1863,7 +1884,9 @@ Then continue the interview naturally once they acknowledge.`;
     questionIndex: state.currentQuestionIndex,
   } as PersistedBarbaraGuidance;
 
-  state.barbaraGuidanceLog.push(createGuidanceLogEntry(state, environmentGuidance));
+  state.barbaraGuidanceLog.push(
+    createGuidanceLogEntry(state, environmentGuidance),
+  );
 
   if (state.providerWs?.readyState === WebSocket.OPEN) {
     const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -3285,7 +3308,7 @@ function buildAQInstructions(
 ): string {
   const respondentAddress = respondentName || "the respondent";
 
-  return `You are Alvia, a warm and professional AI interviewer. You are continuing the main interview conversation with a few more questions, in a British accent. You are polite, encouraging, but also firm and challenge when necessary.
+  return `You are Alvia, a warm and professional AI interviewer. You are continuing the main interview conversation with a few more questions, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
 
 CONTEXT:
 - This is additional question ${aqIndex + 1} of ${totalAQs}
@@ -3759,7 +3782,11 @@ async function generateAlviaSummary(sessionId: string): Promise<string | null> {
   const RESPONSE_IDLE_WAIT_MS = 5000;
 
   try {
-    const isIdle = await waitForResponseIdle(state, sessionId, RESPONSE_IDLE_WAIT_MS);
+    const isIdle = await waitForResponseIdle(
+      state,
+      sessionId,
+      RESPONSE_IDLE_WAIT_MS,
+    );
     if (!isIdle) {
       console.error(
         `[AlviaSummary] Aborting summary — response still in progress after ${RESPONSE_IDLE_WAIT_MS}ms for ${sessionId}`,
