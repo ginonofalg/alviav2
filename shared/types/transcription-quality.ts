@@ -22,6 +22,7 @@ export type TranscriptionQualitySignals = {
   environmentCheckTriggered: boolean;
   environmentCheckTriggeredAt: number | null;
   utterancesSinceEnvironmentCheck: number;
+  environmentCheckCount: number;
   consecutiveGoodUtterances: number;
   vadEagernessReduced: boolean;
   vadEagernessReducedAt: number | null;

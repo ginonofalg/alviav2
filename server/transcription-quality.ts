@@ -15,6 +15,7 @@ export function createEmptyQualitySignals(): TranscriptionQualitySignals {
     environmentCheckTriggered: false,
     environmentCheckTriggeredAt: null,
     utterancesSinceEnvironmentCheck: 0,
+    environmentCheckCount: 0,
     consecutiveGoodUtterances: 0,
     vadEagernessReduced: false,
     vadEagernessReducedAt: null,
@@ -23,6 +24,8 @@ export function createEmptyQualitySignals(): TranscriptionQualitySignals {
 }
 
 const RECENT_WINDOW_SIZE = 5;
+export const MAX_ENVIRONMENT_CHECKS = 2;
+export const GOOD_UTTERANCE_RECOVERY_THRESHOLD = 8;
 
 // Helper to check if recent window has any quality issues
 export function hasRecentQualityIssues(
@@ -283,6 +286,7 @@ export function updateQualitySignals(
 ): QualityUpdateResult {
   const signals = { 
     ...currentSignals,
+    environmentCheckCount: currentSignals.environmentCheckCount ?? 0,
     recentUtteranceQuality: [...currentSignals.recentUtteranceQuality],
   };
   const detectedIssues: string[] = [];
@@ -478,7 +482,7 @@ export function createQualityMetrics(
     signals,
     qualityScore: calculateQualityScore(signals),
     flagsDetected: getQualityFlags(signals),
-    environmentCheckCount: signals.environmentCheckTriggered ? 1 : 0,
+    environmentCheckCount: signals.environmentCheckCount,
   };
 }
 

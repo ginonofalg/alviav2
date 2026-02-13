@@ -55,6 +55,8 @@ import {
   shouldReduceVadEagerness,
   shouldRestoreVadEagerness,
   updateGoodUtteranceTracking,
+  MAX_ENVIRONMENT_CHECKS,
+  GOOD_UTTERANCE_RECOVERY_THRESHOLD,
 } from "./transcription-quality";
 import {
   getRealtimeProvider,
@@ -1474,13 +1476,14 @@ async function handleProviderEvent(
             );
           }
 
-          // Trigger environment check if quality signals indicate issues
           // Re-triggering allowed after cooldown (5 utterances) by resetting the guard
+          // Guards: max 2 checks per session, suppress if audio has recovered (8+ good utterances)
           if (
             qualityResult.shouldTriggerEnvironmentCheck &&
             state.transcriptionQualitySignals.environmentCheckTriggered &&
-            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >=
-              5
+            state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck >= 5 &&
+            state.transcriptionQualitySignals.environmentCheckCount < MAX_ENVIRONMENT_CHECKS &&
+            state.transcriptionQualitySignals.consecutiveGoodUtterances < GOOD_UTTERANCE_RECOVERY_THRESHOLD
           ) {
             state.transcriptionQualitySignals.environmentCheckTriggered = false;
           }
@@ -1493,6 +1496,7 @@ async function handleProviderEvent(
             state.transcriptionQualitySignals.environmentCheckTriggeredAt =
               Date.now();
             state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck = 0;
+            state.transcriptionQualitySignals.environmentCheckCount++;
 
             console.log(
               `[TranscriptionQuality] Triggering environment check for session ${sessionId}`,
