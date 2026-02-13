@@ -1,0 +1,345 @@
+Review and critique the attached proposal. I agree with the issues and opportunities identified in the document, so incorporate them. Develop an implementation plan that adheres to CLAUDE.md guidelines.
+---                                                                                                                                                                  
+  Critique of the Approach
+                                                                                                                                                                       
+  What works well about the concept:
+  - Addresses a genuine workflow gap: researchers routinely have questions from surveys, prior studies, research briefs, or collaborative documents that need to be
+  ported into Alvia
+  - The preview-before-inject model matches the existing GenerateTemplateDialog pattern (two-step: generate → review → create)
+  - Append-by-default respects the iterative way researchers build templates
+  - Voice rephrasing is critical — survey-style questions ("On a scale of 1-5, rate your satisfaction with...") are unnatural when spoken aloud
+
+  Issues and opportunities I'd change or add:
+
+  1. Per-question accept/reject in preview — Don't force all-or-nothing. The LLM may correctly parse 7 of 8 questions but mangle one. Let users toggle individual
+  questions on/off before importing.
+  2. Show original-vs-rephrased comparison — If the LLM rewrites "Rate your satisfaction on a scale of 1-5" into "How satisfied are you with this, on a scale from one
+  to five?", the user needs to see both to verify intent wasn't changed. A subtle diff view or side-by-side is essential for trust.
+  3. Confidence/ambiguity indicators — When pasted text is ambiguous (e.g., "satisfaction level?" with no context), the LLM should flag low-confidence interpretations.
+   The preview should surface these so users know where manual review is needed.
+  4. Deduplication against existing questions — If the user already has 3 questions in the template and pastes 5 more, some may semantically overlap. The preview
+  should flag potential duplicates rather than silently appending.
+  5. Question type detection must be explicit in the prompt — Pasted text like "On a scale of 1-10..." should auto-detect as scale with scaleMin/scaleMax extracted.
+  "Did you enjoy X?" → yes_no. "Select all that apply: A, B, C, D" → multi_select with options populated. This extraction logic needs careful prompt engineering, not
+  just "guess the type."
+  6. Guidance generation should be context-aware, not generic — The LLM prompt should include project objective, audience context, strategic context, and constraints
+  so that generated guidance is specific (e.g., "Probe for adoption barriers in enterprise setting" rather than "Ask follow-up questions").
+  7. Handle messy input gracefully — Users will paste numbered lists, bullet points, tables from Google Docs, questions with sub-questions, headers mixed with
+  questions, instructional text mixed with questions. The LLM prompt needs explicit instructions to separate signal from noise.
+  8. Objective extraction from preamble — Often pasted content includes context before the questions ("This survey aims to understand customer churn..."). If the
+  template objective field is empty, extract a suggested objective from this context. Show it in the preview with an "Apply" option.
+  9. Don't duplicate GenerateTemplateDialog — The existing "Generate Template" feature creates an entire template from project context. This new feature is different:
+  it transforms user-provided content into structured questions. Keep them distinct in the UI — the paste feature is a tool within the template builder, not a separate
+   dialog.
+  10. Editable preview — Let users edit question text, guidance, and type directly in the preview before importing. The GenerateTemplateDialog explicitly doesn't allow
+   this (users must create then edit), which is one of its weaknesses.
+
+  ---
+  Here's the detailed implementation proposal:
+
+  ---
+  Proposal: Paste-to-Questions Feature for Template Builder
+
+  Overview
+
+  Add a "Paste Questions" feature to the template builder page that lets users paste unstructured text (questions from surveys, research briefs, documents) into a free
+   text area. An LLM parses the content into structured template questions with voice-optimized phrasing, interviewer guidance, and appropriate question types. Users
+  preview, edit, and selectively accept questions before they're added to the template.
+
+  User Flow
+
+  [Template Builder Page]
+      │
+      ├── Existing: "Add Question" button (manual, one at a time)
+      ├── NEW: "Paste Questions" button (opens inline panel)
+      │
+      └── Paste Questions Panel (inline, not a dialog)
+           │
+           ├── Step 1: Input
+           │     • Large textarea for pasting raw text
+           │     • Format examples placeholder text
+           │     • "Parse Questions" button → calls LLM
+           │     • Loading state with skeleton preview
+           │
+           ├── Step 2: Preview & Edit
+           │     • Suggested objective (if template objective is empty)
+           │     • List of parsed questions, each with:
+           │       - Checkbox (selected by default)
+           │       - Original text (collapsed, expandable)
+           │       - Rephrased question text (editable inline)
+           │       - Question type badge (editable dropdown)
+           │       - Generated guidance (editable)
+           │       - Confidence indicator (green/amber/red)
+           │       - Duplicate warning (if overlaps existing questions)
+           │     • "Append to template" (default) / "Replace all questions" toggle
+           │     • "Import Selected" button
+           │
+           └── Step 3: Result
+                 • Questions added to the form's `fields` array
+                 • Smart blank-question handling applied
+                 • Toast confirmation with count
+                 • Panel collapses
+
+  Architecture
+
+  New Files
+  ┌───────────────────────────────────────────────┬─────────────────────────────────────────────┬──────────────┐
+  │                     File                      │                   Purpose                   │ Lines (est.) │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┼──────────────┤
+  │ client/src/components/PasteQuestionsPanel.tsx │ Main UI component (input, preview, editing) │ ~350         │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┼──────────────┤
+  │ server/routes/parse-questions.routes.ts       │ API endpoint for LLM parsing                │ ~120         │
+  ├───────────────────────────────────────────────┼─────────────────────────────────────────────┼──────────────┤
+  │ server/question-parser.ts                     │ LLM prompt + response parsing logic         │ ~300         │
+  └───────────────────────────────────────────────┴─────────────────────────────────────────────┴──────────────┘
+  Modified Files
+  ┌───────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+  │                 File                  │                                    Change                                    │
+  ├───────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+  │ client/src/pages/template-builder.tsx │ Add "Paste Questions" button + render PasteQuestionsPanel, pass form context │
+  ├───────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+  │ server/routes/index.ts                │ Register new parseQuestions routes                                           │
+  └───────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
+  No database schema changes needed.
+
+  ---
+  API Design
+
+  POST /api/projects/:projectId/parse-questions
+
+  Request:
+  {
+    rawText: string;                    // The pasted content (max 10,000 chars)
+    existingQuestions?: string[];       // Current question texts for dedup
+    templateObjective?: string;        // Current objective (if any)
+  }
+
+  Response:
+  {
+    suggestedObjective?: string;        // Extracted from preamble, only if templateObjective was empty
+    questions: Array<{
+      originalText: string;             // Raw text that was interpreted as this question
+      questionText: string;             // Voice-optimized rephrased version
+      questionType: "open" | "yes_no" | "scale" | "numeric" | "multi_select";
+      guidance: string;                 // Context-aware interviewer guidance
+      scaleMin?: number;
+      scaleMax?: number;
+      multiSelectOptions?: string[];
+      timeHintSeconds: number;
+      recommendedFollowUps: number;
+      confidence: "high" | "medium" | "low";  // How confident the parse is
+      confidenceNote?: string;          // Why confidence is low (if applicable)
+      possibleDuplicate?: boolean;      // Overlaps with existing question
+      duplicateOf?: string;             // Which existing question it resembles
+    }>;
+  }
+
+  Auth: Requires authenticated user with access to the project.
+
+  LLM tracking: Tracked via withTrackedLlmCall() with a new use case barbara_question_parsing (add to llmUsageStatusEnum and the 16 tracked use cases).
+
+  ---
+  LLM Prompt Strategy
+
+  The server-side prompt in question-parser.ts should:
+
+  1. System prompt establishes the role: "You are a research interview designer converting raw question text into structured voice interview questions."
+  2. Include project context (fetched server-side from the project):
+    - Project name, description, objective, audience context
+    - Strategic context, context type
+    - Tone preference
+    - Avoid rules (constraints)
+  3. Include existing questions for deduplication awareness.
+  4. Explicit parsing instructions:
+    - Separate questions from preamble/context/instructions
+    - Detect question types from phrasing patterns:
+        - Scale indicators: "on a scale of", "rate from X to Y", "1-10" → scale with extracted min/max
+      - Binary indicators: "yes or no", "do you agree" → yes_no
+      - Multi-select indicators: "select all that apply", "which of the following" → multi_select with extracted options
+      - Numeric indicators: "how many", "what percentage" → numeric
+      - Everything else → open
+    - Rephrase for conversational voice delivery (no "please rate", no "on a scale of 1 to 5" → "how would you rate, from one to five")
+    - Generate guidance that references the project objective and audience
+    - Flag ambiguous interpretations with confidence levels
+    - Identify semantic overlap with existing questions
+  5. Output format: JSON matching the response schema above.
+  6. Model: Use barbaraConfig.templateGeneration settings (same model/config as template generation since it's a closely related task).
+
+  ---
+  Client Component: PasteQuestionsPanel
+
+  Props:
+  interface PasteQuestionsPanelProps {
+    projectId: string;
+    existingQuestions: Array<{ questionText: string }>;
+    templateObjective: string;
+    onImport: (questions: ParsedQuestion[], mode: "append" | "replace") => void;
+    onSuggestObjective: (objective: string) => void;
+    onClose: () => void;
+  }
+
+  Key behaviors:
+
+  - Input step: Textarea with placeholder showing example formats ("Paste your questions here — numbered lists, bullet points, survey exports, or plain text all
+  work"). Character count with 10,000 limit.
+  - Loading state: Skeleton cards matching the question card layout, with a "Parsing X questions..." message.
+  - Preview step:
+    - Each question rendered as a compact card with checkbox, editable fields, and metadata badges
+    - Expandable "Original text" section to compare with rephrased version
+    - Confidence badges: green (high), amber (medium), red (low) with tooltip showing confidenceNote
+    - Yellow warning banner on questions flagged as possibleDuplicate
+    - Import mode toggle: "Append to existing questions" (default) vs. "Replace all existing questions"
+    - Suggested objective shown as a dismissible banner with "Apply to template" button
+  - Import action:
+    - Calls onImport with selected questions and mode
+    - Parent component (template-builder.tsx) handles the useFieldArray operations
+
+  Integration with template-builder.tsx:
+
+  // In TemplateBuilderPage:
+  const handlePasteImport = (questions: ParsedQuestion[], mode: "append" | "replace") => {
+    const mapped = questions.map(q => ({
+      questionText: q.questionText,
+      questionType: q.questionType,
+      guidance: q.guidance,
+      scaleMin: q.scaleMin,
+      scaleMax: q.scaleMax,
+      multiSelectOptions: q.multiSelectOptions,
+      timeHintSeconds: q.timeHintSeconds,
+      recommendedFollowUps: q.recommendedFollowUps,
+      isRequired: true,
+    }));
+
+    if (mode === "replace") {
+      replace(mapped);
+    } else {
+      // Smart blank-question handling:
+      // If only question is the default empty one, replace it instead of appending
+      const currentQuestions = form.getValues("questions");
+      const isOnlyDefaultBlank = currentQuestions.length === 1
+        && currentQuestions[0].questionText.trim() === "";
+
+      if (isOnlyDefaultBlank) {
+        replace(mapped);
+      } else {
+        mapped.forEach(q => append(q));
+      }
+    }
+  };
+
+  ---
+  Smart Blank-Question Handling
+
+  When a new template is created, the form initializes with one empty question (questionText: ""). The paste feature should detect this and replace it rather than
+  appending after it:
+
+  - Condition: If the template has exactly 1 question AND that question's questionText is empty/whitespace
+  - Behavior: Treat "append" mode as "replace" — the imported questions replace the blank placeholder
+  - Edge case: If the user has typed into the blank question (even partially), preserve it and append normally
+
+  ---
+  Conversational Rephrasing Rules
+
+  The LLM prompt should enforce these voice-optimization rules:
+  ┌────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+  │                        Survey Style                        │                                  Voice Interview Style                                  │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "Please rate your satisfaction on a scale of 1-5"          │ "How satisfied would you say you are, from one to five?"                                │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "Select all that apply: A, B, C, D"                        │ "Which of these resonate with you — A, B, C, or D? Feel free to pick as many as apply." │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "Do you agree or disagree with the following statement: X" │ "What's your take on X — do you agree with that?"                                       │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "Describe your experience with [product]"                  │ "Tell me about your experience with [product]"                                          │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "What is your annual household income?"                    │ "Roughly speaking, what range does your household income fall in?"                      │
+  ├────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "N/A" or instructional text                                │ Filtered out entirely                                                                   │
+  └────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+  The prompt should specify: questions are being asked aloud by an AI voice interviewer named Alvia in a natural conversation. They should sound like something a human
+   interviewer would say, not something printed on a form.
+
+  ---
+  Project Context Enrichment
+
+  The server endpoint fetches the full project before calling the LLM, providing:
+
+  const project = await storage.getProject(projectId);
+
+  const contextBlock = [
+    `Project: ${project.name}`,
+    project.objective && `Research Objective: ${project.objective}`,
+    project.description && `Description: ${project.description}`,
+    project.audienceContext && `Target Audience: ${project.audienceContext}`,
+    project.contextType && `Context Type: ${project.contextType}`,
+    project.strategicContext && `Strategic Context: ${project.strategicContext}`,
+    project.tone && `Interview Tone: ${project.tone}`,
+    project.avoidRules?.length && `Topics to Avoid: ${project.avoidRules.join(", ")}`,
+  ].filter(Boolean).join("\n");
+
+  This context flows into guidance generation. For example, if the project objective is "Understand barriers to enterprise SaaS adoption" and a pasted question is
+  "What challenges do you face?", the generated guidance would be: "Probe specifically for adoption barriers in their enterprise context — procurement friction, IT
+  approval processes, integration concerns, change management."
+
+  Without project context, guidance would be generic: "Ask follow-up questions about specific challenges."
+
+  ---
+  UI Placement
+
+  The "Paste Questions" button should sit next to the existing "Add Question" button in the questions section header:
+
+  Questions                                    [Paste Questions] [Add Question]
+  Add and configure your interview questions
+
+  When clicked, the paste panel expands inline between the header and the question list (not as a dialog/modal — the user should see their existing questions below
+  while previewing pasted ones).
+
+  Use a collapsible panel with ClipboardPaste icon from Lucide. When open, the "Paste Questions" button becomes "Cancel" to close the panel.
+
+  ---
+  LLM Usage Tracking
+
+  Add barbara_question_parsing to the tracked use cases:
+  - Update shared/types/llm-usage.ts to include the new use case in the type union
+  - Track via withTrackedLlmCall() in the parser module
+  - Uses the templateGeneration Barbara config (same model, same settings)
+  - Attribution: workspace → project (no template/collection/session since the template may not exist yet)
+
+  ---
+  Edge Cases
+  ┌──────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │               Scenario               │                                            Behavior                                            │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Empty paste                          │ Disable "Parse" button, show validation message                                                │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Paste with no recognizable questions │ Return empty array, show "No questions found" message with suggestion to check formatting      │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Paste with 50+ questions             │ Warn user before parsing; suggest breaking into batches. Hard limit at 30 questions per parse. │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Very long question text (>500 chars) │ LLM should split into multiple questions or truncate with confidence flag                      │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Non-English text                     │ Parse as-is; confidence may be lower. Don't auto-translate.                                    │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Pasted HTML/rich text                │ Strip formatting before sending to LLM (client-side)                                           │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ LLM timeout/failure                  │ Show error with "Try again" button; don't lose the pasted text                                 │
+  ├──────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ All questions deselected             │ Disable "Import" button                                                                        │
+  └──────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ---
+  What This Proposal Does NOT Include
+
+  - Drag-and-drop reordering — The existing drag handle is decorative. This proposal doesn't add reordering, though it would pair well.
+  - File upload — Only free-text paste. File parsing (PDF, DOCX) is a separate feature.
+  - Batch editing in preview — Users edit individual questions. "Rephrase all" or "Make all open-ended" would be a future enhancement.
+  - Template-level AI editing — This is strictly for importing questions, not regenerating the entire template.
+
+  ---
+  Estimated Scope
+
+  - Backend: ~420 lines across 2 new files + minor edits to routing and types
+  - Frontend: ~400 lines in 1 new component + ~40 lines of changes to template-builder.tsx
+  - No database migrations needed
+  - No changes to existing API contracts
+
+  This is a medium-sized feature that fits within the project's file size guidelines (no file exceeds 500 lines).
