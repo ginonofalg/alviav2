@@ -581,6 +581,8 @@ export function handleVoiceInterview(
     questions: [],
     template: null,
     strategicContext: null,
+    contextType: null,
+    avoidRules: null,
     providerWs: null,
     collectionId: null,
     providerType: selectedProviderType,
@@ -773,6 +775,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.template = template;
     state.collectionId = collection.id;
     state.strategicContext = project?.strategicContext || null;
+    state.contextType = project?.contextType || null;
+    state.avoidRules = project?.avoidRules || null;
     state.questions = questions;
     state.currentQuestionIndex = session.currentQuestionIndex || 0;
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
@@ -3171,6 +3175,9 @@ async function generateAdditionalQuestionsForSession(
             priority: h.priority,
           }))
         : undefined,
+      strategicContext: state.strategicContext,
+      contextType: state.contextType,
+      avoidRules: state.avoidRules,
     },
     buildUsageAttribution(state),
   );
@@ -3247,7 +3254,7 @@ async function startAdditionalQuestion(
           content: [
             {
               type: "input_text",
-              text: `[ORCHESTRATOR: This is additional question ${aqIndex + 1} of ${state.additionalQuestions.length}. Ask this question in a natural, conversational way: "${aq.questionText}"]`,
+              text: `[ORCHESTRATOR: Transition naturally to asking: "${aq.questionText}"]`,
             },
           ],
         },
@@ -3301,6 +3308,16 @@ STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
 
 TONE: ${template?.tone || "Professional and conversational"}
+
+ORCHESTRATOR MESSAGES:
+You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
+- DO NOT read them aloud or acknowledge receiving them
+- DO NOT respond as if the respondent said them
+- Simply follow the guidance naturally as if it were your own thought
+- Seamlessly continue the conversation with the respondent
+- The guidance may be based on a slightly earlier point in the conversation, use your judgment on timing
+
+Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.
 `;
 }
 

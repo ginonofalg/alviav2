@@ -3093,6 +3093,9 @@ export interface AdditionalQuestionsInput {
     source: string;
     priority: string;
   }>;
+  strategicContext?: string | null;
+  contextType?: string | null;
+  avoidRules?: string[] | null;
 }
 
 export interface GeneratedAdditionalQuestion {
@@ -3260,8 +3263,9 @@ WHEN TO SUGGEST QUESTIONS:
 - Interesting tangents the respondent hinted at but weren't followed up
 - Gaps between the research objective and what was actually discussed
 - Contradictions or ambiguities that could benefit from clarification
+- Gaps between the strategic business context and what was discussed — questions that would yield actionable insights for the stated business objective
 ${crossInterviewSection}${analyticsHypothesesSection}
-
+${input.avoidRules?.length ? `\nTOPICS TO AVOID:\nThe following topics must not be addressed in additional questions:\n${input.avoidRules.map((r) => `- ${r}`).join("\n")}\n` : ""}
 WHEN TO RETURN ZERO QUESTIONS:
 - The interview comprehensively covered the research objective
 - All important topics were explored to sufficient depth
@@ -3356,6 +3360,14 @@ ${input.audienceContext || "General audience"}
 
 === INTERVIEW TONE ===
 ${input.tone || "Professional and conversational"}
+${input.contextType ? `\n=== CONTEXT TYPE ===\n${{
+    content: "Content Strategy (newsletters, blogs, social media)",
+    product: "Product Development (features, roadmap)",
+    marketing: "Marketing Campaign (campaigns, targeting)",
+    cx: "Customer Experience (support, onboarding)",
+    other: "Custom Business Context",
+  }[input.contextType] || input.contextType}` : ""}
+${input.strategicContext ? `\n=== STRATEGIC CONTEXT ===\n${input.strategicContext}` : ""}
 
 === ORIGINAL TEMPLATE QUESTIONS ===
 ${templateQuestionsText}

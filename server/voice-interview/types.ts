@@ -102,6 +102,8 @@ export interface InterviewState {
   questions: any[];
   template: any;
   strategicContext: string | null;
+  contextType: string | null;
+  avoidRules: string[] | null;
   providerWs: WebSocket | null;
   collectionId: string | null;
   providerType: RealtimeProviderType;
