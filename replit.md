@@ -67,7 +67,9 @@ Added Phase 1 of guidance effectiveness tracking:
 
 ### Barbara Guidance Adherence — Phase 2 (February 2026)
 Added adherence scoring to measure how well Alvia follows Barbara's real-time guidance:
-- **Scoring Engine**: `server/guidance-adherence.ts` — action-type-specific heuristic scoring. Each action type has tailored detection logic (keyword matching, question-index tracking, transition language detection).
+- **Scoring Engine**: `server/guidance-adherence.ts` — action-type-specific heuristic scoring. Each action type has tailored detection logic (word-boundary keyword matching, topical relevance via overlap coefficient, question-index tracking, transition language detection).
+- **Text Utilities**: `server/voice-interview/text-utils.ts` — shared `getKeywords()`, `jaccardSimilarity()`, `overlapCoefficient()`, and `INTERVIEW_META_STOPWORDS`. Used by both `transcript.ts` (question repeat detection) and `guidance-adherence.ts` (topical relevance scoring).
+- **Scoring accuracy improvements**: `containsKeywords` uses regex word boundaries to avoid substring false positives (e.g. "right" no longer matches "alright"). `scoreProbeFollowup` checks topical relevance between Barbara's guidance and Alvia's response using overlap coefficient (threshold 0.3). `scoreSuggestNextQuestion` requires question advancement within 2 transcript entries (was 4).
 - **Types**: `GuidanceAdherenceResult` union (`followed | partially_followed | not_followed | not_applicable | unscored`) and `GuidanceAdherenceSummary` in `shared/types/interview-state.ts`. Extended `BarbaraGuidanceLogEntry` with optional `adherence`, `adherenceReason`, `alviaResponseSnippet` fields.
 - **Schema**: `guidanceAdherenceSummary` JSONB column on `interviewSessions` table. Stores per-session summary with overall adherence rate, by-action breakdowns, and counts.
 - **Integration**: Scoring runs automatically in `finalizeInterview()` after summaries are generated. Also available on-demand via API for retroactive scoring of existing sessions.
