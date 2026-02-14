@@ -48,6 +48,8 @@ export interface BarbaraConfig {
   templateGeneration: BarbaraUseCaseConfig;
   additionalQuestions: BarbaraUseCaseConfig;
   sessionSummary: BarbaraUseCaseConfig;
+  personaResearch: BarbaraUseCaseConfig;
+  personaGeneration: BarbaraUseCaseConfig;
 }
 
 // Default configuration - can be updated at runtime
@@ -92,6 +94,16 @@ const barbaraConfig: BarbaraConfig = {
     verbosity: "medium",
     reasoningEffort: "low",
   },
+  personaResearch: {
+    model: "gpt-5",
+    verbosity: "medium",
+    reasoningEffort: "high",
+  },
+  personaGeneration: {
+    model: "gpt-5",
+    verbosity: "low",
+    reasoningEffort: "medium",
+  },
 };
 
 // Getters and setters for Barbara configuration
@@ -128,6 +140,12 @@ export function updateBarbaraConfig(
   }
   if (updates.sessionSummary) {
     Object.assign(barbaraConfig.sessionSummary, updates.sessionSummary);
+  }
+  if (updates.personaResearch) {
+    Object.assign(barbaraConfig.personaResearch, updates.personaResearch);
+  }
+  if (updates.personaGeneration) {
+    Object.assign(barbaraConfig.personaGeneration, updates.personaGeneration);
   }
   return getBarbaraConfig();
 }

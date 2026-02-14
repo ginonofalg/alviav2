@@ -522,6 +522,30 @@ export const simulationRunsRelations = relations(simulationRuns, ({ one }) => ({
   }),
 }));
 
+export const populationBriefs = pgTable("population_briefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  researchPrompt: text("research_prompt").notNull(),
+  additionalContext: text("additional_context"),
+  brief: jsonb("brief").notNull(),
+  confidence: text("confidence").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_population_brief_project").on(table.projectId),
+]);
+
+export const populationBriefsRelations = relations(populationBriefs, ({ one }) => ({
+  project: one(projects, {
+    fields: [populationBriefs.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const insertPopulationBriefSchema = createInsertSchema(populationBriefs).omit({ id: true, createdAt: true });
+export type PopulationBriefRecord = typeof populationBriefs.$inferSelect;
+export type InsertPopulationBrief = z.infer<typeof insertPopulationBriefSchema>;
+
 export const insertPersonaSchema = createInsertSchema(personas).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSimulationRunSchema = createInsertSchema(simulationRuns).omit({ id: true, createdAt: true });
 

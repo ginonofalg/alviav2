@@ -11,7 +11,8 @@ import type {
   WaitlistEntry, InsertWaitlistEntry,
   AlviaSessionSummary, BarbaraSessionSummary,
   LlmUsageEvent, InsertLlmUsageEvent, UsageRollup,
-  BarbaraGuidanceLogEntry, GuidanceAdherenceSummary
+  BarbaraGuidanceLogEntry, GuidanceAdherenceSummary,
+  PopulationBriefRecord, InsertPopulationBrief,
 } from "@shared/schema";
 
 export type CollectionUpdate = Partial<InsertCollection> & {
@@ -224,4 +225,8 @@ export interface IStorage {
   getUsageEventsBySession(sessionId: string): Promise<LlmUsageEvent[]>;
   deleteExpiredUsageEvents(retentionDays: number, batchSize: number): Promise<number>;
   reconcileUsageRollups(hoursBack: number): Promise<number>;
+
+  createPopulationBrief(data: InsertPopulationBrief): Promise<PopulationBriefRecord>;
+  getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined>;
+  getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]>;
 }

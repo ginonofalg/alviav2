@@ -169,6 +169,45 @@ export async function withTrackedLlmCall<T>(
   }
 }
 
+export function extractOpenAIResponsesUsage(
+  response: {
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+      completion_tokens_details?: { reasoning_tokens?: number };
+    } | null;
+  },
+  model: string,
+): { usage: NormalizedTokenUsage; status: LLMUsageStatus } {
+  if (!response.usage) {
+    return {
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0 },
+      status: "missing_usage",
+    };
+  }
+  const u = response.usage;
+  return {
+    usage: {
+      promptTokens: u.prompt_tokens ?? 0,
+      completionTokens: u.completion_tokens ?? 0,
+      totalTokens: u.total_tokens ?? (u.prompt_tokens ?? 0) + (u.completion_tokens ?? 0),
+      inputAudioTokens: 0,
+      outputAudioTokens: 0,
+      inputCachedTokens: u.prompt_tokens_details?.cached_tokens ?? 0,
+    },
+    status: "success",
+  };
+}
+
+export function makeResponsesUsageExtractor(model: string) {
+  return (response: any) => {
+    const { usage, status } = extractOpenAIResponsesUsage(response, model);
+    return { usage, status, rawUsage: response?.usage ?? null };
+  };
+}
+
 export function makeBarbaraUsageExtractor(model: string) {
   return (response: any) => {
     const { usage, status } = extractOpenAIChatUsage(response, model);

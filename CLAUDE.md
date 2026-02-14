@@ -112,6 +112,7 @@ server/
     infographic.routes.ts       # Collection & project infographic generation (~340 lines)
     barbara.routes.ts           # Barbara config endpoints (~190 lines)
     usage.routes.ts             # LLM usage tracking queries (~110 lines)
+    persona-generation.routes.ts # AI persona research & synthesis endpoints with rate limiting (~100 lines)
   storage.ts                # DatabaseStorage class (~1630 lines)
   storage/
     types.ts                    # IStorage interface definitions (~200 lines)
@@ -123,6 +124,11 @@ server/
     question-flow.ts            # Conditional question flow evaluation (~90 lines)
     conversation-utils.ts       # Shared conversation message building utility (~30 lines)
     types.ts                    # Simulation context types and limits (~45 lines)
+  persona-generation/          # AI persona generation from population research (~500 lines total)
+    types.ts                    # PopulationBrief, GeneratedPersona, JSON schemas for structured output (~100 lines)
+    research.ts                 # Phase 1: OpenAI Responses API + web_search to build population brief (~160 lines)
+    synthesis.ts                # Phase 2: Generate diverse personas from population brief (~160 lines)
+    validation.ts               # Post-generation diversity validation with automatic retry (~80 lines)
   voice-interview.ts        # WebSocket handler for voice interviews (~4200 lines)
   voice-interview/           # Extracted voice interview modules (~1270 lines total)
     index.ts                    # Re-exports
@@ -314,6 +320,16 @@ vitest.config.ts            # Vitest test configuration
 - Conditional question flow evaluation with `dependsOn`, `showWhen`, and `condition` operators
 - Shared `buildConversationMessages` utility with perspective parameter (alvia vs respondent)
 - Session scope tracking: `isSimulated` flag on sessions, `analyzedSessionScope` on analytics
+
+**AI persona generation** (`server/persona-generation/`):
+- Two-phase pipeline: research (web search) → synthesis (persona creation)
+- Phase 1 (research.ts): Uses OpenAI Responses API with `web_search` tool to gather demographic and behavioral data about target populations; produces a `PopulationBrief` stored in `population_briefs` table
+- Phase 2 (synthesis.ts): Generates diverse personas from the brief using structured output JSON schemas; supports configurable persona count (3-10), diversity modes (balanced/maximize), and edge case inclusion
+- Post-generation diversity validation (validation.ts): Checks generated personas for variety in age, gender, attitude, and domain knowledge; triggers automatic retry if diversity score falls below threshold
+- Rate limiting: In-memory per-project counter, max 5 research requests per hour
+- LLM use cases: `barbara_persona_research` and `barbara_persona_generation` tracked via `llmUsageEvents`
+- Frontend: `GeneratePersonasDialog` with three-state flow (input → generating with phase indicators → review with persona cards); integrated into `PersonaManager` with "Generate with AI" button
+- API routes: `POST /api/projects/:projectId/personas/research` and `POST /api/projects/:projectId/personas/synthesize`
 
 **Additional questions (AQ) system**:
 - Barbara generates 0-3 dynamic follow-up questions at end of interview based on gaps/themes

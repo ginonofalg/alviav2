@@ -396,7 +396,10 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="personas">
-          <PersonaManager projectId={projectId!} />
+          <PersonaManager
+            projectId={projectId!}
+            hasProjectMetadata={!!(project.description || project.objective || project.audienceContext)}
+          />
         </TabsContent>
       </Tabs>
 

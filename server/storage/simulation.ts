@@ -1,7 +1,8 @@
 import {
-  personas, simulationRuns,
+  personas, simulationRuns, populationBriefs,
   type Persona, type InsertPersona,
   type SimulationRunRecord, type InsertSimulationRun,
+  type PopulationBriefRecord, type InsertPopulationBrief,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, sql, lt } from "drizzle-orm";
@@ -111,4 +112,20 @@ export async function acquireSimulationLock(maxConcurrent: number): Promise<bool
 
 export async function releaseSimulationLock(): Promise<void> {
   await db.execute(sql`SELECT pg_advisory_unlock(hashtext('simulation_concurrency'))`);
+}
+
+export async function createPopulationBrief(data: InsertPopulationBrief): Promise<PopulationBriefRecord> {
+  const [brief] = await db.insert(populationBriefs).values(data).returning();
+  return brief;
+}
+
+export async function getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined> {
+  const [brief] = await db.select().from(populationBriefs).where(eq(populationBriefs.id, id));
+  return brief;
+}
+
+export async function getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]> {
+  return await db.select().from(populationBriefs)
+    .where(eq(populationBriefs.projectId, projectId))
+    .orderBy(desc(populationBriefs.createdAt));
 }

@@ -5,18 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, User } from "lucide-react";
+import { Plus, User, Sparkles } from "lucide-react";
 import { PersonaCard } from "./PersonaCard";
 import { PersonaFormDialog } from "./PersonaFormDialog";
+import { GeneratePersonasDialog } from "./GeneratePersonasDialog";
 import type { Persona } from "@shared/schema";
 
 interface PersonaManagerProps {
   projectId: string;
+  hasProjectMetadata?: boolean;
 }
 
-export function PersonaManager({ projectId }: PersonaManagerProps) {
+export function PersonaManager({ projectId, hasProjectMetadata = false }: PersonaManagerProps) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
   const { data: personas, isLoading } = useQuery<Persona[]>({
@@ -109,10 +112,20 @@ export function PersonaManager({ projectId }: PersonaManagerProps) {
         <p className="text-sm text-muted-foreground">
           Create simulated respondent personas to test your interview questions.
         </p>
-        <Button onClick={handleNew} data-testid="button-new-persona">
-          <Plus className="w-4 h-4 mr-2" />
-          New Persona
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={() => setGenerateDialogOpen(true)}
+            data-testid="button-generate-personas"
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            Generate with AI
+          </Button>
+          <Button onClick={handleNew} data-testid="button-new-persona">
+            <Plus className="w-4 h-4 mr-2" />
+            New Persona
+          </Button>
+        </div>
       </div>
 
       {personas && personas.length > 0 ? (
@@ -134,10 +147,20 @@ export function PersonaManager({ projectId }: PersonaManagerProps) {
             <p className="text-sm text-muted-foreground mb-4">
               Create personas to simulate how different types of respondents would answer your interview questions.
             </p>
-            <Button onClick={handleNew} data-testid="button-create-first-persona">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Persona
-            </Button>
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setGenerateDialogOpen(true)}
+                data-testid="button-generate-first-personas"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate with AI
+              </Button>
+              <Button onClick={handleNew} data-testid="button-create-first-persona">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Persona
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -148,6 +171,13 @@ export function PersonaManager({ projectId }: PersonaManagerProps) {
         onSubmit={handleSubmit}
         persona={editingPersona}
         isPending={createMutation.isPending || updateMutation.isPending}
+      />
+
+      <GeneratePersonasDialog
+        projectId={projectId}
+        hasProjectMetadata={hasProjectMetadata}
+        open={generateDialogOpen}
+        onOpenChange={setGenerateDialogOpen}
       />
     </div>
   );

@@ -18,7 +18,8 @@ import {
   type InviteListEntry, type InsertInviteListEntry,
   type WaitlistEntry, type InsertWaitlistEntry,
   type AlviaSessionSummary, type BarbaraSessionSummary,
-  type LlmUsageEvent, type InsertLlmUsageEvent, type UsageRollup
+  type LlmUsageEvent, type InsertLlmUsageEvent, type UsageRollup,
+  type PopulationBriefRecord, type InsertPopulationBrief
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
@@ -1670,6 +1671,21 @@ export class DatabaseStorage implements IStorage {
     `);
 
     return Number(result.rowCount ?? 0);
+  }
+
+  async createPopulationBrief(data: InsertPopulationBrief): Promise<PopulationBriefRecord> {
+    const { createPopulationBrief: create } = await import("./storage/simulation");
+    return create(data);
+  }
+
+  async getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined> {
+    const { getPopulationBrief: get } = await import("./storage/simulation");
+    return get(id);
+  }
+
+  async getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]> {
+    const { getPopulationBriefsByProject: getByProject } = await import("./storage/simulation");
+    return getByProject(projectId);
   }
 }
 

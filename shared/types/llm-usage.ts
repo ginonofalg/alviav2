@@ -18,6 +18,8 @@ export const LLM_USE_CASES = [
   "barbara_question_parsing",
   "simulation_alvia",
   "simulation_persona",
+  "barbara_persona_research",
+  "barbara_persona_generation",
 ] as const;
 
 export type LLMUseCase = typeof LLM_USE_CASES[number];
