@@ -1,0 +1,97 @@
+Plan: Auto-Persona Generation Proposal Document                                                                                                                                                  
+                                                                                                                                                                                                  
+ Context
+
+ Persona creation for interview simulations is currently fully manual (14+ fields x 5-10 personas). This makes simulation setup slow and often results in shallow, non-representative personas.
+ The proposal introduces AI-powered persona generation that uses web research to ground personas in real population data — making simulations more representative and dramatically reducing setup
+  time.
+
+ Deliverable
+
+ A single proposal document at docs/proposals/auto-persona-generation-proposal.md covering the full feature design.
+
+ Proposal Structure
+
+ 1. Problem Statement & Value
+
+ - Manual persona creation bottleneck (70-140 fields for a representative set)
+ - Impact on simulation quality and adoption
+ - Strategic value: grounding personas in real-world population data
+
+ 2. Input Design
+
+ - Free-form research prompt: Text area describing target population
+ - Project context auto-fill: Pulls from project's objective, audienceContext, strategicContext, contextType, avoidRules
+ - Document upload (V1): Support for CSV, PDF, or text files as additional context — parsed and included in the research prompt
+ - Configuration: Persona count (3-10), edge case toggle, diversity mode
+
+ 3. Web Research Phase (Always On)
+
+ - Approach: OpenAI Responses API with built-in web_search tool
+ - Rationale: single vendor (already using OpenAI), model-directed search, inline citations, no new API keys
+ - Searches for: demographic distributions, behavioral patterns, communication norms, domain knowledge levels, biases/sensitivities
+ - Output: structured "population brief" with citations — an intermediate artifact that's independently valuable
+
+ 4. Two-Phase Generation Architecture
+
+ - Phase 1 — Population Research (~20-40s): Reasoning model + web search → population brief with citations
+ - Phase 2 — Persona Synthesis (~10-20s): Structured generation from brief → array of persona objects matching InsertPersona schema
+ - Benefits: separation of concerns, reusable research, cost efficiency (regenerate Phase 2 without re-running Phase 1)
+
+ 5. Diversity & Quality
+
+ - Systematic distribution across attitude, verbosity, domain knowledge enums
+ - Post-generation diversity validation
+ - Citation tracking: each persona linked to web sources that informed it
+ - Schema validation via existing personaCreateSchema
+
+ 6. UX Flow
+
+ - Trigger: "Generate Personas with AI" button in project persona management
+ - Three-state dialog: Input → Generating (with phase progress) → Review
+ - Async polling pattern (matches existing simulation run pattern)
+ - Review shows persona cards, expandable sources/population brief, edit/remove before save
+
+ 7. Technical Architecture
+
+ - New module: server/persona-generation/ (research.ts, synthesis.ts, types.ts)
+ - New route file: server/routes/persona-generation.routes.ts
+ - Barbara config: new personaGeneration use case entry
+ - LLM tracking: two new use cases (barbara_persona_research, barbara_persona_generation)
+ - Document upload: file parsing utility for CSV/PDF/text → context string
+ - No new environment variables (uses existing OPENAI_API_KEY)
+
+ 8. Edge Cases & Risks
+
+ - Poor web search results → confidence flag, fallback to prompt-only
+ - Hallucination → citations surfaced for verification, population brief reviewable
+ - Cost → rate limiting, Phase 2 regeneration avoids re-running expensive Phase 1
+ - Bias → explicit anti-stereotyping prompts, researcher review before use
+
+ 9. Future Extensions (out of scope)
+
+ - Persona refinement from simulation results
+ - Cross-project persona reuse
+ - Population brief persistence
+ - Persona clustering/segmentation
+
+ 10. Implementation Sequence
+
+ - Recommended build order for the team
+
+ Key Files Referenced
+
+ - shared/schema.ts — persona table definition (lines 467-489)
+ - server/routes/persona.routes.ts — persona CRUD + validation schema
+ - server/simulation/persona-prompt.ts — how persona fields map to LLM behavior
+ - server/barbara-orchestrator.ts — AI generation patterns (generateTemplateFromProject)
+ - client/src/components/GenerateTemplateDialog.tsx — UX pattern for AI generation dialogs
+ - server/llm-usage.ts — withTrackedLlmCall pattern for usage tracking
+ - shared/types/llm-usage.ts — LLMUseCase enum to extend
+ - server/simulation/types.ts — SIMULATION_LIMITS for persona count alignment
+
+ Verification
+
+ - Review proposal for completeness against all 10 sections
+ - Verify technical recommendations align with existing codebase patterns
+ - Ensure proposal is actionable enough for a development team to implement from
