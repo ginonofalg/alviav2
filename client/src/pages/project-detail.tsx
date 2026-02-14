@@ -295,26 +295,24 @@ export default function ProjectDetailPage() {
       </div>
 
       <Tabs defaultValue="templates" className="space-y-6">
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <TabsList className="w-max sm:w-auto">
-            <TabsTrigger value="templates" data-testid="tab-templates">
-              <FileText className="w-4 h-4 mr-2" />
-              Templates
-            </TabsTrigger>
-            <TabsTrigger value="collections" data-testid="tab-collections">
-              <Play className="w-4 h-4 mr-2" />
-              Collections
-            </TabsTrigger>
-            <TabsTrigger value="analytics" data-testid="tab-analytics">
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
-            </TabsTrigger>
-            <TabsTrigger value="infographics" data-testid="tab-infographics">
-              <ImageIcon className="w-4 h-4 mr-2" />
-              Infographics
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="w-full sm:w-auto flex">
+          <TabsTrigger value="templates" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-templates">
+            <FileText className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Templates</span><span className="sm:hidden">Tmpl</span>
+          </TabsTrigger>
+          <TabsTrigger value="collections" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-collections">
+            <Play className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Collections</span><span className="sm:hidden">Coll</span>
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-analytics">
+            <BarChart3 className="w-4 h-4 shrink-0" />
+            <span className="truncate">Analytics</span>
+          </TabsTrigger>
+          <TabsTrigger value="infographics" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-infographics">
+            <ImageIcon className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Infographics</span><span className="sm:hidden">Info</span>
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="templates" className="space-y-4">
           {templatesLoading ? (
