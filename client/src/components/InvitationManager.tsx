@@ -250,8 +250,8 @@ export function InvitationManager({ collectionId, shareUrl }: InvitationManagerP
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between gap-4">
-          <div>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="min-w-0">
             <CardTitle>Invite Respondents</CardTitle>
             <CardDescription>
               Share the public link or invite specific people with trackable links
@@ -259,7 +259,7 @@ export function InvitationManager({ collectionId, shareUrl }: InvitationManagerP
           </div>
           <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" data-testid="button-add-respondent">
+              <Button size="sm" className="shrink-0" data-testid="button-add-respondent">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Add Respondent
               </Button>
@@ -311,18 +311,18 @@ export function InvitationManager({ collectionId, shareUrl }: InvitationManagerP
       </CardHeader>
       <CardContent className="space-y-6">
         <Tabs defaultValue="link">
-          <TabsList>
-            <TabsTrigger value="link" data-testid="tab-share-link">
-              <Link2 className="w-4 h-4 mr-2" />
-              Share Link
+          <TabsList className="w-full sm:w-auto flex">
+            <TabsTrigger value="link" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-share-link">
+              <Link2 className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Share</span> Link
             </TabsTrigger>
-            <TabsTrigger value="import" data-testid="tab-import">
-              <Upload className="w-4 h-4 mr-2" />
-              Import CSV
+            <TabsTrigger value="import" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-import">
+              <Upload className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Import</span> CSV
             </TabsTrigger>
-            <TabsTrigger value="tracking" data-testid="tab-tracking">
-              <Mail className="w-4 h-4 mr-2" />
-              Tracking ({invitedRespondents.length})
+            <TabsTrigger value="tracking" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-tracking">
+              <Mail className="w-4 h-4 shrink-0" />
+              <span className="truncate">Tracking ({invitedRespondents.length})</span>
             </TabsTrigger>
           </TabsList>
 
@@ -461,7 +461,7 @@ export function InvitationManager({ collectionId, shareUrl }: InvitationManagerP
 
           <TabsContent value="tracking" className="mt-4">
             {invitedRespondents.length > 0 && (
-              <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-center gap-4 mb-4 flex-wrap">
                 {Object.entries(statusCounts).map(([status, count]) => {
                   if (count === 0) return null;
                   const config = STATUS_CONFIG[status];

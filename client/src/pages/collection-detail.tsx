@@ -491,20 +491,20 @@ export default function CollectionDetailPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle
-                className="flex items-center gap-2 flex-wrap"
+                className="flex items-center gap-2"
                 data-testid="heading-analytics"
               >
-                <BarChart3 className="w-5 h-5 text-primary" />
+                <BarChart3 className="w-5 h-5 text-primary shrink-0" />
                 Analytics
               </CardTitle>
               <CardDescription data-testid="text-analytics-description">
                 Cross-interview insights and quality analysis
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {analyticsData?.isStale && (
                 <Badge
                   variant="outline"
