@@ -1,0 +1,340 @@
+Digital Respondent Simulation: Codex Critique + Design Spec                                                                                                                                      
+                                                        
+ Part 1: Critique of the Codex Discussion
+
+ Context
+
+ You discussed building a "digital twin" simulation system with Codex -- virtual respondents that can participate in Alvia interviews using LLM-powered personas. Codex proposed a "hacky but
+ real" WebSocket client approach that plugs into the existing interview pipeline via text_input.
+
+ What Codex Got Right
+
+ 1. The text_input path exists and is well-suited. Confirmed at voice-interview.ts:2345-2428. Text input creates identical TranscriptEntry objects as audio STT, triggers Barbara identically,
+ and persists the same way.
+ 2. The event loop sketch is accurate. Create session -> connect WS -> send audio_ready -> wait for ai_transcript_done -> send text_input -> handle question_changed -> handle AQ flow. Correct
+ protocol.
+ 3. Barbara is fully text-decoupled. analyzeWithBarbara() takes BarbaraAnalysisInput which is purely transcript text. No audio dependency whatsoever.
+ 4. No auth required on the interview pipeline. Session creation, data fetch, and WebSocket are all public endpoints.
+
+ What Codex Got Wrong
+
+ Critical Issue #1: "Without audio synthesis" is misleading. Every text_input still triggers response.create with output_modalities: ["audio"] (line 2422). The Realtime API generates full PCM16
+  audio for every Alvia response. A text-only respondent forces Alvia to generate audio that nobody listens to. The Realtime API IS Alvia's brain -- there's no bypass.
+
+ Critical Issue #2: Cost was completely ignored. Realtime API audio output is ~$40/M tokens vs ChatCompletions at ~$0.60/M. Running 50 simulations through the Realtime API means paying 60-70x
+ more for audio tokens that get discarded. This is the elephant in the room.
+
+ Critical Issue #3: Speed bottleneck. The Realtime API streams audio in real-time (~3-8s per Alvia turn). A 10-question interview takes 5-10 minutes. 50 simulations = 4-8 hours sequentially.
+ ChatCompletions would do it in ~30 minutes.
+
+ Issue #4: "Uses your production pipeline" framed as a benefit. For simulation, the audio machinery (VAD, transcription quality, silence detection, barge-in) is irrelevant noise that adds cost,
+  latency, and failure modes.
+
+ Issue #5: Persona modeling was hand-waved. "Generate persona answer with LLM from a persona card" skips the hardest problems: consistency across 30 turns, realistic imperfections (hesitation,
+ off-topic responses, short answers), and calibration against real interview data.
+
+ Verdict
+
+ Codex correctly identified the integration surface but proposed the wrong architecture. The right approach is a text-only ChatCompletions pipeline that reuses Alvia's prompting logic and
+ Barbara's orchestration without touching the Realtime API.
+
+ ---
+ Part 2: Design Spec -- Simulation System
+
+ Architecture Overview
+
+ SimulationRunner (server/simulation/engine.ts)
+   |
+   |-- Alvia Adapter (ChatCompletions, reuses buildInterviewInstructions())
+   |-- Persona Engine (ChatCompletions, structured persona cards)
+   |-- Barbara Integration (reuse existing analyzeWithBarbara(), summaries, AQs)
+   |-- Storage (reuse existing DatabaseStorage for sessions, segments, respondents)
+   |
+   |-- New: personas table, simulation_runs table
+   |-- New: isSimulated flag on sessions
+   |-- New: UI for persona management + simulation launch
+
+ 1. Database Schema Changes
+
+ New table: personas (project-level, reusable across templates)
+
+ personas
+   id              varchar PK
+   projectId       varchar FK -> projects (CASCADE)
+   name            text NOT NULL          -- "Skeptical Power User"
+   description     text                   -- Summary for researcher
+   ageRange        text                   -- "25-34"
+   gender          text
+   occupation      text
+   location        text
+   attitude        enum(cooperative, reluctant, neutral, evasive, enthusiastic)
+   verbosity       enum(low, medium, high)
+   domainKnowledge enum(none, basic, intermediate, expert)
+   traits          text[]                 -- ["analytical", "impatient"]
+   communicationStyle  text               -- "Uses jargon, goes off-topic"
+   backgroundStory text                   -- Optional narrative
+   topicsToAvoid   text[]                 -- Subjects they deflect
+   biases          text[]                 -- "prefers open-source"
+   isArchived      boolean DEFAULT false
+   createdAt       timestamp
+   updatedAt       timestamp
+
+ New table: simulation_runs (tracks batches)
+
+ simulation_runs
+   id                    varchar PK
+   collectionId          varchar FK -> collections (CASCADE)
+   launchedBy            varchar NOT NULL    -- userId
+   status                enum(pending, running, completed, failed, cancelled)
+   personaIds            text[] NOT NULL
+   enableBarbara         boolean DEFAULT true
+   enableSummaries       boolean DEFAULT true
+   enableAdditionalQuestions  boolean DEFAULT true
+   totalSimulations      integer NOT NULL
+   completedSimulations  integer DEFAULT 0
+   failedSimulations     integer DEFAULT 0
+   errorMessage          text
+   startedAt             timestamp
+   completedAt           timestamp
+   createdAt             timestamp
+
+ Altered columns:
+
+ - interviewSessions: add isSimulated (boolean, default false), personaId (FK -> personas), simulationRunId (FK -> simulation_runs)
+ - respondents: add isSimulated (boolean, default false)
+
+ 2. Simulation Engine
+
+ File: server/simulation/engine.ts (~450 lines)
+
+ Core turn loop for each persona:
+
+ 1. Create respondent (isSimulated=true) + session (isSimulated=true, personaId, simulationRunId)
+ 2. Load template, questions, project context
+ 3. For each question (0..N):
+    a. Build Alvia prompt via buildInterviewInstructions() + text-mode adapter
+    b. Call ChatCompletions -> Alvia's opening message for this question
+    c. Add to transcript
+    d. FOLLOW-UP LOOP (max: recommendedFollowUps + 2, hard cap 8):
+       i.   Build persona prompt with full conversation history
+       ii.  Call ChatCompletions -> persona response
+       iii. Add to transcript, update metrics (wordCount, turnCount)
+       iv.  If Barbara enabled: call analyzeWithBarbara()
+       v.   If Barbara says "suggest_next_question" -> break
+       vi.  Build Alvia prompt with Barbara guidance
+       vii. Call ChatCompletions -> Alvia follow-up
+       viii.Add to transcript
+    e. Call generateQuestionSummary() (existing Barbara function)
+    f. Save segment via storage.createSegment()
+ 4. If AQs enabled: call generateAdditionalQuestions()
+ 5. For each AQ: repeat follow-up loop
+ 6. Generate session summaries (Alvia via ChatCompletions, Barbara via existing function)
+ 7. Mark session completed, update simulation run progress
+
+ Termination safeguards:
+ - Barbara's suggest_next_question action (primary signal)
+ - Hard cap: recommendedFollowUps + 2 turns per question
+ - Global fallback: max 8 turns per question
+ - Per-question timeout: 5 minutes; per-session timeout: 30 minutes
+
+ 3. Alvia Text-Mode Adapter
+
+ File: server/simulation/alvia-adapter.ts (~180 lines)
+
+ - Calls buildInterviewInstructions() from server/voice-interview/instructions.ts directly
+ - Appends text-mode override: "This is a text-based simulation. Do not mention buttons, clicking, audio, or speaking aloud."
+ - Calls OpenAI ChatCompletions (model configurable, default gpt-4o-mini)
+ - Tracks usage via withTrackedLlmCall() with use case simulation_alvia
+
+ 4. Persona Prompt Builder
+
+ File: server/simulation/persona-prompt.ts (~200 lines)
+
+ Builds system prompt from persona card:
+ You are role-playing as a research interview respondent. Stay in character.
+
+ PERSONA: [name, age, gender, occupation, location]
+ ATTITUDE: [cooperative/reluctant/etc] -- behavioral description
+ VERBOSITY: [low=1-2 sentences, medium=3-5, high=5+ detailed]
+ DOMAIN KNOWLEDGE: [none/basic/intermediate/expert]
+ TRAITS: [comma-separated]
+ COMMUNICATION STYLE: [free text]
+ BACKGROUND: [story]
+ AVOID TOPICS: [list]
+ BIASES: [list]
+
+ BEHAVIORAL RULES:
+ 1. Match verbosity level strictly
+ 2. If reluctant, give short/deflecting answers sometimes
+ 3. Stay consistent with background and prior answers
+ 4. Never break character
+
+ - Uses ChatCompletions with temperature based on verbosity (low=0.6, medium=0.8, high=1.0)
+ - Tracks usage via withTrackedLlmCall() with use case simulation_persona
+
+ 5. Question Flow Logic
+
+ File: server/simulation/question-flow.ts (~220 lines)
+
+ - Extracts question progression from voice-interview.ts without WebSocket coupling
+ - Handles conditional logic evaluation
+ - Manages AQ phase entry/progression
+ - Returns { action: "continue" | "next_question" | "start_aq" | "complete" }
+
+ 6. API Endpoints
+
+ Persona CRUD (server/routes/persona.routes.ts, ~200 lines):
+
+ ┌────────┬───────────────────────────────────┬───────────────────────┐
+ │ Method │             Endpoint              │      Description      │
+ ├────────┼───────────────────────────────────┼───────────────────────┤
+ │ GET    │ /api/projects/:projectId/personas │ List personas         │
+ ├────────┼───────────────────────────────────┼───────────────────────┤
+ │ GET    │ /api/personas/:id                 │ Get persona           │
+ ├────────┼───────────────────────────────────┼───────────────────────┤
+ │ POST   │ /api/projects/:projectId/personas │ Create persona        │
+ ├────────┼───────────────────────────────────┼───────────────────────┤
+ │ PATCH  │ /api/personas/:id                 │ Update persona        │
+ ├────────┼───────────────────────────────────┼───────────────────────┤
+ │ DELETE │ /api/personas/:id                 │ Archive (soft delete) │
+ └────────┴───────────────────────────────────┴───────────────────────┘
+
+ Simulation control (server/routes/simulation.routes.ts, ~350 lines):
+
+ ┌────────┬────────────────────────────────────────────────┬──────────────────────────────┐
+ │ Method │                    Endpoint                    │         Description          │
+ ├────────┼────────────────────────────────────────────────┼──────────────────────────────┤
+ │ POST   │ /api/collections/:collectionId/simulate        │ Launch run (max 10 personas) │
+ ├────────┼────────────────────────────────────────────────┼──────────────────────────────┤
+ │ GET    │ /api/collections/:collectionId/simulation-runs │ List runs                    │
+ ├────────┼────────────────────────────────────────────────┼──────────────────────────────┤
+ │ GET    │ /api/simulation-runs/:id                       │ Get status + progress        │
+ ├────────┼────────────────────────────────────────────────┼──────────────────────────────┤
+ │ POST   │ /api/simulation-runs/:id/cancel                │ Cancel running simulation    │
+ └────────┴────────────────────────────────────────────────┴──────────────────────────────┘
+
+ Launch runs asynchronously -- HTTP returns immediately with run ID, engine processes in background.
+
+ 7. UI Changes
+
+ New components:
+
+ ┌────────────────────────┬────────────────────────────────────────────────────────────────────┐
+ │       Component        │                              Purpose                               │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ PersonaManager.tsx     │ CRUD list for persona cards within project detail                  │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ PersonaCard.tsx        │ Display card for a single persona                                  │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ PersonaFormDialog.tsx  │ Create/edit form (demographics, attitude, verbosity, traits, etc.) │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ SimulationLauncher.tsx │ Launch dialog: select personas, configure options                  │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ SimulationProgress.tsx │ Progress indicator for running simulations                         │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────┤
+ │ SimulationBadge.tsx    │ Visual badge marking sessions as simulated                         │
+ └────────────────────────┴────────────────────────────────────────────────────────────────────┘
+
+ Page changes:
+
+ - project-detail.tsx: Add "Personas" tab with PersonaManager
+ - collection-detail.tsx: Add "Simulate" button in header -> SimulationLauncher dialog; show SimulationProgress for active runs; add SimulationBadge on simulated sessions; add filter toggle for
+  simulated sessions
+ - session-detail.tsx: Show SimulationBadge + persona info card for simulated sessions
+ - sessions.tsx: Add simulated/real filter; show badge on list items
+
+ New hook: use-simulation-progress.ts -- polls run status every 3s while running.
+
+ 8. Analytics Integration
+
+ - Analytics refresh endpoints accept includeSimulated query param (default: false)
+ - Collection analytics UI gets "Include simulated data" toggle
+ - Cross-interview context for real interviews always excludes simulated sessions
+ - Dashboard stats show "12 completed (3 simulated)" breakdown
+
+ 9. LLM Usage Tracking
+
+ Add 2 new use cases to shared/types/llm-usage.ts:
+ - simulation_alvia -- Alvia's ChatCompletions responses
+ - simulation_persona -- Persona's ChatCompletions responses
+
+ Barbara calls during simulation use existing use cases (barbara_analysis, barbara_question_summary, etc.) -- attribution includes the simulated session ID.
+
+ 10. Storage Changes
+
+ New methods in server/storage/simulation.ts (composition, not growing storage.ts):
+ - getPersona, getPersonasByProject, createPersona, updatePersona, deletePersona
+ - getSimulationRun, getSimulationRunsByCollection, createSimulationRun, updateSimulationRun
+
+ 11. Key Risks and Mitigations
+
+ ┌─────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────┐
+ │                          Risk                           │                                     Mitigation                                      │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ Alvia prompt has voice-specific language ("click Next") │ Append text-mode override. Do NOT fork buildInterviewInstructions().                │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ Turn loop cycles indefinitely                           │ Barbara + hard caps + timeouts (8 turns, 5min/question, 30min/session)              │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ Rate limiting on ChatCompletions                        │ Max 2 concurrent simulations, 200ms inter-turn delay, max 10 personas/run           │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ storage.ts growth (1630 lines, must only shrink)        │ New methods in server/storage/simulation.ts via composition                         │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ Simulated data contaminates real analytics              │ isSimulated default false; analytics excludes by default; prominent badges          │
+ ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+ │ Persona responses too uniform/"helpful AI"              │ Strong behavioral prompts, variable temperature, concrete examples in system prompt │
+ └─────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+
+ 12. Implementation Order
+
+ Phase 1 -- Foundation: Schema changes, persona CRUD (API + UI), db:push
+ Phase 2 -- Engine: Simulation types, persona prompt builder, Alvia adapter, question flow, core turn loop, LLM tracking
+ Phase 3 -- Launch UI: Simulation routes, launcher dialog, progress component, hook
+ Phase 4 -- Visual Integration: SimulationBadge on all session views, filters
+ Phase 5 -- Analytics: includeSimulated filtering, toggle in analytics UI, cross-interview context exclusion
+
+ 13. Key Files to Modify/Create
+
+ Create:
+ - server/simulation/engine.ts -- Core turn loop (~450 lines)
+ - server/simulation/alvia-adapter.ts -- Alvia ChatCompletions adapter (~180 lines)
+ - server/simulation/persona-prompt.ts -- Persona prompt builder (~200 lines)
+ - server/simulation/question-flow.ts -- Question progression (~220 lines)
+ - server/simulation/types.ts -- Type definitions (~100 lines)
+ - server/routes/persona.routes.ts -- Persona API (~200 lines)
+ - server/routes/simulation.routes.ts -- Simulation API (~350 lines)
+ - server/storage/simulation.ts -- Storage methods (~150 lines)
+ - shared/types/simulation.ts -- Shared types (~80 lines)
+ - 6 new React components (PersonaManager, PersonaCard, PersonaFormDialog, SimulationLauncher, SimulationProgress, SimulationBadge)
+ - client/src/hooks/use-simulation-progress.ts
+
+ Modify:
+ - shared/schema.ts -- Add personas, simulation_runs tables; add columns to interviewSessions, respondents
+ - shared/types/llm-usage.ts -- Add 2 new use cases
+ - server/routes/index.ts -- Register new route modules
+ - server/routes/analytics.routes.ts -- Add includeSimulated filtering
+ - client/src/pages/project-detail.tsx -- Add Personas tab
+ - client/src/pages/collection-detail.tsx -- Add Simulate button, progress, badges, filter
+ - client/src/pages/session-detail.tsx -- Add persona info for simulated sessions
+ - client/src/pages/sessions.tsx -- Add simulated filter/badge
+
+ Reuse directly (no changes):
+ - server/voice-interview/instructions.ts -- buildInterviewInstructions()
+ - server/barbara-orchestrator.ts -- analyzeWithBarbara(), generateQuestionSummary(), generateAdditionalQuestions(), generateSessionSummary()
+ - server/voice-interview/context-builders.ts -- Cross-interview context
+ - server/voice-interview/transcript.ts -- addTranscriptEntry()
+ - server/llm-usage.ts -- withTrackedLlmCall()
+
+ Verification
+
+ To test end-to-end:
+ 1. Create a persona via the project detail Personas tab
+ 2. Launch a simulation from a collection with 1 persona
+ 3. Verify simulation run status progresses (pending -> running -> completed)
+ 4. Check the simulated session appears in collection detail with SimulationBadge
+ 5. Open the simulated session -- verify transcript shows natural Alvia/persona conversation
+ 6. Verify Barbara guidance was applied (check lastBarbaraGuidance on session)
+ 7. Verify question summaries and session summary were generated
+ 8. Verify segments were created for each question
+ 9. Refresh collection analytics with includeSimulated=false -- simulated session excluded
+ 10. Refresh with includeSimulated=true -- simulated session included
+ 11. Check LLM usage tracking shows simulation_alvia and simulation_persona use cases
