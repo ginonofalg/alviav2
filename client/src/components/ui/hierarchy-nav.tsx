@@ -42,7 +42,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className={cn("flex items-center gap-1 text-sm", className)}
+      className={cn("flex items-center gap-1 text-sm flex-wrap", className)}
       data-testid="nav-breadcrumb"
     >
       {items.map((item, index) => {
@@ -131,7 +131,7 @@ export function HierarchyHeader({
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1
-                className="text-2xl font-semibold tracking-tight truncate max-w-full sm:max-w-[400px]"
+                className="text-2xl font-semibold tracking-tight truncate"
                 data-testid="heading-page-title"
               >
                 {title}

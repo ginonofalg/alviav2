@@ -63,7 +63,7 @@ function SessionCard({ session }: { session: EnrichedSession }) {
   return (
     <Link href={`/sessions/${session.id}`}>
       <Card 
-        className="hover-elevate cursor-pointer transition-all duration-200 group h-[140px]"
+        className="hover-elevate cursor-pointer transition-all duration-200 group h-[140px] overflow-hidden"
         data-testid={`card-session-${session.id}`}
       >
         <CardContent className="p-4 h-full">
@@ -206,7 +206,7 @@ export default function SessionsPage() {
   const inProgressCount = sessions?.filter(s => s.status === "in_progress").length || 0;
 
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto min-w-0">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Sessions</h1>
         <p className="text-muted-foreground mt-1">
@@ -262,7 +262,7 @@ export default function SessionsPage() {
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40" data-testid="select-status-filter">
+          <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -275,7 +275,7 @@ export default function SessionsPage() {
           </SelectContent>
         </Select>
         <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
-          <SelectTrigger className="w-48" data-testid="select-sort">
+          <SelectTrigger className="w-full sm:w-48" data-testid="select-sort">
             <ArrowUpDown className="w-4 h-4 mr-2" />
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>

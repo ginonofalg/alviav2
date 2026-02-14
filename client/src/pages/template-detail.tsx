@@ -115,7 +115,7 @@ export default function TemplateDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -130,7 +130,7 @@ export default function TemplateDetailPage() {
 
   if (!template) {
     return (
-      <div className="p-4 md:p-8 max-w-4xl mx-auto">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto min-w-0">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Template not found</h3>
@@ -149,7 +149,7 @@ export default function TemplateDetailPage() {
   const questions = template.questions || [];
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
       <HierarchyHeader
         level="template"
         title={template.name}

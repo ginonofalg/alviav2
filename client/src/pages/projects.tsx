@@ -40,7 +40,7 @@ function ProjectCard({ project }: { project: ProjectWithCounts }) {
   const ProjectIcon = projectConfig.icon;
 
   return (
-    <Card className="hover-elevate transition-all duration-200 group" data-testid={`card-project-${project.id}`}>
+    <Card className="hover-elevate transition-all duration-200 group overflow-hidden" data-testid={`card-project-${project.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
         <div className="flex items-start gap-3 min-w-0">
           <div
@@ -148,7 +148,7 @@ export default function ProjectsPage() {
   );
 
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>

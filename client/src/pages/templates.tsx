@@ -49,7 +49,7 @@ function TemplateCard({ template, collections }: { template: TemplateWithDetails
 
   return (
     <Card 
-      className="hover-elevate cursor-pointer transition-all duration-200 group"
+      className="hover-elevate cursor-pointer transition-all duration-200 group overflow-hidden"
       data-testid={`card-template-${template.id}`}
     >
       <Link href={`/templates/${template.id}`} data-testid={`link-template-${template.id}`}>
@@ -225,7 +225,7 @@ export default function TemplatesPage() {
   const hasActiveFilters = searchQuery || projectFilter !== "all" || statusFilter !== "all";
 
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto min-w-0">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight" data-testid="text-page-title">Templates</h1>
         <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
@@ -276,7 +276,7 @@ export default function TemplatesPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-0 sm:min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search templates..."
@@ -288,7 +288,7 @@ export default function TemplatesPage() {
         </div>
 
         <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger className="w-[180px]" data-testid="select-project-filter">
+          <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-project-filter">
             <FolderKanban className="w-4 h-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder="All Projects" />
           </SelectTrigger>
@@ -303,7 +303,7 @@ export default function TemplatesPage() {
         </Select>
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
+          <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-status-filter">
             <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>

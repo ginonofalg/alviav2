@@ -208,14 +208,14 @@ function CollectionProgressCard({
   isLoading: boolean;
 }) {
   return (
-    <Card data-testid="collection-progress">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <div>
-          <CardTitle className="text-lg">Collection Progress</CardTitle>
-          <CardDescription>Active collections and their response targets</CardDescription>
+    <Card data-testid="collection-progress" className="overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <div className="min-w-0">
+          <CardTitle className="text-lg truncate">Collection Progress</CardTitle>
+          <CardDescription className="truncate">Active collections and their response targets</CardDescription>
         </div>
         <Link href="/collections">
-          <Button variant="ghost" size="sm" data-testid="link-view-all-collections">
+          <Button variant="ghost" size="sm" className="shrink-0" data-testid="link-view-all-collections">
             View all
             <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
@@ -441,7 +441,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
@@ -518,14 +518,14 @@ export default function DashboardPage() {
           isLoading={statsLoading}
         />
         
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg">Recent Sessions</CardTitle>
-              <CardDescription>Latest interview activity</CardDescription>
+        <Card className="overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="text-lg truncate">Recent Sessions</CardTitle>
+              <CardDescription className="truncate">Latest interview activity</CardDescription>
             </div>
             <Link href="/sessions">
-              <Button variant="ghost" size="sm" data-testid="link-view-all-sessions">
+              <Button variant="ghost" size="sm" className="shrink-0" data-testid="link-view-all-sessions">
                 View all
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>

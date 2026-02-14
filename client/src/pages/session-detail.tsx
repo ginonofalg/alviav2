@@ -710,7 +710,7 @@ export default function SessionDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 min-w-0">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -725,7 +725,7 @@ export default function SessionDetailPage() {
 
   if (!session) {
     return (
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8 max-w-5xl mx-auto min-w-0">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Session not found</h3>
@@ -766,7 +766,7 @@ export default function SessionDetailPage() {
   const currentFlags = (session.reviewFlags as SessionReviewFlag[]) || [];
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 min-w-0">
       {/* Header with navigation */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">

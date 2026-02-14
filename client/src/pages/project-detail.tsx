@@ -43,7 +43,7 @@ function TemplateCard({ template }: { template: InterviewTemplate }) {
   const TemplateIcon = templateConfig.icon;
   
   return (
-    <Card className="hover-elevate transition-all duration-200 group" data-testid={`card-template-${template.id}`}>
+    <Card className="hover-elevate transition-all duration-200 group overflow-hidden" data-testid={`card-template-${template.id}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
         <div className="flex items-start gap-3 min-w-0">
           <div
@@ -119,7 +119,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
   const CollectionIcon = collectionConfig.icon;
 
   return (
-    <Card className="hover-elevate transition-all duration-200" data-testid={`card-collection-${collection.id}`}>
+    <Card className="hover-elevate transition-all duration-200 overflow-hidden" data-testid={`card-collection-${collection.id}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
@@ -140,7 +140,7 @@ function CollectionCard({ collection }: { collection: Collection }) {
                   {collection.name}
                 </CardTitle>
               </Link>
-              <p className="text-sm text-muted-foreground">{collection.description || "No description"}</p>
+              <p className="text-sm text-muted-foreground line-clamp-2">{collection.description || "No description"}</p>
             </div>
           </div>
           <Badge variant={collection.isActive ? "default" : "secondary"}>
@@ -190,7 +190,7 @@ export default function ProjectDetailPage() {
 
   if (projectLoading) {
     return (
-      <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 min-w-0">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -205,7 +205,7 @@ export default function ProjectDetailPage() {
 
   if (!project) {
     return (
-      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="p-4 md:p-8 max-w-7xl mx-auto min-w-0">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Project not found</h3>
@@ -222,7 +222,7 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 min-w-0">
       <HierarchyHeader
         level="project"
         title={project.name}

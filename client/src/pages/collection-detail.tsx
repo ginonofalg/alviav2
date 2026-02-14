@@ -243,7 +243,7 @@ export default function CollectionDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -259,7 +259,7 @@ export default function CollectionDetailPage() {
 
   if (!collection) {
     return (
-      <div className="p-4 md:p-8 max-w-4xl mx-auto">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto min-w-0">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Collection not found</h3>
@@ -311,7 +311,7 @@ export default function CollectionDetailPage() {
   });
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
       <HierarchyHeader
         level="collection"
         title={collection.name}
@@ -411,16 +411,16 @@ export default function CollectionDetailPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Recent Sessions</CardTitle>
-              <CardDescription>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="truncate">Recent Sessions</CardTitle>
+              <CardDescription className="truncate">
                 Interview sessions from this collection
               </CardDescription>
             </div>
             {totalSessions > 0 && (
               <Link href={`/sessions?collectionId=${collectionId}`}>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="shrink-0">
                   View All
                 </Button>
               </Link>
@@ -450,21 +450,21 @@ export default function CollectionDetailPage() {
                 return (
                   <Link key={session.id} href={`/sessions/${session.id}`}>
                     <div
-                      className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer"
+                      className="flex items-center justify-between gap-2 p-3 rounded-lg border hover-elevate cursor-pointer"
                       data-testid={`session-row-${session.id}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                           <Users className="w-4 h-4 text-primary" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p
-                            className="font-medium text-sm"
+                            className="font-medium text-sm truncate"
                             data-testid={`session-name-${session.id}`}
                           >
                             {displayName}
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground truncate">
                             {session.createdAt
                               ? new Date(session.createdAt).toLocaleDateString()
                               : ""}

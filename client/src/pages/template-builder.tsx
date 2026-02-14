@@ -536,7 +536,7 @@ export default function TemplateBuilderPage() {
 
   if (isEditMode && templateLoading) {
     return (
-      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -551,7 +551,7 @@ export default function TemplateBuilderPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 min-w-0">
       <div className="flex items-center gap-4">
         <Link href={backLink}>
           <Button variant="ghost" size="icon" data-testid="button-back">
