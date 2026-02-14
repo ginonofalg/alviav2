@@ -44,6 +44,33 @@ Preferred communication style: Simple, everyday language.
 -   **Replit OpenID Connect**: For user authentication.
 -   **jsPDF**: For generating PDF exports of analytics reports.
 
+## Simulation System
+
+**Digital Respondent Simulation** enables researchers to test interview questions with LLM-powered personas before running real interviews.
+
+**Architecture**:
+- Uses ChatCompletions API (not Realtime API) for 60-70x cost savings vs audio tokens
+- Reuses `buildInterviewInstructions()` from voice-interview with text-mode override
+- Reuses Barbara orchestration functions (analysis, summaries, additional questions)
+- Asynchronous execution: POST returns run ID immediately, engine processes in background
+
+**Key Files**:
+- `shared/types/simulation.ts` — Shared types (PersonaAttitude, SimulationRunStatus, SimulationConfig)
+- `server/simulation/engine.ts` — Core turn loop with Barbara integration, concurrency control, timeouts
+- `server/simulation/persona-prompt.ts` — Persona prompt builder with attitude/verbosity/domain mappings
+- `server/simulation/alvia-adapter.ts` — ChatCompletions adapter reusing buildInterviewInstructions
+- `server/simulation/question-flow.ts` — Question progression logic without WebSocket
+- `server/storage/simulation.ts` — Persona and simulation_run CRUD (composition pattern)
+- `server/routes/persona.routes.ts` — Persona CRUD endpoints
+- `server/routes/simulation.routes.ts` — Launch, list, status, cancel endpoints
+- `client/src/components/simulation/` — UI components (PersonaManager, SimulationLauncher, SimulationProgress, SimulationBadge)
+
+**Schema**: `personas` table (demographics, attitude, verbosity, domainKnowledge, traits, biases, topicsToAvoid), `simulation_runs` table. `interviewSessions` has `isSimulated`, `personaId`, `simulationRunId`. `respondents` has `isSimulated`.
+
+**LLM Use Cases**: `simulation_alvia` (Alvia text responses), `simulation_persona` (persona responses)
+
+**Limits**: Max 10 personas per run, max 2 concurrent runs, 8 turns per question hard cap, 5min per-question timeout, 30min per-session timeout.
+
 ## Recent Changes
 
 ### Guided Onboarding Flow (February 2026)

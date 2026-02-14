@@ -18,6 +18,8 @@ import {
   registerUsageRoutes,
   registerGuidanceRoutes,
   registerParseQuestionsRoutes,
+  registerPersonaRoutes,
+  registerSimulationRoutes,
 } from "./routes/index";
 
 export async function registerRoutes(
@@ -52,6 +54,8 @@ export async function registerRoutes(
   registerUsageRoutes(app);
   registerGuidanceRoutes(app);
   registerParseQuestionsRoutes(app);
+  registerPersonaRoutes(app);
+  registerSimulationRoutes(app);
 
   return httpServer;
 }

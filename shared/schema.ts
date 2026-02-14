@@ -55,6 +55,36 @@ export const contextTypeEnum = pgEnum("context_type", [
   "other"
 ]);
 
+// Simulation enums
+export const personaAttitudeEnum = pgEnum("persona_attitude", [
+  "cooperative",
+  "reluctant",
+  "neutral",
+  "evasive",
+  "enthusiastic"
+]);
+
+export const personaVerbosityEnum = pgEnum("persona_verbosity", [
+  "low",
+  "medium",
+  "high"
+]);
+
+export const personaDomainKnowledgeEnum = pgEnum("persona_domain_knowledge", [
+  "none",
+  "basic",
+  "intermediate",
+  "expert"
+]);
+
+export const simulationRunStatusEnum = pgEnum("simulation_run_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "cancelled"
+]);
+
 // Workspaces
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -182,6 +212,7 @@ export const respondents = pgTable("respondents", {
   invitedAt: timestamp("invited_at").defaultNow(),
   clickedAt: timestamp("clicked_at"),
   consentGivenAt: timestamp("consent_given_at"),
+  isSimulated: boolean("is_simulated").default(false),
 });
 
 // Interview Sessions
@@ -228,6 +259,9 @@ export const interviewSessions = pgTable("interview_sessions", {
   barbaraSessionSummary: jsonb("barbara_session_summary"),
   barbaraGuidanceLog: jsonb("barbara_guidance_log"),
   guidanceAdherenceSummary: jsonb("guidance_adherence_summary"),
+  isSimulated: boolean("is_simulated").default(false),
+  personaId: varchar("persona_id"),
+  simulationRunId: varchar("simulation_run_id"),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),
@@ -422,6 +456,76 @@ export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
 export type InsertWorkspaceMember = z.infer<typeof insertWorkspaceMemberSchema>;
 export type RedactionMap = typeof redactionMaps.$inferSelect;
 export type InsertRedactionMap = z.infer<typeof insertRedactionMapSchema>;
+
+// ============================================================
+// Simulation: Personas and Simulation Runs
+// ============================================================
+
+export const personas = pgTable("personas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  ageRange: text("age_range"),
+  gender: text("gender"),
+  occupation: text("occupation"),
+  location: text("location"),
+  attitude: personaAttitudeEnum("attitude").notNull().default("cooperative"),
+  verbosity: personaVerbosityEnum("verbosity").notNull().default("medium"),
+  domainKnowledge: personaDomainKnowledgeEnum("domain_knowledge").notNull().default("basic"),
+  traits: text("traits").array().default(sql`'{}'::text[]`),
+  communicationStyle: text("communication_style"),
+  backgroundStory: text("background_story"),
+  topicsToAvoid: text("topics_to_avoid").array().default(sql`'{}'::text[]`),
+  biases: text("biases").array().default(sql`'{}'::text[]`),
+  isArchived: boolean("is_archived").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_persona_project").on(table.projectId),
+]);
+
+export const simulationRuns = pgTable("simulation_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  collectionId: varchar("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  launchedBy: varchar("launched_by").notNull(),
+  status: simulationRunStatusEnum("status").notNull().default("pending"),
+  personaIds: text("persona_ids").array().notNull(),
+  enableBarbara: boolean("enable_barbara").default(true),
+  enableSummaries: boolean("enable_summaries").default(true),
+  enableAdditionalQuestions: boolean("enable_additional_questions").default(true),
+  totalSimulations: integer("total_simulations").notNull(),
+  completedSimulations: integer("completed_simulations").default(0),
+  failedSimulations: integer("failed_simulations").default(0),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_simulation_run_collection").on(table.collectionId),
+]);
+
+export const personasRelations = relations(personas, ({ one }) => ({
+  project: one(projects, {
+    fields: [personas.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const simulationRunsRelations = relations(simulationRuns, ({ one }) => ({
+  collection: one(collections, {
+    fields: [simulationRuns.collectionId],
+    references: [collections.id],
+  }),
+}));
+
+export const insertPersonaSchema = createInsertSchema(personas).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSimulationRunSchema = createInsertSchema(simulationRuns).omit({ id: true, createdAt: true });
+
+export type Persona = typeof personas.$inferSelect;
+export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+export type SimulationRunRecord = typeof simulationRuns.$inferSelect;
+export type InsertSimulationRun = z.infer<typeof insertSimulationRunSchema>;
 
 // ============================================================
 // LLM Usage Events (Billing Ledger)

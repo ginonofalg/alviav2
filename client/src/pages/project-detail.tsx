@@ -29,7 +29,8 @@ import {
 import { ProjectAnalyticsView } from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
 import { GenerateTemplateDialog } from "@/components/GenerateTemplateDialog";
-import { Image as ImageIcon } from "lucide-react";
+import { PersonaManager } from "@/components/simulation/PersonaManager";
+import { Image as ImageIcon, UserCircle } from "lucide-react";
 import type { Project, InterviewTemplate, Collection } from "@shared/schema";
 
 interface ProjectWithCounts extends Project {
@@ -312,6 +313,10 @@ export default function ProjectDetailPage() {
             <ImageIcon className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">Infographics</span><span className="sm:hidden">Info</span>
           </TabsTrigger>
+          <TabsTrigger value="personas" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-personas">
+            <UserCircle className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Personas</span><span className="sm:hidden">Sim</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates" className="space-y-4">
@@ -393,6 +398,10 @@ export default function ProjectDetailPage() {
             entityLevel="project"
             hasAnalytics={!!analyticsData?.analytics}
           />
+        </TabsContent>
+
+        <TabsContent value="personas">
+          <PersonaManager projectId={projectId!} />
         </TabsContent>
       </Tabs>
 

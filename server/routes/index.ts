@@ -12,3 +12,5 @@ export { registerBarbaraRoutes } from "./barbara.routes";
 export { registerUsageRoutes } from "./usage.routes";
 export { registerGuidanceRoutes } from "./guidance.routes";
 export { registerParseQuestionsRoutes } from "./parse-questions.routes";
+export { registerPersonaRoutes } from "./persona.routes";
+export { registerSimulationRoutes } from "./simulation.routes";

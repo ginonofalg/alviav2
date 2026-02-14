@@ -27,6 +27,7 @@ import {
 import { useState, useMemo, useEffect } from "react";
 import type { InterviewSession } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
+import { SimulationBadge } from "@/components/simulation/SimulationBadge";
 
 interface EnrichedSession extends InterviewSession {
   collectionName: string;
@@ -80,10 +81,13 @@ function SessionCard({ session }: { session: EnrichedSession }) {
                   <h4 className="font-medium truncate" data-testid="text-session-collection">
                     {session.collectionName}
                   </h4>
-                  <Badge variant="outline" className={`gap-1 shrink-0 ${status.color}`}>
-                    <StatusIcon className="w-3 h-3" />
-                    {status.label}
-                  </Badge>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {session.isSimulated && <SimulationBadge />}
+                    <Badge variant="outline" className={`gap-1 ${status.color}`}>
+                      <StatusIcon className="w-3 h-3" />
+                      {status.label}
+                    </Badge>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground truncate" data-testid="text-session-breadcrumb">
                   <FolderOpen className="w-3 h-3 inline mr-1" />

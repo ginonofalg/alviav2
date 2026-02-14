@@ -70,6 +70,10 @@ import {
 } from "@/components/analytics";
 import { InfographicGenerator } from "@/components/InfographicGenerator";
 import { InvitationManager } from "@/components/InvitationManager";
+import { SimulationLauncher } from "@/components/simulation/SimulationLauncher";
+import { SimulationProgressList } from "@/components/simulation/SimulationProgress";
+import { SimulationBadge } from "@/components/simulation/SimulationBadge";
+import { Bot } from "lucide-react";
 import type {
   Collection,
   InterviewTemplate,
@@ -121,6 +125,7 @@ export default function CollectionDetailPage() {
   const collectionId = params.id;
   const { toast } = useToast();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [simulationOpen, setSimulationOpen] = useState(false);
 
   const { data: collection, isLoading } = useQuery<CollectionWithDetails>({
     queryKey: ["/api/collections", collectionId],
@@ -350,6 +355,15 @@ export default function CollectionDetailPage() {
               <Copy className="w-4 h-4 mr-2" />
               Copy Link
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSimulationOpen(true)}
+              data-testid="button-simulate"
+            >
+              <Bot className="w-4 h-4 mr-2" />
+              Simulate
+            </Button>
             <a href={shareUrl} target="_blank" rel="noopener noreferrer">
               <Button size="sm" data-testid="button-preview">
                 <ExternalLink className="w-4 h-4 mr-2" />
@@ -408,6 +422,8 @@ export default function CollectionDetailPage() {
       </div>
 
       <InvitationManager collectionId={collectionId} shareUrl={shareUrl} />
+
+      <SimulationProgressList collectionId={collectionId!} />
 
       <Card>
         <CardHeader>
@@ -471,15 +487,18 @@ export default function CollectionDetailPage() {
                           </p>
                         </div>
                       </div>
-                      <Badge
-                        variant={
-                          session.status === "completed"
-                            ? "default"
-                            : "secondary"
-                        }
-                      >
-                        {session.status}
-                      </Badge>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {session.isSimulated && <SimulationBadge />}
+                        <Badge
+                          variant={
+                            session.status === "completed"
+                              ? "default"
+                              : "secondary"
+                          }
+                        >
+                          {session.status}
+                        </Badge>
+                      </div>
                     </div>
                   </Link>
                 );
@@ -985,6 +1004,15 @@ export default function CollectionDetailPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {collection && (
+        <SimulationLauncher
+          collection={collection}
+          projectId={collection.project?.id || ""}
+          open={simulationOpen}
+          onOpenChange={setSimulationOpen}
+        />
+      )}
     </div>
   );
 }
