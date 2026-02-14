@@ -681,8 +681,6 @@ ${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesF
 RECENT TRANSCRIPT (current + previous ${RECENT_TRANSCRIPT_QUESTION_WINDOW} questions):
 ${recentTranscript || "(No transcript yet)"}
 
-RESPONDENT'S ANSWER TO CURRENT QUESTION:
-${currentQuestionResponses || "(No response yet)"}
 ${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}${buildAnalyticsHypothesesBlock(input)}
 Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
 }
