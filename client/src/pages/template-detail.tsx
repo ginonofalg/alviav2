@@ -228,22 +228,20 @@ export default function TemplateDetailPage() {
       </div>
 
       <Tabs defaultValue="questions" className="space-y-6">
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <TabsList className="w-max sm:w-auto">
-            <TabsTrigger value="questions" data-testid="tab-questions">
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Questions ({questions.length})
-            </TabsTrigger>
-            <TabsTrigger value="collections" data-testid="tab-collections">
-              <Layers className="w-4 h-4 mr-2" />
-              Collections ({collections.length})
-            </TabsTrigger>
-            <TabsTrigger value="analytics" data-testid="tab-analytics">
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="w-full sm:w-auto flex">
+          <TabsTrigger value="questions" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-questions">
+            <MessageSquare className="w-4 h-4 shrink-0" />
+            <span className="truncate">Questions ({questions.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="collections" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-collections">
+            <Layers className="w-4 h-4 shrink-0" />
+            <span className="truncate">Collections ({collections.length})</span>
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex-1 sm:flex-initial gap-1.5" data-testid="tab-analytics">
+            <BarChart3 className="w-4 h-4 shrink-0" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="questions" className="space-y-4">
           {template.tone && (
