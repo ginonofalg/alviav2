@@ -1,0 +1,84 @@
+Fix: Alvia says "next question" when there isn't one   
+
+ Context
+
+ Alvia sometimes tells respondents to "move to the next question" when they're on the last question — either the final template question
+ or the final additional question (AQ). This happens because of three compounding gaps in the last-question awareness chain.
+
+ Root Causes
+
+ 1. Hardcoded guidance message — When Barbara suggests suggest_next_question, the guidance injected into Alvia's prompt always says "shall
+  we move to the next question?" with no check for whether a next question actually exists. This overrides Alvia's base instruction #12
+ which says "if last question, don't mention next question." (voice-interview.ts:2139-2142)
+ 2. Barbara analysis runs unchecked during AQ phase — Neither call site guards against isInAdditionalQuestionsPhase. During AQ,
+ currentQuestionIndex points past the template array, so Barbara gets an undefined question and can still emit suggest_next_question.
+ Worse, the guidance injection then calls buildInterviewInstructions() (template-oriented), overwriting Alvia's AQ instructions entirely.
+ (voice-interview.ts:1594,2383,2150)
+ 3. AQ instructions lack last-question safeguard — buildAQInstructions tells Alvia "This is additional question X of Y" but has no
+ instruction to avoid mentioning "next question" on the last AQ. (voice-interview.ts:3307-3351)
+
+ Changes
+
+ 1. Make guidance message context-aware (Bug 1)
+
+ File: server/voice-interview.ts ~line 2139
+
+ Replace the unconditional hardcoded message with a conditional:
+ - Detect isLastTemplateQuestion = not in AQ phase AND currentQuestionIndex === questions.length - 1
+ - Detect isLastAdditionalQuestion = in AQ phase AND currentAdditionalQuestionIndex === additionalQuestions.length - 1
+ - If either is true: message says "This is the LAST question... wrap up naturally... click the button below to continue... Do NOT mention
+  a next question"
+ - Otherwise: keep existing message
+
+ 2. Skip Barbara analysis during AQ phase (Bug 2)
+
+ File: server/voice-interview.ts ~line 1986
+
+ Add early return in triggerBarbaraAnalysis():
+ if (state.isInAdditionalQuestionsPhase) return null;
+ AQ questions are brief (1-2 follow-ups max) and Barbara's template-oriented analysis doesn't apply. This prevents both the meaningless
+ analysis and the destructive instruction overwrite.
+
+ 3. Add last-question guideline to AQ instructions (Bug 3)
+
+ File: server/voice-interview.ts ~line 3334 (in buildAQInstructions)
+
+ Add conditional guideline when aqIndex === totalAQs - 1:
+ - This is the LAST question in the interview. Do NOT mention a next question or moving on. When the respondent has answered, wrap up
+ naturally and tell them they can click the button below to continue.
+
+ 4. Add last-question awareness to Barbara's system prompt (defense-in-depth)
+
+ File: server/barbara-orchestrator.ts ~line 362
+
+ Amend the COMPLETENESS EVALUATION and TIME/LENGTH MONITORING instructions to note: "If the UPCOMING QUESTIONS list is empty, this is the
+ last question — use none instead of suggest_next_question. Alvia will handle wrapping up."
+
+ Defense Layers
+
+ ┌────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │        Scenario        │                                               Protection                                               │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Last template question │ Barbara avoids suggesting (fix 4) + guidance message says "wrap up" (fix 1) + existing instruction #12 │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Any AQ question        │ Barbara skipped entirely (fix 2)                                                                       │
+ ├────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ Last AQ question       │ AQ instruction says "last question, no next" (fix 3) + guidance message backup (fix 1)                 │
+ └────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Files to Modify
+
+ - server/voice-interview.ts — fixes 1, 2, 3
+ - server/barbara-orchestrator.ts — fix 4
+ - server/voice-interview/instructions.ts — no changes needed (existing instruction #12 is fine, the issue was that Barbara's guidance was
+  overriding it)
+
+ Verification
+
+ 1. Run npm run check to verify no type errors
+ 2. Run npx vitest to verify existing tests pass
+ 3. Manual test: start interview, advance to last template question, give a thorough answer — verify Alvia says "click the button below"
+ not "next question"
+ 4. Manual test: enter AQ phase, verify console shows [Barbara] Skipping analysis during AQ phase
+ 5. Manual test: on last AQ, verify Alvia wraps up without mentioning next question
+ 6. Regression: on question 1 of N, verify normal "shall we move to the next question?" behavior
