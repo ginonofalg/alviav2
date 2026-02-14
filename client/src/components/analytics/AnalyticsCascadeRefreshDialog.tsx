@@ -192,11 +192,15 @@ export function AnalyticsCascadeRefreshDialog({
           description: "The refresh may have completed. Please reload to check for updates.",
           variant: "destructive",
         });
-        // Still try to invalidate the query so a page refresh will show new data
-        const queryKey = level === "project"
+        const errorBaseKey = level === "project"
           ? ["/api/projects", entityId, "analytics"]
           : ["/api/templates", entityId, "analytics"];
-        queryClient.invalidateQueries({ queryKey });
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey as string[];
+            return key[0] === errorBaseKey[0] && key[1] === errorBaseKey[1] && key[2] === errorBaseKey[2];
+          },
+        });
       } else {
         toast({
           title: "Refresh failed",
