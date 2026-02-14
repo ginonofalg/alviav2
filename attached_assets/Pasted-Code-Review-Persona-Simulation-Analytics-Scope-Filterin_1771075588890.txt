@@ -1,0 +1,180 @@
+Code Review: Persona Simulation & Analytics Scope Filtering                                                                                                                                      
+                                                        
+ Context
+
+ The Persona_Simulation branch adds an AI-powered interview simulation system allowing researchers to test templates with configurable AI personas before launching real interviews. It also adds
+  session scope filtering (real/simulated/combined) to all analytics endpoints. ~3,200 lines added across 34 files.
+
+ Overall Assessment
+
+ The feature is well-architected at a high level -- clean module separation, proper reuse of existing Barbara/Alvia infrastructure, consistent patterns across backend and frontend, and good
+ UI/UX with the scope toggle. However, there are several correctness bugs, data integrity gaps, and scalability concerns that should be addressed before merging.
+
+ ---
+ Critical Issues
+
+ 1. Analytics staleness is broken with scope filtering
+
+ Files: server/routes/analytics.routes.ts:109-110, 147
+
+ The collection stores a single analyzedSessionCount on the collection record, but analytics can now be refreshed with different scopes. Example:
+ - Refresh with scope "real" -- 5 completed sessions. analyzedSessionCount = 5.
+ - User switches toggle to "simulated" -- 2 completed sessions. Staleness check: 2 !== 5 = stale -- even though simulated analytics were never generated.
+ - User refreshes with "simulated" scope. analyzedSessionCount = 2.
+ - User switches back to "real" -- 5 sessions. 5 !== 2 = stale again.
+
+ This creates a ping-pong effect where switching scopes always shows stale. The stored analytics themselves also don't record which scope produced them, so the user can't tell if the displayed
+ analytics are for "real" or "simulated" data.
+
+ Fix: Store analyzedSessionScope alongside analyzedSessionCount, or store separate analytics per scope.
+
+ 2. In-memory concurrency state is unsafe
+
+ File: server/simulation/engine.ts:23, 330
+
+ activeRunCount and cancelledRuns are module-level in-memory variables. Problems:
+ - Server restart = orphaned runs stuck in "running" status forever, activeRunCount resets to 0
+ - Multiple server instances (if scaled) = each has its own counter, exceeding the intended limit
+ - getActiveSimulationRunCount() in server/storage/simulation.ts:68-72 exists and queries the DB but is never called -- it should be used instead of the in-memory counter
+
+ Fix: Use the DB-backed getActiveSimulationRunCount() for concurrency checking. Add a startup job to reset orphaned "running" status runs.
+
+ 3. Race condition in concurrency check
+
+ File: server/simulation/engine.ts:349-357
+
+ if (activeRunCount >= SIMULATION_LIMITS.MAX_CONCURRENT_RUNS) { ... }
+ activeRunCount++;
+
+ Two requests arriving simultaneously can both pass the check before either increments. Even switching to getActiveSimulationRunCount() has a TOCTOU window.
+
+ Fix: Use a DB-level advisory lock or SELECT ... FOR UPDATE on the simulation runs table when checking/creating runs.
+
+ 4. Missing auth check on template dependencies endpoint
+
+ File: server/routes/analytics.routes.ts:763-818
+
+ GET /api/templates/:templateId/analytics/dependencies has isAuthenticated but no verifyUserAccessToTemplate() check. Any authenticated user can fetch dependency data for any template.
+
+ Fix: Add verifyUserAccessToTemplate check.
+
+ ---
+ Moderate Issues
+
+ 5. Conditional logic is a complete stub
+
+ File: server/simulation/question-flow.ts:36-53
+
+ evaluateConditionalLogic() always returns true:
+ if (!logic.condition && !logic.dependsOn) return true;
+ return true;  // Always true regardless of conditions
+
+ Templates with conditional questions will have all questions shown during simulation, producing unrealistic results.
+
+ 6. Simulations run personas serially, not in parallel
+
+ File: server/simulation/engine.ts:385
+
+ The for (const personaId of personaIds) loop runs each persona's simulation sequentially. With Barbara enabled, each simulation involves many LLM calls. 10 personas could take 30+ minutes.
+ Consider running 2-3 in parallel with Promise.allSettled while respecting rate limits.
+
+ 7. No foreign key constraints on simulation columns
+
+ File: shared/schema.ts:263-264
+
+ personaId and simulationRunId on interviewSessions are plain varchar without .references(). No referential integrity -- a deleted persona won't cascade, and stale IDs will persist.
+
+ 8. Duplicated buildConversationMessages
+
+ Files: server/simulation/alvia-adapter.ts:20-37, server/simulation/persona-prompt.ts:79-96
+
+ Two near-identical functions with inverted role mapping. Should be a shared utility with a perspective parameter.
+
+ 9. Multiple as any casts bypass type safety
+
+ File: server/routes/analytics.routes.ts (lines 192, 306, 429, 609, 666, 730, 886, 940)
+
+ Storage update calls use as any to bypass type checking:
+ await storage.updateCollection(collection.id, { ... } as any);
+
+ This suggests the storage type signatures don't accommodate the analytics fields -- the IStorage interface or update types should be widened instead.
+
+ 10. PersonaCard type duplicates Persona schema type
+
+ File: shared/types/simulation.ts:9-29
+
+ PersonaCard is a manual copy of the Drizzle-inferred Persona type from shared/schema.ts:525. These will drift when the schema changes.
+
+ Fix: Use Persona directly or type PersonaCard = Persona;
+
+ 11. No test coverage
+
+ No tests were added for any of the new code: simulation engine, question flow logic, persona prompts, API routes, or scope filtering. The evaluateQuestionFlow and evaluateConditionalLogic
+ functions are pure and easy to unit test.
+
+ ---
+ Minor Issues
+
+ 12. useEffect missing form in dependency array
+
+ File: client/src/components/simulation/PersonaFormDialog.tsx:130
+
+ useEffect uses form.reset() but dependencies are [persona, open] -- missing form. React will warn about this.
+
+ 13. Max tokens may truncate high-verbosity personas
+
+ File: server/simulation/persona-prompt.ts:118
+
+ max_tokens: 500 for personas with verbosity "high" ("5+ sentences, elaborate, share examples") could truncate responses. Consider 800-1000 for high verbosity.
+
+ 14. Error handling gap in runSingleSimulation
+
+ File: server/simulation/engine.ts:40-265
+
+ If createSession() succeeds but subsequent steps fail, the catch block (line 258-265) sets status to "abandoned". But if createRespondent() succeeds and createSession() fails, the orphaned
+ respondent is never cleaned up.
+
+ 15. analytics.routes.ts approaching file size limit
+
+ At 972 lines, this file is close to the 1000-line soft limit. The cascade refresh logic (lines 533-761) is duplicated between project-level and template-level endpoints and should be
+ extracted.
+
+ 16. previousAnswers map is never effectively used
+
+ File: server/simulation/engine.ts:64, 121
+
+ previousAnswers is populated but only consumed by the stubbed evaluateConditionalLogic which always returns true. Also, it only stores the last response per question (overwrites on follow-up
+ turns).
+
+ 17. Template/project analytics GET endpoints don't apply scope filtering
+
+ Files: analytics.routes.ts:207-243 (template GET), 323-358 (project GET)
+
+ The GET endpoints for template and project analytics don't use sessionScope to calculate staleness. They check staleness based on lastAnalyzedAt timestamps, not session counts -- so the scope
+ parameter on these is inconsistent with collection-level behavior.
+
+ ---
+ What's Done Well
+
+ - Clean module structure -- server/simulation/ with well-separated concerns (engine, alvia-adapter, persona-prompt, question-flow, types)
+ - Proper reuse of buildInterviewInstructions, Barbara orchestrator, LLM usage tracking
+ - TEXT_MODE_OVERRIDE thoughtfully adapts voice instructions for text simulation
+ - Persona attribute system is rich and well-designed (attitude/verbosity/domain knowledge with corresponding prompt guidance)
+ - Soft-delete for personas (archive) is the right call
+ - Session scope toggle is a clean UI pattern with proper React Query key invalidation
+ - Data test IDs on all interactive elements (good for testing)
+ - Zod validation on all API inputs
+ - Auto-polling in SimulationProgress (3-second refetch while active) is appropriate
+ - Safety limits (timeouts, hard caps, max personas) prevent runaway costs
+
+ ---
+ Recommended Fix Priority
+
+ 1. Analytics staleness/scope mismatch (Critical -- data integrity, misleading UX)
+ 2. In-memory concurrency + orphaned runs (Critical -- production reliability)
+ 3. Missing auth check on template dependencies (Critical -- security)
+ 4. Race condition on concurrency (Moderate -- could exceed limits)
+ 5. Conditional logic stub (Moderate -- incorrect simulation results)
+ 6. Serial persona execution (Moderate -- performance)
+ 7. Missing tests (Moderate -- regression risk)
+ 8. FK constraints, type duplication, as any casts (Minor -- technical debt)
