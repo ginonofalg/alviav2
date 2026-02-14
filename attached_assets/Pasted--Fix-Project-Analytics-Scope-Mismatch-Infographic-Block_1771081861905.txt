@@ -1,0 +1,133 @@
+ Fix: Project Analytics Scope Mismatch & Infographic Blocking                                                                                                                                     
+                                                        
+ Context
+
+ Problem: Project Analytics only show when the user selects "All" (combined scope), even though all interview sessions are real. After refreshing twice from the "All" view, the issue persists.
+ Additionally, infographics refuse to generate, reporting analytics are out of date.
+
+ Root cause: The system stores analytics with a single analyzedSessionScope value per entity. When the user views analytics with a different scope (e.g., "Real" vs the stored "Combined"), the
+ backend returns analytics: null. This creates a trap where:
+ 1. User opens analytics tab (defaults to "Real") → sees "No Analytics Available"
+ 2. Switches to "All" → sees analytics (because stored scope is "combined")
+ 3. Refreshes from "All" → refreshes with "combined" scope → still only works for "All"
+ 4. The user never realizes they need to switch to "Real" before refreshing
+
+ The infographic issue is a separate frontend bug: project-detail.tsx checks for analytics existence using a scope-unaware query that always defaults to scope "real".
+
+ Bugs Identified (3)
+
+ Bug 1 (Critical): Infographic gate uses hardcoded "real" scope
+
+ File: client/src/pages/project-detail.tsx:187-190
+ const { data: analyticsData } = useQuery<{ analytics: unknown | null }>({
+     queryKey: ["/api/projects", projectId, "analytics"],  // No sessionScope!
+     enabled: !!projectId,
+ });
+ // line 399:
+ hasAnalytics={!!analyticsData?.analytics}  // Always checks "real" scope
+ This query hits GET /api/projects/:id/analytics without a sessionScope param → defaults to "real" → if project was analyzed with "combined", returns analytics: null → infographics blocked.
+
+ Meanwhile, the infographic backend routes (server/routes/infographic.routes.ts:183) only check !project.analyticsData — they don't care about scope at all. So the backend would work fine; it's
+  purely a frontend gate.
+
+ Bug 2 (Important): No explanation when analytics exist for a different scope
+
+ File: client/src/components/analytics/ProjectAnalyticsView.tsx:484-495
+ When analytics === null, the UI shows a generic "No Analytics Available" card with no indication that analytics DO exist for another scope. The response includes analyzedSessionScope (line
+ 282) which could be used to inform the user.
+
+ Bug 3 (Moderate): Helper functions don't scope-filter child analytics
+
+ File: server/routes/analytics-helpers.ts
+ - refreshTemplateAnalytics (line 109): collectionsData.filter(c => c.analytics !== null) — missing && c.collection.analyzedSessionScope === scope
+ - refreshProjectAnalytics (line 176): templatesData.filter(t => t.analytics !== null) — missing && t.template.analyzedSessionScope === scope
+
+ In cascade refresh flows this is usually benign (children are refreshed first), but in standalone refresh calls it can include analytics from a mismatched scope.
+
+ Fixes
+
+ Fix 1: Make infographic check scope-independent
+
+ File: client/src/pages/project-detail.tsx
+
+ The project data already comes from GET /api/projects/:id which includes analyticsData as a field on the project object. Use the project's analyticsData field directly instead of a separate
+ scope-filtered query.
+
+ Change: Replace the separate analytics query (lines 187-190) with a check on the project object:
+ // Remove the separate analytics query entirely (lines 187-190)
+ // At line 399, change to:
+ hasAnalytics={!!project.analyticsData}
+
+ This aligns with what the backend infographic routes actually check.
+
+ Also apply the same fix for collection-detail.tsx:807 if it has the same pattern (it doesn't — it correctly uses the scoped analyticsData from the analytics query).
+
+ Fix 2: Show scope mismatch message in ProjectAnalyticsView
+
+ File: client/src/components/analytics/ProjectAnalyticsView.tsx
+
+ When analytics === null but data?.analyzedSessionScope exists and differs from the current sessionScope, show an informative message instead of the generic empty state.
+
+ Change at line 484-495 (the !hasData block):
+ {!hasData ? (
+   <Card>
+     <CardContent className="py-12 text-center">
+       <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+       {data?.analyzedSessionScope && data.analyzedSessionScope !== sessionScope ? (
+         <>
+           <h3 className="text-lg font-medium mb-2">Analytics Not Available for This Scope</h3>
+           <p className="text-muted-foreground mb-4">
+             Analytics were generated for {data.analyzedSessionScope === "combined" ? "All" : data.analyzedSessionScope === "simulated" ? "Simulated" : "Real"} sessions.
+             Switch scope to view them, or refresh to regenerate for the current scope.
+           </p>
+         </>
+       ) : (
+         <>
+           <h3 className="text-lg font-medium mb-2">No Analytics Available</h3>
+           <p className="text-muted-foreground mb-4">
+             Refresh analytics to generate project-level insights.
+           </p>
+         </>
+       )}
+       ...existing refresh button...
+     </CardContent>
+   </Card>
+ )
+
+ Apply the same pattern to TemplateAnalyticsView.tsx.
+
+ Fix 3: Add scope filtering in analytics helpers
+
+ File: server/routes/analytics-helpers.ts
+
+ Change line 109 in refreshTemplateAnalytics:
+ const collectionsWithAnalytics = collectionsData.filter(
+   c => c.analytics !== null && c.collection.analyzedSessionScope === scope
+ );
+
+ Change line 176 in refreshProjectAnalytics:
+ const templatesWithAnalytics = templatesData.filter(
+   t => t.analytics !== null && t.template.analyzedSessionScope === scope
+ );
+
+ Files to Modify
+
+ ┌───────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                           File                            │                                              Change                                               │
+ ├───────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ client/src/pages/project-detail.tsx                       │ Remove scope-filtered analytics query; use project.analyticsData directly for infographic check   │
+ ├───────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ client/src/components/analytics/ProjectAnalyticsView.tsx  │ Show scope mismatch message in empty state                                                        │
+ ├───────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ client/src/components/analytics/TemplateAnalyticsView.tsx │ Same scope mismatch message pattern                                                               │
+ ├───────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/routes/analytics-helpers.ts                        │ Add scope filtering in refreshTemplateAnalytics (line 109) and refreshProjectAnalytics (line 176) │
+ └───────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Verification
+
+ 1. Infographic fix: With project analyzed under "combined" scope, navigate to project detail → infographics tab → should show generate buttons (not "Run analytics first")
+ 2. Scope mismatch message: With project analyzed under "combined", view Project Analytics with "Real" toggle → should see "Analytics were generated for All sessions" message
+ 3. Refresh flow: From "Real" scope, click Refresh Analytics → cascade refresh → analytics should now appear for "Real" scope
+ 4. Type check: Run npm run check to verify no TypeScript errors
+ 5. Existing tests: Run npx vitest to confirm no regressions
