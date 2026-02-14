@@ -206,7 +206,7 @@ export default function SessionsPage() {
   const inProgressCount = sessions?.filter(s => s.status === "in_progress").length || 0;
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Sessions</h1>
         <p className="text-muted-foreground mt-1">

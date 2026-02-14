@@ -154,7 +154,7 @@ export default function CollectionsPage() {
   const totalSessions = collections?.reduce((sum, c) => sum + (c.totalSessions || 0), 0) || 0;
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Collections</h1>
         <p className="text-muted-foreground mt-1">

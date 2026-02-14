@@ -52,7 +52,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <ThemeToggle />
           </header>
-          <main className="flex-1 overflow-auto" style={{ scrollbarGutter: "stable" }}>
+          <main className="flex-1 overflow-x-hidden overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
             {children}
           </main>
         </SidebarInset>

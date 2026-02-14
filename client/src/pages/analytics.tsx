@@ -717,7 +717,7 @@ export default function AnalyticsPage() {
   });
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight" data-testid="heading-analytics-title">
@@ -753,14 +753,16 @@ export default function AnalyticsPage() {
         </Card>
       ) : (
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList data-testid="tabs-analytics">
-            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="insights" data-testid="tab-insights">Insights</TabsTrigger>
-            <TabsTrigger value="health" data-testid="tab-health">Research Health</TabsTrigger>
-            {analytics.contextualRecommendations.length > 0 && (
-              <TabsTrigger value="tailored" data-testid="tab-tailored">Tailored</TabsTrigger>
-            )}
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+            <TabsList data-testid="tabs-analytics" className="w-max sm:w-auto">
+              <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+              <TabsTrigger value="insights" data-testid="tab-insights">Insights</TabsTrigger>
+              <TabsTrigger value="health" data-testid="tab-health">Research Health</TabsTrigger>
+              {analytics.contextualRecommendations.length > 0 && (
+                <TabsTrigger value="tailored" data-testid="tab-tailored">Tailored</TabsTrigger>
+              )}
+            </TabsList>
+          </div>
           
           <TabsContent value="overview" className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

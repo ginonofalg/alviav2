@@ -115,7 +115,7 @@ export default function TemplateDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-4xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -130,7 +130,7 @@ export default function TemplateDetailPage() {
 
   if (!template) {
     return (
-      <div className="p-8 max-w-4xl mx-auto">
+      <div className="p-4 md:p-8 max-w-4xl mx-auto">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Template not found</h3>
@@ -149,7 +149,7 @@ export default function TemplateDetailPage() {
   const questions = template.questions || [];
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
       <HierarchyHeader
         level="template"
         title={template.name}
@@ -228,20 +228,22 @@ export default function TemplateDetailPage() {
       </div>
 
       <Tabs defaultValue="questions" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="questions" data-testid="tab-questions">
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Questions ({questions.length})
-          </TabsTrigger>
-          <TabsTrigger value="collections" data-testid="tab-collections">
-            <Layers className="w-4 h-4 mr-2" />
-            Collections ({collections.length})
-          </TabsTrigger>
-          <TabsTrigger value="analytics" data-testid="tab-analytics">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Analytics
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="w-max sm:w-auto">
+            <TabsTrigger value="questions" data-testid="tab-questions">
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Questions ({questions.length})
+            </TabsTrigger>
+            <TabsTrigger value="collections" data-testid="tab-collections">
+              <Layers className="w-4 h-4 mr-2" />
+              Collections ({collections.length})
+            </TabsTrigger>
+            <TabsTrigger value="analytics" data-testid="tab-analytics">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Analytics
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="questions" className="space-y-4">
           {template.tone && (

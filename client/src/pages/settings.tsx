@@ -36,7 +36,7 @@ export default function SettingsPage() {
     : user?.email || "User";
 
   return (
-    <div className="p-8 space-y-6 max-w-3xl mx-auto">
+    <div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">

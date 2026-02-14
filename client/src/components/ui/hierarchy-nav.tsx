@@ -117,8 +117,8 @@ export function HierarchyHeader({
       {breadcrumbItems && breadcrumbItems.length > 0 && (
         <Breadcrumb items={breadcrumbItems} />
       )}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-start gap-4 min-w-0">
           <div
             className={cn(
               "flex items-center justify-center w-12 h-12 rounded-lg shrink-0",
@@ -131,7 +131,7 @@ export function HierarchyHeader({
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1
-                className="text-2xl font-semibold tracking-tight truncate max-w-[400px]"
+                className="text-2xl font-semibold tracking-tight truncate max-w-full sm:max-w-[400px]"
                 data-testid="heading-page-title"
               >
                 {title}
@@ -149,7 +149,7 @@ export function HierarchyHeader({
           </div>
         </div>
         {actions && (
-          <div className="flex items-center gap-2 flex-wrap">{actions}</div>
+          <div className="flex items-center gap-2 flex-wrap shrink-0">{actions}</div>
         )}
       </div>
     </div>

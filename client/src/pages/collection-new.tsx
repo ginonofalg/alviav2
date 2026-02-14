@@ -116,7 +116,7 @@ export default function CollectionNewPage() {
 
   if (!templateId) {
     return (
-      <div className="p-8 max-w-2xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/collections">
             <Button variant="ghost" size="icon" data-testid="button-back">
@@ -175,7 +175,7 @@ export default function CollectionNewPage() {
 
   if (templateLoading) {
     return (
-      <div className="p-8 max-w-2xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -190,7 +190,7 @@ export default function CollectionNewPage() {
 
   if (!template) {
     return (
-      <div className="p-8 max-w-2xl mx-auto">
+      <div className="p-4 md:p-8 max-w-2xl mx-auto">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Template not found</h3>
@@ -209,7 +209,7 @@ export default function CollectionNewPage() {
   const questionCount = template.questions?.length || 0;
 
   return (
-    <div className="p-8 max-w-2xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Link href={`/templates/${templateId}`}>
           <Button variant="ghost" size="icon" data-testid="button-back">

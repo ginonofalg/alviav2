@@ -710,7 +710,7 @@ export default function SessionDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-5xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -725,7 +725,7 @@ export default function SessionDetailPage() {
 
   if (!session) {
     return (
-      <div className="p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8 max-w-5xl mx-auto">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Session not found</h3>
@@ -766,18 +766,18 @@ export default function SessionDetailPage() {
   const currentFlags = (session.reviewFlags as SessionReviewFlag[]) || [];
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       {/* Header with navigation */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <Link href="/sessions">
-            <Button variant="ghost" size="icon" data-testid="button-back">
+            <Button variant="ghost" size="icon" data-testid="button-back" className="shrink-0">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-semibold tracking-tight">
+              <h1 className="text-2xl font-semibold tracking-tight truncate">
                 Session #{session.id.slice(0, 8)}
               </h1>
               <Badge className={`${status.color} text-white`}>
@@ -811,7 +811,7 @@ export default function SessionDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Session Navigation */}
           {siblings && (
             <div className="flex items-center gap-1">
@@ -1021,22 +1021,24 @@ export default function SessionDetailPage() {
           )}
 
           <Tabs defaultValue="summary" className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="summary" data-testid="tab-summary">
-                <FileText className="w-4 h-4 mr-2" />
-                Summary
-              </TabsTrigger>
-              <TabsTrigger value="transcript" data-testid="tab-transcript">
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Full Transcript
-              </TabsTrigger>
-              {Array.isArray(session.barbaraGuidanceLog) && (session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[]).length > 0 && (
-                <TabsTrigger value="guidance" data-testid="tab-guidance">
-                  <Eye className="w-4 h-4 mr-2" />
-                  Guidance
+            <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+              <TabsList className="w-max sm:w-auto">
+                <TabsTrigger value="summary" data-testid="tab-summary">
+                  <FileText className="w-4 h-4 mr-2" />
+                  Summary
                 </TabsTrigger>
-              )}
-            </TabsList>
+                <TabsTrigger value="transcript" data-testid="tab-transcript">
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Full Transcript
+                </TabsTrigger>
+                {Array.isArray(session.barbaraGuidanceLog) && (session.barbaraGuidanceLog as BarbaraGuidanceLogEntry[]).length > 0 && (
+                  <TabsTrigger value="guidance" data-testid="tab-guidance">
+                    <Eye className="w-4 h-4 mr-2" />
+                    Guidance
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
 
             <TabsContent value="summary" className="space-y-4">
               {(() => {

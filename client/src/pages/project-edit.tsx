@@ -138,7 +138,7 @@ export default function ProjectEditPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-3xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -153,7 +153,7 @@ export default function ProjectEditPage() {
 
   if (!project) {
     return (
-      <div className="p-8 max-w-3xl mx-auto">
+      <div className="p-4 md:p-8 max-w-3xl mx-auto">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Project not found</h3>
@@ -177,7 +177,7 @@ export default function ProjectEditPage() {
   ];
 
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Link href={`/projects/${projectId}`}>
           <Button variant="ghost" size="icon" data-testid="button-back">

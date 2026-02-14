@@ -190,7 +190,7 @@ export default function ProjectDetailPage() {
 
   if (projectLoading) {
     return (
-      <div className="p-8 max-w-7xl mx-auto space-y-6">
+      <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="w-9 h-9" />
           <div className="space-y-2">
@@ -205,7 +205,7 @@ export default function ProjectDetailPage() {
 
   if (!project) {
     return (
-      <div className="p-8 max-w-7xl mx-auto">
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <Card className="py-16">
           <CardContent className="text-center">
             <h3 className="text-lg font-medium mb-2">Project not found</h3>
@@ -222,7 +222,7 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       <HierarchyHeader
         level="project"
         title={project.name}
@@ -295,24 +295,26 @@ export default function ProjectDetailPage() {
       </div>
 
       <Tabs defaultValue="templates" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="templates" data-testid="tab-templates">
-            <FileText className="w-4 h-4 mr-2" />
-            Templates
-          </TabsTrigger>
-          <TabsTrigger value="collections" data-testid="tab-collections">
-            <Play className="w-4 h-4 mr-2" />
-            Collections
-          </TabsTrigger>
-          <TabsTrigger value="analytics" data-testid="tab-analytics">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="infographics" data-testid="tab-infographics">
-            <ImageIcon className="w-4 h-4 mr-2" />
-            Infographics
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="w-max sm:w-auto">
+            <TabsTrigger value="templates" data-testid="tab-templates">
+              <FileText className="w-4 h-4 mr-2" />
+              Templates
+            </TabsTrigger>
+            <TabsTrigger value="collections" data-testid="tab-collections">
+              <Play className="w-4 h-4 mr-2" />
+              Collections
+            </TabsTrigger>
+            <TabsTrigger value="analytics" data-testid="tab-analytics">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="infographics" data-testid="tab-infographics">
+              <ImageIcon className="w-4 h-4 mr-2" />
+              Infographics
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="templates" className="space-y-4">
           {templatesLoading ? (
