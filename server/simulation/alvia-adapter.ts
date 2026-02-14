@@ -5,6 +5,7 @@ import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
 import type { TranscriptEntry } from "../barbara-orchestrator";
 import type { Question, InterviewTemplate } from "@shared/schema";
+import { buildConversationMessages } from "./conversation-utils";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -16,25 +17,6 @@ This is a text-based simulation, not a live voice interview. Adjust your behavio
 - Simply proceed through questions naturally as a text conversation
 - When you are ready to move to the next question, end your message clearly
 - Keep your responses conversational but text-appropriate`;
-
-function buildConversationMessages(
-  transcript: TranscriptEntry[],
-  systemPrompt: string,
-): Array<{ role: "system" | "user" | "assistant"; content: string }> {
-  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: systemPrompt },
-  ];
-
-  for (const entry of transcript) {
-    if (entry.speaker === "alvia") {
-      messages.push({ role: "assistant", content: entry.text });
-    } else if (entry.speaker === "respondent") {
-      messages.push({ role: "user", content: entry.text });
-    }
-  }
-
-  return messages;
-}
 
 export async function generateAlviaResponse(
   template: InterviewTemplate,
@@ -64,7 +46,7 @@ export async function generateAlviaResponse(
   );
 
   const fullInstructions = instructions + TEXT_MODE_OVERRIDE;
-  const messages = buildConversationMessages(transcript, fullInstructions);
+  const messages = buildConversationMessages(transcript, fullInstructions, "alvia");
 
   const tracked = await withTrackedLlmCall({
     attribution: usageContext,

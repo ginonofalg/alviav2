@@ -4,7 +4,7 @@ import {
   type SimulationRunRecord, type InsertSimulationRun,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, lt } from "drizzle-orm";
 
 export async function getPersona(id: string): Promise<Persona | undefined> {
   const [persona] = await db.select().from(personas).where(eq(personas.id, id));
@@ -81,9 +81,10 @@ export async function cleanupOrphanedSimulationRuns(): Promise<number> {
     .set({ status: "failed", errorMessage: "Server restarted during execution", completedAt: new Date() })
     .where(eq(simulationRuns.status, "running"))
     .returning();
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   const orphanedPending = await db.update(simulationRuns)
     .set({ status: "failed", errorMessage: "Server restarted before execution started", completedAt: new Date() })
-    .where(eq(simulationRuns.status, "pending"))
+    .where(and(eq(simulationRuns.status, "pending"), lt(simulationRuns.createdAt, fiveMinutesAgo)))
     .returning();
   return orphanedRunning.length + orphanedPending.length;
 }

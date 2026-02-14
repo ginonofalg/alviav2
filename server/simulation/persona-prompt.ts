@@ -1,5 +1,6 @@
 import type { Persona } from "@shared/schema";
 import type { TranscriptEntry } from "../barbara-orchestrator";
+import { buildConversationMessages } from "./conversation-utils";
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
@@ -82,25 +83,6 @@ BEHAVIORAL RULES:
   return prompt;
 }
 
-function buildConversationMessages(
-  transcript: TranscriptEntry[],
-  systemPrompt: string,
-): Array<{ role: "system" | "user" | "assistant"; content: string }> {
-  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: systemPrompt },
-  ];
-
-  for (const entry of transcript) {
-    if (entry.speaker === "alvia") {
-      messages.push({ role: "user", content: entry.text });
-    } else if (entry.speaker === "respondent") {
-      messages.push({ role: "assistant", content: entry.text });
-    }
-  }
-
-  return messages;
-}
-
 export async function generatePersonaResponse(
   persona: Persona,
   transcript: TranscriptEntry[],
@@ -108,7 +90,7 @@ export async function generatePersonaResponse(
   usageContext: LLMUsageAttribution,
 ): Promise<string> {
   const systemPrompt = buildPersonaSystemPrompt(persona);
-  const messages = buildConversationMessages(transcript, systemPrompt);
+  const messages = buildConversationMessages(transcript, systemPrompt, "respondent");
   const temperature = VERBOSITY_TEMP[persona.verbosity] || 0.8;
 
   const tracked = await withTrackedLlmCall({

@@ -47,14 +47,20 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
     invitationStatus: "consented",
   });
 
-  const session = await storage.createSession({
-    collectionId: ctx.collection.id,
-    respondentId: respondent.id,
-    status: "in_progress",
-    isSimulated: true,
-    personaId: ctx.persona.id,
-    simulationRunId: ctx.runId,
-  });
+  let session;
+  try {
+    session = await storage.createSession({
+      collectionId: ctx.collection.id,
+      respondentId: respondent.id,
+      status: "in_progress",
+      isSimulated: true,
+      personaId: ctx.persona.id,
+      simulationRunId: ctx.runId,
+    });
+  } catch (err) {
+    // Note: deleteRespondent not available; orphaned respondent may remain
+    throw err;
+  }
 
   await storage.updateSession(session.id, { startedAt: new Date() });
 
@@ -355,13 +361,14 @@ export async function executeSimulationRun(
   }
 
   try {
-    if (await isSimulationRunCancelled(runId)) {
+    try {
+      if (await isSimulationRunCancelled(runId)) {
+        return;
+      }
+      await updateSimulationRun(runId, { status: "running", startedAt: new Date() });
+    } finally {
       await releaseSimulationLock();
-      return;
     }
-
-    await updateSimulationRun(runId, { status: "running", startedAt: new Date() });
-    await releaseSimulationLock();
 
     const collection = await storage.getCollection(collectionId);
     if (!collection) throw new Error("Collection not found");

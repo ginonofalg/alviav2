@@ -263,8 +263,8 @@ export const interviewSessions = pgTable("interview_sessions", {
   barbaraGuidanceLog: jsonb("barbara_guidance_log"),
   guidanceAdherenceSummary: jsonb("guidance_adherence_summary"),
   isSimulated: boolean("is_simulated").default(false),
-  personaId: varchar("persona_id"),
-  simulationRunId: varchar("simulation_run_id"),
+  personaId: varchar("persona_id").references(() => personas.id, { onDelete: "set null" }),
+  simulationRunId: varchar("simulation_run_id").references(() => simulationRuns.id, { onDelete: "set null" }),
 }, (table) => [
   index("idx_session_collection").on(table.collectionId),
   index("idx_session_status").on(table.status),

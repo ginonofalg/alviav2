@@ -99,7 +99,8 @@ server/
   routes.ts                 # Route registration entry point (~50 lines)
   routes/                   # Modular route handlers (~3330 lines total)
     index.ts                    # Exports all route registration functions
-    analytics.routes.ts         # Dashboard stats, analytics, aggregated analytics (~940 lines)
+    analytics.routes.ts         # Dashboard stats, analytics, aggregated analytics (~700 lines)
+    analytics-helpers.ts        # Extracted analytics refresh helpers (staleness, cascade refresh) (~205 lines)
     projects.routes.ts          # Project CRUD (~140 lines)
     templates.routes.ts         # Template CRUD, generation (~220 lines)
     collections.routes.ts       # Collection CRUD, analytics refresh (~165 lines)
@@ -114,6 +115,14 @@ server/
   storage.ts                # DatabaseStorage class (~1630 lines)
   storage/
     types.ts                    # IStorage interface definitions (~200 lines)
+    simulation.ts               # Persona & simulation run CRUD, advisory locks, cleanup (~115 lines)
+  simulation/                 # Persona simulation engine (~750 lines total)
+    engine.ts                   # Simulation execution engine with parallel batching (~460 lines)
+    persona-prompt.ts           # Persona response generation with verbosity scaling (~130 lines)
+    alvia-adapter.ts            # Alvia text-mode response generation (~90 lines)
+    question-flow.ts            # Conditional question flow evaluation (~90 lines)
+    conversation-utils.ts       # Shared conversation message building utility (~30 lines)
+    types.ts                    # Simulation context types and limits (~45 lines)
   voice-interview.ts        # WebSocket handler for voice interviews (~4200 lines)
   voice-interview/           # Extracted voice interview modules (~1270 lines total)
     index.ts                    # Re-exports
@@ -158,6 +167,8 @@ shared/
     aggregated-analytics.ts     # Command center analytics types
     review.ts                   # Review rating types
     llm-usage.ts                # LLM usage tracking types (16 use cases)
+    simulation.ts               # Simulation types (SessionScope, PersonaAttitude, SimulationRun, SimulationConfig)
+    guidance-aggregation.ts     # Guidance aggregation types
 docs/
   pause-duration-tracking-spec.md     # Silence vs pause tracking spec
   project-template-generation-prompt.md
@@ -260,8 +271,10 @@ vitest.config.ts            # Vitest test configuration
 - **Template-level**: `TemplateAnalytics` - aggregated themes, consistency metrics across collections
 - **Project-level**: `ProjectAnalytics` - cross-template synthesis, contextual recommendations
 - **Command center**: `AggregatedAnalytics` - cross-project insights
-- Staleness tracking via `StalenessStatus` type, `lastAnalyzedAt`, `analyzedSessionCount`
+- Staleness tracking via `StalenessStatus` type, `lastAnalyzedAt`, `analyzedSessionCount`, `analyzedSessionScope`
+- Scope filtering: analytics refresh filters by `sessionScope` (real, simulated, combined) at every hierarchy level
 - Cascade refresh: refreshing project analytics triggers template and collection refreshes
+- Cascade refresh helpers extracted into `server/routes/analytics-helpers.ts`
 
 **PDF Export system**:
 - `AnalyticsPdfExport` component generates formatted PDF reports
@@ -289,6 +302,18 @@ vitest.config.ts            # Vitest test configuration
 - `withTrackedLlmCall()` wrapper used by Barbara to automatically log usage
 - Automated maintenance: raw events expire after 14 days, rollup reconciliation every 24 hours
 - Usage query endpoints at session, collection, template, and project levels
+
+**Persona simulation system** (`server/simulation/`):
+- Text-based persona simulation engine for generating synthetic interview responses
+- Configurable personas with attitude, verbosity, domain knowledge, traits, communication style
+- DB tables: `personas`, `simulationRuns` with FK constraints from `interviewSessions.personaId` and `.simulationRunId`
+- Concurrency control via PostgreSQL advisory locks (`pg_try_advisory_lock`)
+- Parallel execution: batches of 3 personas via `Promise.allSettled`
+- Cancellation: DB-backed status checks between batches
+- Orphan cleanup on server restart (running runs immediately, pending runs after 5-minute threshold)
+- Conditional question flow evaluation with `dependsOn`, `showWhen`, and `condition` operators
+- Shared `buildConversationMessages` utility with perspective parameter (alvia vs respondent)
+- Session scope tracking: `isSimulated` flag on sessions, `analyzedSessionScope` on analytics
 
 **Additional questions (AQ) system**:
 - Barbara generates 0-3 dynamic follow-up questions at end of interview based on gaps/themes

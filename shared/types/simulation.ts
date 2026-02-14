@@ -6,28 +6,6 @@ export type PersonaDomainKnowledge = "none" | "basic" | "intermediate" | "expert
 
 export type SimulationRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-export type PersonaCard = {
-  id: string;
-  projectId: string;
-  name: string;
-  description: string | null;
-  ageRange: string | null;
-  gender: string | null;
-  occupation: string | null;
-  location: string | null;
-  attitude: PersonaAttitude;
-  verbosity: PersonaVerbosity;
-  domainKnowledge: PersonaDomainKnowledge;
-  traits: string[];
-  communicationStyle: string | null;
-  backgroundStory: string | null;
-  topicsToAvoid: string[];
-  biases: string[];
-  isArchived: boolean;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-};
-
 export type SimulationRun = {
   id: string;
   collectionId: string;
