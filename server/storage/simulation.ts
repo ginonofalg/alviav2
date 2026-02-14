@@ -77,11 +77,15 @@ export async function isSimulationRunCancelled(runId: string): Promise<boolean> 
 }
 
 export async function cleanupOrphanedSimulationRuns(): Promise<number> {
-  const orphaned = await db.update(simulationRuns)
+  const orphanedRunning = await db.update(simulationRuns)
     .set({ status: "failed", errorMessage: "Server restarted during execution", completedAt: new Date() })
     .where(eq(simulationRuns.status, "running"))
     .returning();
-  return orphaned.length;
+  const orphanedPending = await db.update(simulationRuns)
+    .set({ status: "failed", errorMessage: "Server restarted before execution started", completedAt: new Date() })
+    .where(eq(simulationRuns.status, "pending"))
+    .returning();
+  return orphanedRunning.length + orphanedPending.length;
 }
 
 export async function acquireSimulationLock(maxConcurrent: number): Promise<boolean> {

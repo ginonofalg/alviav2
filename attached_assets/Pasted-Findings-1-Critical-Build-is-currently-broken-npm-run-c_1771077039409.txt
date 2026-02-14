@@ -1,0 +1,26 @@
+Findings
+
+  1. Critical Build is currently broken. npm run check fails on server/routes/analytics.routes.ts:773, server/routes/projects.routes.ts:131, server/simulation/alvia-adapter.ts:82, server/
+     simulation/persona-prompt.ts:127, server/simulation/engine.ts:217.
+  2. Critical Session-scope toggle for template/project analytics is effectively non-functional. Frontend sends scope in client/src/components/analytics/TemplateAnalyticsView.tsx:459 and client/
+     src/components/analytics/ProjectAnalyticsView.tsx:393, but backend GET routes don’t apply scope in server/routes/analytics.routes.ts:210 and server/routes/analytics.routes.ts:326.
+  3. High Scope persistence is inconsistent: only collections track scope (shared/schema.ts:186), while template/project analytics are overwritten without scope metadata (server/routes/
+     analytics.routes.ts:305, server/routes/analytics.routes.ts:428). This can mix/replace “real” vs “simulated” outputs.
+  4. High Simulation concurrency lock is unsafe. Advisory lock usage in server/storage/simulation.ts:89 + pooled DB connections in server/db.ts:13 can fail to reliably unlock across different
+     connections (server/storage/simulation.ts:108). Also the lock is released before marking run active (server/simulation/engine.ts:358, server/simulation/engine.ts:359), creating a race that
+     can exceed max concurrency.
+  5. High Missing auth check on template cascade refresh endpoint. server/routes/analytics.routes.ts:836 starts refresh logic without verifyUserAccessToTemplate, unlike project cascade refresh
+     (server/routes/analytics.routes.ts:546).
+  6. Medium Cancel race: cancellation can be overwritten by executor startup. Cancel sets status in server/routes/simulation.routes.ts:139, but executor sets running in server/simulation/
+     engine.ts:359 and only checks cancellation later in server/simulation/engine.ts:403.
+  7. Medium Simulated respondents are marked completed before completion: invitationStatus: "completed" at creation in server/simulation/engine.ts:47, which can skew completion funnel stats if a
+     run fails.
+  8. Medium Crash recovery only cleans running runs (server/storage/simulation.ts:82). Runs left in pending (created at server/routes/simulation.routes.ts:60) can remain stuck indefinitely.
+  9. Low UI says max 10 personas (client/src/components/simulation/SimulationLauncher.tsx:72) but selection isn’t capped in UI (client/src/components/simulation/SimulationLauncher.tsx:55);
+     backend rejects over-limit in server/routes/simulation.routes.ts:15, causing avoidable user-facing errors.
+  10. Medium No tests were added for new persona/simulation/scope logic (no new *.test.ts in changed files), so regressions above were not caught.
+
+  Validation Run
+
+  1. npm run check failed (5 TS errors listed above).
+  2. npx vitest --run passed existing tests (46/46), but they do not cover the new simulation/scope paths.

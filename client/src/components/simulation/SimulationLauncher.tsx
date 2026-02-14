@@ -51,10 +51,18 @@ export function SimulationLauncher({ collection, projectId, open, onOpenChange }
     },
   });
 
+  const MAX_PERSONAS = 10;
+
   const togglePersona = (persona: Persona) => {
-    setSelectedPersonaIds((prev) =>
-      prev.includes(persona.id) ? prev.filter((id) => id !== persona.id) : [...prev, persona.id]
-    );
+    setSelectedPersonaIds((prev) => {
+      if (prev.includes(persona.id)) {
+        return prev.filter((id) => id !== persona.id);
+      }
+      if (prev.length >= MAX_PERSONAS) {
+        return prev;
+      }
+      return [...prev, persona.id];
+    });
   };
 
   return (

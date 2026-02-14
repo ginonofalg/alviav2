@@ -124,7 +124,7 @@ export async function generatePersonaResponse(
         max_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
       })) as ChatCompletion;
     },
-    extractUsage: makeBarbaraUsageExtractor(),
+    extractUsage: makeBarbaraUsageExtractor(model),
   });
 
   return tracked.result.choices[0]?.message?.content?.trim() || "I'm not sure how to answer that.";

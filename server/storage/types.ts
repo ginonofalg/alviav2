@@ -23,14 +23,16 @@ export type CollectionUpdate = Partial<InsertCollection> & {
 };
 
 export type TemplateUpdate = Partial<InsertTemplate> & {
-  lastAnalyzedAt?: Date;
-  analyzedCollectionCount?: number;
+  lastAnalyzedAt?: Date | null;
+  analyzedCollectionCount?: number | null;
+  analyzedSessionScope?: string | null;
   analyticsData?: unknown;
 };
 
 export type ProjectUpdate = Partial<InsertProject> & {
-  lastAnalyzedAt?: Date;
-  analyzedTemplateCount?: number;
+  lastAnalyzedAt?: Date | null;
+  analyzedTemplateCount?: number | null;
+  analyzedSessionScope?: string | null;
   analyticsData?: unknown;
 };
 

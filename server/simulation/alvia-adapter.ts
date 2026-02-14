@@ -79,7 +79,7 @@ export async function generateAlviaResponse(
         max_tokens: 600,
       })) as ChatCompletion;
     },
-    extractUsage: makeBarbaraUsageExtractor(),
+    extractUsage: makeBarbaraUsageExtractor(model),
   });
 
   return tracked.result.choices[0]?.message?.content?.trim() || "";

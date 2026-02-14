@@ -220,24 +220,26 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+      const scopeMatches = template.analyzedSessionScope === scope;
       const collections = await storage.getCollectionsByTemplate(template.id);
-      const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+      const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null && c.analyzedSessionScope === scope);
 
-      const isStale = template.lastAnalyzedAt 
-        ? collections.some(c => {
+      const isStale = !template.lastAnalyzedAt || !scopeMatches
+        || collections.some(c => {
             const collectionAnalyzedAt = c.lastAnalyzedAt;
             return collectionAnalyzedAt && collectionAnalyzedAt > template.lastAnalyzedAt!;
-          })
-        : collectionsWithAnalytics.length > 0;
+          });
 
       res.json({
-        analytics: template.analyticsData as TemplateAnalytics | null,
-        lastAnalyzedAt: template.lastAnalyzedAt,
+        analytics: scopeMatches ? template.analyticsData as TemplateAnalytics | null : null,
+        lastAnalyzedAt: scopeMatches ? template.lastAnalyzedAt : null,
         analyzedCollectionCount: template.analyzedCollectionCount || 0,
+        analyzedSessionScope: template.analyzedSessionScope,
         currentCollectionCount: collectionsWithAnalytics.length,
         totalCollectionCount: collections.length,
         isStale,
-        missingAnalytics: collections.filter(c => c.analyticsData === null).length,
+        missingAnalytics: collections.filter(c => c.analyticsData === null || c.analyzedSessionScope !== scope).length,
       });
     } catch (error) {
       console.error("Error fetching template analytics:", error);
@@ -305,6 +307,7 @@ export function registerAnalyticsRoutes(app: Express) {
       await storage.updateTemplate(template.id, {
         lastAnalyzedAt: new Date(),
         analyzedCollectionCount: collectionsWithAnalytics.length,
+        analyzedSessionScope: scope,
         analyticsData,
       });
 
@@ -312,6 +315,7 @@ export function registerAnalyticsRoutes(app: Express) {
         analytics: analyticsData,
         lastAnalyzedAt: new Date(),
         analyzedCollectionCount: collectionsWithAnalytics.length,
+        analyzedSessionScope: scope,
         currentCollectionCount: collectionsWithAnalytics.length,
         totalCollectionCount: collections.length,
         isStale: false,
@@ -336,24 +340,26 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+      const scopeMatches = project.analyzedSessionScope === scope;
       const templates = await storage.getTemplatesByProject(project.id);
-      const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null);
+      const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null && t.analyzedSessionScope === scope);
 
-      const isStale = project.lastAnalyzedAt 
-        ? templates.some(t => {
+      const isStale = !project.lastAnalyzedAt || !scopeMatches
+        || templates.some(t => {
             const templateAnalyzedAt = t.lastAnalyzedAt;
             return templateAnalyzedAt && templateAnalyzedAt > project.lastAnalyzedAt!;
-          })
-        : templatesWithAnalytics.length > 0;
+          });
 
       res.json({
-        analytics: project.analyticsData as ProjectAnalytics | null,
-        lastAnalyzedAt: project.lastAnalyzedAt,
+        analytics: scopeMatches ? project.analyticsData as ProjectAnalytics | null : null,
+        lastAnalyzedAt: scopeMatches ? project.lastAnalyzedAt : null,
         analyzedTemplateCount: project.analyzedTemplateCount || 0,
+        analyzedSessionScope: project.analyzedSessionScope,
         currentTemplateCount: templatesWithAnalytics.length,
         totalTemplateCount: templates.length,
         isStale,
-        missingAnalytics: templates.filter(t => t.analyticsData === null).length,
+        missingAnalytics: templates.filter(t => t.analyticsData === null || t.analyzedSessionScope !== scope).length,
       });
     } catch (error) {
       console.error("Error fetching project analytics:", error);
@@ -428,6 +434,7 @@ export function registerAnalyticsRoutes(app: Express) {
       await storage.updateProject(project.id, {
         lastAnalyzedAt: new Date(),
         analyzedTemplateCount: templatesWithAnalytics.length,
+        analyzedSessionScope: scope,
         analyticsData,
       });
 
@@ -435,6 +442,7 @@ export function registerAnalyticsRoutes(app: Express) {
         analytics: analyticsData,
         lastAnalyzedAt: new Date(),
         analyzedTemplateCount: templatesWithAnalytics.length,
+        analyzedSessionScope: scope,
         currentTemplateCount: templatesWithAnalytics.length,
         totalTemplateCount: templates.length,
         isStale: false,
@@ -673,6 +681,7 @@ export function registerAnalyticsRoutes(app: Express) {
           await storage.updateTemplate(template.id, {
             lastAnalyzedAt: new Date(),
             analyzedCollectionCount: collectionsWithAnalytics.length,
+            analyzedSessionScope: scope,
             analyticsData,
           });
 
@@ -734,6 +743,7 @@ export function registerAnalyticsRoutes(app: Express) {
           await storage.updateProject(project.id, {
             lastAnalyzedAt: new Date(),
             analyzedTemplateCount: templatesWithAnalytics.length,
+            analyzedSessionScope: scope,
             analyticsData: projectAnalyticsData,
           });
 
@@ -768,9 +778,9 @@ export function registerAnalyticsRoutes(app: Express) {
     }
   });
 
-  app.get("/api/templates/:templateId/analytics/dependencies", isAuthenticated, async (req, res) => {
+  app.get("/api/templates/:templateId/analytics/dependencies", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user!.claims.sub;
+      const userId = req.user.claims.sub;
       const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -833,8 +843,14 @@ export function registerAnalyticsRoutes(app: Express) {
     }
   });
 
-  app.post("/api/templates/:templateId/analytics/cascade-refresh", isAuthenticated, async (req, res) => {
+  app.post("/api/templates/:templateId/analytics/cascade-refresh", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -955,6 +971,7 @@ export function registerAnalyticsRoutes(app: Express) {
           await storage.updateTemplate(template.id, {
             lastAnalyzedAt: new Date(),
             analyzedCollectionCount: collectionsWithAnalytics.length,
+            analyzedSessionScope: scope,
             analyticsData: templateAnalyticsData,
           });
 

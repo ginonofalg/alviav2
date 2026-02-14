@@ -129,6 +129,7 @@ export const projects = pgTable("projects", {
   // Analytics metadata
   lastAnalyzedAt: timestamp("last_analyzed_at"),
   analyzedTemplateCount: integer("analyzed_template_count").default(0),
+  analyzedSessionScope: text("analyzed_session_scope"),
   analyticsData: jsonb("analytics_data"),
 });
 
@@ -148,6 +149,7 @@ export const interviewTemplates = pgTable("interview_templates", {
   // Analytics metadata
   lastAnalyzedAt: timestamp("last_analyzed_at"),
   analyzedCollectionCount: integer("analyzed_collection_count").default(0),
+  analyzedSessionScope: text("analyzed_session_scope"),
   analyticsData: jsonb("analytics_data"),
 });
 

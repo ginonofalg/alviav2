@@ -44,7 +44,7 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
     fullName: ctx.persona.name,
     informalName: ctx.persona.name,
     isSimulated: true,
-    invitationStatus: "completed",
+    invitationStatus: "consented",
   });
 
   const session = await storage.createSession({
@@ -214,7 +214,7 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
           .filter((e) => e.questionIndex === questionIndex)
           .map((e) => `[${e.speaker}]: ${e.text}`)
           .join("\n"),
-        summaryBullets: questionSummaries[questionSummaries.length - 1]?.keyPoints || [],
+        summaryBullets: questionSummaries[questionSummaries.length - 1]?.keyInsights || [],
       });
 
       const nextIndex = getNextQuestionIndex(questionIndex, ctx.questions, previousAnswers);
@@ -355,8 +355,13 @@ export async function executeSimulationRun(
   }
 
   try {
-    await releaseSimulationLock();
+    if (await isSimulationRunCancelled(runId)) {
+      await releaseSimulationLock();
+      return;
+    }
+
     await updateSimulationRun(runId, { status: "running", startedAt: new Date() });
+    await releaseSimulationLock();
 
     const collection = await storage.getCollection(collectionId);
     if (!collection) throw new Error("Collection not found");
