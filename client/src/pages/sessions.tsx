@@ -95,14 +95,14 @@ function SessionCard({ session }: { session: EnrichedSession }) {
                 </p>
               </div>
               <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex items-center gap-1 shrink-0">
                     <Clock className="w-3.5 h-3.5" />
                     {duration !== null ? `${duration} min` : "—"}
                   </span>
-                  <span className="flex items-center gap-1 truncate">
+                  <span className="flex items-center gap-1 min-w-0 truncate">
                     <Calendar className="w-3.5 h-3.5 shrink-0" />
-                    {startedAt ? `Started ${startedAt}` : "Not started"}
+                    <span className="truncate">{startedAt ? `Started ${startedAt}` : "Not started"}</span>
                   </span>
                 </div>
                 <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />

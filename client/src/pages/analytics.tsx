@@ -828,13 +828,13 @@ export default function AnalyticsPage() {
             
             {analytics.projects.length > 0 && (
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
+                <CardHeader className="flex flex-row items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <CardTitle className="text-lg">Quick Navigation</CardTitle>
                     <CardDescription>Jump to your research projects</CardDescription>
                   </div>
                   <Link href="/projects">
-                    <Button variant="ghost" size="sm" data-testid="button-view-all-projects">
+                    <Button variant="ghost" size="sm" className="shrink-0" data-testid="button-view-all-projects">
                       View All
                       <ArrowRight className="w-4 h-4 ml-1" />
                     </Button>
@@ -845,14 +845,14 @@ export default function AnalyticsPage() {
                     {analytics.projects.slice(0, 6).map((project) => (
                       <Link key={project.id} href={`/projects/${project.id}`}>
                         <div 
-                          className="p-3 rounded-lg hover-elevate border border-transparent hover:border-border cursor-pointer"
+                          className="p-3 rounded-lg hover-elevate border border-transparent hover:border-border cursor-pointer min-w-0 overflow-hidden"
                           data-testid={`card-quick-nav-${project.id}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium truncate">{project.name}</span>
-                            <StalenessBadge status={project.stalenessStatus} />
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <span className="font-medium truncate min-w-0">{project.name}</span>
+                            <StalenessBadge status={project.stalenessStatus} className="shrink-0" />
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <p className="text-xs text-muted-foreground mt-1 truncate">
                             {project.completedSessions} sessions completed
                           </p>
                         </div>

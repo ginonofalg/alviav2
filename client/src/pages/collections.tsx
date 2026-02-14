@@ -78,23 +78,23 @@ function CollectionCard({ collection }: { collection: CollectionWithStats }) {
             <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </div>
         </CardHeader>
-        <CardContent className="pt-0 pl-[3.25rem] space-y-4">
-          <div className="flex items-center gap-6 text-sm">
+        <CardContent className="pt-0 pl-4 sm:pl-[3.25rem] space-y-4 min-w-0">
+          <div className="flex items-center gap-4 sm:gap-6 text-sm flex-wrap">
             <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Users className="w-4 h-4" />
+              <Users className="w-4 h-4 shrink-0" />
               <span>{collection.totalSessions || 0} sessions</span>
             </div>
             <div className="flex items-center gap-1.5 text-muted-foreground">
-              <CheckCircle2 className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{collection.completedSessions || 0} completed</span>
             </div>
           </div>
 
           {collection.targetResponses && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-muted-foreground flex items-center gap-1">
-                  <Target className="w-3 h-3" />
+                  <Target className="w-3 h-3 shrink-0" />
                   Progress
                 </span>
                 <span className="font-medium">
@@ -105,9 +105,9 @@ function CollectionCard({ collection }: { collection: CollectionWithStats }) {
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-2 border-t text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
+          <div className="flex items-center justify-between gap-2 pt-2 border-t text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 truncate">
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
               Created {createdAt}
             </span>
           </div>
