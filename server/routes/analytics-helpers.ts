@@ -106,10 +106,12 @@ export async function refreshTemplateAnalytics(
   questions: Question[],
   scope: SessionScope,
 ): Promise<{ analytics: TemplateAnalytics; analyzedCollectionCount: number }> {
-  const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null);
+  const collectionsWithAnalytics = collectionsData.filter(
+    c => c.analytics !== null && c.collection.analyzedSessionScope === scope
+  );
 
   console.log("[Template Analytics] Generating for template:", template.name);
-  console.log("[Template Analytics] Collections with analytics:", collectionsWithAnalytics.length);
+  console.log("[Template Analytics] Collections with analytics (scope=%s):", scope, collectionsWithAnalytics.length);
 
   const usageContext: LLMUsageAttribution = {
     projectId: template.projectId,
@@ -173,10 +175,12 @@ export async function refreshProjectAnalytics(
   templatesData: TemplateData[],
   scope: SessionScope,
 ): Promise<{ analytics: ProjectAnalytics; analyzedTemplateCount: number }> {
-  const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null);
+  const templatesWithAnalytics = templatesData.filter(
+    t => t.analytics !== null && t.template.analyzedSessionScope === scope
+  );
 
   console.log("[Project Analytics] Generating for project:", project.name);
-  console.log("[Project Analytics] Templates with analytics:", templatesWithAnalytics.length);
+  console.log("[Project Analytics] Templates with analytics (scope=%s):", scope, templatesWithAnalytics.length);
 
   const usageContext: LLMUsageAttribution = {
     projectId: project.id,

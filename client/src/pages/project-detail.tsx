@@ -184,11 +184,6 @@ export default function ProjectDetailPage() {
     enabled: !!projectId,
   });
 
-  const { data: analyticsData } = useQuery<{ analytics: unknown | null }>({
-    queryKey: ["/api/projects", projectId, "analytics"],
-    enabled: !!projectId,
-  });
-
   if (projectLoading) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 min-w-0">
@@ -396,7 +391,7 @@ export default function ProjectDetailPage() {
             entityId={projectId!}
             entityName={project.name}
             entityLevel="project"
-            hasAnalytics={!!analyticsData?.analytics}
+            hasAnalytics={!!project.analyticsData}
           />
         </TabsContent>
 

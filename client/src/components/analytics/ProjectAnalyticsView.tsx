@@ -36,6 +36,7 @@ interface ProjectAnalyticsResponse {
   analytics: ProjectAnalytics | null;
   lastAnalyzedAt: string | null;
   analyzedTemplateCount: number;
+  analyzedSessionScope: string | null;
   currentTemplateCount: number;
   totalTemplateCount: number;
   isStale: boolean;
@@ -485,12 +486,24 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
         <Card data-testid="card-no-analytics">
           <CardContent className="py-12 text-center">
             <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No Analytics Available</h3>
-            <p className="text-muted-foreground mb-4">
-              {data?.currentTemplateCount === 0
-                ? "No templates with analytics yet. Please refresh analytics for at least one template first."
-                : "Click the Refresh Analytics button to generate project-level insights."}
-            </p>
+            {data?.analyzedSessionScope && data.analyzedSessionScope !== sessionScope ? (
+              <>
+                <h3 className="text-lg font-medium mb-2">Analytics Not Available for This Scope</h3>
+                <p className="text-muted-foreground mb-4">
+                  Analytics were generated for {data.analyzedSessionScope === "combined" ? "All" : data.analyzedSessionScope === "simulated" ? "Simulated" : "Real"} sessions.
+                  Switch scope to view them, or refresh to regenerate for the current scope.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-medium mb-2">No Analytics Available</h3>
+                <p className="text-muted-foreground mb-4">
+                  {data?.currentTemplateCount === 0
+                    ? "No templates with analytics yet. Please refresh analytics for at least one template first."
+                    : "Click the Refresh Analytics button to generate project-level insights."}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : analytics ? (

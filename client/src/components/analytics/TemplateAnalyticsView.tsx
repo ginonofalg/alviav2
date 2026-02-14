@@ -49,6 +49,7 @@ interface TemplateAnalyticsResponse {
   analytics: TemplateAnalytics | null;
   lastAnalyzedAt: string | null;
   analyzedCollectionCount: number;
+  analyzedSessionScope: string | null;
   currentCollectionCount: number;
   totalCollectionCount: number;
   isStale: boolean;
@@ -536,12 +537,24 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
         <Card data-testid="card-no-analytics">
           <CardContent className="py-12 text-center">
             <BarChart3 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No Analytics Available</h3>
-            <p className="text-muted-foreground mb-4">
-              {data?.currentCollectionCount === 0
-                ? "No collections with analytics yet. Please refresh analytics for at least one collection first."
-                : "Click the Refresh Analytics button to generate template-level insights."}
-            </p>
+            {data?.analyzedSessionScope && data.analyzedSessionScope !== sessionScope ? (
+              <>
+                <h3 className="text-lg font-medium mb-2">Analytics Not Available for This Scope</h3>
+                <p className="text-muted-foreground mb-4">
+                  Analytics were generated for {data.analyzedSessionScope === "combined" ? "All" : data.analyzedSessionScope === "simulated" ? "Simulated" : "Real"} sessions.
+                  Switch scope to view them, or refresh to regenerate for the current scope.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-medium mb-2">No Analytics Available</h3>
+                <p className="text-muted-foreground mb-4">
+                  {data?.currentCollectionCount === 0
+                    ? "No collections with analytics yet. Please refresh analytics for at least one collection first."
+                    : "Click the Refresh Analytics button to generate template-level insights."}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
