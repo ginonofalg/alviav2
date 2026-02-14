@@ -127,7 +127,7 @@ export default function CollectionDetailPage() {
   const { toast } = useToast();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [simulationOpen, setSimulationOpen] = useState(false);
-  const [analyticsScope, setAnalyticsScope] = useState<import("@shared/types/simulation").SessionScope>("real");
+  const [analyticsScope, setAnalyticsScope] = useState<import("@shared/types/simulation").SessionScope>("combined");
 
   const { data: collection, isLoading } = useQuery<CollectionWithDetails>({
     queryKey: ["/api/collections", collectionId],

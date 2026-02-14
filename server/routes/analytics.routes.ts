@@ -15,11 +15,11 @@ import {
   refreshProjectAnalytics,
 } from "./analytics-helpers";
 
-const sessionScopeSchema = z.enum(["real", "simulated", "combined"]).default("real");
+const sessionScopeSchema = z.enum(["real", "simulated", "combined"]).default("combined");
 
 function parseSessionScope(query: any): SessionScope {
   const result = sessionScopeSchema.safeParse(query.sessionScope);
-  return result.success ? result.data : "real";
+  return result.success ? result.data : "combined";
 }
 
 export function registerAnalyticsRoutes(app: Express) {

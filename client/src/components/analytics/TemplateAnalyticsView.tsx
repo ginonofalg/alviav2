@@ -451,7 +451,7 @@ function DivergenceCard({ divergence, index }: { divergence: DivergencePointWith
 export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnalyticsViewProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const [showCascadeDialog, setShowCascadeDialog] = useState(false);
-  const [sessionScope, setSessionScope] = useState<SessionScope>("real");
+  const [sessionScope, setSessionScope] = useState<SessionScope>("combined");
 
   const { data, isLoading } = useQuery<TemplateAnalyticsResponse>({
     queryKey: ["/api/templates", templateId, "analytics", sessionScope],

@@ -98,7 +98,7 @@ export function AnalyticsCascadeRefreshDialog({
   entityId,
   entityName,
   onSuccess,
-  sessionScope = "real",
+  sessionScope = "combined",
 }: AnalyticsCascadeRefreshDialogProps) {
   const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);

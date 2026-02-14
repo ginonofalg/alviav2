@@ -385,7 +385,7 @@ function ContextualRecommendationsCard({
 export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalyticsViewProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const [showCascadeDialog, setShowCascadeDialog] = useState(false);
-  const [sessionScope, setSessionScope] = useState<SessionScope>("real");
+  const [sessionScope, setSessionScope] = useState<SessionScope>("combined");
 
   const { data, isLoading } = useQuery<ProjectAnalyticsResponse>({
     queryKey: ["/api/projects", projectId, "analytics", sessionScope],
