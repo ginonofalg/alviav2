@@ -258,7 +258,7 @@ export default function ProjectDetailPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -318,7 +318,7 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="templates" className="space-y-4">
           {templatesLoading ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3].map((i) => (
                 <Card key={i}>
                   <CardHeader>
@@ -329,7 +329,7 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           ) : templates && templates.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {templates.map((template) => (
                 <TemplateCard key={template.id} template={template} />
               ))}
@@ -355,7 +355,7 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="collections" className="space-y-4">
           {collectionsLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {[1, 2].map((i) => (
                 <Card key={i}>
                   <CardHeader>
@@ -366,7 +366,7 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           ) : collections && collections.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {collections.map((collection) => (
                 <CollectionCard key={collection.id} collection={collection} />
               ))}

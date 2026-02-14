@@ -161,7 +161,7 @@ function QuestionCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             control={form.control}
             name={`questions.${index}.questionType`}
@@ -214,7 +214,7 @@ function QuestionCard({
         </div>
 
         {questionType === "scale" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField
               control={form.control}
               name={`questions.${index}.scaleMin`}
@@ -648,7 +648,7 @@ export default function TemplateBuilderPage() {
                 )}
               />
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="tone"

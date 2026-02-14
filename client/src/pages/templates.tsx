@@ -233,7 +233,7 @@ export default function TemplatesPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
@@ -327,13 +327,13 @@ export default function TemplatesPage() {
       </div>
 
       {templatesLoading ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <TemplateCardSkeleton />
           <TemplateCardSkeleton />
           <TemplateCardSkeleton />
         </div>
       ) : filteredTemplates && filteredTemplates.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {filteredTemplates.map((template) => (
             <TemplateCard 
               key={template.id} 

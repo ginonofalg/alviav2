@@ -214,7 +214,7 @@ export default function SessionsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -289,14 +289,14 @@ export default function SessionsPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SessionCardSkeleton />
           <SessionCardSkeleton />
           <SessionCardSkeleton />
           <SessionCardSkeleton />
         </div>
       ) : filteredAndSortedSessions.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {filteredAndSortedSessions.map((session) => (
             <SessionCard key={session.id} session={session} />
           ))}

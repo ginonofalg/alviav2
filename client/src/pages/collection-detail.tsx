@@ -360,7 +360,7 @@ export default function CollectionDetailPage() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -610,7 +610,7 @@ export default function CollectionDetailPage() {
               </TabsList>
 
               <TabsContent value="summary" className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
                   <div
                     className="p-4 rounded-lg bg-muted/50"
                     data-testid="metric-sessions"

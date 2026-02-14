@@ -386,7 +386,7 @@ function ResearchHealthSection({
 }) {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card data-testid="card-stat-projects">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Projects</CardTitle>
@@ -515,7 +515,7 @@ function ResearchHealthSection({
       </Card>
       
       {(templateStaleness.length > 0 || collectionStaleness.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {templateStaleness.length > 0 && (
             <Card data-testid="card-template-staleness">
               <CardHeader className="pb-3">
@@ -670,7 +670,7 @@ function ContextualRecommendationsSection({ recommendations }: { recommendations
 function LoadingSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
@@ -683,7 +683,7 @@ function LoadingSkeleton() {
           </Card>
         ))}
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <Skeleton className="h-5 w-40" />
@@ -765,7 +765,7 @@ export default function AnalyticsPage() {
           </div>
           
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Card data-testid="card-stat-projects-overview">
                 <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Projects</CardTitle>
@@ -821,7 +821,7 @@ export default function AnalyticsPage() {
               </Card>
             </div>
             
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <ExecutiveSummarySection projects={analytics.projects} />
               <StrategicThemesSection themes={analytics.strategicThemes} />
             </div>
@@ -841,7 +841,7 @@ export default function AnalyticsPage() {
                   </Link>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {analytics.projects.slice(0, 6).map((project) => (
                       <Link key={project.id} href={`/projects/${project.id}`}>
                         <div 
@@ -865,7 +865,7 @@ export default function AnalyticsPage() {
           </TabsContent>
           
           <TabsContent value="insights" className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <InsightsFeedSection 
                 insights={analytics.strategicInsights} 
                 findings={analytics.keyFindings}

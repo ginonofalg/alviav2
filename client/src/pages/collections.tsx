@@ -162,7 +162,7 @@ export default function CollectionsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
@@ -212,13 +212,13 @@ export default function CollectionsPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <CollectionCardSkeleton />
           <CollectionCardSkeleton />
           <CollectionCardSkeleton />
         </div>
       ) : filteredCollections && filteredCollections.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {filteredCollections.map((collection) => (
             <CollectionCard key={collection.id} collection={collection} />
           ))}
