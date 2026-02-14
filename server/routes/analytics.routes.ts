@@ -184,8 +184,9 @@ export function registerAnalyticsRoutes(app: Express) {
       const collections = await storage.getCollectionsByTemplate(template.id);
       const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null && c.analyzedSessionScope === scope);
 
+      const scopedCollections = collections.filter(c => c.analyzedSessionScope === scope);
       const isStale = !template.lastAnalyzedAt || !scopeMatches
-        || collections.some(c => {
+        || scopedCollections.some(c => {
             const collectionAnalyzedAt = c.lastAnalyzedAt;
             return collectionAnalyzedAt && collectionAnalyzedAt > template.lastAnalyzedAt!;
           });
@@ -269,8 +270,9 @@ export function registerAnalyticsRoutes(app: Express) {
       const templates = await storage.getTemplatesByProject(project.id);
       const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null && t.analyzedSessionScope === scope);
 
+      const scopedTemplates = templates.filter(t => t.analyzedSessionScope === scope);
       const isStale = !project.lastAnalyzedAt || !scopeMatches
-        || templates.some(t => {
+        || scopedTemplates.some(t => {
             const templateAnalyzedAt = t.lastAnalyzedAt;
             return templateAnalyzedAt && templateAnalyzedAt > project.lastAnalyzedAt!;
           });
@@ -376,8 +378,9 @@ export function registerAnalyticsRoutes(app: Express) {
           );
 
           const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+          const scopedCollectionsForTemplate = collections.filter(c => c.analyzedSessionScope === scope);
           const templateIsStale = template.lastAnalyzedAt 
-            ? collections.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
+            ? scopedCollectionsForTemplate.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
             : collectionsWithAnalytics.length > 0;
           const hasRefreshableCollections = collectionsData.some(c => c.hasData);
 
@@ -397,8 +400,9 @@ export function registerAnalyticsRoutes(app: Express) {
       const staleTemplates = templatesData.filter(t => t.isStale || t.staleCollectionCount > 0);
 
       const templatesWithAnalytics = templates.filter(t => t.analyticsData !== null);
+      const scopedTemplatesForProject = templates.filter(t => t.analyzedSessionScope === scope);
       const projectIsStale = project.lastAnalyzedAt 
-        ? templates.some(t => t.lastAnalyzedAt && t.lastAnalyzedAt > project.lastAnalyzedAt!)
+        ? scopedTemplatesForProject.some(t => t.lastAnalyzedAt && t.lastAnalyzedAt > project.lastAnalyzedAt!)
         : templatesWithAnalytics.length > 0;
 
       res.json({
@@ -587,9 +591,10 @@ export function registerAnalyticsRoutes(app: Express) {
 
       const staleCollections = collectionsData.filter(c => c.isStale);
       const collectionsWithAnalytics = collections.filter(c => c.analyticsData !== null);
+      const scopedCollectionsForDeps = collections.filter(c => c.analyzedSessionScope === scope);
       
       const templateIsStale = template.lastAnalyzedAt 
-        ? collections.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
+        ? scopedCollectionsForDeps.some(c => c.lastAnalyzedAt && c.lastAnalyzedAt > template.lastAnalyzedAt!)
         : collectionsWithAnalytics.length > 0;
 
       res.json({
