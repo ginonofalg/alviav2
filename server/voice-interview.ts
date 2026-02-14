@@ -1982,6 +1982,13 @@ async function triggerBarbaraAnalysis(
   const state = interviewStates.get(sessionId);
   if (!state || state.isWaitingForBarbara) return null;
 
+  if (state.isInAdditionalQuestionsPhase) {
+    console.log(
+      `[Barbara] Skipping analysis during AQ phase for session: ${sessionId}`,
+    );
+    return null;
+  }
+
   // Don't analyze if we don't have enough transcript
   if (state.transcriptLog.length < 2) return null;
 
@@ -2134,11 +2141,25 @@ async function triggerBarbaraAnalysis(
     if (guidance.action !== "none" && guidance.confidence > 0.6) {
       state.barbaraGuidanceQueue.push(guidance);
 
-      // For suggest_next_question, craft a flexible message that works regardless of timing
       let guidanceMessage = guidance.message;
       if (guidance.action === "suggest_next_question") {
-        guidanceMessage =
-          "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. When there's a natural pause or you finish responding to their latest point, warmly offer to move on. You might say something like: 'Thank you for sharing that. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+        const isLastTemplateQuestion =
+          !state.isInAdditionalQuestionsPhase &&
+          state.currentQuestionIndex === state.questions.length - 1;
+        const isLastAdditionalQuestion =
+          state.isInAdditionalQuestionsPhase &&
+          state.currentAdditionalQuestionIndex != null &&
+          state.additionalQuestions.length > 0 &&
+          state.currentAdditionalQuestionIndex >=
+            state.additionalQuestions.length - 1;
+
+        if (isLastTemplateQuestion || isLastAdditionalQuestion) {
+          guidanceMessage =
+            "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. This is the LAST question in the interview. When there's a natural pause, wrap up naturally — thank them warmly for their time and insights, and let them know they can click the button below to continue. Do NOT mention a next question or moving on to another topic.";
+        } else {
+          guidanceMessage =
+            "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. When there's a natural pause or you finish responding to their latest point, warmly offer to move on. You might say something like: 'Thank you for sharing that. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+        }
       }
 
       // Inject guidance by updating session instructions (system context)
@@ -3332,6 +3353,7 @@ GUIDELINES:
 - Keep this portion brief but thorough, aim for 1-2 follow-up probes maximum
 - Acknowledge insights with genuine interest
 - Continue the conversation naturally without announcing a topic change or transition; do not say things like "let's shift gears", "I'd like to move on to", or "now I have some follow-up questions"
+${aqIndex === totalAQs - 1 ? `- This is the LAST question in the entire interview. Do NOT mention a next question or moving on to another topic. When ${respondentAddress} has answered, wrap up naturally — thank them warmly for their time and insights, and let them know they can click the button below to continue.` : ""}
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.
