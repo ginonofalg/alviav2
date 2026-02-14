@@ -26,6 +26,12 @@ import { eq, desc, and, sql, count } from "drizzle-orm";
 import type { InterviewStatePatch, EnrichedSession, IStorage } from "./storage/types";
 export type { InterviewStatePatch, EnrichedSession, IStorage } from "./storage/types";
 
+function filterBySessionScope(sessions: InterviewSession[], scope?: string): InterviewSession[] {
+  if (!scope || scope === "combined") return sessions;
+  if (scope === "simulated") return sessions.filter(s => s.isSimulated);
+  return sessions.filter(s => !s.isSimulated);
+}
+
 export class DatabaseStorage implements IStorage {
   // Workspaces
   async getWorkspace(id: string): Promise<Workspace | undefined> {
@@ -577,7 +583,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Stats
-  async getDashboardStats(userId: string): Promise<{
+  async getDashboardStats(userId: string, sessionScope?: string): Promise<{
     projectCount: number;
     templateCount: number;
     collectionCount: number;
@@ -600,7 +606,8 @@ export class DatabaseStorage implements IStorage {
       collectionCount += collectionList.length;
       
       for (const collection of collectionList) {
-        const sessionList = await this.getSessionsByCollection(collection.id);
+        const allSessions = await this.getSessionsByCollection(collection.id);
+        const sessionList = filterBySessionScope(allSessions, sessionScope);
         sessionCount += sessionList.length;
         completedSessions += sessionList.filter(s => s.status === "completed").length;
       }
@@ -609,7 +616,7 @@ export class DatabaseStorage implements IStorage {
     return { projectCount, templateCount, collectionCount, sessionCount, completedSessions };
   }
 
-  async getEnhancedDashboardStats(userId: string): Promise<{
+  async getEnhancedDashboardStats(userId: string, sessionScope?: string): Promise<{
     projectCount: number;
     templateCount: number;
     collectionCount: number;
@@ -721,7 +728,8 @@ export class DatabaseStorage implements IStorage {
       collectionCount += collectionList.length;
       
       for (const collection of collectionList) {
-        const sessionList = await this.getSessionsByCollection(collection.id);
+        const allSessionsInCollection = await this.getSessionsByCollection(collection.id);
+        const sessionList = filterBySessionScope(allSessionsInCollection, sessionScope);
         sessionCount += sessionList.length;
         
         let lastSessionAt: Date | null = null;
@@ -838,7 +846,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getAnalytics(filters?: { projectId?: string; collectionId?: string }): Promise<{
+  async getAnalytics(filters?: { projectId?: string; collectionId?: string; sessionScope?: string }): Promise<{
     totalSessions: number;
     completedSessions: number;
     averageDuration: number;
@@ -846,18 +854,19 @@ export class DatabaseStorage implements IStorage {
     topThemes: { theme: string; count: number }[];
     questionStats: { questionText: string; avgConfidence: number; responseCount: number }[];
   }> {
-    let allSessions: Awaited<ReturnType<typeof this.getAllSessions>>;
+    let rawSessions: Awaited<ReturnType<typeof this.getAllSessions>>;
     
     if (filters?.collectionId) {
-      allSessions = await this.getSessionsByCollection(filters.collectionId);
+      rawSessions = await this.getSessionsByCollection(filters.collectionId);
     } else if (filters?.projectId) {
       const collections = await this.getCollectionsByProject(filters.projectId);
       const sessionPromises = collections.map(c => this.getSessionsByCollection(c.id));
       const sessionArrays = await Promise.all(sessionPromises);
-      allSessions = sessionArrays.flat();
+      rawSessions = sessionArrays.flat();
     } else {
-      allSessions = await this.getAllSessions();
+      rawSessions = await this.getAllSessions();
     }
+    const allSessions = filterBySessionScope(rawSessions, filters?.sessionScope);
     const totalSessions = allSessions.length;
     const completedSessionsList = allSessions.filter(s => s.status === "completed");
     const completedSessions = completedSessionsList.length;
@@ -935,7 +944,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getAggregatedAnalytics(userId: string): Promise<AggregatedAnalytics> {
+  async getAggregatedAnalytics(userId: string, sessionScope?: string): Promise<AggregatedAnalytics> {
     const projectList = await this.getProjectsByUser(userId);
     
     const projectSummaries: ProjectSummaryWithAnalytics[] = [];
@@ -992,7 +1001,8 @@ export class DatabaseStorage implements IStorage {
       const generatedAt = analytics?.generatedAt ?? null;
       
       for (const collection of projectCollections) {
-        const sessions = await this.getSessionsByCollection(collection.id);
+        const rawSessions = await this.getSessionsByCollection(collection.id);
+        const sessions = filterBySessionScope(rawSessions, sessionScope);
         projectSessions += sessions.length;
         projectCompletedSessions += sessions.filter(s => s.status === "completed").length;
         

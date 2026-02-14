@@ -116,13 +116,13 @@ export interface IStorage {
   createSegment(segment: InsertSegment): Promise<Segment>;
   updateSegment(id: string, segment: Partial<InsertSegment>): Promise<Segment | undefined>;
   
-  getDashboardStats(userId: string): Promise<{
+  getDashboardStats(userId: string, sessionScope?: string): Promise<{
     projectCount: number;
     collectionCount: number;
     sessionCount: number;
     completedSessions: number;
   }>;
-  getEnhancedDashboardStats(userId: string): Promise<{
+  getEnhancedDashboardStats(userId: string, sessionScope?: string): Promise<{
     projectCount: number;
     templateCount: number;
     collectionCount: number;
@@ -170,7 +170,7 @@ export interface IStorage {
       }>;
     };
   }>;
-  getAnalytics(filters?: { projectId?: string; collectionId?: string }): Promise<{
+  getAnalytics(filters?: { projectId?: string; collectionId?: string; sessionScope?: string }): Promise<{
     totalSessions: number;
     completedSessions: number;
     averageDuration: number;
@@ -179,7 +179,7 @@ export interface IStorage {
     questionStats: { questionText: string; avgConfidence: number; responseCount: number }[];
   }>;
   
-  getAggregatedAnalytics(userId: string): Promise<AggregatedAnalytics>;
+  getAggregatedAnalytics(userId: string, sessionScope?: string): Promise<AggregatedAnalytics>;
   
   verifyUserAccessToProject(userId: string, projectId: string): Promise<boolean>;
   verifyUserAccessToTemplate(userId: string, templateId: string): Promise<boolean>;

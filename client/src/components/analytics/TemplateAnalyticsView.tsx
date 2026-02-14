@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { SessionScopeToggle } from "@/components/simulation/SessionScopeToggle";
+import type { SessionScope } from "@shared/types/simulation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -448,10 +450,16 @@ function DivergenceCard({ divergence, index }: { divergence: DivergencePointWith
 export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnalyticsViewProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const [showCascadeDialog, setShowCascadeDialog] = useState(false);
+  const [sessionScope, setSessionScope] = useState<SessionScope>("real");
 
   const { data, isLoading } = useQuery<TemplateAnalyticsResponse>({
-    queryKey: ["/api/templates", templateId, "analytics"],
+    queryKey: ["/api/templates", templateId, "analytics", sessionScope],
     enabled: !!templateId,
+    queryFn: async () => {
+      const res = await fetch(`/api/templates/${templateId}/analytics?sessionScope=${sessionScope}`);
+      if (!res.ok) throw new Error("Failed to fetch analytics");
+      return res.json();
+    },
   });
 
   // The cascade dialog now handles query invalidation directly
@@ -480,6 +488,7 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
           <p className="text-sm text-muted-foreground" data-testid="text-template-name">{templateName}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <SessionScopeToggle value={sessionScope} onChange={setSessionScope} />
           {data?.isStale && (
             <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-600/30" data-testid="badge-stale">
               <AlertTriangle className="w-3 h-3" />
@@ -520,6 +529,7 @@ export function TemplateAnalyticsView({ templateId, templateName }: TemplateAnal
         entityId={templateId}
         entityName={templateName}
         onSuccess={handleRefreshSuccess}
+        sessionScope={sessionScope}
       />
 
       {!hasData || !analytics ? (

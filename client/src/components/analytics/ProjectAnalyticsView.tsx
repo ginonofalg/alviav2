@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { SessionScopeToggle } from "@/components/simulation/SessionScopeToggle";
+import type { SessionScope } from "@shared/types/simulation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -382,10 +384,16 @@ function ContextualRecommendationsCard({
 export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalyticsViewProps) {
   const [activeTab, setActiveTab] = useState("overview");
   const [showCascadeDialog, setShowCascadeDialog] = useState(false);
+  const [sessionScope, setSessionScope] = useState<SessionScope>("real");
 
   const { data, isLoading } = useQuery<ProjectAnalyticsResponse>({
-    queryKey: ["/api/projects", projectId, "analytics"],
+    queryKey: ["/api/projects", projectId, "analytics", sessionScope],
     enabled: !!projectId,
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/analytics?sessionScope=${sessionScope}`);
+      if (!res.ok) throw new Error("Failed to fetch analytics");
+      return res.json();
+    },
   });
 
   // The cascade dialog now handles query invalidation directly
@@ -414,6 +422,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
           <p className="text-sm text-muted-foreground" data-testid="text-project-name">{projectName}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <SessionScopeToggle value={sessionScope} onChange={setSessionScope} />
           {data?.isStale && (
             <Badge variant="outline" className="gap-1 text-yellow-600 border-yellow-600/30" data-testid="badge-stale">
               <AlertTriangle className="w-3 h-3" />
@@ -469,6 +478,7 @@ export function ProjectAnalyticsView({ projectId, projectName }: ProjectAnalytic
         entityId={projectId}
         entityName={projectName}
         onSuccess={handleRefreshSuccess}
+        sessionScope={sessionScope}
       />
 
       {!hasData ? (

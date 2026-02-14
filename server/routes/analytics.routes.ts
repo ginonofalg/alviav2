@@ -3,12 +3,29 @@ import { isAuthenticated } from "../replit_integrations/auth";
 import { storage } from "../storage";
 import { generateCrossInterviewAnalysis, generateTemplateAnalytics, generateProjectAnalytics } from "../barbara-orchestrator";
 import type { LLMUsageAttribution, QuestionSummary, CollectionAnalytics, TemplateAnalytics, ProjectAnalytics } from "@shared/schema";
+import { z } from "zod";
+import type { SessionScope } from "@shared/types/simulation";
+import type { InterviewSession } from "@shared/schema";
+
+const sessionScopeSchema = z.enum(["real", "simulated", "combined"]).default("real");
+
+function parseSessionScope(query: any): SessionScope {
+  const result = sessionScopeSchema.safeParse(query.sessionScope);
+  return result.success ? result.data : "real";
+}
+
+function filterSessionsByScope(sessions: InterviewSession[], scope: SessionScope): InterviewSession[] {
+  if (scope === "combined") return sessions;
+  if (scope === "simulated") return sessions.filter(s => s.isSimulated);
+  return sessions.filter(s => !s.isSimulated);
+}
 
 export function registerAnalyticsRoutes(app: Express) {
   app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const stats = await storage.getDashboardStats(userId);
+      const scope = parseSessionScope(req.query);
+      const stats = await storage.getDashboardStats(userId, scope);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -19,7 +36,8 @@ export function registerAnalyticsRoutes(app: Express) {
   app.get("/api/dashboard/enhanced-stats", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const stats = await storage.getEnhancedDashboardStats(userId);
+      const scope = parseSessionScope(req.query);
+      const stats = await storage.getEnhancedDashboardStats(userId, scope);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching enhanced dashboard stats:", error);
@@ -50,7 +68,8 @@ export function registerAnalyticsRoutes(app: Express) {
         }
       }
       
-      const analytics = await storage.getAnalytics({ projectId, collectionId });
+      const scope = parseSessionScope(req.query);
+      const analytics = await storage.getAnalytics({ projectId, collectionId, sessionScope: scope });
       res.json(analytics);
     } catch (error) {
       console.error("Error fetching analytics:", error);
@@ -61,7 +80,8 @@ export function registerAnalyticsRoutes(app: Express) {
   app.get("/api/analytics/aggregated", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const aggregated = await storage.getAggregatedAnalytics(userId);
+      const scope = parseSessionScope(req.query);
+      const aggregated = await storage.getAggregatedAnalytics(userId, scope);
       res.json(aggregated);
     } catch (error) {
       console.error("Error fetching aggregated analytics:", error);
@@ -82,8 +102,9 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);
-      const completedSessions = sessions.filter(s => s.status === "completed");
+      const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
       
       const isStale = !collection.lastAnalyzedAt || 
         completedSessions.length !== collection.analyzedSessionCount;
@@ -114,6 +135,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const template = await storage.getTemplate(collection.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -121,7 +144,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
       const questions = await storage.getQuestionsByTemplate(template.id);
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);
-      const completedSessions = sessions.filter(s => s.status === "completed");
+      const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
 
       if (completedSessions.length === 0) {
         return res.status(400).json({ message: "No completed sessions to analyze" });
@@ -232,13 +255,15 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const questions = await storage.getQuestionsByTemplate(template.id);
       const collections = await storage.getCollectionsByTemplate(template.id);
 
       const collectionsData = await Promise.all(
         collections.map(async (collection) => {
           const sessions = await storage.getSessionsByCollection(collection.id);
-          const completedSessions = sessions.filter(s => s.status === "completed");
+          const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
           return {
             collection,
             analytics: collection.analyticsData as CollectionAnalytics | null,
@@ -346,6 +371,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const templates = await storage.getTemplatesByProject(project.id);
 
       const templatesData = await Promise.all(
@@ -355,7 +382,7 @@ export function registerAnalyticsRoutes(app: Express) {
           let totalSessions = 0;
           for (const collection of collections) {
             const sessions = await storage.getSessionsByCollection(collection.id);
-            totalSessions += sessions.filter(s => s.status === "completed").length;
+            totalSessions += filterSessionsByScope(sessions, scope).filter(s => s.status === "completed").length;
           }
           return {
             template,
@@ -429,6 +456,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const templates = await storage.getTemplatesByProject(project.id);
       
       const templatesData = await Promise.all(
@@ -438,7 +467,7 @@ export function registerAnalyticsRoutes(app: Express) {
           const collectionsData = await Promise.all(
             collections.map(async (collection) => {
               const sessions = await storage.getSessionsByCollection(collection.id);
-              const completedSessions = sessions.filter(s => s.status === "completed");
+              const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
               
               const isStale = !collection.lastAnalyzedAt || 
                 completedSessions.length !== collection.analyzedSessionCount;
@@ -514,6 +543,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const results = {
         collectionsRefreshed: 0,
         templatesRefreshed: 0,
@@ -530,7 +561,7 @@ export function registerAnalyticsRoutes(app: Express) {
         
         for (const collection of collections) {
           const sessions = await storage.getSessionsByCollection(collection.id);
-          const completedSessions = sessions.filter(s => s.status === "completed");
+          const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
           
           if (completedSessions.length === 0) continue;
           
@@ -600,7 +631,7 @@ export function registerAnalyticsRoutes(app: Express) {
           collections.map(async (collection) => {
             const freshCollection = await storage.getCollection(collection.id);
             const sessions = await storage.getSessionsByCollection(collection.id);
-            const completedSessions = sessions.filter(s => s.status === "completed");
+            const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
             return {
               collection: freshCollection!,
               analytics: freshCollection?.analyticsData as CollectionAnalytics | null,
@@ -658,7 +689,7 @@ export function registerAnalyticsRoutes(app: Express) {
           let totalSessions = 0;
           for (const collection of collections) {
             const sessions = await storage.getSessionsByCollection(collection.id);
-            totalSessions += sessions.filter(s => s.status === "completed").length;
+            totalSessions += filterSessionsByScope(sessions, scope).filter(s => s.status === "completed").length;
           }
           return {
             template,
@@ -736,12 +767,14 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(404).json({ message: "Template not found" });
       }
 
+      const scope = parseSessionScope(req.query);
+
       const collections = await storage.getCollectionsByTemplate(template.id);
       
       const collectionsData = await Promise.all(
         collections.map(async (collection) => {
           const sessions = await storage.getSessionsByCollection(collection.id);
-          const completedSessions = sessions.filter(s => s.status === "completed");
+          const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
           
           const isStale = !collection.lastAnalyzedAt || 
             completedSessions.length !== collection.analyzedSessionCount;
@@ -792,6 +825,7 @@ export function registerAnalyticsRoutes(app: Express) {
       }
 
       const project = await storage.getProject(template.projectId);
+      const scope = parseSessionScope(req.query);
       const results = {
         collectionsRefreshed: 0,
         templateRefreshed: false,
@@ -804,7 +838,7 @@ export function registerAnalyticsRoutes(app: Express) {
       // Step 1: Refresh all stale collections
       for (const collection of collections) {
         const sessions = await storage.getSessionsByCollection(collection.id);
-        const completedSessions = sessions.filter(s => s.status === "completed");
+        const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
         
         if (completedSessions.length === 0) continue;
         
@@ -869,7 +903,7 @@ export function registerAnalyticsRoutes(app: Express) {
       const collectionsData = await Promise.all(
         freshCollections.map(async (collection) => {
           const sessions = await storage.getSessionsByCollection(collection.id);
-          const completedSessions = sessions.filter(s => s.status === "completed");
+          const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
           return {
             collection,
             analytics: collection.analyticsData as CollectionAnalytics | null,

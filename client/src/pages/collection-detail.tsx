@@ -73,6 +73,7 @@ import { InvitationManager } from "@/components/InvitationManager";
 import { SimulationLauncher } from "@/components/simulation/SimulationLauncher";
 import { SimulationProgressList } from "@/components/simulation/SimulationProgress";
 import { SimulationBadge } from "@/components/simulation/SimulationBadge";
+import { SessionScopeToggle } from "@/components/simulation/SessionScopeToggle";
 import { Bot } from "lucide-react";
 import type {
   Collection,
@@ -126,6 +127,7 @@ export default function CollectionDetailPage() {
   const { toast } = useToast();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [simulationOpen, setSimulationOpen] = useState(false);
+  const [analyticsScope, setAnalyticsScope] = useState<import("@shared/types/simulation").SessionScope>("real");
 
   const { data: collection, isLoading } = useQuery<CollectionWithDetails>({
     queryKey: ["/api/collections", collectionId],
@@ -139,22 +141,27 @@ export default function CollectionDetailPage() {
 
   const { data: analyticsData, isLoading: isLoadingAnalytics } =
     useQuery<AnalyticsResponse>({
-      queryKey: ["/api/collections", collectionId, "analytics"],
+      queryKey: ["/api/collections", collectionId, "analytics", analyticsScope],
       enabled: !!collectionId,
+      queryFn: async () => {
+        const res = await fetch(`/api/collections/${collectionId}/analytics?sessionScope=${analyticsScope}`);
+        if (!res.ok) throw new Error("Failed to fetch analytics");
+        return res.json();
+      },
     });
 
   const refreshAnalyticsMutation = useMutation({
     mutationFn: async () => {
       return apiRequestJson<AnalyticsResponse>(
         "POST",
-        `/api/collections/${collectionId}/analytics/refresh`,
+        `/api/collections/${collectionId}/analytics/refresh?sessionScope=${analyticsScope}`,
         undefined,
         { timeoutMs: 180000 },
       );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["/api/collections", collectionId, "analytics"],
+        queryKey: ["/api/collections", collectionId, "analytics", analyticsScope],
       });
       toast({
         title: "Analysis complete",
@@ -524,6 +531,7 @@ export default function CollectionDetailPage() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <SessionScopeToggle value={analyticsScope} onChange={setAnalyticsScope} />
               {analyticsData?.isStale && (
                 <Badge
                   variant="outline"

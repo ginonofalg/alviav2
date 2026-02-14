@@ -71,6 +71,8 @@ Preferred communication style: Simple, everyday language.
 
 **Limits**: Max 10 personas per run, max 2 concurrent runs, 8 turns per question hard cap, 5min per-question timeout, 30min per-session timeout.
 
+**Analytics Session Scope Filtering**: All analytics endpoints (GET, refresh, cascade-refresh, dependencies) accept `?sessionScope=real|simulated|combined` query parameter. Defaults to "real" (human respondents only). Frontend uses `SessionScopeToggle` component (ToggleGroup with Real/Simulated/All) integrated into collection-detail, ProjectAnalyticsView, and TemplateAnalyticsView. React Query keys include sessionScope for cache isolation across scopes. Backend `filterSessionsByScope()` and `filterBySessionScope()` helpers filter `interviewSessions` by `isSimulated` field before analytics computation.
+
 ## Recent Changes
 
 ### Guided Onboarding Flow (February 2026)

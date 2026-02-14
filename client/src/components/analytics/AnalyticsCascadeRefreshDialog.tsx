@@ -88,6 +88,7 @@ interface AnalyticsCascadeRefreshDialogProps {
   entityId: string;
   entityName: string;
   onSuccess?: () => void;
+  sessionScope?: string;
 }
 
 export function AnalyticsCascadeRefreshDialog({
@@ -97,20 +98,22 @@ export function AnalyticsCascadeRefreshDialog({
   entityId,
   entityName,
   onSuccess,
+  sessionScope = "real",
 }: AnalyticsCascadeRefreshDialogProps) {
   const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const scopeParam = `?sessionScope=${sessionScope}`;
   const dependenciesEndpoint = level === "project"
-    ? `/api/projects/${entityId}/analytics/dependencies`
-    : `/api/templates/${entityId}/analytics/dependencies`;
+    ? `/api/projects/${entityId}/analytics/dependencies${scopeParam}`
+    : `/api/templates/${entityId}/analytics/dependencies${scopeParam}`;
 
   const cascadeEndpoint = level === "project"
-    ? `/api/projects/${entityId}/analytics/cascade-refresh`
-    : `/api/templates/${entityId}/analytics/cascade-refresh`;
+    ? `/api/projects/${entityId}/analytics/cascade-refresh${scopeParam}`
+    : `/api/templates/${entityId}/analytics/cascade-refresh${scopeParam}`;
 
   const { data: dependencies, isLoading, isError, error, refetch } = useQuery<ProjectDependencies | TemplateDependencies>({
-    queryKey: [dependenciesEndpoint],
+    queryKey: [dependenciesEndpoint, sessionScope],
     enabled: open,
   });
 
@@ -133,14 +136,15 @@ export function AnalyticsCascadeRefreshDialog({
     onSuccess: async (data) => {
       setIsRefreshing(false);
       
-      // Invalidate and wait for refetch to complete
-      const queryKey = level === "project"
+      const baseKey = level === "project"
         ? ["/api/projects", entityId, "analytics"]
         : ["/api/templates", entityId, "analytics"];
       
       await queryClient.invalidateQueries({
-        queryKey,
-        refetchType: "active",
+        predicate: (query) => {
+          const key = query.queryKey as string[];
+          return key[0] === baseKey[0] && key[1] === baseKey[1] && key[2] === baseKey[2];
+        },
       });
 
       const results = data.results;

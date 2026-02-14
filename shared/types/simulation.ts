@@ -1,3 +1,5 @@
+export type SessionScope = "real" | "simulated" | "combined";
+
 export type PersonaAttitude = "cooperative" | "reluctant" | "neutral" | "evasive" | "enthusiastic";
 export type PersonaVerbosity = "low" | "medium" | "high";
 export type PersonaDomainKnowledge = "none" | "basic" | "intermediate" | "expert";
