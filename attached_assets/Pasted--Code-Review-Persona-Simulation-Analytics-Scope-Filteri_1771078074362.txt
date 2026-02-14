@@ -1,0 +1,158 @@
+ Code Review: Persona Simulation & Analytics Scope Filtering (Re-review)                                                                                                                          
+                                                        
+ Context
+
+ Re-review of the Persona_Simulation branch after 3 fix commits (75521f1, 8d96133, 3be5c2c) that addressed issues from the initial review. ~3,670 lines added across 34+ files.
+
+ ---
+ Status of Previously Identified Issues
+
+ FIXED: In-memory concurrency control replaced with DB-backed locking
+
+ server/storage/simulation.ts:91-113 now uses pg_try_advisory_lock for atomic concurrency control. acquireSimulationLock() atomically acquires a PG advisory lock, checks the DB for active run
+ count, and either holds or releases. The in-memory activeRunCount and cancelledRuns Set are gone. Well done -- this is the right approach.
+
+ FIXED: Orphaned simulation runs cleaned up on startup
+
+ server/index.ts:99-101 calls cleanupOrphanedSimulationRuns() on server start, which marks any "running" or "pending" runs as "failed" with an explanatory error message
+ (server/storage/simulation.ts:79-88). Good fix.
+
+ FIXED: Analytics staleness now tracks scope
+
+ analyzedSessionScope column added to collections, interviewTemplates, and projects tables (shared/schema.ts:132,152,191). Staleness checks now compare the current requested scope against the
+ stored scope (analytics.routes.ts:109-112). Template and project GET endpoints return null analytics when scope doesn't match (analytics.routes.ts:235-236, 355-356). Properly typed via
+ CollectionUpdate, TemplateUpdate, ProjectUpdate in server/storage/types.ts:17-37. The as any casts are gone -- types are correct now.
+
+ FIXED: Missing auth check on template dependencies endpoint
+
+ analytics.routes.ts:783-787 now has verifyUserAccessToTemplate() before fetching data. The template cascade-refresh endpoint also got the same fix (analytics.routes.ts:848-852). Good.
+
+ FIXED: Conditional logic is no longer a stub
+
+ server/simulation/question-flow.ts:36-86 now implements real conditional evaluation: dependsOn, showWhen (with pipe-delimited options), and condition operators (answered,
+ not_answered/unanswered, contains:, equals:). Falls back to "has any answer" when conditions are unrecognized. Solid implementation.
+
+ FIXED: Simulations now run personas in parallel batches
+
+ server/simulation/engine.ts:388,407-442 uses Promise.allSettled with batches of 3 (PARALLEL_LIMIT). Persona validation also runs in parallel upfront. Good improvement.
+
+ FIXED: Cancellation is now DB-backed
+
+ cancelSimulationRun() (engine.ts:331-333) now writes status: "cancelled" directly to the DB. The execution loop checks cancellation via isSimulationRunCancelled() (storage/simulation.ts:74-77)
+  which queries the DB. Correct.
+
+ FIXED: Max tokens now scales with verbosity
+
+ server/simulation/persona-prompt.ts:16-20 adds VERBOSITY_MAX_TOKENS map: low=200, medium=500, high=800. Good fix.
+
+ FIXED: makeBarbaraUsageExtractor now receives model parameter
+
+ Both alvia-adapter.ts:82 and persona-prompt.ts:127 now pass model to makeBarbaraUsageExtractor(model). Previously called with no args.
+
+ FIXED: Client-side max persona enforcement
+
+ SimulationLauncher.tsx:54-66 now caps selection at MAX_PERSONAS (10) in the togglePersona function instead of allowing unlimited selection.
+
+ ---
+ Remaining Issues
+
+ MODERATE: Advisory lock released too early, creating a race window
+
+ File: server/simulation/engine.ts:348-364
+
+ const lockAcquired = await acquireSimulationLock(MAX_CONCURRENT_RUNS);
+ // ... lock is held ...
+ await updateSimulationRun(runId, { status: "running", startedAt: new Date() });
+ await releaseSimulationLock();  // Lock released here (line 364)
+ // ... simulation runs WITHOUT the lock ...
+
+ The lock is acquired to check count, the run is set to "running", then the lock is immediately released. But getActiveSimulationRunCount() counts rows with status: "running". Since the status
+ update and lock release are not in the same transaction, there's still a small window where another request could acquire the lock between status update and release. In practice this is very
+ unlikely with PG advisory locks (they're session-scoped) but the pattern is fragile.
+
+ More importantly: if the process crashes after releaseSimulationLock() but before the simulation completes, there's no mechanism to re-check whether the run count is still below the limit
+ mid-execution. This isn't a bug per se (the orphan cleanup handles it on restart), but worth noting.
+
+ MODERATE: cleanupOrphanedSimulationRuns marks ALL pending runs as failed
+
+ File: server/storage/simulation.ts:84-87
+
+ On server restart, ALL runs with status "pending" are marked as failed. But "pending" runs might have been legitimately queued and not yet started. If the server restarts quickly, these runs
+ are killed unnecessarily. Consider only cleaning up runs that have been pending for longer than a threshold (e.g., 5 minutes).
+
+ MODERATE: No foreign key constraints on simulation columns
+
+ File: shared/schema.ts:266-267
+
+ personaId and simulationRunId on interviewSessions are still plain varchar without .references(). Deleting a persona or simulation run leaves dangling IDs. This could cause issues if the UI
+ tries to resolve persona names from IDs on session detail pages.
+
+ MODERATE: Duplicated buildConversationMessages function
+
+ Files: server/simulation/alvia-adapter.ts:20-37, server/simulation/persona-prompt.ts:85-102
+
+ Still two near-identical functions with inverted role mapping (alvia→assistant in one, alvia→user in the other). This is correct since the perspective differs, but should be a shared utility:
+ function buildConversationMessages(transcript, systemPrompt, perspective: "alvia" | "respondent")
+
+ MODERATE: PersonaCard type still duplicates Persona schema type
+
+ File: shared/types/simulation.ts:9-29
+
+ The manually-defined PersonaCard type is a copy of the Drizzle-inferred Persona type. These will drift when schema changes.
+
+ MODERATE: No test coverage
+
+ No tests for the simulation engine, question flow logic, persona prompts, or routes. The evaluateConditionalLogic and evaluateQuestionFlow functions are pure and trivially unit-testable. The
+ advisory lock logic and cancellation flow would also benefit from integration tests.
+
+ MINOR: previousAnswers only stores last turn's response
+
+ File: server/simulation/engine.ts:122
+
+ previousAnswers.set(questionIndex, personaResponse) overwrites on each turn within a question. For multi-turn questions, only the last response is stored. Since evaluateConditionalLogic now
+ actually uses previousAnswers, the conditional logic for multi-turn questions will only see the final response, not the full answer. This is probably fine for most cases, but could miss
+ important context in longer exchanges.
+
+ MINOR: analytics.routes.ts is now 1,008 lines
+
+ At 1,008 lines, this file exceeds the 1,000-line soft limit per CLAUDE.md. The cascade refresh logic (project-level: lines 546-779, template-level: lines 846-1007) contains heavily duplicated
+ patterns for building sessionsWithSummaries, checking staleness, and refreshing analytics. This should be extracted into a shared helper.
+
+ MINOR: Template analytics refresh doesn't filter collections by scope
+
+ File: server/routes/analytics.routes.ts:280
+
+ When refreshing template analytics, collectionsWithAnalytics is filtered by c.analytics !== null but doesn't check c.analyzedSessionScope === scope. This means if collection A was analyzed
+ with scope "real" and collection B with scope "simulated", a template refresh with scope "simulated" would include collection A's "real" analytics in the template aggregation. The GET endpoint
+  correctly filters by scope (line 226), but the POST/refresh endpoint doesn't.
+
+ The same issue exists in project analytics refresh (analytics.routes.ts:406): templatesWithAnalytics doesn't filter by matching scope.
+
+ MINOR: Error handling gap -- orphaned respondent on session creation failure
+
+ File: server/simulation/engine.ts:40-57
+
+ If createRespondent succeeds (line 41) but createSession fails (line 50), the catch block (line 259-265) can't clean up the respondent because session is undefined. This leaves an orphaned
+ simulated respondent in the database.
+
+ ---
+ What's Been Improved Since Initial Review
+
+ The fixes demonstrate good engineering judgment:
+ - Advisory locks are the right PostgreSQL primitive for cross-process concurrency
+ - DB-backed cancellation is more reliable than in-memory Sets
+ - analyzedSessionScope properly solves the staleness ping-pong problem
+ - Parallel batching with Promise.allSettled is clean and handles failures correctly
+ - Type narrowing via CollectionUpdate/TemplateUpdate/ProjectUpdate eliminates as any
+ - Conditional logic implementation handles realistic scenarios (pipe-delimited options, named conditions)
+
+ ---
+ Recommended Next Steps (Priority Order)
+
+ 1. Extract cascade refresh helpers -- deduplicate the 400+ lines of shared patterns in analytics.routes.ts
+ 2. Filter by scope in analytics refresh -- template/project refresh should only include sub-level analytics that match the requested scope
+ 3. Add FK constraints on personaId/simulationRunId
+ 4. Add unit tests for evaluateConditionalLogic, evaluateQuestionFlow, and advisory lock behavior
+ 5. Extract shared buildConversationMessages with perspective parameter
+ 6. Remove PersonaCard type -- use Persona directly
+ 7. Threshold for pending run cleanup -- don't kill recently-created pending runs on restart
