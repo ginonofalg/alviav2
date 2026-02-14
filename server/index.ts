@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startUsageMaintenanceJobs } from "./usage-maintenance";
+import { cleanupOrphanedSimulationRuns } from "./storage/simulation";
 
 const app = express();
 const httpServer = createServer(app);
@@ -95,6 +96,9 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
       startUsageMaintenanceJobs();
+      cleanupOrphanedSimulationRuns().then(count => {
+        if (count > 0) log(`Cleaned up ${count} orphaned simulation run(s)`);
+      }).catch(err => console.error("Failed to cleanup orphaned simulation runs:", err));
     },
   );
 })();

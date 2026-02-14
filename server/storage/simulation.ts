@@ -4,7 +4,7 @@ import {
   type SimulationRunRecord, type InsertSimulationRun,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 export async function getPersona(id: string): Promise<Persona | undefined> {
   const [persona] = await db.select().from(personas).where(eq(personas.id, id));
@@ -69,4 +69,41 @@ export async function getActiveSimulationRunCount(): Promise<number> {
   const rows = await db.select().from(simulationRuns)
     .where(eq(simulationRuns.status, "running"));
   return rows.length;
+}
+
+export async function isSimulationRunCancelled(runId: string): Promise<boolean> {
+  const run = await getSimulationRun(runId);
+  return !run || run.status === "cancelled";
+}
+
+export async function cleanupOrphanedSimulationRuns(): Promise<number> {
+  const orphaned = await db.update(simulationRuns)
+    .set({ status: "failed", errorMessage: "Server restarted during execution", completedAt: new Date() })
+    .where(eq(simulationRuns.status, "running"))
+    .returning();
+  return orphaned.length;
+}
+
+export async function acquireSimulationLock(maxConcurrent: number): Promise<boolean> {
+  const result = await db.execute(sql`
+    SELECT pg_try_advisory_lock(hashtext('simulation_concurrency')) as acquired
+  `);
+  const acquired = (result.rows[0] as any)?.acquired;
+  if (!acquired) return false;
+
+  try {
+    const activeCount = await getActiveSimulationRunCount();
+    if (activeCount >= maxConcurrent) {
+      await db.execute(sql`SELECT pg_advisory_unlock(hashtext('simulation_concurrency'))`);
+      return false;
+    }
+    return true;
+  } catch {
+    await db.execute(sql`SELECT pg_advisory_unlock(hashtext('simulation_concurrency'))`);
+    return false;
+  }
+}
+
+export async function releaseSimulationLock(): Promise<void> {
+  await db.execute(sql`SELECT pg_advisory_unlock(hashtext('simulation_concurrency'))`);
 }

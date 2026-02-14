@@ -23,8 +23,8 @@ import {
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 
-import type { InterviewStatePatch, EnrichedSession, IStorage } from "./storage/types";
-export type { InterviewStatePatch, EnrichedSession, IStorage } from "./storage/types";
+import type { InterviewStatePatch, EnrichedSession, IStorage, CollectionUpdate, TemplateUpdate, ProjectUpdate } from "./storage/types";
+export type { InterviewStatePatch, EnrichedSession, IStorage, CollectionUpdate, TemplateUpdate, ProjectUpdate } from "./storage/types";
 
 function filterBySessionScope(sessions: InterviewSession[], scope?: string): InterviewSession[] {
   if (!scope || scope === "combined") return sessions;
@@ -87,7 +87,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> {
+  async updateProject(id: string, project: ProjectUpdate): Promise<Project | undefined> {
     const [updated] = await db.update(projects)
       .set({ ...project, updatedAt: new Date() })
       .where(eq(projects.id, id))
@@ -129,7 +129,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateTemplate(id: string, template: Partial<InsertTemplate>): Promise<InterviewTemplate | undefined> {
+  async updateTemplate(id: string, template: TemplateUpdate): Promise<InterviewTemplate | undefined> {
     const [updated] = await db.update(interviewTemplates)
       .set({ ...template, updatedAt: new Date() })
       .where(eq(interviewTemplates.id, id))
@@ -224,7 +224,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined> {
+  async updateCollection(id: string, collection: CollectionUpdate): Promise<Collection | undefined> {
     const [updated] = await db.update(collections)
       .set(collection)
       .where(eq(collections.id, id))

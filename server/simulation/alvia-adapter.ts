@@ -3,7 +3,7 @@ import type { ChatCompletion } from "openai/resources/chat/completions";
 import { buildInterviewInstructions } from "../voice-interview/instructions";
 import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
-import type { TranscriptEntry } from "../voice-interview/types";
+import type { TranscriptEntry } from "../barbara-orchestrator";
 import type { Question, InterviewTemplate } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

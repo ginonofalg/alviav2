@@ -106,8 +106,10 @@ export function registerAnalyticsRoutes(app: Express) {
       const sessions = await storage.getSessionsByCollection(req.params.collectionId);
       const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
       
+      const scopeMatches = collection.analyzedSessionScope === scope;
       const isStale = !collection.lastAnalyzedAt || 
-        completedSessions.length !== collection.analyzedSessionCount;
+        !scopeMatches ||
+        (scopeMatches && completedSessions.length !== collection.analyzedSessionCount);
       
       res.json({
         analytics: collection.analyticsData as CollectionAnalytics | null,
@@ -188,8 +190,9 @@ export function registerAnalyticsRoutes(app: Express) {
       await storage.updateCollection(req.params.collectionId, {
         lastAnalyzedAt: new Date(),
         analyzedSessionCount: completedSessions.length,
+        analyzedSessionScope: scope,
         analyticsData,
-      } as any);
+      });
 
       res.json({
         analytics: analyticsData,
@@ -303,7 +306,7 @@ export function registerAnalyticsRoutes(app: Express) {
         lastAnalyzedAt: new Date(),
         analyzedCollectionCount: collectionsWithAnalytics.length,
         analyticsData,
-      } as any);
+      });
 
       res.json({
         analytics: analyticsData,
@@ -426,7 +429,7 @@ export function registerAnalyticsRoutes(app: Express) {
         lastAnalyzedAt: new Date(),
         analyzedTemplateCount: templatesWithAnalytics.length,
         analyticsData,
-      } as any);
+      });
 
       res.json({
         analytics: analyticsData,
@@ -469,8 +472,10 @@ export function registerAnalyticsRoutes(app: Express) {
               const sessions = await storage.getSessionsByCollection(collection.id);
               const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
               
+              const scopeMatches = collection.analyzedSessionScope === scope;
               const isStale = !collection.lastAnalyzedAt || 
-                completedSessions.length !== collection.analyzedSessionCount;
+                !scopeMatches ||
+                (scopeMatches && completedSessions.length !== collection.analyzedSessionCount);
               const hasData = completedSessions.length > 0;
               
               return {
@@ -565,8 +570,10 @@ export function registerAnalyticsRoutes(app: Express) {
           
           if (completedSessions.length === 0) continue;
           
+          const cascadeScopeMatches = collection.analyzedSessionScope === scope;
           const isStale = !collection.lastAnalyzedAt || 
-            completedSessions.length !== collection.analyzedSessionCount;
+            !cascadeScopeMatches ||
+            (cascadeScopeMatches && completedSessions.length !== collection.analyzedSessionCount);
           
           if (isStale) {
             try {
@@ -605,8 +612,9 @@ export function registerAnalyticsRoutes(app: Express) {
               await storage.updateCollection(collection.id, {
                 lastAnalyzedAt: new Date(),
                 analyzedSessionCount: completedSessions.length,
+                analyzedSessionScope: scope,
                 analyticsData,
-              } as any);
+              });
 
               results.collectionsRefreshed++;
             } catch (error: any) {
@@ -666,7 +674,7 @@ export function registerAnalyticsRoutes(app: Express) {
             lastAnalyzedAt: new Date(),
             analyzedCollectionCount: collectionsWithAnalytics.length,
             analyticsData,
-          } as any);
+          });
 
           results.templatesRefreshed++;
         } catch (error: any) {
@@ -727,7 +735,7 @@ export function registerAnalyticsRoutes(app: Express) {
             lastAnalyzedAt: new Date(),
             analyzedTemplateCount: templatesWithAnalytics.length,
             analyticsData: projectAnalyticsData,
-          } as any);
+          });
 
           results.projectRefreshed = true;
         } catch (error: any) {
@@ -762,6 +770,12 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/templates/:templateId/analytics/dependencies", isAuthenticated, async (req, res) => {
     try {
+      const userId = req.user!.claims.sub;
+      const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -776,8 +790,10 @@ export function registerAnalyticsRoutes(app: Express) {
           const sessions = await storage.getSessionsByCollection(collection.id);
           const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
           
+          const scopeMatches = collection.analyzedSessionScope === scope;
           const isStale = !collection.lastAnalyzedAt || 
-            completedSessions.length !== collection.analyzedSessionCount;
+            !scopeMatches ||
+            (scopeMatches && completedSessions.length !== collection.analyzedSessionCount);
           const hasData = completedSessions.length > 0;
           
           return {
@@ -842,8 +858,10 @@ export function registerAnalyticsRoutes(app: Express) {
         
         if (completedSessions.length === 0) continue;
         
+        const tplScopeMatches = collection.analyzedSessionScope === scope;
         const isStale = !collection.lastAnalyzedAt || 
-          completedSessions.length !== collection.analyzedSessionCount;
+          !tplScopeMatches ||
+          (tplScopeMatches && completedSessions.length !== collection.analyzedSessionCount);
         
         if (isStale) {
           try {
@@ -882,8 +900,9 @@ export function registerAnalyticsRoutes(app: Express) {
             await storage.updateCollection(collection.id, {
               lastAnalyzedAt: new Date(),
               analyzedSessionCount: completedSessions.length,
+              analyzedSessionScope: scope,
               analyticsData,
-            } as any);
+            });
 
             results.collectionsRefreshed++;
           } catch (error: any) {
@@ -937,7 +956,7 @@ export function registerAnalyticsRoutes(app: Express) {
             lastAnalyzedAt: new Date(),
             analyzedCollectionCount: collectionsWithAnalytics.length,
             analyticsData: templateAnalyticsData,
-          } as any);
+          });
 
           results.templateRefreshed = true;
         } catch (error: any) {

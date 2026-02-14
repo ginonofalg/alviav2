@@ -1,4 +1,4 @@
-import type { TranscriptEntry, QuestionSummary } from "../voice-interview/types";
+import type { TranscriptEntry, QuestionSummary } from "../barbara-orchestrator";
 import type { Question, Collection, InterviewTemplate, Project, Persona } from "@shared/schema";
 
 export interface SimulationContext {

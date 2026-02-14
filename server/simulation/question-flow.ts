@@ -35,7 +35,7 @@ export function evaluateQuestionFlow(state: QuestionFlowState): SimulationTurnAc
 
 export function evaluateConditionalLogic(
   question: Question,
-  _previousAnswers: Map<number, string>,
+  previousAnswers: Map<number, string>,
 ): boolean {
   if (!question.conditionalLogic) return true;
 
@@ -46,8 +46,40 @@ export function evaluateConditionalLogic(
       showWhen?: string;
     };
 
-    if (!logic.condition && !logic.dependsOn) return true;
-    return true;
+    if (logic.dependsOn == null) return true;
+
+    const dependentAnswer = previousAnswers.get(logic.dependsOn);
+
+    if (dependentAnswer === undefined) return false;
+
+    if (logic.showWhen) {
+      const normalizedAnswer = dependentAnswer.trim().toLowerCase();
+      const normalizedShowWhen = logic.showWhen.trim().toLowerCase();
+      const showWhenOptions = normalizedShowWhen.split("|").map(s => s.trim());
+      return showWhenOptions.some(option => normalizedAnswer.includes(option));
+    }
+
+    if (logic.condition) {
+      const normalizedCondition = logic.condition.trim().toLowerCase();
+      const normalizedAnswer = dependentAnswer.trim().toLowerCase();
+
+      if (normalizedCondition === "answered") {
+        return dependentAnswer.trim().length > 0;
+      }
+      if (normalizedCondition === "not_answered" || normalizedCondition === "unanswered") {
+        return dependentAnswer.trim().length === 0;
+      }
+      if (normalizedCondition.startsWith("contains:")) {
+        const keyword = normalizedCondition.slice("contains:".length).trim();
+        return normalizedAnswer.includes(keyword);
+      }
+      if (normalizedCondition.startsWith("equals:")) {
+        const value = normalizedCondition.slice("equals:".length).trim();
+        return normalizedAnswer === value;
+      }
+    }
+
+    return dependentAnswer.trim().length > 0;
   } catch {
     return true;
   }

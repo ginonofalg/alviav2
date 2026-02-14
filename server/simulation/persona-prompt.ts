@@ -1,5 +1,5 @@
 import type { Persona } from "@shared/schema";
-import type { TranscriptEntry } from "../voice-interview/types";
+import type { TranscriptEntry } from "../barbara-orchestrator";
 import OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
@@ -11,6 +11,12 @@ const VERBOSITY_TEMP: Record<string, number> = {
   low: 0.6,
   medium: 0.8,
   high: 1.0,
+};
+
+const VERBOSITY_MAX_TOKENS: Record<string, number> = {
+  low: 200,
+  medium: 500,
+  high: 800,
 };
 
 const VERBOSITY_GUIDANCE: Record<string, string> = {
@@ -115,7 +121,7 @@ export async function generatePersonaResponse(
         model,
         messages,
         temperature,
-        max_tokens: 500,
+        max_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
       })) as ChatCompletion;
     },
     extractUsage: makeBarbaraUsageExtractor(),

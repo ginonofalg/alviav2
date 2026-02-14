@@ -14,6 +14,26 @@ import type {
   BarbaraGuidanceLogEntry, GuidanceAdherenceSummary
 } from "@shared/schema";
 
+export type CollectionUpdate = Partial<InsertCollection> & {
+  lastAnalyzedAt?: Date;
+  analyzedSessionCount?: number;
+  analyzedSessionScope?: string;
+  analyticsData?: unknown;
+  closedAt?: Date | null;
+};
+
+export type TemplateUpdate = Partial<InsertTemplate> & {
+  lastAnalyzedAt?: Date;
+  analyzedCollectionCount?: number;
+  analyticsData?: unknown;
+};
+
+export type ProjectUpdate = Partial<InsertProject> & {
+  lastAnalyzedAt?: Date;
+  analyzedTemplateCount?: number;
+  analyticsData?: unknown;
+};
+
 export interface InterviewStatePatch {
   liveTranscript?: PersistedTranscriptEntry[];
   lastBarbaraGuidance?: PersistedBarbaraGuidance | null;
@@ -51,14 +71,14 @@ export interface IStorage {
   getProjectsByWorkspace(workspaceId: string): Promise<Project[]>;
   getProjectsByUser(userId: string): Promise<Project[]>;
   createProject(project: InsertProject): Promise<Project>;
-  updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
+  updateProject(id: string, project: ProjectUpdate): Promise<Project | undefined>;
   
   getTemplate(id: string): Promise<InterviewTemplate | undefined>;
   getTemplatesByProject(projectId: string): Promise<InterviewTemplate[]>;
   getTemplatesByUser(userId: string): Promise<InterviewTemplate[]>;
   getAllTemplates(): Promise<InterviewTemplate[]>;
   createTemplate(template: InsertTemplate): Promise<InterviewTemplate>;
-  updateTemplate(id: string, template: Partial<InsertTemplate>): Promise<InterviewTemplate | undefined>;
+  updateTemplate(id: string, template: TemplateUpdate): Promise<InterviewTemplate | undefined>;
   
   getQuestion(id: string): Promise<Question | undefined>;
   getQuestionsByTemplate(templateId: string): Promise<Question[]>;
@@ -74,7 +94,7 @@ export interface IStorage {
   getCollectionsByUser(userId: string): Promise<Collection[]>;
   getAllCollections(): Promise<Collection[]>;
   createCollection(collection: InsertCollection): Promise<Collection>;
-  updateCollection(id: string, collection: Partial<InsertCollection>): Promise<Collection | undefined>;
+  updateCollection(id: string, collection: CollectionUpdate): Promise<Collection | undefined>;
   
   getRespondent(id: string): Promise<Respondent | undefined>;
   getRespondentByEmail(collectionId: string, email: string): Promise<Respondent | undefined>;

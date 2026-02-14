@@ -186,6 +186,7 @@ export const collections = pgTable("collections", {
   // Analytics metadata
   lastAnalyzedAt: timestamp("last_analyzed_at"),
   analyzedSessionCount: integer("analyzed_session_count").default(0),
+  analyzedSessionScope: text("analyzed_session_scope"),
   analyticsData: jsonb("analytics_data"),
 });
 

@@ -3,14 +3,15 @@ import {
   getPersona,
   getSimulationRun,
   updateSimulationRun,
-  getActiveSimulationRunCount,
+  acquireSimulationLock,
+  releaseSimulationLock,
+  isSimulationRunCancelled,
 } from "../storage/simulation";
 import { generateAlviaResponse } from "./alvia-adapter";
 import { generatePersonaResponse } from "./persona-prompt";
 import { evaluateQuestionFlow, getNextQuestionIndex } from "./question-flow";
 import type { SimulationContext, SimulationQuestionMetrics } from "./types";
 import { SIMULATION_LIMITS } from "./types";
-import type { TranscriptEntry, QuestionSummary } from "../voice-interview/types";
 import type { LLMUsageAttribution } from "@shared/schema";
 import {
   analyzeWithBarbara,
@@ -18,9 +19,9 @@ import {
   generateAdditionalQuestions,
   generateSessionSummary,
   type QuestionMetrics,
+  type TranscriptEntry,
+  type QuestionSummary,
 } from "../barbara-orchestrator";
-
-let activeRunCount = 0;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -327,10 +328,8 @@ async function runAdditionalQuestions(
   }
 }
 
-const cancelledRuns = new Set<string>();
-
-export function cancelSimulationRun(runId: string): void {
-  cancelledRuns.add(runId);
+export async function cancelSimulationRun(runId: string): Promise<void> {
+  await updateSimulationRun(runId, { status: "cancelled", completedAt: new Date() });
 }
 
 export async function executeSimulationRun(
@@ -346,7 +345,8 @@ export async function executeSimulationRun(
     personaModel?: string;
   },
 ): Promise<void> {
-  if (activeRunCount >= SIMULATION_LIMITS.MAX_CONCURRENT_RUNS) {
+  const lockAcquired = await acquireSimulationLock(SIMULATION_LIMITS.MAX_CONCURRENT_RUNS);
+  if (!lockAcquired) {
     await updateSimulationRun(runId, {
       status: "failed",
       errorMessage: "Too many concurrent simulations. Please wait for others to finish.",
@@ -354,9 +354,8 @@ export async function executeSimulationRun(
     return;
   }
 
-  activeRunCount++;
-
   try {
+    await releaseSimulationLock();
     await updateSimulationRun(runId, { status: "running", startedAt: new Date() });
 
     const collection = await storage.getCollection(collectionId);
@@ -381,47 +380,54 @@ export async function executeSimulationRun(
 
     let completed = 0;
     let failed = 0;
+    const PARALLEL_LIMIT = 3;
 
-    for (const personaId of personaIds) {
-      if (cancelledRuns.has(runId)) {
-        cancelledRuns.delete(runId);
-        await updateSimulationRun(runId, {
-          status: "cancelled",
-          completedSimulations: completed,
-          failedSimulations: failed,
-          completedAt: new Date(),
-        });
+    const personas = await Promise.all(
+      personaIds.map(async (id) => {
+        const persona = await getPersona(id);
+        if (!persona) {
+          failed++;
+          console.error(`[Simulation] Persona ${id} not found, skipping`);
+        }
+        return persona;
+      }),
+    );
+
+    const validPersonas = personas.filter((p): p is NonNullable<typeof p> => p !== null);
+
+    if (failed > 0) {
+      await updateSimulationRun(runId, { failedSimulations: failed });
+    }
+
+    for (let i = 0; i < validPersonas.length; i += PARALLEL_LIMIT) {
+      if (await isSimulationRunCancelled(runId)) {
         return;
       }
 
-      const persona = await getPersona(personaId);
-      if (!persona) {
-        failed++;
-        console.error(`[Simulation] Persona ${personaId} not found, skipping`);
-        await updateSimulationRun(runId, {
-          completedSimulations: completed,
-          failedSimulations: failed,
-        });
-        continue;
-      }
+      const batch = validPersonas.slice(i, i + PARALLEL_LIMIT);
+      const results = await Promise.allSettled(
+        batch.map(async (persona) => {
+          const ctx: SimulationContext = {
+            project, template, collection, questions, persona, runId,
+            enableBarbara: options.enableBarbara,
+            enableSummaries: options.enableSummaries,
+            enableAdditionalQuestions: options.enableAdditionalQuestions,
+            alviaModel: options.alviaModel || "gpt-4o-mini",
+            personaModel: options.personaModel || "gpt-4o-mini",
+            maxTurnsPerQuestion: SIMULATION_LIMITS.HARD_CAP_TURNS_PER_QUESTION,
+            interTurnDelayMs: 200,
+          };
+          await runSingleSimulation(ctx);
+        }),
+      );
 
-      const ctx: SimulationContext = {
-        project, template, collection, questions, persona, runId,
-        enableBarbara: options.enableBarbara,
-        enableSummaries: options.enableSummaries,
-        enableAdditionalQuestions: options.enableAdditionalQuestions,
-        alviaModel: options.alviaModel || "gpt-4o-mini",
-        personaModel: options.personaModel || "gpt-4o-mini",
-        maxTurnsPerQuestion: SIMULATION_LIMITS.HARD_CAP_TURNS_PER_QUESTION,
-        interTurnDelayMs: 200,
-      };
-
-      try {
-        await runSingleSimulation(ctx);
-        completed++;
-      } catch (err) {
-        failed++;
-        console.error(`[Simulation] Persona ${persona.name} failed:`, err);
+      for (let j = 0; j < results.length; j++) {
+        if (results[j].status === "fulfilled") {
+          completed++;
+        } else {
+          failed++;
+          console.error(`[Simulation] Persona ${batch[j].name} failed:`, (results[j] as PromiseRejectedResult).reason);
+        }
       }
 
       await updateSimulationRun(runId, {
@@ -444,8 +450,5 @@ export async function executeSimulationRun(
       errorMessage: err.message || "Unknown error",
       completedAt: new Date(),
     });
-  } finally {
-    activeRunCount--;
-    cancelledRuns.delete(runId);
   }
 }

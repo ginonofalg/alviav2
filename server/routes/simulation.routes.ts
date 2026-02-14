@@ -7,7 +7,6 @@ import {
   createSimulationRun,
   getSimulationRun,
   getSimulationRunsByCollection,
-  updateSimulationRun,
   getPersona,
 } from "../storage/simulation";
 import { executeSimulationRun, cancelSimulationRun, SIMULATION_LIMITS } from "../simulation";
@@ -137,8 +136,7 @@ export function registerSimulationRoutes(app: Express) {
         return res.status(400).json({ message: "Can only cancel running or pending simulations" });
       }
 
-      cancelSimulationRun(run.id);
-      await updateSimulationRun(run.id, { status: "cancelled", completedAt: new Date() });
+      await cancelSimulationRun(run.id);
 
       res.json({ message: "Simulation cancelled" });
     } catch (error) {
