@@ -26,6 +26,7 @@ import {
 import {
   buildCrossInterviewRuntimeContext,
   buildAnalyticsHypothesesRuntimeContext,
+  buildAQCrossInterviewContext,
 } from "../voice-interview/context-builders";
 import type {
   CrossInterviewRuntimeContext,
@@ -439,6 +440,16 @@ async function runAdditionalQuestions(
 ): Promise<void> {
   try {
     const maxAQ = ctx.collection.maxAdditionalQuestions ?? 1;
+    const aqCrossCtx = await buildAQCrossInterviewContext(
+      ctx.project.id,
+      ctx.collection.id,
+      sessionId,
+    );
+
+    console.log(
+      `[Simulation] AQ cross-interview context: ${aqCrossCtx.enabled ? "enabled" : "disabled"}${aqCrossCtx.reason ? ` (${aqCrossCtx.reason})` : ""}`,
+    );
+
     const aqResult = await generateAdditionalQuestions({
       transcriptLog: transcript,
       templateQuestions: ctx.questions.map((q) => ({
@@ -450,6 +461,14 @@ async function runAdditionalQuestions(
       audienceContext: ctx.project.audienceContext || null,
       tone: ctx.template.tone || null,
       maxQuestions: maxAQ,
+      crossInterviewContext: aqCrossCtx,
+      analyticsHypotheses: analyticsHypothesesCtx.enabled
+        ? analyticsHypothesesCtx.hypotheses?.map((h) => ({
+            hypothesis: h.hypothesis,
+            source: h.source,
+            priority: h.priority,
+          }))
+        : undefined,
       strategicContext: ctx.project.strategicContext,
       contextType: ctx.project.contextType,
       avoidRules: ctx.project.avoidRules,

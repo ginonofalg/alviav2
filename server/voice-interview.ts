@@ -94,6 +94,7 @@ import {
 import {
   buildAnalyticsHypothesesRuntimeContext,
   buildCrossInterviewRuntimeContext,
+  buildAQCrossInterviewContext,
 } from "./voice-interview/context-builders";
 import {
   createEmptyMetricsTracker,
@@ -3204,6 +3205,16 @@ async function generateAdditionalQuestionsForSession(
   // Wait for any pending summaries to complete
   await new Promise((resolve) => setTimeout(resolve, 500));
 
+  const aqCrossCtx = await buildAQCrossInterviewContext(
+    state.template?.projectId,
+    state.collectionId!,
+    sessionId,
+  );
+
+  console.log(
+    `[AQ] Cross-interview context: ${aqCrossCtx.enabled ? "enabled" : "disabled"}${aqCrossCtx.reason ? ` (${aqCrossCtx.reason})` : ""}`,
+  );
+
   const result = await generateAdditionalQuestions(
     {
       transcriptLog: state.fullTranscriptForPersistence,
@@ -3215,9 +3226,7 @@ async function generateAdditionalQuestionsForSession(
       audienceContext,
       tone,
       maxQuestions: state.maxAdditionalQuestions,
-      crossInterviewContext: {
-        enabled: false, // TODO: Implement cross-interview context in future iteration
-      },
+      crossInterviewContext: aqCrossCtx,
       analyticsHypotheses: state.analyticsHypothesesRuntimeContext.enabled
         ? state.analyticsHypothesesRuntimeContext.hypotheses?.map((h) => ({
             hypothesis: h.hypothesis,

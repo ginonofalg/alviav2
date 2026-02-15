@@ -1,4 +1,6 @@
 import type { QualityFlag } from "@shared/schema";
+import type { QuestionSummary } from "../barbara-orchestrator";
+import { storage } from "../storage";
 import type {
   CompactCrossInterviewTheme,
   CompactFlagCount,
@@ -19,6 +21,70 @@ import {
   MAX_HYPOTHESIS_LENGTH,
   MAX_RELATED_THEMES_PER_HYPOTHESIS,
 } from "./types";
+
+export const MAX_PRIOR_SESSIONS_FOR_AQ = 10;
+
+export type AQCrossInterviewContext = {
+  enabled: boolean;
+  reason?: string;
+  priorSessionSummaries?: Array<{
+    sessionId: string;
+    summaries: QuestionSummary[];
+  }>;
+};
+
+export async function buildAQCrossInterviewContext(
+  projectId: string | null | undefined,
+  collectionId: string,
+  currentSessionId: string,
+): Promise<AQCrossInterviewContext> {
+  if (!projectId) {
+    return { enabled: false, reason: "no_project_id" };
+  }
+
+  const project = await storage.getProject(projectId);
+  if (!project) {
+    return { enabled: false, reason: "project_not_found" };
+  }
+
+  if (!project.crossInterviewContext) {
+    return { enabled: false, reason: "feature_disabled_on_project" };
+  }
+
+  const threshold = project.crossInterviewThreshold ?? 5;
+
+  const sessions = await storage.getSessionsByCollection(collectionId);
+
+  const eligibleSessions = sessions.filter((s) => {
+    if (s.id === currentSessionId) return false;
+    if (s.status !== "completed") return false;
+    const summaries = s.questionSummaries as QuestionSummary[] | null;
+    return Array.isArray(summaries) && summaries.length > 0;
+  });
+
+  if (eligibleSessions.length < threshold) {
+    return {
+      enabled: false,
+      reason: `threshold_unmet (${eligibleSessions.length}/${threshold} completed sessions with summaries)`,
+    };
+  }
+
+  const capped = eligibleSessions.slice(0, MAX_PRIOR_SESSIONS_FOR_AQ);
+
+  const priorSessionSummaries = capped.map((s) => ({
+    sessionId: s.id,
+    summaries: s.questionSummaries as QuestionSummary[],
+  }));
+
+  console.log(
+    `[AQ-CrossInterview] Enabled: ${priorSessionSummaries.length} prior sessions for collection ${collectionId}`,
+  );
+
+  return {
+    enabled: true,
+    priorSessionSummaries,
+  };
+}
 
 export function buildAnalyticsHypothesesRuntimeContext(
   project: any,
