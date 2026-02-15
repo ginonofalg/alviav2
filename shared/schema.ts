@@ -502,6 +502,7 @@ export const simulationRuns = pgTable("simulation_runs", {
   completedSimulations: integer("completed_simulations").default(0),
   failedSimulations: integer("failed_simulations").default(0),
   errorMessage: text("error_message"),
+  progress: jsonb("progress"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow(),
