@@ -60,9 +60,17 @@ interface ResearchStatusResponse {
   errorMessage?: string;
 }
 
-interface SynthesizeResponse {
-  personas: GeneratedPersona[];
+interface SynthesizeStartResponse {
+  jobId: string;
+  status: string;
+}
+
+interface SynthesisStatusResponse {
+  status: "synthesizing" | "completed" | "failed";
+  jobId: string;
+  personas?: GeneratedPersona[];
   validationWarnings?: string[];
+  errorMessage?: string;
 }
 
 interface GeneratePersonasDialogProps {
@@ -105,6 +113,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const RESEARCH_POLL_INTERVAL_MS = 3000;
+const SYNTHESIS_POLL_INTERVAL_MS = 3000;
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -142,8 +151,10 @@ export function GeneratePersonasDialog({
   const [uploadedFileMimeType, setUploadedFileMimeType] = useState<string | null>(null);
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [synthesisJobId, setSynthesisJobId] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const synthesisPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const briefsQuery = useQuery<{ id: string }[]>({
     queryKey: ["/api/projects", projectId, "personas", "briefs"],
@@ -161,15 +172,59 @@ export function GeneratePersonasDialog({
     }
   }, [dialogState]);
 
-  const stopPolling = useCallback(() => {
+  const stopResearchPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
   }, []);
 
-  const startPolling = useCallback((pollBriefId: string) => {
-    stopPolling();
+  const stopSynthesisPolling = useCallback(() => {
+    if (synthesisPollingRef.current) {
+      clearInterval(synthesisPollingRef.current);
+      synthesisPollingRef.current = null;
+    }
+  }, []);
+
+  const stopAllPolling = useCallback(() => {
+    stopResearchPolling();
+    stopSynthesisPolling();
+  }, [stopResearchPolling, stopSynthesisPolling]);
+
+  const startSynthesisPolling = useCallback((jobId: string) => {
+    stopSynthesisPolling();
+    synthesisPollingRef.current = setInterval(async () => {
+      try {
+        const status = await apiRequestJson<SynthesisStatusResponse>(
+          "GET",
+          `/api/projects/${projectId}/personas/synthesize/${jobId}/status`,
+          undefined,
+          { timeoutMs: 15000 },
+        );
+
+        if (status.status === "completed" && status.personas) {
+          stopSynthesisPolling();
+          setGeneratedPersonas(status.personas);
+          setRemovedIndices(new Set());
+          setValidationWarnings(status.validationWarnings ?? []);
+          setDialogState("review");
+        } else if (status.status === "failed") {
+          stopSynthesisPolling();
+          setDialogState("review");
+          toast({
+            title: "Persona generation failed",
+            description: status.errorMessage || "Please try regenerating.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("[GeneratePersonas] Synthesis polling error:", error);
+      }
+    }, SYNTHESIS_POLL_INTERVAL_MS);
+  }, [projectId, stopSynthesisPolling, toast]);
+
+  const startResearchPolling = useCallback((pollBriefId: string) => {
+    stopResearchPolling();
     pollingRef.current = setInterval(async () => {
       try {
         const status = await apiRequestJson<ResearchStatusResponse>(
@@ -180,13 +235,13 @@ export function GeneratePersonasDialog({
         );
 
         if (status.status === "completed" && status.brief) {
-          stopPolling();
+          stopResearchPolling();
           setBrief(status.brief);
           setIsUngrounded(status.ungrounded ?? false);
           setDialogState("synthesizing");
           synthesizeMutation.mutate(pollBriefId);
         } else if (status.status === "failed") {
-          stopPolling();
+          stopResearchPolling();
           setDialogState("input");
           toast({
             title: "Research failed",
@@ -195,14 +250,14 @@ export function GeneratePersonasDialog({
           });
         }
       } catch (error) {
-        console.error("[GeneratePersonas] Polling error:", error);
+        console.error("[GeneratePersonas] Research polling error:", error);
       }
     }, RESEARCH_POLL_INTERVAL_MS);
-  }, [projectId, stopPolling, toast]);
+  }, [projectId, stopResearchPolling, toast]);
 
   useEffect(() => {
-    return () => stopPolling();
-  }, [stopPolling]);
+    return () => stopAllPolling();
+  }, [stopAllPolling]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -270,7 +325,7 @@ export function GeneratePersonasDialog({
     },
     onSuccess: (data) => {
       setBriefId(data.briefId);
-      startPolling(data.briefId);
+      startResearchPolling(data.briefId);
     },
     onError: (error: Error) => {
       setDialogState("input");
@@ -286,7 +341,7 @@ export function GeneratePersonasDialog({
     mutationFn: async (overrideBriefId?: string) => {
       const id = overrideBriefId ?? briefId;
       if (!id) throw new Error("No research data");
-      return await apiRequestJson<SynthesizeResponse>(
+      return await apiRequestJson<SynthesizeStartResponse>(
         "POST",
         `/api/projects/${projectId}/personas/synthesize`,
         {
@@ -295,14 +350,12 @@ export function GeneratePersonasDialog({
           diversityMode,
           edgeCases,
         },
-        { timeoutMs: 310000 },
+        { timeoutMs: 30000 },
       );
     },
     onSuccess: (data) => {
-      setGeneratedPersonas(data.personas);
-      setRemovedIndices(new Set());
-      setValidationWarnings(data.validationWarnings ?? []);
-      setDialogState("review");
+      setSynthesisJobId(data.jobId);
+      startSynthesisPolling(data.jobId);
     },
     onError: (error: Error) => {
       setDialogState("review");
@@ -389,7 +442,7 @@ export function GeneratePersonasDialog({
   };
 
   const handleClose = () => {
-    stopPolling();
+    stopAllPolling();
     setDialogState("input");
     setResearchPrompt("");
     setPersonaCount("5");
@@ -405,6 +458,7 @@ export function GeneratePersonasDialog({
     setUploadedFileMimeType(null);
     setIsUngrounded(false);
     setValidationWarnings([]);
+    setSynthesisJobId(null);
     onOpenChange(false);
   };
 

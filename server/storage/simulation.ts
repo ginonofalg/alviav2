@@ -1,8 +1,9 @@
 import {
-  personas, simulationRuns, populationBriefs,
+  personas, simulationRuns, populationBriefs, synthesisJobs,
   type Persona, type InsertPersona,
   type SimulationRunRecord, type InsertSimulationRun,
   type PopulationBriefRecord, type InsertPopulationBrief,
+  type SynthesisJobRecord, type InsertSynthesisJob,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, sql, lt } from "drizzle-orm";
@@ -139,4 +140,25 @@ export async function getPopulationBriefsByProject(projectId: string): Promise<P
   return await db.select().from(populationBriefs)
     .where(eq(populationBriefs.projectId, projectId))
     .orderBy(desc(populationBriefs.createdAt));
+}
+
+export async function createSynthesisJob(data: InsertSynthesisJob): Promise<SynthesisJobRecord> {
+  const [job] = await db.insert(synthesisJobs).values(data).returning();
+  return job;
+}
+
+export async function updateSynthesisJob(
+  id: string,
+  data: Partial<InsertSynthesisJob>,
+): Promise<SynthesisJobRecord | undefined> {
+  const [job] = await db.update(synthesisJobs)
+    .set(data)
+    .where(eq(synthesisJobs.id, id))
+    .returning();
+  return job;
+}
+
+export async function getSynthesisJob(id: string): Promise<SynthesisJobRecord | undefined> {
+  const [job] = await db.select().from(synthesisJobs).where(eq(synthesisJobs.id, id));
+  return job;
 }

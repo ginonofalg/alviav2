@@ -13,6 +13,7 @@ import type {
   LlmUsageEvent, InsertLlmUsageEvent, UsageRollup,
   BarbaraGuidanceLogEntry, GuidanceAdherenceSummary,
   PopulationBriefRecord, InsertPopulationBrief,
+  SynthesisJobRecord, InsertSynthesisJob,
 } from "@shared/schema";
 
 export type CollectionUpdate = Partial<InsertCollection> & {
@@ -230,4 +231,8 @@ export interface IStorage {
   updatePopulationBrief(id: string, data: Partial<InsertPopulationBrief>): Promise<PopulationBriefRecord | undefined>;
   getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined>;
   getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]>;
+
+  createSynthesisJob(data: InsertSynthesisJob): Promise<SynthesisJobRecord>;
+  updateSynthesisJob(id: string, data: Partial<InsertSynthesisJob>): Promise<SynthesisJobRecord | undefined>;
+  getSynthesisJob(id: string): Promise<SynthesisJobRecord | undefined>;
 }

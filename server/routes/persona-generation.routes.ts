@@ -246,41 +246,69 @@ export function registerPersonaGenerationRoutes(app: Express) {
       );
       const workspaceId = workspace?.id ?? "";
 
-      const config = { personaCount, diversityMode, edgeCases };
-      const attribution = { workspaceId, projectId };
+      const job = await storage.createSynthesisJob({
+        projectId,
+        briefId,
+        personaCount,
+        diversityMode,
+        edgeCases,
+        status: "synthesizing",
+      });
 
-      console.log(`[PersonaGeneration] Handing off to synthesizePersonas | project=${projectId} | briefId=${briefId} | personaCount=${personaCount} | diversityMode=${diversityMode}`);
+      console.log(`[PersonaGeneration] Synthesis job created | jobId=${job.id} | project=${projectId} | briefId=${briefId} | personaCount=${personaCount}`);
 
-      let personas = await synthesizePersonas({ brief, config, attribution });
-      let validationWarnings: string[] = [];
+      res.json({ jobId: job.id, status: "synthesizing" });
 
-      const validation = validatePersonaDiversity(personas, diversityMode);
-      if (!validation.valid) {
-        console.log(`[PersonaGeneration] Diversity validation failed, retrying with correction | errors=${validation.errors.length} | elapsed=${elapsed(requestStart)}`);
-        const correctionPrompt = buildCorrectionPrompt(validation.errors);
-        personas = await synthesizePersonas({ brief, config, attribution, correctionPrompt });
-
-        const retryValidation = validatePersonaDiversity(personas, diversityMode);
-        if (!retryValidation.valid) {
-          validationWarnings = retryValidation.errors.map((e) => `Diversity issue: ${e}`);
-          console.warn(`[PersonaGeneration] Retry still failed validation | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
-        }
-      }
-
-      console.log(`[PersonaGeneration] POST /synthesize completed 200 | project=${projectId} | personasGenerated=${personas.length} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
-
-      res.json({
-        personas,
-        validationWarnings: validationWarnings.length > 0 ? validationWarnings : undefined,
+      runSynthesisInBackground({
+        jobId: job.id,
+        projectId,
+        brief,
+        config: { personaCount, diversityMode, edgeCases },
+        attribution: { workspaceId, projectId },
+        requestStart,
       });
     } catch (error: any) {
       const errorMsg = error?.message ?? String(error);
-      console.error(`[PersonaGeneration] POST /synthesize failed | project=${projectId} | error=${errorMsg} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(requestStart)}`);
-
-      if (error?.message?.includes("aborted") || error?.name === "AbortError") {
-        return res.status(504).json({ message: "Persona generation timed out. Please try again." });
-      }
+      console.error(`[PersonaGeneration] POST /synthesize failed | project=${projectId} | error=${errorMsg}`);
       res.status(500).json({ message: `Persona generation failed: ${errorMsg}` });
+    }
+  });
+
+  app.get("/api/projects/:projectId/personas/synthesize/:jobId/status", isAuthenticated, async (req: any, res) => {
+    const { projectId, jobId } = req.params;
+    try {
+      const userId = req.user.claims.sub;
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const job = await storage.getSynthesisJob(jobId);
+      if (!job || job.projectId !== projectId) {
+        return res.status(404).json({ message: "Synthesis job not found" });
+      }
+
+      if (job.status === "completed") {
+        return res.json({
+          status: "completed",
+          jobId: job.id,
+          personas: (job.personas as any[]) ?? [],
+          validationWarnings: (job.validationWarnings as string[]) ?? [],
+        });
+      }
+
+      if (job.status === "failed") {
+        return res.json({
+          status: "failed",
+          jobId: job.id,
+          errorMessage: job.errorMessage ?? "Synthesis failed unexpectedly.",
+        });
+      }
+
+      res.json({ status: "synthesizing", jobId: job.id });
+    } catch (error) {
+      console.error("[PersonaGeneration] GET /synthesize/:jobId/status failed:", error);
+      res.status(500).json({ message: "Failed to check synthesis status" });
     }
   });
 }
@@ -340,6 +368,69 @@ async function runResearchInBackground(params: {
       });
     } catch (updateError) {
       console.error(`[PersonaGeneration] Failed to update brief status to failed | brief=${briefId}`, updateError);
+    }
+  }
+}
+
+async function runSynthesisInBackground(params: {
+  jobId: string;
+  projectId: string;
+  brief: PopulationBrief;
+  config: { personaCount: number; diversityMode: string; edgeCases: boolean };
+  attribution: { workspaceId: string; projectId: string };
+  requestStart: number;
+}) {
+  const { jobId, projectId, brief, config, attribution, requestStart } = params;
+
+  try {
+    console.log(`[PersonaGeneration] Background synthesis starting | job=${jobId} | project=${projectId}`);
+
+    let personas = await synthesizePersonas({ brief, config, attribution });
+    let validationWarnings: string[] = [];
+
+    const validation = validatePersonaDiversity(personas, config.diversityMode);
+    if (!validation.valid) {
+      console.log(`[PersonaGeneration] Diversity validation failed, retrying with correction | job=${jobId} | errors=${validation.errors.length} | elapsed=${elapsed(requestStart)}`);
+      const correctionPrompt = buildCorrectionPrompt(validation.errors);
+      personas = await synthesizePersonas({ brief, config, attribution, correctionPrompt });
+
+      const retryValidation = validatePersonaDiversity(personas, config.diversityMode);
+      if (!retryValidation.valid) {
+        validationWarnings = retryValidation.errors.map((e) => `Diversity issue: ${e}`);
+        console.warn(`[PersonaGeneration] Retry still failed validation | job=${jobId} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
+      }
+    }
+
+    await storage.updateSynthesisJob(jobId, {
+      status: "completed",
+      personas: personas as any,
+      validationWarnings: validationWarnings.length > 0 ? validationWarnings as any : null,
+    });
+
+    console.log(`[PersonaGeneration] Background synthesis completed | job=${jobId} | project=${projectId} | personasGenerated=${personas.length} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
+  } catch (error: any) {
+    const errorMsg = error?.message ?? String(error);
+    console.error(`[PersonaGeneration] Background synthesis failed | job=${jobId} | project=${projectId} | error=${errorMsg} | elapsed=${elapsed(requestStart)}`);
+
+    try {
+      let userMessage = "Persona generation failed unexpectedly. Please try again.";
+      if (error?.message?.includes("aborted") || error?.name === "AbortError") {
+        userMessage = "Persona generation timed out. Please try again.";
+      }
+      const status = error?.status ?? error?.statusCode;
+      if (status === 429) {
+        userMessage = "The AI service is temporarily overloaded. Please wait a minute and try again.";
+      }
+      if (status === 401 || status === 403) {
+        userMessage = "AI service authentication failed. Please check the OpenAI API key configuration.";
+      }
+
+      await storage.updateSynthesisJob(jobId, {
+        status: "failed",
+        errorMessage: userMessage,
+      });
+    } catch (updateError) {
+      console.error(`[PersonaGeneration] Failed to update synthesis job status to failed | job=${jobId}`, updateError);
     }
   }
 }

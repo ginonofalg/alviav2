@@ -19,7 +19,8 @@ import {
   type WaitlistEntry, type InsertWaitlistEntry,
   type AlviaSessionSummary, type BarbaraSessionSummary,
   type LlmUsageEvent, type InsertLlmUsageEvent, type UsageRollup,
-  type PopulationBriefRecord, type InsertPopulationBrief
+  type PopulationBriefRecord, type InsertPopulationBrief,
+  type SynthesisJobRecord, type InsertSynthesisJob
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
@@ -1691,6 +1692,21 @@ export class DatabaseStorage implements IStorage {
   async getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]> {
     const { getPopulationBriefsByProject: getByProject } = await import("./storage/simulation");
     return getByProject(projectId);
+  }
+
+  async createSynthesisJob(data: InsertSynthesisJob): Promise<SynthesisJobRecord> {
+    const { createSynthesisJob: create } = await import("./storage/simulation");
+    return create(data);
+  }
+
+  async updateSynthesisJob(id: string, data: Partial<InsertSynthesisJob>): Promise<SynthesisJobRecord | undefined> {
+    const { updateSynthesisJob: update } = await import("./storage/simulation");
+    return update(id, data);
+  }
+
+  async getSynthesisJob(id: string): Promise<SynthesisJobRecord | undefined> {
+    const { getSynthesisJob: get } = await import("./storage/simulation");
+    return get(id);
   }
 }
 
