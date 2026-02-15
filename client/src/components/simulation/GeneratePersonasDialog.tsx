@@ -214,7 +214,7 @@ export function GeneratePersonasDialog({
       setBrief(data.brief);
       setIsUngrounded(data.ungrounded ?? false);
       setDialogState("synthesizing");
-      synthesizeMutation.mutate();
+      synthesizeMutation.mutate(data.briefId);
     },
     onError: (error: Error) => {
       setDialogState("input");
@@ -227,9 +227,9 @@ export function GeneratePersonasDialog({
   });
 
   const synthesizeMutation = useMutation({
-    mutationFn: async () => {
-      if (!briefId && !researchMutation.data?.briefId) throw new Error("No research data");
-      const id = briefId ?? researchMutation.data!.briefId;
+    mutationFn: async (overrideBriefId?: string) => {
+      const id = overrideBriefId ?? briefId ?? researchMutation.data?.briefId;
+      if (!id) throw new Error("No research data");
       return await apiRequestJson<SynthesizeResponse>(
         "POST",
         `/api/projects/${projectId}/personas/synthesize`,
@@ -313,7 +313,7 @@ export function GeneratePersonasDialog({
     setGeneratedPersonas([]);
     setRemovedIndices(new Set());
     setValidationWarnings([]);
-    synthesizeMutation.mutate();
+    synthesizeMutation.mutate(undefined);
   };
 
   const handleRemovePersona = (index: number) => {
