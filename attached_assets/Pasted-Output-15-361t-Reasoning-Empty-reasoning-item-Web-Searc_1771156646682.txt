@@ -1,0 +1,457 @@
+Output
+15,361t
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+assistant
+{
+  "targetPopulation": "UK residents aged 16+ across England, Scotland, Wales and Northern Ireland, with attention to how demographics and cultural heritage shape adherence to UK public-etiquette norms (queues, shared-space behaviour, indirectness, and nonverbal sanctioning).",
+  "confidence": "high",
+  "demographics": {
+    "summary": "The UK population was estimated at 68.3 million at mid‑2023, with growth driven mainly by net migration; England and Wales alone reached 61.1m by mid‑2023 and 61.8m by mid‑2024 after revisions. The population is ageing (median age mid‑2024: England 40.2; Wales 42.8; Scotland 42.8; Northern Ireland 40.3). Most residents live in built‑up areas (c. 94.6% in England & Wales). In 2021 England & Wales were 81.7% White overall; 16.8% of residents were born outside the UK (London 40.6%); 91.1% reported English (or Welsh in Wales) as a main language, with 1.8% reporting limited proficiency. Disabled people (Equality Act definition) comprised about 17.8% across England & Wales in 2021. These compositional facts help explain why shared‑space etiquette, queuing norms, indirect speech, and face‑saving repair are both salient and variably interpreted across regions, ages, and migration histories. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2023?utm_source=openai))",
+    "distributions": [
+      {
+        "dimension": "UK nations (mid‑2023 population)",
+        "breakdown": "England 57.11m; Wales 3.13m; Scotland 5.45m; Northern Ireland 1.91m; UK total 68.27m. Main driver of growth: net international migration in the year to mid‑2023.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2023"
+      },
+      {
+        "dimension": "Age structure and median age (mid‑2024)",
+        "breakdown": "Median ages: England 40.2; Wales 42.8; Scotland 42.8; Northern Ireland 40.3. 65+ increased in all nations year‑on‑year.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/latest"
+      },
+      {
+        "dimension": "Urbanisation (England & Wales, 2021)",
+        "breakdown": "94.6% of people lived in ONS built‑up areas; 94.9% in England and 88.0% in Wales.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/articles/townsandcitiescharacteristicsofbuiltupareasenglandandwales/census2021"
+      },
+      {
+        "dimension": "Ethnic group (England & Wales, 2021)",
+        "breakdown": "White 81.7% overall; Asian/Asian British/Asian Welsh 9.3%; Black 4.0%; Mixed 2.9%; Other 2.1%.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/ethnicity/bulletins/ethnicgroupenglandandwales/census2021"
+      },
+      {
+        "dimension": "Ethnicity (Scotland, 2022)",
+        "breakdown": "Minority ethnic background 12.9% (up from 8.2% in 2011).",
+        "source": "https://www.scotlandscensus.gov.uk/census-results/at-a-glance/ethnicity/"
+      },
+      {
+        "dimension": "Language (England & Wales, 2021)",
+        "breakdown": "English (or Welsh in Wales) as main language 91.1%; a further 7.1% were proficient but had another main language; 1.5% could not speak English well; 0.3% not at all. Top other main languages: Polish 1.1%, Romanian 0.8%.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/language/bulletins/languageenglandandwales/census2021"
+      },
+      {
+        "dimension": "Welsh language (Wales, 2021)",
+        "breakdown": "Ability to speak Welsh has declined since 2011; migration into Wales is a factor in the trend.",
+        "source": "https://www.gov.wales/welsh-language-wales-census-2021-html"
+      },
+      {
+        "dimension": "Migration & country of birth (England & Wales, 2021)",
+        "breakdown": "16.8% (c. 10m) were born outside the UK; London 40.6% born overseas.",
+        "source": "https://www.ons.gov.uk/news/news/census2021demographyandinternationalmigrationstatistics"
+      },
+      {
+        "dimension": "Disability (England & Wales, 2021)",
+        "breakdown": "17.8% of people were disabled under the Equality Act definition (age‑standardised). Marked regional and deprivation gradients.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/bulletins/disabilityenglandandwales/census2021"
+      },
+      {
+        "dimension": "Approximated Social Grade (England & Wales, 2021)",
+        "breakdown": "AB 23.3%; C1 32.8%; C2 21.3%; DE 22.6% (usual residents in households with HRP aged 16–64).",
+        "source": "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/bulletins/approximatedsocialgradeenglandandwales/census2021"
+      },
+      {
+        "dimension": "Commuting mode (Great Britain, 2023)",
+        "breakdown": "Car 66%; walk 11%; rail/underground/light rail/tram 10%; bus/coach 7% (major London–rest of GB variation; London is the only region with a public‑transport majority).",
+        "source": "https://www.gov.uk/government/statistics/transport-statistics-great-britain-2024/transport-statistics-great-britain-2023-domestic-travel"
+      },
+      {
+        "dimension": "Families with dependent children (UK, 2024)",
+        "breakdown": "42.3% of families contained one or more dependent children; 44.3% had one dependent child, 40.8% two, 14.8% three or more.",
+        "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/families/bulletins/familiesandhouseholds/2024"
+      }
+    ]
+  },
+  "behavioralPatterns": [
+    {
+      "pattern": "High salience of turn‑taking/flow on mass transit.",
+      "prevalence": "YouGov found 90% of Londoners are annoyed by boarding before alighting (61% ‘very’), 90% by blocking exits, and 88% by pushing ahead. ([yougov.co.uk](https://yougov.co.uk/politics/articles/18740-revealed-single-most-annoying-thing-people-do-lond))",
+      "source": "https://yougov.co.uk/politics/articles/18740-revealed-single-most-annoying-thing-people-do-lond"
+    },
+    {
+      "pattern": "Preference for silent non‑engagement with strangers in confined public settings.",
+      "prevalence": "54% of Britons prefer not to talk to fellow passengers on public transport; in London this rises to 67%. ([yougov.co.uk](https://yougov.co.uk/politics/articles/19784-its-good-talk-one-four-brits-would-prefer-not-talk))",
+      "source": "https://yougov.co.uk/politics/articles/19784-its-good-talk-one-four-brits-would-prefer-not-talk"
+    },
+    {
+      "pattern": "Indirectness and ‘polite‑isms’ as conflict‑avoidance.",
+      "prevalence": "Trinity’s 2025 study reports 83% of UK respondents avoid confrontation, and 50% regularly use ‘polite‑isms’ at work. ([trinitycollege.com](https://www.trinitycollege.com/news/viewarticle/new-research-explores-british-polite-isms))",
+      "source": "https://www.trinitycollege.com/news/viewarticle/new-research-explores-british-polite-isms"
+    },
+    {
+      "pattern": "Strong annoyance at ‘imposition’ nuisances in shared space.",
+      "prevalence": "Recent YouGov reporting highlights littering as top public nuisance, with high irritation at loudspeakers/phone audio and obstructive e‑bikes. ([yougov.co.uk](https://yougov.co.uk/society/articles/52076-littering-loudspeakers-and-lime-bikes-what-public-nuisances-bother-britons-most))",
+      "source": "https://yougov.co.uk/society/articles/52076-littering-loudspeakers-and-lime-bikes-what-public-nuisances-bother-britons-most"
+    },
+    {
+      "pattern": "Dense urban living amplifies micro‑coordination rules (queues, spacing).",
+      "prevalence": "About 94.6% of England & Wales residents live in built‑up areas, increasing stranger‑sharing and norm salience for spacing/flow. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/housing/articles/townsandcitiescharacteristicsofbuiltupareasenglandandwales/census2021?utm_source=openai))",
+      "source": "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/articles/townsandcitiescharacteristicsofbuiltupareasenglandandwales/census2021"
+    }
+  ],
+  "communicationNorms": [
+    {
+      "norm": "Queue fairness and ‘let them off first’.",
+      "context": "Strong moral framing of first‑come‑first‑served; etiquette messaging and campaigns on transit reinforce ‘let passengers off first’. ([debretts.com](https://debretts.com/a-very-british-queue/))"
+    },
+    {
+      "norm": "Invisible queues and turn‑tracking at bars/shops.",
+      "context": "Service staff and patrons often track arrival order without a visible line; being served out of turn can trigger silent sanctions. ([williamdorrell.co.uk](https://www.williamdorrell.co.uk/pdfs/Watching_the_English.pdf))"
+    },
+    {
+      "norm": "Apology as boundary repair (‘sorry’ for bumps/near‑misses).",
+      "context": "Corpus and ethnographic work show frequent use of apology formulae and ‘sorry’ for micro‑repairs; class/age patterns exist. ([brill.com](https://brill.com/display/book/edcoll/9789401201797/B9789401201797-s014.xml?utm_source=openai))"
+    },
+    {
+      "norm": "Indirect, face‑saving phrasing (‘polite‑isms’).",
+      "context": "Softeners and hedges to avoid open conflict or direct refusal in workplaces and daily life. ([trinitycollege.com](https://www.trinitycollege.com/news/viewarticle/new-research-explores-british-polite-isms))"
+    },
+    {
+      "norm": "Nonverbal reprimands over direct call‑outs.",
+      "context": "Tutting, sighs, eyebrow work, and conversational ‘clicks’ signal disapproval while preserving face. ([eprints.whiterose.ac.uk](https://eprints.whiterose.ac.uk/id/eprint/165376/1/RoLSI_clicks_revisions.pdf))"
+    },
+    {
+      "norm": "Personal‑space caution and non‑imposition.",
+      "context": "Global proxemics studies show cultural variance in preferred distances; UK norms fit ‘don’t crowd’ expectations. ([wrap.warwick.ac.uk](https://wrap.warwick.ac.uk/100226/7/WRAP-preferred-interpersonal-distances-global-comparison-Realo-2017.pdf))"
+    }
+  ],
+  "domainKnowledgeLevels": [
+    {
+      "segment": "Long‑term UK‑born residents",
+      "level": "expert",
+      "description": "High fluency in local tacit rules (queues, transit flow, small‑talk); can decode nonverbal sanctions and indirectness; strong expectations of fairness/non‑imposition."
+    },
+    {
+      "segment": "Recent migrants and English L2 speakers",
+      "level": "basic",
+      "description": "May miss subtle cues (tutting, ‘remarks to nobody’); language data show 1.8% with limited English and 0.3% with none, implying higher miscue risk in public micro‑interactions. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/language/bulletins/languageenglandandwales/census2021?utm_source=openai))"
+    },
+    {
+      "segment": "Public‑transport‑heavy commuters (esp. London)",
+      "level": "expert",
+      "description": "Frequent exposure to strong flow/turn‑taking norms; London is the only GB region where most commute by public transport; annoyance at flow breaches is high. ([gov.uk](https://www.gov.uk/government/statistics/transport-statistics-great-britain-2024/transport-statistics-great-britain-2023-domestic-travel?utm_source=openai))"
+    },
+    {
+      "segment": "Parents/carers with dependent children",
+      "level": "intermediate",
+      "description": "Balance pram/kid logistics with shared‑space rules; about 42% of UK families include dependent children, shaping situational allowances and expectations. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/families/bulletins/familiesandhouseholds/2024?utm_source=openai))"
+    },
+    {
+      "segment": "People with disabilities (incl. hidden)",
+      "level": "intermediate",
+      "description": "17.8% of England & Wales residents are disabled; the Sunflower scheme signals hidden needs (extra time/space), influencing judgments of ‘rudeness’ vs. access. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/bulletins/disabilityenglandandwales/census2021?form=MG0AV3&utm_source=openai))"
+    },
+    {
+      "segment": "Young adults (18–34) in multi‑ethnic urban settings",
+      "level": "intermediate",
+      "description": "Greater exposure to Multicultural London English and evolving norms; more likely to avoid stranger chat on transport. ([theguardian.com](https://www.theguardian.com/science/2022/jun/14/wagwan-why-are-more-and-more-britons-speaking-multicultural-london-english))"
+    }
+  ],
+  "biasesAndSensitivities": [
+    {
+      "topic": "Class‑coded politeness expectations",
+      "nature": "Indirectness, reserve and self‑deprecation are read as ‘proper’; can stigmatise more direct styles.",
+      "source": "https://www.cambridge.org/core/books/english-politeness-and-class/english-politeness-and-class/3041E218935BF3B2061E1ED8B168F68C"
+    },
+    {
+      "topic": "Accent/language judgments toward migrants",
+      "nature": "Public forum analyses show hostility to immigrant languages and pressure to ‘speak English’, intertwining etiquette with boundary‑policing.",
+      "source": "https://ueaeprints.uea.ac.uk/70747/1/Accepted_Manuscript.pdf"
+    },
+    {
+      "topic": "Hidden disabilities misread as rudeness",
+      "nature": "Unseen conditions (processing delays, sensory overload) can be mistaken for norm‑breach; Sunflower lanyards seek compassionate recognition.",
+      "source": "https://collection.sciencemuseumgroup.org.uk/objects/co8858298/hidden-disabilities-sunflower-lanyard"
+    },
+    {
+      "topic": "Regional/situational variation in indirectness",
+      "nature": "North–South differences in conventionalised politeness formulae; urban density (esp. London) shifts norms for speech and spacing.",
+      "source": "https://research.lancaster-university.uk/en/publications/politeness-variation-in-england-a-north-south-divide/"
+    },
+    {
+      "topic": "Crowding/transport stress and fairness thresholds",
+      "nature": "Campaigns and etiquette signage highlight ‘let off first’, no door‑holding, move down; breach triggers strong irritation.",
+      "source": "https://www.wired.com/story/queen-elizabeth-ii-queue/"
+    }
+  ],
+  "suggestedPersonaProfiles": [
+    {
+      "archetype": "Flow‑Defender Commuter (public transport regular)",
+      "rationale": "Daily exposure to strong turn‑taking and flow norms; high sensitivity to ‘boarding before alighting’, door‑blocking, pole‑hogging; likely to use nonverbal sanctions first.",
+      "representsPct": "~19% of commuters (rail/underground ≈10% + bus/coach ≈7% + other PT ≈2%). ([gov.uk](https://www.gov.uk/government/statistics/transport-statistics-great-britain-2024/transport-statistics-great-britain-2023-domestic-travel?utm_source=openai))"
+    },
+    {
+      "archetype": "Car‑first Suburban/Rural Majority",
+      "rationale": "Drives to work, shops and school runs; expects spatial courtesy in car parks/supermarkets; less daily exposure to Tube‑style norms but strong queue fairness in shops/services.",
+      "representsPct": "~66% of commuters travel by car. ([gov.uk](https://www.gov.uk/government/statistics/transport-statistics-great-britain-2024/transport-statistics-great-britain-2023-domestic-travel?utm_source=openai))"
+    },
+    {
+      "archetype": "Invisible‑Disability Navigator",
+      "rationale": "Manages shared spaces with access needs (extra time/space); may use Sunflower lanyard; sensitive to crowding/noise and misinterpretation of coping behaviours.",
+      "representsPct": "~18% of adults in England & Wales meet Equality Act disability definition. ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/bulletins/disabilityenglandandwales/census2021?form=MG0AV3&utm_source=openai))"
+    },
+    {
+      "archetype": "Newcomer Learning the Cues (foreign‑born resident)",
+      "rationale": "Understands explicit rules but may miss tacit signals (tutting, ‘invisible queues’); language proficiency and recency of arrival shape confidence in speaking up.",
+      "representsPct": "~17% of England & Wales residents were born outside the UK in 2021. ([ons.gov.uk](https://www.ons.gov.uk/news/news/census2021demographyandinternationalmigrationstatistics?utm_source=openai))"
+    },
+    {
+      "archetype": "Parent/Carer on the Move",
+      "rationale": "Balances prams/kids with crowd etiquette; negotiates seat‑priority, lift use, and ‘exception clauses’ to queue rules; often receives/elicits repair talk (‘sorry’, ‘after you’).",
+      "representsPct": "Families with dependent children are ~42% of UK families (proxy for prevalence in public). ([ons.gov.uk](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/families/bulletins/familiesandhouseholds/2024?utm_source=openai))"
+    },
+    {
+      "archetype": "Workplace Polite‑ism Practitioner",
+      "rationale": "Relies on indirect phrases to soften requests/criticisms; avoids overt confrontation; skilled at face‑work, sometimes causing ambiguity for outsiders.",
+      "representsPct": "~50% report regular use of ‘polite‑isms’ at work (Trinity 2025). ([trinitycollege.com](https://www.trinitycollege.com/news/viewarticle/new-research-explores-british-polite-isms))"
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2023",
+      "title": "Population estimates for the UK, England, Wales, Scotland and Northern Ireland: mid‑2023",
+      "relevance": "UK total and national populations; migration as main growth driver."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/latest",
+      "title": "Population estimates (latest): age structure and medians, mid‑2024",
+      "relevance": "Median ages by UK nation; ageing trend."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/articles/townsandcitiescharacteristicsofbuiltupareasenglandandwales/census2021",
+      "title": "Towns and cities: characteristics of built‑up areas (Census 2021)",
+      "relevance": "Share living in built‑up areas (urbanisation)."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/ethnicity/bulletins/ethnicgroupenglandandwales/census2021",
+      "title": "Ethnic group, England and Wales: Census 2021",
+      "relevance": "Ethnic composition (5‑group headline)."
+    },
+    {
+      "url": "https://www.scotlandscensus.gov.uk/census-results/at-a-glance/ethnicity/",
+      "title": "Scotland’s Census 2022: Ethnicity (at a glance)",
+      "relevance": "Ethnic diversity figures for Scotland 2022."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/language/bulletins/languageenglandandwales/census2021",
+      "title": "Language, England and Wales: Census 2021",
+      "relevance": "Main language; English proficiency distribution; top other languages."
+    },
+    {
+      "url": "https://www.gov.wales/welsh-language-wales-census-2021-html",
+      "title": "Welsh language in Wales (Census 2021)",
+      "relevance": "Trend and interpretation of Welsh language ability."
+    },
+    {
+      "url": "https://www.ons.gov.uk/news/news/census2021demographyandinternationalmigrationstatistics",
+      "title": "Census 2021 demography and international migration statistics",
+      "relevance": "One in six born outside UK in E&W; top countries of birth."
+    },
+    {
+      "url": "https://yougov.co.uk/politics/articles/18740-revealed-single-most-annoying-thing-people-do-lond",
+      "title": "Londoners’ top Tube gripes",
+      "relevance": "Annoyance ratings for flow‑breaking behaviours on the Underground."
+    },
+    {
+      "url": "https://yougov.co.uk/politics/articles/19784-its-good-talk-one-four-brits-would-prefer-not-talk",
+      "title": "It’s good to talk? Not if you’re young or on public transport",
+      "relevance": "Britons’ preferences for small talk with strangers; London vs rest."
+    },
+    {
+      "url": "https://yougov.co.uk/society/articles/52076-littering-loudspeakers-and-lime-bikes-what-public-nuisances-bother-britons-most",
+      "title": "Public nuisances that bother Britons most",
+      "relevance": "Declared top irritations in shared spaces (littering, loud audio, etc.)."
+    },
+    {
+      "url": "https://www.trinitycollege.com/news/viewarticle/new-research-explores-british-polite-isms",
+      "title": "New research explores British ‘Polite‑isms’",
+      "relevance": "Survey percentages on confrontation‑avoidance and indirect phrasing."
+    },
+    {
+      "url": "https://www.williamdorrell.co.uk/pdfs/Watching_the_English.pdf",
+      "title": "Kate Fox, Watching the English (excerpts)",
+      "relevance": "Ethnographic descriptions of queues, apology rituals, invisible queues."
+    },
+    {
+      "url": "https://debretts.com/a-very-british-queue/",
+      "title": "Debrett’s: A very British queue",
+      "relevance": "Etiquette framing of queueing norms and edge‑cases."
+    },
+    {
+      "url": "https://eprints.whiterose.ac.uk/id/eprint/165376/1/RoLSI_clicks_revisions.pdf",
+      "title": "Ogden (2020) ‘Audibly not saying something with clicks’",
+      "relevance": "Interactional use of ‘tuts/clicks’ as nonverbal stance/reprimand."
+    },
+    {
+      "url": "https://wrap.warwick.ac.uk/100226/7/WRAP-preferred-interpersonal-distances-global-comparison-Realo-2017.pdf",
+      "title": "Preferred interpersonal distance: a global comparison",
+      "relevance": "Cross‑cultural proxemics baseline for spacing norms."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/bulletins/disabilityenglandandwales/census2021",
+      "title": "Disability, England and Wales: Census 2021",
+      "relevance": "Equality Act disability prevalence and gradients."
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/english-politeness-and-class/english-politeness-and-class/3041E218935BF3B2061E1ED8B168F68C",
+      "title": "Sara Mills (2017) English Politeness and Class",
+      "relevance": "Class‑linked interpretations of British politeness and reserve."
+    },
+    {
+      "url": "https://ueaeprints.uea.ac.uk/70747/1/Accepted_Manuscript.pdf",
+      "title": "Musolff: Hostility towards immigrants’ languages in Britain",
+      "relevance": "Attitudes to multilingualism; boundary‑policing via language."
+    },
+    {
+      "url": "https://www.gov.uk/government/statistics/transport-statistics-great-britain-2024/transport-statistics-great-britain-2023-domestic-travel",
+      "title": "Transport Statistics Great Britain 2023 (Domestic travel)",
+      "relevance": "Commuting mode shares and regional contrasts."
+    },
+    {
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/families/bulletins/familiesandhouseholds/2024",
+      "title": "Families and households in the UK: 2024",
+      "relevance": "Share of families with dependent children; household context."
+    },
+    {
+      "url": "https://www.wired.com/story/queen-elizabeth-ii-queue/",
+      "title": "WIRED: How to design the perfect queue (Queen Elizabeth II queue)",
+      "relevance": "Queue as national ritual; logistics and compliance without disorder."
+    },
+    {
+      "url": "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/bulletins/approximatedsocialgradeenglandandwales/census2021",
+      "title": "Approximated Social Grade, E&W: Census 2021",
+      "relevance": "AB/C1/C2/DE distribution relevant to class‑coded norms."
+    },
+    {
+      "url": "https://collection.sciencemuseumgroup.org.uk/objects/co8858298/hidden-disabilities-sunflower-lanyard",
+      "title": "Hidden Disabilities Sunflower lanyard (Science Museum)",
+      "relevance": "Hidden‑disability recognition practice in UK public venues."
+    },
+    {
+      "url": "https://yougov.co.uk/",
+      "title": "YouGov Public Data hub (host pages above)",
+      "relevance": "Methodological anchor for referenced articles."
+    }
+  ]
+}
