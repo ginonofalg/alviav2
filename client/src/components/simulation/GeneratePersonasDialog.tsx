@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
 import type { PopulationBrief, GeneratedPersona } from "@shared/types/persona-generation";
+import { BriefSelectionView } from "./BriefSelectionView";
 
 interface ResearchResponse {
   briefId: string;
@@ -65,7 +66,7 @@ interface GeneratePersonasDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type DialogState = "input" | "researching" | "synthesizing" | "review";
+type DialogState = "input" | "select-brief" | "researching" | "synthesizing" | "review";
 
 const ATTITUDE_LABELS: Record<string, string> = {
   cooperative: "Cooperative",
@@ -134,6 +135,12 @@ export function GeneratePersonasDialog({
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  const briefsQuery = useQuery<{ id: string }[]>({
+    queryKey: ["/api/projects", projectId, "personas", "briefs"],
+    enabled: open,
+  });
+  const existingBriefCount = briefsQuery.data?.length ?? 0;
 
   useEffect(() => {
     if (dialogState === "researching" || dialogState === "synthesizing") {
@@ -278,6 +285,7 @@ export function GeneratePersonasDialog({
           backgroundStory: persona.backgroundStory,
           topicsToAvoid: persona.topicsToAvoid,
           biases: persona.biases,
+          populationBriefId: briefId ?? undefined,
         });
         results.push(await res.json());
       }
@@ -314,6 +322,17 @@ export function GeneratePersonasDialog({
     setRemovedIndices(new Set());
     setValidationWarnings([]);
     synthesizeMutation.mutate(undefined);
+  };
+
+  const handleSelectExistingBrief = (selectedBriefId: string) => {
+    setBriefId(selectedBriefId);
+    setBrief(null);
+    setIsUngrounded(false);
+    setGeneratedPersonas([]);
+    setRemovedIndices(new Set());
+    setValidationWarnings([]);
+    setDialogState("synthesizing");
+    synthesizeMutation.mutate(selectedBriefId);
   };
 
   const handleRemovePersona = (index: number) => {
@@ -470,10 +489,23 @@ export function GeneratePersonasDialog({
               </div>
             </div>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter className="gap-2 flex-wrap">
               <Button variant="outline" onClick={handleClose} data-testid="button-cancel-generate">
                 Cancel
               </Button>
+              {existingBriefCount > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => setDialogState("select-brief")}
+                  data-testid="button-use-existing-research"
+                >
+                  <Globe className="w-4 h-4 mr-2" />
+                  Use Existing Research
+                  <Badge variant="secondary" className="ml-2 text-xs no-default-hover-elevate no-default-active-elevate">
+                    {existingBriefCount}
+                  </Badge>
+                </Button>
+              )}
               <Button
                 onClick={handleGenerate}
                 disabled={!isPromptValid}
@@ -484,6 +516,20 @@ export function GeneratePersonasDialog({
               </Button>
             </DialogFooter>
           </>
+        )}
+
+        {dialogState === "select-brief" && (
+          <BriefSelectionView
+            projectId={projectId}
+            personaCount={personaCount}
+            setPersonaCount={setPersonaCount}
+            diversityMode={diversityMode}
+            setDiversityMode={setDiversityMode}
+            edgeCases={edgeCases}
+            setEdgeCases={setEdgeCases}
+            onSelectBrief={handleSelectExistingBrief}
+            onBack={() => setDialogState("input")}
+          />
         )}
 
         {(dialogState === "researching" || dialogState === "synthesizing") && (

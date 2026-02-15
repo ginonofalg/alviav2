@@ -103,6 +103,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         additionalContext: parseResult.data.additionalContext ?? null,
         brief: brief as any,
         confidence: brief.confidence,
+        isUngrounded: ungrounded ?? false,
       });
 
       console.log(`[PersonaGeneration] POST /research completed 200 | project=${projectId} | confidence=${brief.confidence} | citations=${citations.length} | elapsed=${elapsed(requestStart)}`);
@@ -128,6 +129,58 @@ export function registerPersonaGenerationRoutes(app: Express) {
         return res.status(502).json({ message: "AI service authentication failed. Please check the OpenAI API key configuration." });
       }
       res.status(500).json({ message: `Research failed: ${errorMsg}` });
+    }
+  });
+
+  app.get("/api/projects/:projectId/personas/briefs", isAuthenticated, async (req: any, res) => {
+    const { projectId } = req.params;
+    try {
+      const userId = req.user.claims.sub;
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const briefs = await storage.getPopulationBriefsByProject(projectId);
+      const summaries = briefs.map((rec) => {
+        const b = rec.brief as unknown as PopulationBrief;
+        return {
+          id: rec.id,
+          researchPrompt: rec.researchPrompt,
+          targetPopulation: b.targetPopulation,
+          confidence: rec.confidence,
+          isUngrounded: rec.isUngrounded,
+          sourceCount: b.sources?.length ?? 0,
+          suggestedProfileCount: b.suggestedPersonaProfiles?.length ?? 0,
+          behavioralPatternCount: b.behavioralPatterns?.length ?? 0,
+          demographicDimensionCount: b.demographics?.distributions?.length ?? 0,
+          createdAt: rec.createdAt,
+        };
+      });
+      res.json(summaries);
+    } catch (error) {
+      console.error("[PersonaGeneration] GET /briefs failed:", error);
+      res.status(500).json({ message: "Failed to fetch population briefs" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/personas/briefs/:briefId", isAuthenticated, async (req: any, res) => {
+    const { projectId, briefId } = req.params;
+    try {
+      const userId = req.user.claims.sub;
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const briefRecord = await storage.getPopulationBrief(briefId);
+      if (!briefRecord || briefRecord.projectId !== projectId) {
+        return res.status(404).json({ message: "Population brief not found" });
+      }
+      res.json(briefRecord);
+    } catch (error) {
+      console.error("[PersonaGeneration] GET /briefs/:briefId failed:", error);
+      res.status(500).json({ message: "Failed to fetch population brief" });
     }
   });
 

@@ -467,6 +467,7 @@ export type InsertRedactionMap = z.infer<typeof insertRedactionMapSchema>;
 export const personas = pgTable("personas", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  populationBriefId: varchar("population_brief_id").references(() => populationBriefs.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   ageRange: text("age_range"),
@@ -530,6 +531,7 @@ export const populationBriefs = pgTable("population_briefs", {
   additionalContext: text("additional_context"),
   brief: jsonb("brief").notNull(),
   confidence: text("confidence").notNull(),
+  isUngrounded: boolean("is_ungrounded").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_population_brief_project").on(table.projectId),

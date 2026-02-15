@@ -27,6 +27,7 @@ const personaCreateSchema = insertPersonaSchema.omit({ projectId: true }).extend
   backgroundStory: z.string().max(2000).optional().nullable(),
   topicsToAvoid: z.array(z.string()).default([]),
   biases: z.array(z.string()).default([]),
+  populationBriefId: z.string().optional().nullable(),
 });
 
 export function registerPersonaRoutes(app: Express) {
