@@ -1,0 +1,70 @@
+ Fix: OpenAI SDK Default Timeout Killing Research Calls in Production
+
+ Context
+
+ The persona generation research pipeline still fails in production despite prior fixes. Production DB evidence from Feb 15:
+
+ - 5:42 PM: Brief 47701caf — gpt-5 barbara_persona_research timed out at 300,843ms (~5 min) with error "Request timed out."
+ - 5:04 PM: Old code — timed out at 600s with "Request was aborted." (AbortController race)
+ - 4:21 PM: Same — 600s abort
+
+ The prior fix (from this plan's earlier revision) correctly:
+ 1. Increased RESEARCH_TIMEOUT_MS to 900s
+ 2. Removed the duplicate timeout from SDK calls
+ 3. Added maxRetries: 0
+ 4. Added client-side polling resilience (error counting, max duration, cancel button)
+ 5. Added server-side stuck job detection
+
+ But removing timeout from the SDK call caused the SDK to fall back to its own default timeout (300 seconds for gpt-5/Responses API). The error message "Request timed out." (vs. "Request was
+ aborted.") confirms this is the SDK's internal HTTP timeout, not our AbortController.
+
+ The Fix (3 lines)
+
+ Add timeout back to each SDK call, alongside the existing signal and maxRetries: 0. With maxRetries: 0 in place, the original race condition (SDK timeout → internal retry → AbortController
+ fires during retry) cannot happen.
+
+ File: server/persona-generation/research.ts
+
+ Line 217 — Change:
+ } as any, { signal, maxRetries: 0 });
+ To:
+ } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
+
+ Line 308 — Same change for the fallback (no-web-search) call:
+ } as any, { signal, maxRetries: 0 });
+ To:
+ } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
+
+ File: server/persona-generation/synthesis.ts
+
+ Line 146 — Change:
+ } as any, { signal, maxRetries: 0 });
+ To:
+ } as any, { signal, maxRetries: 0, timeout: SYNTHESIS_TIMEOUT_MS });
+
+ Why This Is Safe Now
+
+ The original fix removed timeout because two equal-value timeouts raced: when the SDK's timeout fired first, the SDK would retry (default maxRetries: 2), and then our AbortController would
+ fire during the retry, causing a confusing "aborted" error even after OpenAI had completed.
+
+ With maxRetries: 0, there are no retries. Both the SDK timeout (900s) and our AbortController signal (900s) will fire at approximately the same time. Whichever fires first produces the same
+ effect — a clean timeout error. No retry race.
+
+ Files Modified (2 files, 3 lines)
+
+ ┌────────────────────────────────────────┬──────┬──────────────────────────────────────────────────┐
+ │                  File                  │ Line │                      Change                      │
+ ├────────────────────────────────────────┼──────┼──────────────────────────────────────────────────┤
+ │ server/persona-generation/research.ts  │ 217  │ Add timeout: RESEARCH_TIMEOUT_MS to SDK options  │
+ ├────────────────────────────────────────┼──────┼──────────────────────────────────────────────────┤
+ │ server/persona-generation/research.ts  │ 308  │ Add timeout: RESEARCH_TIMEOUT_MS to SDK options  │
+ ├────────────────────────────────────────┼──────┼──────────────────────────────────────────────────┤
+ │ server/persona-generation/synthesis.ts │ 146  │ Add timeout: SYNTHESIS_TIMEOUT_MS to SDK options │
+ └────────────────────────────────────────┴──────┴──────────────────────────────────────────────────┘
+
+ Verification
+
+ 1. npm run check — confirm no TypeScript errors
+ 2. npx vitest — confirm no regressions
+ 3. Deploy to production and trigger a research request
+ 4. Monitor server logs — the research call should now be allowed to run for up to 15 minutes (900s) before timing out, instead of being killed at 5 minutes by the SDK default
