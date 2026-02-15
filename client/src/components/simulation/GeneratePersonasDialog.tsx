@@ -629,9 +629,9 @@ export function GeneratePersonasDialog({
         )}
 
         {dialogState === "review" && (
-          <div className="flex-1 min-h-0 space-y-3">
+          <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
             {isUngrounded && (
-              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20 shrink-0">
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="text-sm">
                   <p className="font-medium text-amber-600 dark:text-amber-400">
@@ -645,7 +645,7 @@ export function GeneratePersonasDialog({
             )}
 
             {validationWarnings.length > 0 && (
-              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20 shrink-0">
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="text-sm">
                   <p className="font-medium text-amber-600 dark:text-amber-400">
@@ -659,7 +659,7 @@ export function GeneratePersonasDialog({
             )}
 
             {brief && (
-              <Collapsible open={briefExpanded} onOpenChange={setBriefExpanded}>
+              <Collapsible open={briefExpanded} onOpenChange={setBriefExpanded} className="shrink-0">
                 <CollapsibleTrigger asChild>
                   <Button
                     variant="ghost"
@@ -705,7 +705,7 @@ export function GeneratePersonasDialog({
               </Collapsible>
             )}
 
-            <ScrollArea className="flex-1 max-h-[40vh]">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="space-y-2 pr-3">
                 {generatedPersonas.map((persona, index) => {
                   if (removedIndices.has(index)) return null;
@@ -760,7 +760,7 @@ export function GeneratePersonasDialog({
               </div>
             </ScrollArea>
 
-            <DialogFooter className="gap-2 flex-wrap">
+            <DialogFooter className="gap-2 flex-wrap shrink-0">
               <Button
                 variant="outline"
                 onClick={handleRegenerate}
