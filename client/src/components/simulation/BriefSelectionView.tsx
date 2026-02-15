@@ -141,7 +141,7 @@ export function BriefSelectionView({
       )}
 
       {!isLoading && briefs && briefs.length > 0 && (
-        <ScrollArea className="flex-1 min-h-0 mt-4" data-testid="brief-list-scroll">
+        <ScrollArea className="flex-1 min-h-0 mt-4 max-h-[calc(85vh-280px)]" data-testid="brief-list-scroll">
           <div className="space-y-3 pr-3">
             {briefs.map((summary) => (
               <PopulationBriefCard
