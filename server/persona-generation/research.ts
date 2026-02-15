@@ -214,7 +214,7 @@ export async function researchPopulation(params: {
               },
             },
             reasoning: { effort: config.reasoningEffort as any },
-          } as any, { signal, maxRetries: 0 });
+          } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
       });
@@ -305,7 +305,7 @@ async function researchWithoutWebSearch(
           },
         },
         reasoning: { effort: config.reasoningEffort as any },
-      } as any, { signal, maxRetries: 0 });
+      } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
     },
     extractUsage: makeResponsesUsageExtractor(config.model),
   });
