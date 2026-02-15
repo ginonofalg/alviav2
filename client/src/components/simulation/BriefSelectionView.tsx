@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -141,8 +140,8 @@ export function BriefSelectionView({
       )}
 
       {!isLoading && briefs && briefs.length > 0 && (
-        <ScrollArea className="flex-1 min-h-0 mt-4 max-h-[calc(85vh-280px)]" data-testid="brief-list-scroll">
-          <div className="space-y-3 pr-3">
+        <div className="flex-1 min-h-0 mt-4 overflow-y-auto" data-testid="brief-list-scroll">
+          <div className="space-y-3 pr-1">
             {briefs.map((summary) => (
               <PopulationBriefCard
                 key={summary.id}
@@ -154,7 +153,7 @@ export function BriefSelectionView({
               />
             ))}
           </div>
-        </ScrollArea>
+        </div>
       )}
     </div>
   );
