@@ -3551,7 +3551,11 @@ Analyze this interview and provide your structured assessment.`;
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          text: { format: { type: "json_object" } },
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          reasoning: { effort: config.reasoningEffort },
         });
       },
       extractUsage: makeResponsesUsageExtractor(config.model),
