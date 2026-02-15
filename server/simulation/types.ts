@@ -14,6 +14,7 @@ export interface SimulationContext {
   alviaModel: string;
   personaModel: string;
   maxTurnsPerQuestion: number;
+  maxAQTurnsPerQuestion: number;
   interTurnDelayMs: number;
 }
 
@@ -43,5 +44,5 @@ export const SIMULATION_LIMITS = {
   MAX_CONCURRENT_RUNS: 2,
   PER_QUESTION_TIMEOUT_MS: 5 * 60 * 1000,
   PER_SESSION_TIMEOUT_MS: 30 * 60 * 1000,
-  HARD_CAP_TURNS_PER_QUESTION: 8,
+  HARD_CAP_TURNS_PER_QUESTION: 12,
 } as const;

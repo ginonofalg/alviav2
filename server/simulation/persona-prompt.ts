@@ -41,6 +41,14 @@ const DOMAIN_GUIDANCE: Record<string, string> = {
   expert: "You have deep expertise. You use precise terminology, reference specifics, and can discuss nuances and edge cases.",
 };
 
+const DISFLUENCY_GUIDANCE: Record<string, string> = {
+  cooperative: "Occasionally include natural speech patterns: 'um', 'you know', 'I mean', brief self-corrections ('well, actually...'). About 1 in 4 responses should have a minor disfluency.",
+  reluctant: "Include frequent pauses and hedging: 'I guess...', 'I don't know, maybe...', 'hmm let me think...'. Trail off mid-sentence sometimes. About half your responses should feel halting.",
+  neutral: "Occasionally include a brief 'um' or 'let me think'. Keep disfluencies minimal — about 1 in 5 responses.",
+  evasive: "Use deflection patterns: 'that's a good question...', 'well, it depends...', pivot mid-sentence. Include 'I mean' and restarts. About 1 in 3 responses.",
+  enthusiastic: "Include excited speech patterns: 'oh!', 'right, so...', 'wait, actually...'. Occasionally jump between thoughts mid-sentence. About 1 in 4 responses.",
+};
+
 function buildPersonaSystemPrompt(persona: Persona): string {
   const traits = (persona.traits || []).join(", ");
   const avoidTopics = (persona.topicsToAvoid || []).join(", ");
@@ -70,6 +78,8 @@ ${DOMAIN_GUIDANCE[persona.domainKnowledge] || DOMAIN_GUIDANCE.basic}`;
   if (avoidTopics) prompt += `\n\nTOPICS TO AVOID: ${avoidTopics}\nWhen asked about these topics, deflect or give minimal answers.`;
   if (biases) prompt += `\n\nBIASES/PREFERENCES: ${biases}`;
 
+  prompt += `\n\nSPEECH REALISM: ${DISFLUENCY_GUIDANCE[persona.attitude] || DISFLUENCY_GUIDANCE.neutral}`;
+
   prompt += `\n
 BEHAVIORAL RULES:
 1. Match the verbosity level strictly
@@ -77,7 +87,7 @@ BEHAVIORAL RULES:
 3. Stay consistent with your background and prior answers in this conversation
 4. Never break character or mention being an AI
 5. Respond naturally as a real person would in a research interview
-6. Include natural speech patterns like brief hesitations or filler words occasionally
+6. Follow the SPEECH REALISM guidance strictly — your text will be compared against real interview transcripts for naturalness
 7. If you don't know something, say so naturally rather than making up detailed answers`;
 
   return prompt;

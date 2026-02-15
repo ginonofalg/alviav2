@@ -33,6 +33,7 @@ export type SimulationConfig = {
   alviaModel: string;
   personaModel: string;
   maxTurnsPerQuestion: number;
+  maxAQTurnsPerQuestion: number;
   maxConcurrentSimulations: number;
   interTurnDelayMs: number;
 };
@@ -43,7 +44,8 @@ export const DEFAULT_SIMULATION_CONFIG: SimulationConfig = {
   enableAdditionalQuestions: true,
   alviaModel: "gpt-4o-mini",
   personaModel: "gpt-4o-mini",
-  maxTurnsPerQuestion: 8,
+  maxTurnsPerQuestion: 6,
+  maxAQTurnsPerQuestion: 3,
   maxConcurrentSimulations: 2,
   interTurnDelayMs: 200,
 };

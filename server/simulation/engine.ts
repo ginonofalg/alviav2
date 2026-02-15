@@ -12,19 +12,37 @@ import { generatePersonaResponse } from "./persona-prompt";
 import { evaluateQuestionFlow, getNextQuestionIndex } from "./question-flow";
 import type { SimulationContext, SimulationQuestionMetrics } from "./types";
 import { SIMULATION_LIMITS } from "./types";
-import type { LLMUsageAttribution } from "@shared/schema";
+import type { LLMUsageAttribution, Question } from "@shared/schema";
 import {
   analyzeWithBarbara,
   generateQuestionSummary,
   generateAdditionalQuestions,
   generateSessionSummary,
+  type BarbaraAnalysisInput,
   type QuestionMetrics,
   type TranscriptEntry,
   type QuestionSummary,
 } from "../barbara-orchestrator";
+import {
+  buildCrossInterviewRuntimeContext,
+  buildAnalyticsHypothesesRuntimeContext,
+} from "../voice-interview/context-builders";
+import type {
+  CrossInterviewRuntimeContext,
+  AnalyticsHypothesesRuntimeContext,
+} from "../voice-interview/types";
+
+const BARBARA_TIMEOUT_MS = 10_000;
+const BARBARA_CONFIDENCE_GATE = 0.6;
+const WORDS_PER_MINUTE = 150;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function calculateSpeakingDelayMs(text: string, minDelayMs: number): number {
+  const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length;
+  return Math.max(minDelayMs, (wordCount / WORDS_PER_MINUTE) * 60 * 1000);
 }
 
 function buildUsageContext(ctx: SimulationContext, sessionId: string): LLMUsageAttribution {
@@ -35,6 +53,106 @@ function buildUsageContext(ctx: SimulationContext, sessionId: string): LLMUsageA
     collectionId: ctx.collection.id,
     sessionId,
   };
+}
+
+function buildBarbaraContextFields(
+  crossInterviewCtx: CrossInterviewRuntimeContext,
+  analyticsHypothesesCtx: AnalyticsHypothesesRuntimeContext,
+  questionIndex: number,
+) {
+  let crossInterviewContext: BarbaraAnalysisInput["crossInterviewContext"];
+  if (crossInterviewCtx.enabled && crossInterviewCtx.priorSessionCount != null) {
+    const questionThemes = crossInterviewCtx.themesByQuestion?.[questionIndex] || [];
+    const emergentThemes = crossInterviewCtx.emergentThemes || [];
+    const currentQuestionQuality = crossInterviewCtx.qualityInsightsByQuestion?.[questionIndex];
+
+    const upcomingQualityAlerts: NonNullable<BarbaraAnalysisInput["crossInterviewContext"]>["upcomingQualityAlerts"] = [];
+    if (crossInterviewCtx.qualityInsightsByQuestion) {
+      for (const [qIdxStr, insight] of Object.entries(crossInterviewCtx.qualityInsightsByQuestion)) {
+        const qIdx = parseInt(qIdxStr, 10);
+        if (qIdx > questionIndex && qIdx <= questionIndex + 2) {
+          upcomingQualityAlerts.push(insight);
+        }
+      }
+    }
+
+    const hasThemeContext = questionThemes.length > 0 || emergentThemes.length > 0;
+    const hasQualityContext = currentQuestionQuality !== undefined || upcomingQualityAlerts.length > 0;
+
+    if (hasThemeContext || hasQualityContext) {
+      crossInterviewContext = {
+        priorSessionCount: crossInterviewCtx.priorSessionCount,
+        snapshotGeneratedAt: crossInterviewCtx.snapshotGeneratedAt ?? null,
+        questionThemes,
+        emergentThemes,
+        currentQuestionQuality,
+        upcomingQualityAlerts: upcomingQualityAlerts.length > 0 ? upcomingQualityAlerts : undefined,
+      };
+    }
+  }
+
+  let analyticsHypotheses: BarbaraAnalysisInput["analyticsHypotheses"];
+  if (
+    analyticsHypothesesCtx.enabled &&
+    analyticsHypothesesCtx.hypotheses?.length &&
+    analyticsHypothesesCtx.totalProjectSessions != null
+  ) {
+    analyticsHypotheses = {
+      totalProjectSessions: analyticsHypothesesCtx.totalProjectSessions,
+      analyticsGeneratedAt: analyticsHypothesesCtx.analyticsGeneratedAt ?? null,
+      hypotheses: analyticsHypothesesCtx.hypotheses.map((h) => ({
+        hypothesis: h.hypothesis,
+        source: h.source,
+        priority: h.priority,
+        isCurrentQuestionRelevant:
+          h.relatedQuestionIndices.includes(questionIndex) ||
+          h.relatedQuestionIndices.length === 0,
+      })),
+    };
+  }
+
+  return { crossInterviewContext, analyticsHypotheses };
+}
+
+async function runBarbaraWithRacing(
+  barbaraInput: Parameters<typeof analyzeWithBarbara>[0],
+  usageCtx: LLMUsageAttribution,
+  speakingDelayMs: number,
+): Promise<{ guidance: string | undefined; suggestedNext: boolean }> {
+  const turnStartTime = Date.now();
+  let guidance: string | undefined;
+  let suggestedNext = false;
+
+  let timedOut = false;
+  const barbaraPromise = analyzeWithBarbara(barbaraInput, usageCtx);
+  const timeoutMs = Math.min(speakingDelayMs, BARBARA_TIMEOUT_MS);
+  const timeoutPromise = new Promise<null>((resolve) =>
+    setTimeout(() => { timedOut = true; resolve(null); }, timeoutMs),
+  );
+
+  try {
+    const result = await Promise.race([barbaraPromise, timeoutPromise]);
+    if (result && result.confidence > BARBARA_CONFIDENCE_GATE && result.action !== "none") {
+      guidance = result.message;
+      if (result.action === "suggest_next_question") {
+        suggestedNext = true;
+      }
+    }
+  } catch (err) {
+    console.error(`[Simulation] Barbara analysis failed:`, err);
+  }
+
+  if (timedOut) {
+    barbaraPromise.catch((err) => {
+      console.error(`[Simulation] Late Barbara analysis failed (post-timeout):`, err);
+    });
+  }
+
+  const elapsed = Date.now() - turnStartTime;
+  const remaining = speakingDelayMs - elapsed;
+  if (remaining > 0) await delay(remaining);
+
+  return { guidance, suggestedNext };
 }
 
 async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
@@ -58,7 +176,6 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
       simulationRunId: ctx.runId,
     });
   } catch (err) {
-    // Note: deleteRespondent not available; orphaned respondent may remain
     throw err;
   }
 
@@ -69,6 +186,12 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
   const questionSummaries: QuestionSummary[] = [];
   const sessionStartTime = Date.now();
   const previousAnswers = new Map<number, string>();
+
+  const crossInterviewCtx = buildCrossInterviewRuntimeContext(ctx.project, ctx.collection);
+  const analyticsHypothesesCtx = buildAnalyticsHypothesesRuntimeContext(
+    ctx.project,
+    ctx.questions.map((q) => ({ text: q.questionText, guidance: q.guidance })),
+  );
 
   try {
     let questionIndex = 0;
@@ -127,41 +250,45 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
         metrics.followUpCount++;
         previousAnswers.set(questionIndex, personaResponse);
 
-        await delay(ctx.interTurnDelayMs);
+        const speakingDelayMs = calculateSpeakingDelayMs(personaResponse, ctx.interTurnDelayMs);
 
         let barbaraGuidance: string | undefined;
         if (ctx.enableBarbara) {
-          try {
-            const barbaraMetrics: QuestionMetrics = {
-              questionIndex: metrics.questionIndex,
-              wordCount: metrics.wordCount,
-              activeTimeMs: Date.now() - metrics.startedAt,
-              turnCount: metrics.turnCount,
-              startedAt: metrics.startedAt,
-              followUpCount: metrics.followUpCount,
-              recommendedFollowUps: question.recommendedFollowUps ?? null,
-            };
+          const barbaraMetrics: QuestionMetrics = {
+            questionIndex: metrics.questionIndex,
+            wordCount: metrics.wordCount,
+            activeTimeMs: Date.now() - metrics.startedAt,
+            turnCount: metrics.turnCount,
+            startedAt: metrics.startedAt,
+            followUpCount: metrics.followUpCount,
+            recommendedFollowUps: question.recommendedFollowUps ?? null,
+          };
 
-            const result = await analyzeWithBarbara({
-              transcriptLog: transcript,
-              previousQuestionSummaries: questionSummaries,
-              currentQuestionIndex: questionIndex,
-              currentQuestion: { text: question.questionText, guidance: question.guidance || "" },
-              allQuestions: ctx.questions.map((q) => ({
-                text: q.questionText, guidance: q.guidance || "",
-              })),
-              questionMetrics: barbaraMetrics,
-              templateObjective: ctx.template.objective || "",
-              templateTone: ctx.template.tone || "professional",
-            }, usageCtx);
+          const { crossInterviewContext, analyticsHypotheses } = buildBarbaraContextFields(
+            crossInterviewCtx, analyticsHypothesesCtx, questionIndex,
+          );
 
-            barbaraGuidance = result.message;
-            if (result.action === "suggest_next_question") {
-              barbaraSuggestedNext = true;
-            }
-          } catch (err) {
-            console.error(`[Simulation] Barbara analysis failed:`, err);
+          const raceResult = await runBarbaraWithRacing({
+            transcriptLog: transcript,
+            previousQuestionSummaries: questionSummaries,
+            currentQuestionIndex: questionIndex,
+            currentQuestion: { text: question.questionText, guidance: question.guidance || "" },
+            allQuestions: ctx.questions.map((q) => ({
+              text: q.questionText, guidance: q.guidance || "",
+            })),
+            questionMetrics: barbaraMetrics,
+            templateObjective: ctx.template.objective || "",
+            templateTone: ctx.template.tone || "professional",
+            crossInterviewContext,
+            analyticsHypotheses,
+          }, usageCtx, speakingDelayMs);
+
+          barbaraGuidance = raceResult.guidance;
+          if (raceResult.suggestedNext) {
+            barbaraSuggestedNext = true;
           }
+        } else {
+          await delay(speakingDelayMs);
         }
 
         const action = evaluateQuestionFlow({
@@ -229,7 +356,10 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
     }
 
     if (ctx.enableAdditionalQuestions && (ctx.collection.maxAdditionalQuestions ?? 0) > 0) {
-      await runAdditionalQuestions(ctx, session.id, transcript, questionSummaries, usageCtx);
+      await runAdditionalQuestions(
+        ctx, session.id, transcript, questionSummaries, usageCtx,
+        crossInterviewCtx, analyticsHypothesesCtx,
+      );
     }
 
     if (ctx.enableSummaries) {
@@ -278,6 +408,8 @@ async function runAdditionalQuestions(
   transcript: TranscriptEntry[],
   questionSummaries: QuestionSummary[],
   usageCtx: LLMUsageAttribution,
+  crossInterviewCtx: CrossInterviewRuntimeContext,
+  analyticsHypothesesCtx: AnalyticsHypothesesRuntimeContext,
 ): Promise<void> {
   try {
     const maxAQ = ctx.collection.maxAdditionalQuestions ?? 1;
@@ -299,6 +431,11 @@ async function runAdditionalQuestions(
 
     if (!aqResult.questions || aqResult.questions.length === 0) return;
 
+    const aqHardCap = Math.min(
+      ctx.maxAQTurnsPerQuestion,
+      SIMULATION_LIMITS.HARD_CAP_TURNS_PER_QUESTION,
+    );
+
     for (let aqIdx = 0; aqIdx < aqResult.questions.length; aqIdx++) {
       const aq = aqResult.questions[aqIdx];
       const aqQuestionIndex = ctx.questions.length + aqIdx;
@@ -310,24 +447,116 @@ async function runAdditionalQuestions(
 
       await delay(ctx.interTurnDelayMs);
 
-      const personaResponse = await generatePersonaResponse(
-        ctx.persona, transcript, ctx.personaModel, usageCtx,
-      );
+      let barbaraSuggestedNext = false;
+      const aqMetrics: SimulationQuestionMetrics = {
+        questionIndex: aqQuestionIndex,
+        wordCount: 0,
+        turnCount: 0,
+        followUpCount: 0,
+        startedAt: Date.now(),
+      };
 
-      transcript.push({
-        speaker: "respondent", text: personaResponse,
-        timestamp: Date.now(), questionIndex: aqQuestionIndex,
-      });
+      for (let turn = 0; turn < aqHardCap; turn++) {
+        const personaResponse = await generatePersonaResponse(
+          ctx.persona, transcript, ctx.personaModel, usageCtx,
+        );
+
+        transcript.push({
+          speaker: "respondent", text: personaResponse,
+          timestamp: Date.now(), questionIndex: aqQuestionIndex,
+        });
+
+        const words = personaResponse.split(/\s+/).filter((w) => w.length > 0).length;
+        aqMetrics.wordCount += words;
+        aqMetrics.turnCount++;
+        aqMetrics.followUpCount++;
+
+        const speakingDelayMs = calculateSpeakingDelayMs(personaResponse, ctx.interTurnDelayMs);
+
+        let barbaraGuidance: string | undefined;
+        if (ctx.enableBarbara) {
+          const barbaraMetrics: QuestionMetrics = {
+            questionIndex: aqMetrics.questionIndex,
+            wordCount: aqMetrics.wordCount,
+            activeTimeMs: Date.now() - aqMetrics.startedAt,
+            turnCount: aqMetrics.turnCount,
+            startedAt: aqMetrics.startedAt,
+            followUpCount: aqMetrics.followUpCount,
+            recommendedFollowUps: null,
+          };
+
+          const { crossInterviewContext, analyticsHypotheses } = buildBarbaraContextFields(
+            crossInterviewCtx, analyticsHypothesesCtx, aqQuestionIndex,
+          );
+
+          const raceResult = await runBarbaraWithRacing({
+            transcriptLog: transcript,
+            previousQuestionSummaries: questionSummaries,
+            currentQuestionIndex: aqQuestionIndex,
+            currentQuestion: { text: aq.questionText, guidance: "" },
+            allQuestions: ctx.questions.map((q) => ({
+              text: q.questionText, guidance: q.guidance || "",
+            })),
+            questionMetrics: barbaraMetrics,
+            templateObjective: ctx.template.objective || "",
+            templateTone: ctx.template.tone || "professional",
+            crossInterviewContext,
+            analyticsHypotheses,
+          }, usageCtx, speakingDelayMs);
+
+          barbaraGuidance = raceResult.guidance;
+          if (raceResult.suggestedNext) {
+            barbaraSuggestedNext = true;
+          }
+        } else {
+          await delay(speakingDelayMs);
+        }
+
+        const action = evaluateQuestionFlow({
+          currentQuestionIndex: aqQuestionIndex,
+          totalQuestions: ctx.questions.length,
+          followUpCount: aqMetrics.followUpCount,
+          maxTurnsPerQuestion: aqHardCap,
+          barbaraSuggestedNext,
+          inAdditionalQuestionPhase: true,
+          currentAdditionalQuestionIndex: aqIdx,
+          totalAdditionalQuestions: aqResult.questions.length,
+        });
+
+        if (action !== "continue") break;
+
+        const aqAsQuestion = {
+          questionText: aq.questionText,
+          guidance: "",
+        } as Question;
+
+        const alviaFollowUp = await generateAlviaResponse(
+          ctx.template,
+          aqAsQuestion,
+          aqQuestionIndex, ctx.questions.length,
+          transcript, barbaraGuidance, ctx.persona.name, ctx.questions,
+          { followUpCount: aqMetrics.followUpCount, recommendedFollowUps: null },
+          true, ctx.alviaModel, usageCtx,
+        );
+
+        transcript.push({
+          speaker: "alvia", text: alviaFollowUp,
+          timestamp: Date.now(), questionIndex: aqQuestionIndex,
+        });
+
+        await delay(ctx.interTurnDelayMs);
+      }
 
       await storage.createSegment({
         sessionId,
         questionId: null,
         additionalQuestionIndex: aqIdx,
         additionalQuestionText: aq.questionText,
-        transcript: `[alvia]: ${aq.questionText}\n[respondent]: ${personaResponse}`,
+        transcript: transcript
+          .filter((e) => e.questionIndex === aqQuestionIndex)
+          .map((e) => `[${e.speaker}]: ${e.text}`)
+          .join("\n"),
       });
-
-      await delay(ctx.interTurnDelayMs);
     }
   } catch (err) {
     console.error(`[Simulation] Additional questions failed:`, err);
@@ -349,6 +578,8 @@ export async function executeSimulationRun(
     enableAdditionalQuestions: boolean;
     alviaModel?: string;
     personaModel?: string;
+    maxTurnsPerQuestion?: number;
+    maxAQTurnsPerQuestion?: number;
   },
 ): Promise<void> {
   const lockAcquired = await acquireSimulationLock(SIMULATION_LIMITS.MAX_CONCURRENT_RUNS);
@@ -426,7 +657,8 @@ export async function executeSimulationRun(
             enableAdditionalQuestions: options.enableAdditionalQuestions,
             alviaModel: options.alviaModel || "gpt-4o-mini",
             personaModel: options.personaModel || "gpt-4o-mini",
-            maxTurnsPerQuestion: SIMULATION_LIMITS.HARD_CAP_TURNS_PER_QUESTION,
+            maxTurnsPerQuestion: options.maxTurnsPerQuestion ?? 6,
+            maxAQTurnsPerQuestion: options.maxAQTurnsPerQuestion ?? 3,
             interTurnDelayMs: 200,
           };
           await runSingleSimulation(ctx);
