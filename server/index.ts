@@ -8,6 +8,10 @@ import { cleanupOrphanedSimulationRuns } from "./storage/simulation";
 const app = express();
 const httpServer = createServer(app);
 
+httpServer.timeout = 660_000;
+httpServer.keepAliveTimeout = 660_000;
+httpServer.headersTimeout = 665_000;
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
