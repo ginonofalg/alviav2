@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -705,8 +704,8 @@ export function GeneratePersonasDialog({
               </Collapsible>
             )}
 
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="space-y-2 pr-3">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="space-y-2 pr-1">
                 {generatedPersonas.map((persona, index) => {
                   if (removedIndices.has(index)) return null;
                   return (
@@ -758,7 +757,7 @@ export function GeneratePersonasDialog({
                   );
                 })}
               </div>
-            </ScrollArea>
+            </div>
 
             <DialogFooter className="gap-2 flex-wrap shrink-0">
               <Button
