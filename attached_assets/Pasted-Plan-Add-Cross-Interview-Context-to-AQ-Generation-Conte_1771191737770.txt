@@ -1,0 +1,94 @@
+Plan: Add Cross-Interview Context to AQ Generation     
+
+ Context
+
+ Barbara's generateAdditionalQuestions() already supports cross-interview context via priorSessionSummaries in the input type and prompt builders — but neither the voice interview nor
+ simulation paths populate it. Voice interviews have a hardcoded enabled: false with a TODO (voice-interview.ts:3219). The simulation engine receives the context as a parameter but silently
+ drops it (engine.ts:442). Additionally, the simulation engine also drops analyticsHypotheses for AQs (already working in voice interviews).
+
+ Goal: Wire up cross-interview context for AQ generation in both real and simulated interviews, gated behind the existing project-level crossInterviewContext flag and crossInterviewThreshold.
+
+ Key Insight
+
+ The AQ function expects priorSessionSummaries (per-session QuestionSummary[] arrays fetched from DB) — a different shape than the pre-computed CrossInterviewRuntimeContext used for real-time
+ Barbara guidance (aggregated analytics themes). A new async helper is needed.
+
+ Implementation Steps
+
+ Step 1: Add buildAQCrossInterviewContext helper
+
+ File: server/voice-interview/context-builders.ts (~50 lines added)
+
+ New exported async function at end of file:
+ - Takes project (for flag + threshold), collectionId, currentSessionId
+ - Gates on project.crossInterviewContext flag and project.crossInterviewThreshold (default 5)
+ - Calls storage.getSessionsByCollection(collectionId) (already returns sessions ordered by createdAt desc)
+ - Filters to: completed, non-empty questionSummaries, excludes current session
+ - Caps at 10 prior sessions (MAX_PRIOR_SESSIONS_FOR_AQ constant)
+ - Returns { enabled, reason?, priorSessionSummaries? } matching AdditionalQuestionsInput.crossInterviewContext shape
+
+ No new storage method needed — reuses existing getSessionsByCollection.
+
+ Step 2: Cache project flags on InterviewState
+
+ File: server/voice-interview/types.ts (line ~177)
+
+ Add two fields to InterviewState:
+ - projectCrossInterviewContext: boolean
+ - projectCrossInterviewThreshold: number
+
+ File: server/voice-interview.ts
+ - Default values in initial state (~line 652): false, 5
+ - Set from project at init (~line 781): project?.crossInterviewContext ?? false, project?.crossInterviewThreshold ?? 5
+
+ This avoids a redundant project DB fetch at AQ generation time.
+
+ Step 3: Wire up in voice interviews
+
+ File: server/voice-interview.ts (line ~3207)
+
+ In generateAdditionalQuestionsForSession:
+ - Import buildAQCrossInterviewContext from ./voice-interview/context-builders (add to existing import at line 95-96)
+ - Before the generateAdditionalQuestions call, invoke the new helper using cached state fields
+ - Replace the hardcoded crossInterviewContext: { enabled: false } with the helper result
+ - Add logging for enabled/disabled status
+
+ Step 4: Wire up in simulation engine
+
+ File: server/simulation/engine.ts (line ~442)
+
+ In runAdditionalQuestions:
+ - Import buildAQCrossInterviewContext (add to existing import at line 26-29)
+ - Before generateAdditionalQuestions call, invoke the helper with ctx.project, ctx.collection.id, sessionId
+ - Pass result as crossInterviewContext
+ - Also pass analyticsHypotheses from analyticsHypothesesCtx (currently missing — mirrors voice interview pattern at voice-interview.ts:3221-3227)
+
+ Files Changed
+
+ ┌────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                    File                    │                                           Change                                            │
+ ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview/context-builders.ts │ Add buildAQCrossInterviewContext function (~50 lines)                                       │
+ ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview/types.ts            │ Add 2 fields to InterviewState (~4 lines)                                                   │
+ ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/voice-interview.ts                  │ Cache project flags at init + replace TODO in AQ call (~15 lines added, ~3 removed)         │
+ ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/simulation/engine.ts                │ Add cross-interview context + analytics hypotheses to AQ call (~15 lines added, ~1 removed) │
+ └────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ No changes needed in barbara-orchestrator.ts — prompt builders already consume the data.
+
+ Edge Cases
+
+ - Below threshold: Returns enabled: false immediately — negligible overhead
+ - Simulated + real sessions mixed: Both included as prior context (matches existing analytics behavior)
+ - Parallel simulation batches: Only completed sessions from prior batches are included — no race condition
+ - Resumed interviews: Context fetched at AQ time (not cached at init), so picks up newly completed sessions
+
+ Verification
+
+ 1. npm run check — type checking passes
+ 2. npx vitest — existing tests pass
+ 3. Manual: Create project with crossInterviewContext: true, crossInterviewThreshold: 2. Run simulation with 5+ personas. Check server logs for [AQ-CrossInterview] Enabled messages on later
+ sessions and threshold_unmet on early ones.
