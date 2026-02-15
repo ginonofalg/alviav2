@@ -12,7 +12,10 @@
       "WebFetch(domain:frankfu.blog)",
       "WebFetch(domain:ai.google.dev)",
       "WebFetch(domain:docs.cloud.google.com)",
-      "WebFetch(domain:developers.openai.com)"
+      "WebFetch(domain:developers.openai.com)",
+      "WebFetch(domain:madhub081011.medium.com)",
+      "WebFetch(domain:thenewstack.io)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
