@@ -127,7 +127,7 @@ export async function synthesizePersonas(params: {
       model: barbaraConfig.model,
       useCase: "barbara_persona_generation",
       timeoutMs: SYNTHESIS_TIMEOUT_MS,
-      callFn: async () => {
+      callFn: async (signal) => {
         return await openai.responses.create({
           model: barbaraConfig.model,
           input: [
@@ -143,7 +143,7 @@ export async function synthesizePersonas(params: {
             },
           },
           reasoning: { effort: barbaraConfig.reasoningEffort as any },
-        } as any);
+        } as any, { signal, timeout: SYNTHESIS_TIMEOUT_MS });
       },
       extractUsage: makeResponsesUsageExtractor(barbaraConfig.model),
     });

@@ -6,7 +6,7 @@ import { populationBriefJsonSchema } from "./types";
 import type { Project } from "@shared/schema";
 import type { LLMUsageAttribution } from "@shared/schema";
 
-const RESEARCH_TIMEOUT_MS = 300_000;
+const RESEARCH_TIMEOUT_MS = 600_000;
 
 const RESEARCH_SYSTEM_PROMPT = `You are a research population analyst. Your task is to research a target population
 for a qualitative interview study and produce a structured population brief.
@@ -196,7 +196,7 @@ export async function researchPopulation(params: {
         model: config.model,
         useCase: "barbara_persona_research",
         timeoutMs: RESEARCH_TIMEOUT_MS,
-        callFn: async () => {
+        callFn: async (signal) => {
           return await openai.responses.create({
             model: config.model,
             input: buildInputMessages(
@@ -214,7 +214,7 @@ export async function researchPopulation(params: {
               },
             },
             reasoning: { effort: config.reasoningEffort as any },
-          } as any);
+          } as any, { signal, timeout: RESEARCH_TIMEOUT_MS });
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
       });
@@ -288,7 +288,7 @@ async function researchWithoutWebSearch(
     model: config.model,
     useCase: "barbara_persona_research",
     timeoutMs: RESEARCH_TIMEOUT_MS,
-    callFn: async () => {
+    callFn: async (signal) => {
       return await openai.responses.create({
         model: config.model,
         input: buildInputMessages(
@@ -305,7 +305,7 @@ async function researchWithoutWebSearch(
           },
         },
         reasoning: { effort: config.reasoningEffort as any },
-      } as any);
+      } as any, { signal, timeout: RESEARCH_TIMEOUT_MS });
     },
     extractUsage: makeResponsesUsageExtractor(config.model),
   });

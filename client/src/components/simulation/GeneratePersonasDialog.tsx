@@ -206,7 +206,7 @@ export function GeneratePersonasDialog({
         "POST",
         `/api/projects/${projectId}/personas/research`,
         body,
-        { timeoutMs: 310000 },
+        { timeoutMs: 610000 },
       );
     },
     onSuccess: (data) => {
@@ -512,11 +512,11 @@ export function GeneratePersonasDialog({
                         ? "Sending research prompt to AI..."
                         : elapsedSeconds < 30
                           ? "AI is searching the web for population data..."
-                          : elapsedSeconds < 90
+                          : elapsedSeconds < 120
                             ? "Analyzing sources and building population brief..."
-                            : elapsedSeconds < 180
-                              ? "Deep research in progress, analyzing multiple sources..."
-                              : "Still working -- complex populations take longer to research..."}
+                            : elapsedSeconds < 300
+                              ? "Deep research in progress -- the AI is conducting multiple web searches..."
+                              : "Still working -- complex populations can require extensive research..."}
                     </p>
                   )}
                   {brief && dialogState === "synthesizing" && (
@@ -577,7 +577,7 @@ export function GeneratePersonasDialog({
             )}
 
             <p className="text-xs text-center text-muted-foreground" data-testid="text-generation-notice">
-              This can take up to 5 minutes for complex populations
+              Research can take up to 10 minutes for complex populations with web search
             </p>
           </div>
         )}
