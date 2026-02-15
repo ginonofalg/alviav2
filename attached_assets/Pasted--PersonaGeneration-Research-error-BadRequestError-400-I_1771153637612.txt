@@ -1,0 +1,40 @@
+[PersonaGeneration] Research error: BadRequestError: 400 Invalid schema for response_format 'population_brief': In context=('properties', 'demographics', 'properties', 'distributions', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'source'.
+    at Function.generate (/home/runner/workspace/node_modules/openai/src/core/error.ts:72:14)
+    at OpenAI.makeStatusError (/home/runner/workspace/node_modules/openai/src/client.ts:478:28)
+    at OpenAI.makeRequest (/home/runner/workspace/node_modules/openai/src/client.ts:728:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async callFn (/home/runner/workspace/server/persona-generation/research.ts:189:18)
+    at async withTrackedLlmCall (/home/runner/workspace/server/llm-usage.ts:136:20)
+    at async researchPopulation (/home/runner/workspace/server/persona-generation/research.ts:182:23)
+    at async <anonymous> (/home/runner/workspace/server/routes/persona-generation.routes.ts:80:48) {
+  status: 400,
+  headers: Headers {
+    date: 'Sun, 15 Feb 2026 11:06:20 GMT',
+    'content-type': 'application/json',
+    'content-length': '392',
+    connection: 'keep-alive',
+    server: 'cloudflare',
+    'openai-version': '2020-10-01',
+    'openai-organization': 'user-80dmvakojrdurfcpn5ahvfaa',
+    'openai-project': 'proj_H2wPZEKEYZzcU1WX4VWKY5Ys',
+    'x-request-id': 'req_71a52458d7074b4a8d8faca14cb8df8b',
+    'openai-processing-ms': '20',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '__cf_bm=Ysqefv0p1d6VjiQqqMUHvG3Ooxkz3e4bNoWOStXkbz4-1771153580.0408828-1.0.1.1-ua0ElVHj2t8iyOtgxoGMbtx7Fsc8dVEevXaMauEzdLjzFKTvElXB8bSCvuDXcUy24fnQVA2y4hSdo3IJdssJLZego.gu3r7.QIuXAb1_S2DkVKZ8B81QTeNpy7axKJbs; HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Sun, 15 Feb 2026 11:36:20 GMT',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'x-content-type-options': 'nosniff',
+    'cf-ray': '9ce455d3386ddc1e-SEA',
+    'alt-svc': 'h3=":443"; ma=86400'
+  },
+  requestID: 'req_71a52458d7074b4a8d8faca14cb8df8b',
+  error: {
+    message: "Invalid schema for response_format 'population_brief': In context=('properties', 'demographics', 'properties', 'distributions', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'source'.",
+    type: 'invalid_request_error',
+    param: 'text.format.schema',
+    code: 'invalid_json_schema'
+  },
+  code: 'invalid_json_schema',
+  param: 'text.format.schema',
+  type: 'invalid_request_error'
+}
+11:06:20 AM [express] POST /api/projects/7bf66f89-a0f2-4438-90a3-69048dd1c8d9/personas/research 500 in 581ms :: {"message":"Failed to research population. Please try again."}
