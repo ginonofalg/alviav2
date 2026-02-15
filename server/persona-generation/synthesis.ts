@@ -9,6 +9,8 @@ import type {
 import { generatedPersonasJsonSchema } from "./types";
 import type { LLMUsageAttribution } from "@shared/schema";
 
+const SYNTHESIS_TIMEOUT_MS = 300_000;
+
 function buildSynthesisSystemPrompt(config: GenerationConfig): string {
   const diversityBlock =
     config.diversityMode === "balanced"
@@ -95,6 +97,10 @@ CONFIGURATION:
 Generate ${config.personaCount} diverse, research-grounded personas for this population.`;
 }
 
+function elapsed(startMs: number): string {
+  return `${((Date.now() - startMs) / 1000).toFixed(1)}s`;
+}
+
 export async function synthesizePersonas(params: {
   brief: PopulationBrief;
   config: GenerationConfig;
@@ -103,6 +109,9 @@ export async function synthesizePersonas(params: {
 }): Promise<GeneratedPersona[]> {
   const openai = new OpenAI();
   const barbaraConfig = getBarbaraConfig().personaGeneration;
+  const startTime = Date.now();
+
+  console.log(`[PersonaGeneration] Synthesis started | model=${barbaraConfig.model} | personaCount=${params.config.personaCount} | diversityMode=${params.config.diversityMode} | edgeCases=${params.config.edgeCases} | hasCorrection=${!!params.correctionPrompt}`);
 
   const systemPrompt = buildSynthesisSystemPrompt(params.config);
   let userPrompt = buildSynthesisUserPrompt(params.brief, params.config);
@@ -111,34 +120,43 @@ export async function synthesizePersonas(params: {
     userPrompt += `\n\n${params.correctionPrompt}`;
   }
 
-  const tracked = await withTrackedLlmCall({
-    attribution: params.attribution,
-    provider: "openai",
-    model: barbaraConfig.model,
-    useCase: "barbara_persona_generation",
-    timeoutMs: 180_000,
-    callFn: async () => {
-      return await openai.responses.create({
-        model: barbaraConfig.model,
-        input: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "generated_personas",
-            strict: true,
-            schema: generatedPersonasJsonSchema,
+  try {
+    const tracked = await withTrackedLlmCall({
+      attribution: params.attribution,
+      provider: "openai",
+      model: barbaraConfig.model,
+      useCase: "barbara_persona_generation",
+      timeoutMs: SYNTHESIS_TIMEOUT_MS,
+      callFn: async () => {
+        return await openai.responses.create({
+          model: barbaraConfig.model,
+          input: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "generated_personas",
+              strict: true,
+              schema: generatedPersonasJsonSchema,
+            },
           },
-        },
-        reasoning: { effort: barbaraConfig.reasoningEffort as any },
-      } as any);
-    },
-    extractUsage: makeResponsesUsageExtractor(barbaraConfig.model),
-  });
+          reasoning: { effort: barbaraConfig.reasoningEffort as any },
+        } as any);
+      },
+      extractUsage: makeResponsesUsageExtractor(barbaraConfig.model),
+    });
 
-  const result = tracked.result as any;
-  const parsed = JSON.parse(result.output_text);
-  return parsed.personas as GeneratedPersona[];
+    const result = tracked.result as any;
+    const parsed = JSON.parse(result.output_text);
+    const personas = parsed.personas as GeneratedPersona[];
+
+    console.log(`[PersonaGeneration] Synthesis completed | personasGenerated=${personas.length} | elapsed=${elapsed(startTime)}`);
+
+    return personas;
+  } catch (error: any) {
+    console.error(`[PersonaGeneration] Synthesis OpenAI call failed | error=${error?.message ?? String(error)} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(startTime)}`);
+    throw error;
+  }
 }

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -133,6 +133,17 @@ export function GeneratePersonasDialog({
   const [uploadedFileMimeType, setUploadedFileMimeType] = useState<string | null>(null);
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (dialogState === "researching" || dialogState === "synthesizing") {
+      setElapsedSeconds(0);
+      const interval = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [dialogState]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -195,7 +206,7 @@ export function GeneratePersonasDialog({
         "POST",
         `/api/projects/${projectId}/personas/research`,
         body,
-        { timeoutMs: 120000 },
+        { timeoutMs: 310000 },
       );
     },
     onSuccess: (data) => {
@@ -228,7 +239,7 @@ export function GeneratePersonasDialog({
           diversityMode,
           edgeCases,
         },
-        { timeoutMs: 90000 },
+        { timeoutMs: 310000 },
       );
     },
     onSuccess: (data) => {
@@ -484,11 +495,31 @@ export function GeneratePersonasDialog({
                 ) : (
                   <Check className="w-5 h-5 text-green-500" />
                 )}
-                <div>
-                  <p className="font-medium">
-                    Phase 1: Researching population
-                  </p>
-                  {brief && (
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="font-medium">
+                      Phase 1: Researching population
+                    </p>
+                    {dialogState === "researching" && (
+                      <span className="text-xs text-muted-foreground tabular-nums" data-testid="text-research-elapsed">
+                        {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
+                      </span>
+                    )}
+                  </div>
+                  {dialogState === "researching" && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {elapsedSeconds < 10
+                        ? "Sending research prompt to AI..."
+                        : elapsedSeconds < 30
+                          ? "AI is searching the web for population data..."
+                          : elapsedSeconds < 90
+                            ? "Analyzing sources and building population brief..."
+                            : elapsedSeconds < 180
+                              ? "Deep research in progress, analyzing multiple sources..."
+                              : "Still working -- complex populations take longer to research..."}
+                    </p>
+                  )}
+                  {brief && dialogState === "synthesizing" && (
                     <p className="text-sm text-muted-foreground">
                       {brief.sources.length} sources found, confidence:{" "}
                       <span className={CONFIDENCE_COLORS[brief.confidence]}>{brief.confidence}</span>
@@ -503,9 +534,29 @@ export function GeneratePersonasDialog({
                 ) : (
                   <div className="w-5 h-5 rounded-full border-2 border-muted" />
                 )}
-                <p className={`font-medium ${dialogState === "researching" ? "text-muted-foreground" : ""}`}>
-                  Phase 2: Generating {personaCount} personas
-                </p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className={`font-medium ${dialogState === "researching" ? "text-muted-foreground" : ""}`}>
+                      Phase 2: Generating {personaCount} personas
+                    </p>
+                    {dialogState === "synthesizing" && (
+                      <span className="text-xs text-muted-foreground tabular-nums" data-testid="text-synthesis-elapsed">
+                        {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
+                      </span>
+                    )}
+                  </div>
+                  {dialogState === "synthesizing" && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {elapsedSeconds < 10
+                        ? "Building diverse persona profiles from research..."
+                        : elapsedSeconds < 45
+                          ? "Crafting backstories, traits, and communication styles..."
+                          : elapsedSeconds < 120
+                            ? "Validating diversity and grounding against population data..."
+                            : "Finalizing persona details -- almost done..."}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -524,6 +575,10 @@ export function GeneratePersonasDialog({
                 ))}
               </div>
             )}
+
+            <p className="text-xs text-center text-muted-foreground" data-testid="text-generation-notice">
+              This can take up to 5 minutes for complex populations
+            </p>
           </div>
         )}
 

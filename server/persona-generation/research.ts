@@ -6,6 +6,8 @@ import { populationBriefJsonSchema } from "./types";
 import type { Project } from "@shared/schema";
 import type { LLMUsageAttribution } from "@shared/schema";
 
+const RESEARCH_TIMEOUT_MS = 300_000;
+
 const RESEARCH_SYSTEM_PROMPT = `You are a research population analyst. Your task is to research a target population
 for a qualitative interview study and produce a structured population brief.
 
@@ -37,8 +39,8 @@ represent the key segments of this population. For each, explain:
 OUTPUT FORMAT:
 Return a JSON object matching the PopulationBrief schema. Every claim should
 include a source URL where possible. Do not fabricate sources -- if you cannot
-find data for a dimension, omit the source field and note this in your
-confidence assessment.`;
+find data for a dimension, set the source field to an empty string and note
+this in your confidence assessment.`;
 
 const FALLBACK_SYSTEM_PROMPT = `You are a research population analyst. Your task is to produce a structured
 population brief for a qualitative interview study based on your existing knowledge.
@@ -152,6 +154,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function elapsed(startMs: number): string {
+  return `${((Date.now() - startMs) / 1000).toFixed(1)}s`;
+}
+
 export interface ResearchResult {
   brief: PopulationBrief;
   citations: Array<{ url: string; title: string }>;
@@ -167,6 +173,9 @@ export async function researchPopulation(params: {
 }): Promise<ResearchResult> {
   const openai = new OpenAI();
   const config = getBarbaraConfig().personaResearch;
+  const overallStart = Date.now();
+
+  console.log(`[PersonaGeneration] Research started | model=${config.model} | promptLength=${params.researchPrompt.length} | hasFile=${!!params.uploadedFile} | project=${params.project.name}`);
 
   const userPrompt = buildResearchUserPrompt(
     params.researchPrompt,
@@ -179,12 +188,14 @@ export async function researchPopulation(params: {
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      console.log(`[PersonaGeneration] OpenAI research call starting | attempt=${attempt + 1}/2 | webSearch=true | elapsed=${elapsed(overallStart)}`);
+
       const tracked = await withTrackedLlmCall({
         attribution: params.attribution,
         provider: "openai",
         model: config.model,
         useCase: "barbara_persona_research",
-        timeoutMs: 180_000,
+        timeoutMs: RESEARCH_TIMEOUT_MS,
         callFn: async () => {
           return await openai.responses.create({
             model: config.model,
@@ -214,9 +225,11 @@ export async function researchPopulation(params: {
 
       const citations = extractCitations(result);
 
+      console.log(`[PersonaGeneration] Research completed | confidence=${brief.confidence} | citations=${citations.length} | demographics=${brief.demographics?.distributions?.length ?? 0} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
+
       if (brief.confidence === "low" && citations.length === 0) {
         console.warn(
-          "[PersonaGeneration] Web search returned no useful results, flagging as ungrounded",
+          `[PersonaGeneration] Web search returned no useful results, flagging as ungrounded | elapsed=${elapsed(overallStart)}`,
         );
         return { brief, citations, ungrounded: true };
       }
@@ -224,10 +237,11 @@ export async function researchPopulation(params: {
       return { brief, citations, ungrounded: false };
     } catch (error: any) {
       lastError = error;
+      const errorMsg = error?.message ?? String(error);
 
       if (isRateLimitError(error) && attempt === 0) {
         console.warn(
-          "[PersonaGeneration] Rate limited by OpenAI, retrying in 5s...",
+          `[PersonaGeneration] Rate limited by OpenAI, retrying in 5s... | elapsed=${elapsed(overallStart)}`,
         );
         await delay(5000);
         continue;
@@ -235,18 +249,19 @@ export async function researchPopulation(params: {
 
       if (isWebSearchUnavailable(error)) {
         console.warn(
-          "[PersonaGeneration] Web search unavailable, falling back to prompt-only generation",
+          `[PersonaGeneration] Web search unavailable, falling back to prompt-only | error=${errorMsg} | elapsed=${elapsed(overallStart)}`,
         );
         useFallback = true;
         break;
       }
 
+      console.error(`[PersonaGeneration] Research OpenAI call failed | attempt=${attempt + 1} | error=${errorMsg} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(overallStart)}`);
       throw error;
     }
   }
 
   if (useFallback) {
-    return await researchWithoutWebSearch(params, openai, config, userPrompt);
+    return await researchWithoutWebSearch(params, openai, config, userPrompt, overallStart);
   }
 
   throw lastError;
@@ -263,13 +278,16 @@ async function researchWithoutWebSearch(
   openai: OpenAI,
   config: { model: string; reasoningEffort: string },
   userPrompt: string,
+  overallStart: number,
 ): Promise<ResearchResult> {
+  console.log(`[PersonaGeneration] Fallback research call starting (no web search) | elapsed=${elapsed(overallStart)}`);
+
   const tracked = await withTrackedLlmCall({
     attribution: params.attribution,
     provider: "openai",
     model: config.model,
     useCase: "barbara_persona_research",
-    timeoutMs: 180_000,
+    timeoutMs: RESEARCH_TIMEOUT_MS,
     callFn: async () => {
       return await openai.responses.create({
         model: config.model,
@@ -294,6 +312,8 @@ async function researchWithoutWebSearch(
 
   const result = tracked.result as any;
   const brief: PopulationBrief = JSON.parse(result.output_text);
+
+  console.log(`[PersonaGeneration] Fallback research completed | confidence=${brief.confidence} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
 
   return { brief, citations: [], ungrounded: true };
 }

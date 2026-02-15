@@ -28,6 +28,10 @@ function checkResearchRateLimit(projectId: string): boolean {
   return true;
 }
 
+function elapsed(startMs: number): string {
+  return `${((Date.now() - startMs) / 1000).toFixed(1)}s`;
+}
+
 const uploadedFileSchema = z.object({
   data: z.string().max(3_000_000),
   fileName: z.string().max(255),
@@ -49,16 +53,21 @@ const synthesizeInputSchema = z.object({
 
 export function registerPersonaGenerationRoutes(app: Express) {
   app.post("/api/projects/:projectId/personas/research", isAuthenticated, async (req: any, res) => {
+    const requestStart = Date.now();
+    const { projectId } = req.params;
+    console.log(`[PersonaGeneration] POST /research received | project=${projectId}`);
+
     try {
       const userId = req.user.claims.sub;
-      const { projectId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
+        console.warn(`[PersonaGeneration] Access denied | project=${projectId} | user=${userId}`);
         return res.status(403).json({ message: "Access denied" });
       }
 
       if (!checkResearchRateLimit(projectId)) {
+        console.warn(`[PersonaGeneration] Rate limit exceeded | project=${projectId}`);
         return res.status(429).json({
           message: "Rate limit exceeded. Maximum 5 research requests per project per hour.",
         });
@@ -66,6 +75,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
 
       const parseResult = researchInputSchema.safeParse(req.body);
       if (!parseResult.success) {
+        console.warn(`[PersonaGeneration] Validation failed | project=${projectId} | error=${fromError(parseResult.error).toString()}`);
         return res.status(400).json({ message: fromError(parseResult.error).toString() });
       }
 
@@ -76,6 +86,8 @@ export function registerPersonaGenerationRoutes(app: Express) {
 
       const workspace = await storage.getWorkspace(project.workspaceId);
       const workspaceId = workspace?.id ?? project.workspaceId;
+
+      console.log(`[PersonaGeneration] Handing off to researchPopulation | project=${projectId} | promptLength=${parseResult.data.researchPrompt.length} | hasFile=${!!parseResult.data.uploadedFile}`);
 
       const { brief, citations, ungrounded } = await researchPopulation({
         researchPrompt: parseResult.data.researchPrompt,
@@ -93,6 +105,8 @@ export function registerPersonaGenerationRoutes(app: Express) {
         confidence: brief.confidence,
       });
 
+      console.log(`[PersonaGeneration] POST /research completed 200 | project=${projectId} | confidence=${brief.confidence} | citations=${citations.length} | elapsed=${elapsed(requestStart)}`);
+
       res.json({
         briefId: briefRecord.id,
         brief,
@@ -100,7 +114,9 @@ export function registerPersonaGenerationRoutes(app: Express) {
         ungrounded,
       });
     } catch (error: any) {
-      console.error("[PersonaGeneration] Research error:", error);
+      const errorMsg = error?.message ?? String(error);
+      console.error(`[PersonaGeneration] POST /research failed | project=${projectId} | error=${errorMsg} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(requestStart)}`);
+
       if (error?.message?.includes("aborted") || error?.name === "AbortError") {
         return res.status(504).json({ message: "Research timed out. Please try again with a more specific prompt." });
       }
@@ -111,14 +127,17 @@ export function registerPersonaGenerationRoutes(app: Express) {
       if (status === 401 || status === 403) {
         return res.status(502).json({ message: "AI service authentication failed. Please check the OpenAI API key configuration." });
       }
-      res.status(500).json({ message: "Failed to research population. Please try again." });
+      res.status(500).json({ message: `Research failed: ${errorMsg}` });
     }
   });
 
   app.post("/api/projects/:projectId/personas/synthesize", isAuthenticated, async (req: any, res) => {
+    const requestStart = Date.now();
+    const { projectId } = req.params;
+    console.log(`[PersonaGeneration] POST /synthesize received | project=${projectId}`);
+
     try {
       const userId = req.user.claims.sub;
-      const { projectId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
@@ -127,6 +146,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
 
       const parseResult = synthesizeInputSchema.safeParse(req.body);
       if (!parseResult.success) {
+        console.warn(`[PersonaGeneration] Synthesize validation failed | project=${projectId} | error=${fromError(parseResult.error).toString()}`);
         return res.status(400).json({ message: fromError(parseResult.error).toString() });
       }
 
@@ -146,31 +166,38 @@ export function registerPersonaGenerationRoutes(app: Express) {
       const config = { personaCount, diversityMode, edgeCases };
       const attribution = { workspaceId, projectId };
 
+      console.log(`[PersonaGeneration] Handing off to synthesizePersonas | project=${projectId} | briefId=${briefId} | personaCount=${personaCount} | diversityMode=${diversityMode}`);
+
       let personas = await synthesizePersonas({ brief, config, attribution });
       let validationWarnings: string[] = [];
 
       const validation = validatePersonaDiversity(personas, diversityMode);
       if (!validation.valid) {
+        console.log(`[PersonaGeneration] Diversity validation failed, retrying with correction | errors=${validation.errors.length} | elapsed=${elapsed(requestStart)}`);
         const correctionPrompt = buildCorrectionPrompt(validation.errors);
         personas = await synthesizePersonas({ brief, config, attribution, correctionPrompt });
 
         const retryValidation = validatePersonaDiversity(personas, diversityMode);
         if (!retryValidation.valid) {
           validationWarnings = retryValidation.errors.map((e) => `Diversity issue: ${e}`);
-          console.warn("[PersonaGeneration] Retry still failed validation:", retryValidation.errors);
+          console.warn(`[PersonaGeneration] Retry still failed validation | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
         }
       }
+
+      console.log(`[PersonaGeneration] POST /synthesize completed 200 | project=${projectId} | personasGenerated=${personas.length} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
 
       res.json({
         personas,
         validationWarnings: validationWarnings.length > 0 ? validationWarnings : undefined,
       });
     } catch (error: any) {
-      console.error("[PersonaGeneration] Synthesis error:", error);
+      const errorMsg = error?.message ?? String(error);
+      console.error(`[PersonaGeneration] POST /synthesize failed | project=${projectId} | error=${errorMsg} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(requestStart)}`);
+
       if (error?.message?.includes("aborted") || error?.name === "AbortError") {
         return res.status(504).json({ message: "Persona generation timed out. Please try again." });
       }
-      res.status(500).json({ message: "Failed to generate personas. Please try again." });
+      res.status(500).json({ message: `Persona generation failed: ${errorMsg}` });
     }
   });
 }
