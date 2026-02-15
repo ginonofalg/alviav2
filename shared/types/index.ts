@@ -11,3 +11,4 @@ export * from "./review";
 export * from "./llm-usage";
 export * from "./guidance-aggregation";
 export * from "./simulation";
+export * from "./persona-generation";

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -38,48 +38,24 @@ import {
   X,
   Globe,
   Search,
+  Upload,
+  FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequestJson, queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-
-interface PopulationBrief {
-  targetPopulation: string;
-  confidence: "high" | "medium" | "low";
-  demographics: {
-    summary: string;
-    distributions: Array<{ dimension: string; breakdown: string; source?: string }>;
-  };
-  behavioralPatterns: Array<{ pattern: string; prevalence: string }>;
-  sources: Array<{ url: string; title: string; relevance: string }>;
-  suggestedPersonaProfiles: Array<{ archetype: string; rationale: string; representsPct: string }>;
-}
-
-interface GeneratedPersona {
-  name: string;
-  description: string;
-  ageRange: string;
-  gender: string;
-  occupation: string;
-  location: string;
-  attitude: string;
-  verbosity: string;
-  domainKnowledge: string;
-  traits: string[];
-  communicationStyle: string;
-  backgroundStory: string;
-  topicsToAvoid: string[];
-  biases: string[];
-}
+import type { PopulationBrief, GeneratedPersona } from "@shared/types/persona-generation";
 
 interface ResearchResponse {
   briefId: string;
   brief: PopulationBrief;
   citations: Array<{ url: string; title: string }>;
+  ungrounded?: boolean;
 }
 
 interface SynthesizeResponse {
   personas: GeneratedPersona[];
+  validationWarnings?: string[];
 }
 
 interface GeneratePersonasDialogProps {
@@ -112,6 +88,17 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   low: "text-red-600 dark:text-red-400",
 };
 
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const MAX_DOC_TOKENS = 8000;
+const ALLOWED_FILE_TYPES = [".csv", ".txt", ".pdf"];
+
+function truncateToTokenLimit(text: string, maxTokens: number): string {
+  const approxCharsPerToken = 4;
+  const maxChars = maxTokens * approxCharsPerToken;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + "\n[...document truncated at token limit]";
+}
+
 export function GeneratePersonasDialog({
   projectId,
   hasProjectMetadata,
@@ -119,6 +106,7 @@ export function GeneratePersonasDialog({
   onOpenChange,
 }: GeneratePersonasDialogProps) {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [dialogState, setDialogState] = useState<DialogState>("input");
   const [researchPrompt, setResearchPrompt] = useState("");
   const [personaCount, setPersonaCount] = useState("5");
@@ -129,19 +117,74 @@ export function GeneratePersonasDialog({
   const [generatedPersonas, setGeneratedPersonas] = useState<GeneratedPersona[]>([]);
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [briefExpanded, setBriefExpanded] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedDocumentText, setUploadedDocumentText] = useState<string | null>(null);
+  const [isUngrounded, setIsUngrounded] = useState(false);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+    if (!ALLOWED_FILE_TYPES.includes(ext)) {
+      toast({
+        title: "Unsupported file type",
+        description: "Please upload a CSV, TXT, or PDF file.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: "File too large",
+        description: "Maximum file size is 2MB.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const truncated = truncateToTokenLimit(text, MAX_DOC_TOKENS);
+      setUploadedDocumentText(truncated);
+      setUploadedFileName(file.name);
+    } catch {
+      toast({
+        title: "Failed to read file",
+        description: "Could not read the uploaded file.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setUploadedFileName(null);
+    setUploadedDocumentText(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const researchMutation = useMutation({
     mutationFn: async () => {
+      const body: Record<string, string> = { researchPrompt };
+      if (uploadedDocumentText) {
+        body.uploadedDocumentText = uploadedDocumentText;
+      }
       return await apiRequestJson<ResearchResponse>(
         "POST",
         `/api/projects/${projectId}/personas/research`,
-        { researchPrompt },
+        body,
         { timeoutMs: 120000 },
       );
     },
     onSuccess: (data) => {
       setBriefId(data.briefId);
       setBrief(data.brief);
+      setIsUngrounded(data.ungrounded ?? false);
       setDialogState("synthesizing");
       synthesizeMutation.mutate();
     },
@@ -174,6 +217,7 @@ export function GeneratePersonasDialog({
     onSuccess: (data) => {
       setGeneratedPersonas(data.personas);
       setRemovedIndices(new Set());
+      setValidationWarnings(data.validationWarnings ?? []);
       setDialogState("review");
     },
     onError: (error: Error) => {
@@ -231,6 +275,8 @@ export function GeneratePersonasDialog({
     setRemovedIndices(new Set());
     setBrief(null);
     setBriefId(null);
+    setIsUngrounded(false);
+    setValidationWarnings([]);
     researchMutation.mutate();
   };
 
@@ -238,6 +284,7 @@ export function GeneratePersonasDialog({
     setDialogState("synthesizing");
     setGeneratedPersonas([]);
     setRemovedIndices(new Set());
+    setValidationWarnings([]);
     synthesizeMutation.mutate();
   };
 
@@ -256,6 +303,10 @@ export function GeneratePersonasDialog({
     setGeneratedPersonas([]);
     setRemovedIndices(new Set());
     setBriefExpanded(false);
+    setUploadedFileName(null);
+    setUploadedDocumentText(null);
+    setIsUngrounded(false);
+    setValidationWarnings([]);
     onOpenChange(false);
   };
 
@@ -305,6 +356,48 @@ export function GeneratePersonasDialog({
                 />
                 <p className="text-xs text-muted-foreground">
                   {researchPrompt.length}/2000 characters (minimum 20)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Upload supporting document (optional)</Label>
+                <div className="flex items-center gap-2">
+                  {uploadedFileName ? (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted text-sm">
+                      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="truncate max-w-[200px]">{uploadedFileName}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={handleRemoveFile}
+                        data-testid="button-remove-file"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      data-testid="button-upload-file"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload File
+                    </Button>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,.txt,.pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    data-testid="input-file-upload"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  CSV, TXT, or PDF up to 2MB. Content is used as additional research context.
                 </p>
               </div>
 
@@ -418,6 +511,34 @@ export function GeneratePersonasDialog({
 
         {dialogState === "review" && (
           <div className="flex-1 min-h-0 space-y-3">
+            {isUngrounded && (
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-600 dark:text-amber-400">
+                    Limited web research
+                  </p>
+                  <p className="text-muted-foreground">
+                    Web search returned limited results. Personas are based on general knowledge and may not fully reflect current population data.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {validationWarnings.length > 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-600 dark:text-amber-400">
+                    Diversity check warnings
+                  </p>
+                  <p className="text-muted-foreground">
+                    Some personas may lack diversity. Consider regenerating or manually adjusting after saving.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {brief && (
               <Collapsible open={briefExpanded} onOpenChange={setBriefExpanded}>
                 <CollapsibleTrigger asChild>

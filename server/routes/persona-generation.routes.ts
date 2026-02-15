@@ -28,9 +28,17 @@ function checkResearchRateLimit(projectId: string): boolean {
   return true;
 }
 
+const MAX_DOCUMENT_CHARS = 32000;
+
+function truncateDocumentText(text: string): string {
+  if (text.length <= MAX_DOCUMENT_CHARS) return text;
+  return text.slice(0, MAX_DOCUMENT_CHARS) + "\n[...document truncated at token limit]";
+}
+
 const researchInputSchema = z.object({
   researchPrompt: z.string().min(20).max(2000),
   additionalContext: z.string().max(8000).optional(),
+  uploadedDocumentText: z.string().max(100000).optional(),
 });
 
 const synthesizeInputSchema = z.object({
@@ -70,10 +78,15 @@ export function registerPersonaGenerationRoutes(app: Express) {
       const workspace = await storage.getWorkspace(project.workspaceId);
       const workspaceId = workspace?.id ?? project.workspaceId;
 
-      const { brief, citations } = await researchPopulation({
+      const docText = parseResult.data.uploadedDocumentText
+        ? truncateDocumentText(parseResult.data.uploadedDocumentText)
+        : undefined;
+
+      const { brief, citations, ungrounded } = await researchPopulation({
         researchPrompt: parseResult.data.researchPrompt,
         project,
         additionalContext: parseResult.data.additionalContext,
+        uploadedDocumentText: docText,
         attribution: { workspaceId, projectId },
       });
 
@@ -89,11 +102,19 @@ export function registerPersonaGenerationRoutes(app: Express) {
         briefId: briefRecord.id,
         brief,
         citations,
+        ungrounded,
       });
     } catch (error: any) {
       console.error("[PersonaGeneration] Research error:", error);
       if (error?.message?.includes("aborted") || error?.name === "AbortError") {
         return res.status(504).json({ message: "Research timed out. Please try again with a more specific prompt." });
+      }
+      const status = error?.status ?? error?.statusCode;
+      if (status === 429) {
+        return res.status(429).json({ message: "The AI service is temporarily overloaded. Please wait a minute and try again." });
+      }
+      if (status === 401 || status === 403) {
+        return res.status(502).json({ message: "AI service authentication failed. Please check the OpenAI API key configuration." });
       }
       res.status(500).json({ message: "Failed to research population. Please try again." });
     }
@@ -131,14 +152,24 @@ export function registerPersonaGenerationRoutes(app: Express) {
       const attribution = { workspaceId, projectId };
 
       let personas = await synthesizePersonas({ brief, config, attribution });
+      let validationWarnings: string[] = [];
 
       const validation = validatePersonaDiversity(personas, diversityMode);
       if (!validation.valid) {
         const correctionPrompt = buildCorrectionPrompt(validation.errors);
         personas = await synthesizePersonas({ brief, config, attribution, correctionPrompt });
+
+        const retryValidation = validatePersonaDiversity(personas, diversityMode);
+        if (!retryValidation.valid) {
+          validationWarnings = retryValidation.errors.map((e) => `Diversity issue: ${e}`);
+          console.warn("[PersonaGeneration] Retry still failed validation:", retryValidation.errors);
+        }
       }
 
-      res.json({ personas });
+      res.json({
+        personas,
+        validationWarnings: validationWarnings.length > 0 ? validationWarnings : undefined,
+      });
     } catch (error: any) {
       console.error("[PersonaGeneration] Synthesis error:", error);
       if (error?.message?.includes("aborted") || error?.name === "AbortError") {

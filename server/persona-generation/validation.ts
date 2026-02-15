@@ -4,9 +4,10 @@ const ATTITUDES = ["cooperative", "reluctant", "neutral", "evasive", "enthusiast
 const VERBOSITIES = ["low", "medium", "high"] as const;
 const DOMAIN_KNOWLEDGE = ["none", "basic", "intermediate", "expert"] as const;
 
-interface ValidationResult {
+export interface ValidationResult {
   valid: boolean;
   errors: string[];
+  warnings: string[];
 }
 
 function countDistinct<T>(values: T[]): number {
@@ -20,15 +21,57 @@ function maxPct<T>(values: T[]): number {
   return Math.max(...counts.values()) / values.length;
 }
 
+function parseAgeRange(ageRange: string): { min: number; max: number } | null {
+  const match = ageRange.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (match) return { min: parseInt(match[1]), max: parseInt(match[2]) };
+  const plusMatch = ageRange.match(/(\d+)\+/);
+  if (plusMatch) return { min: parseInt(plusMatch[1]), max: 100 };
+  const singleMatch = ageRange.match(/(\d+)/);
+  if (singleMatch) {
+    const n = parseInt(singleMatch[1]);
+    return { min: n, max: n };
+  }
+  return null;
+}
+
+function validateDemographicSpread(personas: GeneratedPersona[]): string[] {
+  const errors: string[] = [];
+  const count = personas.length;
+  if (count < 3) return errors;
+
+  const ages = personas.map((p) => parseAgeRange(p.ageRange)).filter((a): a is { min: number; max: number } => a !== null);
+  if (ages.length >= 3) {
+    const midpoints = ages.map((a) => (a.min + a.max) / 2);
+    const minAge = Math.min(...midpoints);
+    const maxAge = Math.max(...midpoints);
+    if (maxAge - minAge < 10) {
+      errors.push(`age: all personas fall within a narrow range (${Math.round(minAge)}-${Math.round(maxAge)}), need more age diversity`);
+    }
+  }
+
+  const genders = personas.map((p) => p.gender.toLowerCase().trim());
+  if (count >= 4 && countDistinct(genders) < 2) {
+    errors.push(`gender: all ${count} personas have the same gender "${genders[0]}", need at least 2 different genders`);
+  }
+
+  const locations = personas.map((p) => p.location.toLowerCase().trim());
+  if (count >= 5 && countDistinct(locations) < 2) {
+    errors.push(`location: all ${count} personas share the same location "${locations[0]}", need geographic diversity`);
+  }
+
+  return errors;
+}
+
 export function validatePersonaDiversity(
   personas: GeneratedPersona[],
   diversityMode: DiversityMode,
 ): ValidationResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const count = personas.length;
 
   if (count < 2) {
-    return { valid: true, errors: [] };
+    return { valid: true, errors: [], warnings: [] };
   }
 
   const attitudes = personas.map((p) => p.attitude);
@@ -90,7 +133,10 @@ export function validatePersonaDiversity(
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  const demographicErrors = validateDemographicSpread(personas);
+  errors.push(...demographicErrors);
+
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 export function buildCorrectionPrompt(errors: string[]): string {
