@@ -58,11 +58,16 @@ represent the key segments of this population. For each, explain:
 OUTPUT FORMAT:
 Return a JSON object matching the PopulationBrief schema.`;
 
+export interface UploadedFile {
+  data: string;
+  fileName: string;
+  mimeType: string;
+}
+
 function buildResearchUserPrompt(
   researchPrompt: string,
   project: Project,
   additionalContext?: string,
-  uploadedDocumentText?: string,
 ): string {
   const parts: string[] = [`RESEARCH CONTEXT:\n${researchPrompt}`];
 
@@ -78,12 +83,39 @@ function buildResearchUserPrompt(
     parts.push(`\nADDITIONAL CONTEXT PROVIDED BY RESEARCHER:\n${additionalContext}`);
   }
 
-  if (uploadedDocumentText) {
-    parts.push(`\nUPLOADED DOCUMENT CONTENT:\n${uploadedDocumentText}`);
-  }
-
   parts.push("\nResearch this population thoroughly using web search. Produce a structured population brief with citations.");
   return parts.join("\n");
+}
+
+function buildInputMessages(
+  systemPrompt: string,
+  userPrompt: string,
+  uploadedFile?: UploadedFile,
+): any[] {
+  const messages: any[] = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  if (uploadedFile) {
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "input_file",
+          filename: uploadedFile.fileName,
+          file_data: `data:${uploadedFile.mimeType};base64,${uploadedFile.data}`,
+        },
+        {
+          type: "input_text",
+          text: `The above file ("${uploadedFile.fileName}") contains reference data about the target population. Use it alongside web search to inform the population brief.\n\n${userPrompt}`,
+        },
+      ],
+    });
+  } else {
+    messages.push({ role: "user", content: userPrompt });
+  }
+
+  return messages;
 }
 
 function isRateLimitError(error: any): boolean {
@@ -114,7 +146,7 @@ export async function researchPopulation(params: {
   researchPrompt: string;
   project: Project;
   additionalContext?: string;
-  uploadedDocumentText?: string;
+  uploadedFile?: UploadedFile;
   attribution: LLMUsageAttribution;
 }): Promise<ResearchResult> {
   const openai = new OpenAI();
@@ -124,7 +156,6 @@ export async function researchPopulation(params: {
     params.researchPrompt,
     params.project,
     params.additionalContext,
-    params.uploadedDocumentText,
   );
 
   let lastError: any = null;
@@ -141,10 +172,7 @@ export async function researchPopulation(params: {
         callFn: async () => {
           return await openai.responses.create({
             model: config.model,
-            input: [
-              { role: "system", content: RESEARCH_SYSTEM_PROMPT },
-              { role: "user", content: userPrompt },
-            ],
+            input: buildInputMessages(RESEARCH_SYSTEM_PROMPT, userPrompt, params.uploadedFile),
             tools: [{ type: "web_search" as any }],
             text: {
               format: {
@@ -167,7 +195,7 @@ export async function researchPopulation(params: {
       const citations = extractCitations(result);
 
       if (brief.confidence === "low" && citations.length === 0) {
-        console.warn("[PersonaGeneration] Web search returned no useful results, re-running without web search for consistency flagging");
+        console.warn("[PersonaGeneration] Web search returned no useful results, flagging as ungrounded");
         return { brief, citations, ungrounded: true };
       }
 
@@ -203,7 +231,7 @@ async function researchWithoutWebSearch(
     researchPrompt: string;
     project: Project;
     additionalContext?: string;
-    uploadedDocumentText?: string;
+    uploadedFile?: UploadedFile;
     attribution: LLMUsageAttribution;
   },
   openai: OpenAI,
@@ -219,10 +247,7 @@ async function researchWithoutWebSearch(
     callFn: async () => {
       return await openai.responses.create({
         model: config.model,
-        input: [
-          { role: "system", content: FALLBACK_SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
+        input: buildInputMessages(FALLBACK_SYSTEM_PROMPT, userPrompt, params.uploadedFile),
         text: {
           format: {
             type: "json_schema",

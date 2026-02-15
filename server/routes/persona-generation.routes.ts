@@ -28,17 +28,16 @@ function checkResearchRateLimit(projectId: string): boolean {
   return true;
 }
 
-const MAX_DOCUMENT_CHARS = 32000;
-
-function truncateDocumentText(text: string): string {
-  if (text.length <= MAX_DOCUMENT_CHARS) return text;
-  return text.slice(0, MAX_DOCUMENT_CHARS) + "\n[...document truncated at token limit]";
-}
+const uploadedFileSchema = z.object({
+  data: z.string().max(3_000_000),
+  fileName: z.string().max(255),
+  mimeType: z.enum(["text/csv", "text/plain", "application/pdf"]),
+});
 
 const researchInputSchema = z.object({
   researchPrompt: z.string().min(20).max(2000),
   additionalContext: z.string().max(8000).optional(),
-  uploadedDocumentText: z.string().max(100000).optional(),
+  uploadedFile: uploadedFileSchema.optional(),
 });
 
 const synthesizeInputSchema = z.object({
@@ -78,15 +77,11 @@ export function registerPersonaGenerationRoutes(app: Express) {
       const workspace = await storage.getWorkspace(project.workspaceId);
       const workspaceId = workspace?.id ?? project.workspaceId;
 
-      const docText = parseResult.data.uploadedDocumentText
-        ? truncateDocumentText(parseResult.data.uploadedDocumentText)
-        : undefined;
-
       const { brief, citations, ungrounded } = await researchPopulation({
         researchPrompt: parseResult.data.researchPrompt,
         project,
         additionalContext: parseResult.data.additionalContext,
-        uploadedDocumentText: docText,
+        uploadedFile: parseResult.data.uploadedFile,
         attribution: { workspaceId, projectId },
       });
 

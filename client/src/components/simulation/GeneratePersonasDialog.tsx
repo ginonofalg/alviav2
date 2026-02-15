@@ -89,14 +89,25 @@ const CONFIDENCE_COLORS: Record<string, string> = {
 };
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024;
-const MAX_DOC_TOKENS = 8000;
 const ALLOWED_FILE_TYPES = [".csv", ".txt", ".pdf"];
 
-function truncateToTokenLimit(text: string, maxTokens: number): string {
-  const approxCharsPerToken = 4;
-  const maxChars = maxTokens * approxCharsPerToken;
-  if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars) + "\n[...document truncated at token limit]";
+const MIME_TYPES: Record<string, string> = {
+  ".csv": "text/csv",
+  ".txt": "text/plain",
+  ".pdf": "application/pdf",
+};
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(",")[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export function GeneratePersonasDialog({
@@ -118,7 +129,8 @@ export function GeneratePersonasDialog({
   const [removedIndices, setRemovedIndices] = useState<Set<number>>(new Set());
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [uploadedDocumentText, setUploadedDocumentText] = useState<string | null>(null);
+  const [uploadedFileData, setUploadedFileData] = useState<string | null>(null);
+  const [uploadedFileMimeType, setUploadedFileMimeType] = useState<string | null>(null);
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
@@ -148,10 +160,10 @@ export function GeneratePersonasDialog({
     }
 
     try {
-      const text = await file.text();
-      const truncated = truncateToTokenLimit(text, MAX_DOC_TOKENS);
-      setUploadedDocumentText(truncated);
+      const base64 = await readFileAsBase64(file);
+      setUploadedFileData(base64);
       setUploadedFileName(file.name);
+      setUploadedFileMimeType(MIME_TYPES[ext] ?? "application/octet-stream");
     } catch {
       toast({
         title: "Failed to read file",
@@ -164,15 +176,20 @@ export function GeneratePersonasDialog({
 
   const handleRemoveFile = () => {
     setUploadedFileName(null);
-    setUploadedDocumentText(null);
+    setUploadedFileData(null);
+    setUploadedFileMimeType(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const researchMutation = useMutation({
     mutationFn: async () => {
-      const body: Record<string, string> = { researchPrompt };
-      if (uploadedDocumentText) {
-        body.uploadedDocumentText = uploadedDocumentText;
+      const body: Record<string, any> = { researchPrompt };
+      if (uploadedFileData && uploadedFileName && uploadedFileMimeType) {
+        body.uploadedFile = {
+          data: uploadedFileData,
+          fileName: uploadedFileName,
+          mimeType: uploadedFileMimeType,
+        };
       }
       return await apiRequestJson<ResearchResponse>(
         "POST",

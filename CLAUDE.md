@@ -327,7 +327,7 @@ vitest.config.ts            # Vitest test configuration
 - Phase 2 (synthesis.ts): Generates diverse personas from the brief using structured output JSON schemas; supports configurable persona count (3-10), diversity modes (balanced/maximize), and edge case inclusion
 - Post-generation diversity validation (validation.ts): Checks enum coverage, name uniqueness, trait overlap, and demographic spread (age range, gender, geographic diversity); triggers automatic retry with correction prompt; second retry validated with warnings surfaced to user
 - Web search fallback: retry once on rate limit (5s delay); fallback to prompt-only generation when web search is unavailable; `ungrounded` flag set when web search yields no useful results (low confidence + zero citations)
-- Document upload: supports CSV/TXT/PDF file upload (2MB max); client-side text extraction with token truncation; backend enforces 32k character limit before injecting into research prompt
+- Document upload: supports CSV/TXT/PDF file upload (2MB max); files sent as base64 and passed directly to OpenAI Responses API as `input_file` content parts — the LLM handles parsing natively
 - Shared types: `PopulationBrief`, `GeneratedPersona`, and related interfaces defined in `shared/types/persona-generation.ts`; server types.ts re-exports from shared
 - Rate limiting: In-memory per-project counter, max 5 research requests per hour
 - LLM use cases: `barbara_persona_research` and `barbara_persona_generation` tracked via `llmUsageEvents`
