@@ -100,7 +100,7 @@ const barbaraConfig: BarbaraConfig = {
     reasoningEffort: "high",
   },
   personaGeneration: {
-    model: "gpt-5",
+    model: "gpt-5-mini",
     verbosity: "low",
     reasoningEffort: "medium",
   },

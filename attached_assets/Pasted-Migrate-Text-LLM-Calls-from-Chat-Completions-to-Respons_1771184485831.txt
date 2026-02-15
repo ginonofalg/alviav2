@@ -1,0 +1,430 @@
+Migrate Text LLM Calls from Chat Completions to Responses API                                                                                                                                    
+                                                        
+ Context
+
+ The project currently uses two OpenAI API patterns for text LLM calls:
+ - Responses API (openai.responses.create) — used by persona generation (2 calls in server/persona-generation/)
+ - Chat Completions API (openai.chat.completions.create) — used everywhere else (11 production calls + 3 seed script calls)
+
+ The Responses API is OpenAI's newer, recommended endpoint with benefits including: built-in tool use (web_search), strict JSON schema support, prompt caching with token visibility, and a
+ simpler response structure. This migration standardizes all text LLM calls on the Responses API, leaving only the Realtime WebSocket calls and Gemini API calls untouched.
+
+ Scope
+
+ Production code (11 calls across 4 files):
+
+ server/barbara-orchestrator.ts — 8 calls, all JSON object mode:
+
+ ┌─────┬──────────────────────────────────┬──────┬───────────────────────────────────────────┬─────────────────────┬────────────┐
+ │  #  │             Function             │ Line │                 Use Case                  │     Config Key      │ Max Tokens │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 1   │ analyzeWithBarbara()             │ 321  │ barbara_analysis                          │ analysis            │ 500        │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 2   │ detectTopicOverlap()             │ 808  │ barbara_topic_overlap                     │ topicOverlap        │ 200        │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 3   │ generateQuestionSummary()        │ 984  │ barbara_question_summary                  │ summarisation       │ 1500       │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 4   │ generateCrossInterviewAnalysis() │ 1610 │ barbara_cross_interview_enhanced_analysis │ summarisation       │ 16000      │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 5   │ generateProjectAnalytics()       │ 2776 │ barbara_project_cross_template_analysis   │ projectAnalytics    │ 20000      │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 6   │ generateTemplateFromProject()    │ 3025 │ barbara_template_generation               │ templateGeneration  │ 10000      │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 7   │ generateAdditionalQuestions()    │ 3212 │ barbara_additional_questions              │ additionalQuestions │ 20000      │
+ ├─────┼──────────────────────────────────┼──────┼───────────────────────────────────────────┼─────────────────────┼────────────┤
+ │ 8   │ generateSessionSummary()         │ 3557 │ barbara_session_summary                   │ sessionSummary      │ (none)     │
+ └─────┴──────────────────────────────────┴──────┴───────────────────────────────────────────┴─────────────────────┴────────────┘
+
+ server/simulation/persona-prompt.ts — 1 call, plain text:
+
+ ┌─────┬───────────────────────────┬──────┬────────────────────┬────────────────────────────────────────┐
+ │  #  │         Function          │ Line │      Use Case      │                 Notes                  │
+ ├─────┼───────────────────────────┼──────┼────────────────────┼────────────────────────────────────────┤
+ │ 9   │ generatePersonaResponse() │ 102  │ simulation_persona │ drop temperature → reasoning+verbosity │
+ └─────┴───────────────────────────┴──────┴────────────────────┴────────────────────────────────────────┘
+
+ server/simulation/alvia-adapter.ts — 1 call, plain text:
+
+ ┌─────┬─────────────────────────┬──────┬──────────────────┬──────────────────────────────┐
+ │  #  │        Function         │ Line │     Use Case     │            Notes             │
+ ├─────┼─────────────────────────┼──────┼──────────────────┼──────────────────────────────┤
+ │ 10  │ generateAlviaResponse() │ 57   │ simulation_alvia │ drop temperature → reasoning │
+ └─────┴─────────────────────────┴──────┴──────────────────┴──────────────────────────────┘
+
+ server/question-parser.ts — 1 call, JSON object mode:
+
+ ┌─────┬──────────────────┬──────┬──────────────────────────┬───────────────────────┐
+ │  #  │     Function     │ Line │         Use Case         │         Notes         │
+ ├─────┼──────────────────┼──────┼──────────────────────────┼───────────────────────┤
+ │ 11  │ parseQuestions() │ 173  │ barbara_question_parsing │ hardcoded model gpt-5 │
+ └─────┴──────────────────┴──────┴──────────────────────────┴───────────────────────┘
+
+ Seed scripts (3 calls across 3 files):
+
+ scripts/seed-test-data/generators/conversations.ts — 1 call:
+
+ ┌────────────────────────┬──────┬─────────────────────────────────────┐
+ │        Function        │ Line │                Notes                │
+ ├────────────────────────┼──────┼─────────────────────────────────────┤
+ │ generateConversation() │ 125  │ JSON object mode, no usage tracking │
+ └────────────────────────┴──────┴─────────────────────────────────────┘
+
+ scripts/seed-test-data/generators/summaries.ts — 1 call:
+
+ ┌───────────────────────────┬──────┬─────────────────────────────────────┐
+ │         Function          │ Line │                Notes                │
+ ├───────────────────────────┼──────┼─────────────────────────────────────┤
+ │ generateQuestionSummary() │ 82   │ JSON object mode, no usage tracking │
+ └───────────────────────────┴──────┴─────────────────────────────────────┘
+
+ scripts/seed-test-data/generators/personas.ts — 1 call:
+
+ ┌────────────────────┬──────┬─────────────────────────────────────┐
+ │      Function      │ Line │                Notes                │
+ ├────────────────────┼──────┼─────────────────────────────────────┤
+ │ generatePersonas() │ 55   │ JSON object mode, no usage tracking │
+ └────────────────────┴──────┴─────────────────────────────────────┘
+
+ Out of scope:
+
+ - server/voice-interview.ts — Realtime WebSocket API (different protocol)
+ - server/infographic-service.ts — Google Gemini SDK (different provider)
+
+ API Translation Reference
+
+ ┌───────────────────┬──────────────────────────────────────────┬─────────────────────────────────────────────────────────┐
+ │      Aspect       │             Chat Completions             │                      Responses API                      │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Method            │ openai.chat.completions.create()         │ openai.responses.create()                               │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Input messages    │ messages: [{role, content}]              │ input: [{role, content}]                                │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ JSON mode         │ response_format: { type: "json_object" } │ text: { format: { type: "json_object" } }               │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Verbosity         │ verbosity: "low" (top-level)             │ text: { format: ..., verbosity: "low" }                 │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Max output tokens │ max_completion_tokens: N                 │ max_output_tokens: N                                    │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Temperature       │ temperature: N                           │ Dropped — use reasoning.effort + text.verbosity instead │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Reasoning effort  │ reasoning_effort: "low"                  │ reasoning: { effort: "low" }                            │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Output text       │ response.choices[0].message.content      │ response.output_text                                    │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Finish/status     │ response.choices[0].finish_reason        │ response.status + response.incomplete_details           │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Usage: input      │ response.usage.prompt_tokens             │ response.usage.input_tokens                             │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Usage: output     │ response.usage.completion_tokens         │ response.usage.output_tokens                            │
+ ├───────────────────┼──────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Usage: cached     │ N/A                                      │ response.usage.input_tokens_details.cached_tokens       │
+ └───────────────────┴──────────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+
+ Implementation Steps
+
+ Step 1: Fix extractOpenAIResponsesUsage() bug in server/llm-usage.ts
+
+ The existing function reads prompt_tokens/completion_tokens but the Responses API returns input_tokens/output_tokens. This is currently broken for persona generation — it reports 0 tokens with
+  "success" status.
+
+ Before: u.prompt_tokens, u.completion_tokens, u.prompt_tokens_details
+ After:  u.input_tokens, u.output_tokens, u.input_tokens_details
+
+ Also update the TypeScript type signature to match the actual Responses API response shape.
+
+ File: server/llm-usage.ts lines 172-209
+
+ Step 2: Migrate server/barbara-orchestrator.ts (8 calls)
+
+ For each of the 8 calls, apply this mechanical transformation:
+
+ a) Change the API call:
+ // Before:
+ return (await openai.chat.completions.create({
+   model: config.model,
+   messages: [
+     { role: "system", content: systemPrompt },
+     { role: "user", content: userPrompt },
+   ],
+   response_format: { type: "json_object" },
+   max_completion_tokens: 500,
+   reasoning_effort: config.reasoningEffort,
+   verbosity: config.verbosity,
+ } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model: config.model,
+   input: [
+     { role: "system", content: systemPrompt },
+     { role: "user", content: userPrompt },
+   ],
+   text: {
+     format: { type: "json_object" },
+     verbosity: config.verbosity,
+   },
+   max_output_tokens: 500,
+   reasoning: { effort: config.reasoningEffort },
+ } as any);
+
+ b) Change usage extractor:
+ // Before:
+ extractUsage: makeBarbaraUsageExtractor(config.model),
+ // After:
+ extractUsage: makeResponsesUsageExtractor(config.model),
+
+ c) Change response consumption:
+ // Before:
+ const content = response.choices[0]?.message?.content;
+ // After:
+ const content = (response as any).output_text;
+
+ d) Change finish_reason check (only in generateQuestionSummary):
+ // Before:
+ const finishReason = response.choices[0]?.finish_reason;
+ if (finishReason === "length") { ... }
+ // After:
+ const status = (response as any).status;
+ if (status === "incomplete") { ... }
+
+ e) Update usage logging lines (in analyzeWithBarbara and anywhere else that logs tokens):
+ // Before:
+ response.usage.prompt_tokens ... response.usage.completion_tokens
+ // After:
+ response.usage.input_tokens ... response.usage.output_tokens
+
+ f) Update imports: Remove ChatCompletion type import, add makeResponsesUsageExtractor import.
+
+ g) generateSessionSummary note: This call has no max_completion_tokens, reasoning_effort, or verbosity. The migration is simpler — just change the method, input, text format, extractor, and
+ response consumption.
+
+ Step 3: Migrate server/simulation/persona-prompt.ts (1 call)
+
+ Plain text response. Replace temperature with reasoning-based parameters since all models are now reasoning models.
+
+ // Before:
+ const temperature = VERBOSITY_TEMP[persona.verbosity] || 0.8;
+ return (await openai.chat.completions.create({
+   model,
+   messages,
+   temperature,
+   max_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
+ })) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model,
+   input: messages,
+   text: { verbosity: persona.verbosity },
+   max_output_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
+   reasoning: { effort: "medium" as any },
+ } as any);
+
+ Additional cleanup:
+ - Remove VERBOSITY_TEMP map (no longer needed — temperature replaced by text verbosity)
+ - Remove temperature local variable
+
+ Response consumption: tracked.result.choices[0]?.message?.content?.trim() → (tracked.result as any).output_text?.trim()
+
+ Update imports: Remove ChatCompletion, change makeBarbaraUsageExtractor → makeResponsesUsageExtractor.
+
+ Step 4: Migrate server/simulation/alvia-adapter.ts (1 call)
+
+ Plain text response. Replace temperature: 0.7 with reasoning parameters.
+
+ // Before:
+ return (await openai.chat.completions.create({
+   model,
+   messages,
+   temperature: 0.7,
+   max_tokens: 600,
+ })) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model,
+   input: messages,
+   max_output_tokens: 600,
+   reasoning: { effort: "medium" as any },
+ } as any);
+
+ Response consumption: same pattern as Step 3.
+ Update imports: same as Step 3.
+
+ Step 4b: Update simulation model defaults in server/simulation/engine.ts
+
+ Update default models from gpt-4o-mini to gpt-5-mini (reasoning model):
+
+ // Before (lines 427-428):
+ alviaModel: options.alviaModel || "gpt-4o-mini",
+ personaModel: options.personaModel || "gpt-4o-mini",
+
+ // After:
+ alviaModel: options.alviaModel || "gpt-5-mini",
+ personaModel: options.personaModel || "gpt-5-mini",
+
+ Step 5: Migrate server/question-parser.ts (1 call)
+
+ Same pattern as Step 2 — JSON object mode with reasoning_effort. Uses hardcoded model so no config-based verbosity. Map reasoning_effort to reasoning: { effort: ... }.
+
+ Step 6: Migrate seed scripts (3 calls)
+
+ These are simpler — they don't use withTrackedLlmCall, just call the API directly.
+
+ For each of the 3 files, apply:
+ // Before:
+ const response = await openai.chat.completions.create({
+   model: SEED_CONFIG.model,
+   messages: [{ role: 'user', content: prompt }],
+   response_format: { type: "json_object" }
+ });
+ const content = response.choices[0].message.content;
+
+ // After:
+ const response = await openai.responses.create({
+   model: SEED_CONFIG.model,
+   input: [{ role: 'user', content: prompt }],
+   text: { format: { type: "json_object" } },
+ } as any);
+ const content = (response as any).output_text;
+
+ Files:
+ - scripts/seed-test-data/generators/conversations.ts (line 125)
+ - scripts/seed-test-data/generators/summaries.ts (line 82)
+ - scripts/seed-test-data/generators/personas.ts (line 55)
+
+ Step 7: Remove dead code
+
+ After all calls are migrated:
+ - Remove extractOpenAIChatUsage() from server/llm-usage.ts (lines 12-33) — no longer used
+ - Remove makeBarbaraUsageExtractor() from server/llm-usage.ts (lines 211-216) — no longer used
+ - Remove ChatCompletion type imports from all migrated files
+ - Remove as Parameters<typeof openai.chat.completions.create>[0] type casts
+
+ Files Modified
+
+ ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                        File                        │                                                    Changes                                                    │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/llm-usage.ts                                │ Fix extractOpenAIResponsesUsage field names; remove dead extractOpenAIChatUsage and makeBarbaraUsageExtractor │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/barbara-orchestrator.ts                     │ Migrate 8 calls; update imports; update response consumption and logging                                      │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/simulation/persona-prompt.ts                │ Migrate 1 call; drop temperature, use reasoning+verbosity; remove VERBOSITY_TEMP                              │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/simulation/alvia-adapter.ts                 │ Migrate 1 call; drop temperature, use reasoning                                                               │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/simulation/engine.ts                        │ Update default models from gpt-4o-mini to gpt-5-mini                                                          │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/question-parser.ts                          │ Migrate 1 call; update imports and extractor                                                                  │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/seed-test-data/generators/conversations.ts │ Migrate 1 call                                                                                                │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/seed-test-data/generators/summaries.ts     │ Migrate 1 call                                                                                                │
+ ├────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ scripts/seed-test-data/generators/personas.ts      │ Migrate 1 call                                                                                                │
+ └────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Verification
+
+ 1. Type check: npm run check — ensure no TypeScript errors
+ 2. Unit tests: npx vitest — run existing test suite
+ 3. Manual smoke test (if dev server available):
+   - Trigger a simulation run (exercises persona-prompt.ts + alvia-adapter.ts)
+   - Generate a template from a project (exercises generateTemplateFromProject)
+   - Paste questions into template builder (exercises parseQuestions)
+   - View collection analytics (exercises generateCrossInterviewAnalysis)
+ 1. Check LLM usage tracking: After running any LLM call, verify the llmUsageEvents table shows non-zero prompt_tokens and completion_tokens values (confirms the usage extractor fix works)
+
+## ADDITIONAL GUIDANCE ON RESPONSES:
+
+Your codebase has 14 Chat Completions calls and 2 Responses API calls (already migrated for persona generation):                                                                                
+                                                                                                                                                                                                  
+  ┌─────────────────────────────────┬────────────┬──────────────────┬────────────────────────────────────────┐                                                                                    
+  │            Location             │ Call Count │     API Used     │              Key Features              │                                                                                    
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤                                                                                    
+  │ barbara-orchestrator.ts         │ 8 calls    │ Chat Completions │ JSON mode, reasoning effort, verbosity │                                                                                    
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ simulation/persona-prompt.ts    │ 1 call     │ Chat Completions │ Temperature, max_tokens                │
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ simulation/alvia-adapter.ts     │ 1 call     │ Chat Completions │ Temperature, max_tokens                │
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ question-parser.ts              │ 1 call     │ Chat Completions │ JSON mode, reasoning effort            │
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ scripts/seed-test-data/         │ 3 calls    │ Chat Completions │ JSON mode (untracked)                  │
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ persona-generation/research.ts  │ 1 call     │ Responses        │ web_search, JSON schema, strict        │
+  ├─────────────────────────────────┼────────────┼──────────────────┼────────────────────────────────────────┤
+  │ persona-generation/synthesis.ts │ 1 call     │ Responses        │ JSON schema, strict                    │
+  └─────────────────────────────────┴────────────┴──────────────────┴────────────────────────────────────────┘
+
+  Your SDK (openai@6.16.0) already supports both APIs — no upgrade needed.
+
+  Benefits of Migrating
+
+  High value:
+  - Strict structured output — Responses uses json_schema with strict: true by default. Your 11 Completions calls all use response_format: { type: "json_object" } (loose JSON mode), which
+  doesn't validate against a schema. Migrating means the model is guaranteed to return valid JSON matching your schema. This eliminates the JSON parsing failures and malformed output that loose
+  JSON mode allows.
+  - Better reasoning model performance — GPT-5 scores ~5% better on benchmarks via Responses due to reasoning state preservation across turns.
+  - 40-80% better cache utilization — OpenAI reports significantly higher cache hit rates with Responses, which reduces costs on repeated prompt patterns (relevant for Barbara's templated
+  prompts).
+
+  Medium value:
+  - Built-in tools — web_search, file_search, code_interpreter become available to all call sites. You already use web_search for persona research; other Barbara use cases (analytics, template
+  generation) could benefit from file search or code interpreter.
+  - Richer usage tracking — Responses returns input_tokens_details.cached_tokens and output_tokens_details.reasoning_tokens, giving you visibility into cache savings and reasoning costs. Your
+  llm-usage.ts already has extractOpenAIResponsesUsage() that handles this.
+  - previous_response_id chaining — Could simplify Barbara's multi-turn analysis by avoiding resending full conversation history. Requires store: true though, which has privacy implications for
+  interview data.
+
+  Low value for your use case:
+  - Streaming (you don't stream any Completions calls)
+  - Conversation state API (you manage state in your own DB)
+
+  What Doesn't Change
+
+  - Chat Completions is NOT being deprecated. OpenAI says they'll support it "indefinitely." This is not urgent.
+  - Same models work on both APIs.
+  - No SDK upgrade needed.
+
+  Migration Effort
+
+  Per-call changes are mechanical but non-trivial:
+
+  Change: Request params
+  Effort: Low
+  Details: messages → input + instructions, response_format → text.format
+  ────────────────────────────────────────
+  Change: Response access
+  Effort: Low
+  Details: response.choices[0].message.content → response.output_text
+  ────────────────────────────────────────
+  Change: JSON mode → JSON schema
+  Effort: Medium
+  Details: Need to define strict JSON schemas for all 11 Barbara calls that currently use loose { type: "json_object" }. This is the biggest piece of work but also the biggest quality win.
+  ────────────────────────────────────────
+  Change: Usage tracking
+  Effort: Low
+  Details: Already have extractOpenAIResponsesUsage() and makeResponsesUsageExtractor() in llm-usage.ts
+  ────────────────────────────────────────
+  Change: Tool definitions
+  Effort: Low
+  Details: Flatten the function wrapper (only relevant if you add tools later)
+
+  Estimated scope:
+  - 11 production call sites to migrate (8 in barbara-orchestrator, 2 in simulation, 1 in question-parser)
+  - 3 seed script calls (low priority, can migrate or leave)
+  - 11 JSON schemas to define — this is the bulk of the work. Each Barbara use case returns a different structure (guidance actions, question summaries, analytics, etc.) and you'd need to codify
+   those as strict schemas.
+  - Usage extractor swap — switch from makeBarbaraUsageExtractor() to makeResponsesUsageExtractor() at each call site
+
+  Total estimate: Medium-sized piece of work. The API call migration itself is ~1-2 hours of mechanical changes. Defining the 11 JSON schemas properly is the real work — probably 1-2 days, but
+  it pays for itself in reliability.
+
+  Recommendation
+
+  The strongest reason to migrate is strict structured output. Your Barbara orchestrator relies heavily on parsing JSON responses, and loose JSON mode is a known source of parsing failures.
+  Migrating to Responses with strict schemas would eliminate that class of bug entirely.
+
+  If you want to proceed, the most impactful approach would be to migrate the 8 Barbara orchestrator calls first (they all follow the same pattern and benefit most from strict schemas), then the simulation and parser calls.
