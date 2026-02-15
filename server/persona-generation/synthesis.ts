@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ReasoningEffort } from "openai/resources/shared";
 import { getBarbaraConfig } from "../barbara-orchestrator";
 import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
 import type {
@@ -142,13 +143,13 @@ export async function synthesizePersonas(params: {
               schema: generatedPersonasJsonSchema,
             },
           },
-          reasoning: { effort: barbaraConfig.reasoningEffort as any },
-        } as any, { signal, maxRetries: 0, timeout: SYNTHESIS_TIMEOUT_MS });
+          reasoning: { effort: barbaraConfig.reasoningEffort as ReasoningEffort },
+        }, { signal, maxRetries: 0, timeout: SYNTHESIS_TIMEOUT_MS });
       },
       extractUsage: makeResponsesUsageExtractor(barbaraConfig.model),
     });
 
-    const result = tracked.result as any;
+    const result = tracked.result;
     const parsed = JSON.parse(result.output_text);
     const personas = parsed.personas as GeneratedPersona[];
 

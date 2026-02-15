@@ -2,8 +2,7 @@ import type { Persona } from "@shared/schema";
 import type { TranscriptEntry } from "../barbara-orchestrator";
 import { buildConversationMessages } from "./conversation-utils";
 import OpenAI from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
-import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
+import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -109,15 +108,15 @@ export async function generatePersonaResponse(
     model,
     useCase: "simulation_persona",
     callFn: async () => {
-      return (await openai.chat.completions.create({
+      return await openai.responses.create({
         model,
-        messages,
+        input: messages,
         temperature,
-        max_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
-      })) as ChatCompletion;
+        max_output_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
+      });
     },
-    extractUsage: makeBarbaraUsageExtractor(model),
+    extractUsage: makeResponsesUsageExtractor(model),
   });
 
-  return tracked.result.choices[0]?.message?.content?.trim() || "I'm not sure how to answer that.";
+  return tracked.result.output_text?.trim() || "I'm not sure how to answer that.";
 }

@@ -1,9 +1,8 @@
 import OpenAI from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { BarbaraSessionSummary } from "@shared/schema";
 import {
   withTrackedLlmCall,
-  makeBarbaraUsageExtractor,
+  makeResponsesUsageExtractor,
   type TrackedLlmResult,
 } from "./llm-usage";
 import type {
@@ -318,31 +317,31 @@ export async function analyzeWithBarbara(
       model: config.model,
       useCase: "barbara_analysis",
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 500,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 500,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
     if (response.usage) {
       console.log(
-        `[Barbara] Actual usage: ${response.usage.prompt_tokens} input, ${response.usage.completion_tokens} output tokens`,
+        `[Barbara] Actual usage: ${response.usage.input_tokens} input, ${response.usage.output_tokens} output tokens`,
       );
     }
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       return {
         action: "none",
@@ -805,32 +804,32 @@ Does the upcoming question's topic overlap with what the respondent has already 
       useCase: "barbara_topic_overlap",
       timeoutMs: TOPIC_OVERLAP_TIMEOUT_MS,
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 200,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 200,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
     const elapsed = Date.now() - startTime;
 
-    if (!response || !("choices" in response)) {
+    if (!response || !response.output_text) {
       console.log(`[TopicOverlap] No valid response after ${elapsed}ms`);
       return null;
     }
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       console.log(
         `[TopicOverlap] Empty content in response after ${elapsed}ms`,
@@ -981,52 +980,44 @@ Create a structured summary of the respondent's answer.`;
       useCase: "barbara_question_summary",
       timeoutMs: SUMMARY_TIMEOUT_MS,
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 1500,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 1500,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
-    const finishReason = response.choices[0]?.finish_reason;
+    const responseStatus = response.status;
     console.log(
-      `[Summary] Q${questionIndex + 1}: OpenAI API call completed, finish_reason: ${finishReason}`,
+      `[Summary] Q${questionIndex + 1}: OpenAI API call completed, status: ${responseStatus}`,
     );
 
-    // Warn if we're hitting token limits - indicates we may need to increase max_completion_tokens
-    if (finishReason === "length") {
+    if (responseStatus === "incomplete") {
       console.warn(
-        `[Summary] Q${questionIndex + 1}: WARNING - Response truncated due to token limit! Consider increasing max_completion_tokens.`,
+        `[Summary] Q${questionIndex + 1}: WARNING - Response truncated! Consider increasing max_output_tokens.`,
       );
     }
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
 
     if (!content) {
       console.log(
-        `[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response structure:`,
+        `[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response details:`,
         JSON.stringify(
           {
-            hasChoices: !!response.choices,
-            choicesLength: response.choices?.length,
-            firstChoice: response.choices?.[0]
-              ? {
-                  hasMessage: !!response.choices[0].message,
-                  messageContent:
-                    response.choices[0].message?.content?.substring(0, 100),
-                  finishReason: response.choices[0].finish_reason,
-                }
-              : null,
+            status: response.status,
+            incompleteDetails: response.incomplete_details,
+            hasOutputText: !!response.output_text,
           },
           null,
           2,
@@ -1607,21 +1598,21 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       model: config.model,
       useCase: "barbara_cross_interview_enhanced_analysis",
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 16000,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 16000,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
@@ -1630,12 +1621,12 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       JSON.stringify(response, null, 2).substring(0, 1000),
     );
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       console.error("[Barbara] No content in AI response");
       console.error(
-        "[Barbara] Response choices:",
-        JSON.stringify(response.choices, null, 2),
+        "[Barbara] Response details:",
+        JSON.stringify({ status: response.status, incompleteDetails: response.incomplete_details }, null, 2),
       );
       return createEmptyAnalysis();
     }
@@ -2773,25 +2764,25 @@ Pay special attention to the verbatims provided - use them to support your insig
       useCase: "barbara_project_cross_template_analysis",
       timeoutMs: PROJECT_ANALYTICS_TIMEOUT_MS,
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 20000,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 20000,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       console.log("[Project Analytics] Empty AI response, returning defaults");
       return createDefaultAIResult(input.projectName);
@@ -3022,25 +3013,25 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
       model: config.model,
       useCase: "barbara_template_generation",
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 10000,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 10000,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       throw new Error("No content in response");
     }
@@ -3209,25 +3200,25 @@ export async function generateAdditionalQuestions(
       model: config.model,
       useCase: "barbara_additional_questions",
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 20000,
-          reasoning_effort: config.reasoningEffort,
-          verbosity: config.verbosity,
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: {
+            format: { type: "json_object" },
+            ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+          },
+          max_output_tokens: 20000,
+          reasoning: { effort: config.reasoningEffort },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       console.log("[Barbara] No content in additional questions response");
       return {
@@ -3554,22 +3545,20 @@ Analyze this interview and provide your structured assessment.`;
       model: config.model,
       useCase: "barbara_session_summary",
       callFn: async () => {
-        return (await openai.chat.completions.create({
+        return await openai.responses.create({
           model: config.model,
-          messages: [
+          input: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: { type: "json_object" },
-        } as Parameters<
-          typeof openai.chat.completions.create
-        >[0])) as ChatCompletion;
+          text: { format: { type: "json_object" } },
+        });
       },
-      extractUsage: makeBarbaraUsageExtractor(config.model),
+      extractUsage: makeResponsesUsageExtractor(config.model),
     });
     const response = tracked.result;
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       throw new Error("Empty response from Barbara session summary");
     }

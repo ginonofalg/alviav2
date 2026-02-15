@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import type { Response as OAIResponse } from "openai/resources/responses/responses";
+import type { ReasoningEffort } from "openai/resources/shared";
 import { getBarbaraConfig } from "../barbara-orchestrator";
 import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
 import type { PopulationBrief } from "./types";
@@ -204,7 +206,7 @@ export async function researchPopulation(params: {
               userPrompt,
               params.uploadedFile,
             ),
-            tools: [{ type: "web_search" as any }],
+            tools: [{ type: "web_search" }],
             text: {
               format: {
                 type: "json_schema",
@@ -213,13 +215,13 @@ export async function researchPopulation(params: {
                 schema: populationBriefJsonSchema,
               },
             },
-            reasoning: { effort: config.reasoningEffort as any },
-          } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
+            reasoning: { effort: config.reasoningEffort as ReasoningEffort },
+          }, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
       });
 
-      const result = tracked.result as any;
+      const result = tracked.result;
       const briefText = result.output_text;
       const brief: PopulationBrief = JSON.parse(briefText);
 
@@ -304,13 +306,13 @@ async function researchWithoutWebSearch(
             schema: populationBriefJsonSchema,
           },
         },
-        reasoning: { effort: config.reasoningEffort as any },
-      } as any, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
+        reasoning: { effort: config.reasoningEffort as ReasoningEffort },
+      }, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
     },
     extractUsage: makeResponsesUsageExtractor(config.model),
   });
 
-  const result = tracked.result as any;
+  const result = tracked.result;
   const brief: PopulationBrief = JSON.parse(result.output_text);
 
   console.log(`[PersonaGeneration] Fallback research completed | confidence=${brief.confidence} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
@@ -318,14 +320,14 @@ async function researchWithoutWebSearch(
   return { brief, citations: [], ungrounded: true };
 }
 
-function extractCitations(result: any): Array<{ url: string; title: string }> {
+function extractCitations(result: OAIResponse): Array<{ url: string; title: string }> {
   const citations: Array<{ url: string; title: string }> = [];
   try {
     const outputItems = result.output ?? [];
     for (const item of outputItems) {
       if (item.type === "message" && item.content) {
         for (const content of item.content) {
-          if (content.annotations) {
+          if (content.type === "output_text" && content.annotations) {
             for (const annotation of content.annotations) {
               if (annotation.type === "url_citation") {
                 citations.push({

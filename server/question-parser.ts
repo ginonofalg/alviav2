@@ -1,6 +1,5 @@
 import OpenAI from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
-import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "./llm-usage";
+import { withTrackedLlmCall, makeResponsesUsageExtractor } from "./llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
 import { storage } from "./storage";
 
@@ -170,21 +169,21 @@ export async function parseQuestions(
     model: QUESTION_PARSING_MODEL,
     useCase: "barbara_question_parsing",
     callFn: async () => {
-      return (await openai.chat.completions.create({
+      return await openai.responses.create({
         model: QUESTION_PARSING_MODEL,
-        messages: [
+        input: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 10000,
-        reasoning_effort: QUESTION_PARSING_REASONING_EFFORT,
-      } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+        text: { format: { type: "json_object" } },
+        max_output_tokens: 10000,
+        reasoning: { effort: QUESTION_PARSING_REASONING_EFFORT },
+      });
     },
-    extractUsage: makeBarbaraUsageExtractor(QUESTION_PARSING_MODEL),
+    extractUsage: makeResponsesUsageExtractor(QUESTION_PARSING_MODEL),
   });
 
-  const content = tracked.result.choices[0]?.message?.content;
+  const content = tracked.result.output_text;
   if (!content) {
     throw new Error("No content in LLM response");
   }

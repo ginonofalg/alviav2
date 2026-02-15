@@ -1,7 +1,6 @@
 import OpenAI from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
 import { buildInterviewInstructions } from "../voice-interview/instructions";
-import { withTrackedLlmCall, makeBarbaraUsageExtractor } from "../llm-usage";
+import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
 import type { TranscriptEntry } from "../barbara-orchestrator";
 import type { Question, InterviewTemplate } from "@shared/schema";
@@ -54,15 +53,15 @@ export async function generateAlviaResponse(
     model,
     useCase: "simulation_alvia",
     callFn: async () => {
-      return (await openai.chat.completions.create({
+      return await openai.responses.create({
         model,
-        messages,
+        input: messages,
         temperature: 0.7,
-        max_tokens: 600,
-      })) as ChatCompletion;
+        max_output_tokens: 600,
+      });
     },
-    extractUsage: makeBarbaraUsageExtractor(model),
+    extractUsage: makeResponsesUsageExtractor(model),
   });
 
-  return tracked.result.choices[0]?.message?.content?.trim() || "";
+  return tracked.result.output_text?.trim() || "";
 }

@@ -122,13 +122,13 @@ export async function generateConversation(
     .replace('{followUpInstructions}', followUpInstructions)
     .replace('{extractionInstructions}', extractionInstructions);
   
-  const response = await openai.chat.completions.create({
+  const response = await openai.responses.create({
     model: SEED_CONFIG.model,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: "json_object" }
+    input: [{ role: 'user', content: prompt }],
+    text: { format: { type: "json_object" } },
   });
   
-  const content = response.choices[0].message.content;
+  const content = response.output_text;
   if (!content) throw new Error('Empty response from OpenAI');
   
   const parsed = JSON.parse(content);
