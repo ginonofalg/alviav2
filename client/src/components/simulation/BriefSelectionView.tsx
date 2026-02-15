@@ -50,8 +50,8 @@ export function BriefSelectionView({
   };
 
   return (
-    <div className="space-y-4" data-testid="brief-selection-view">
-      <div className="flex items-start gap-3">
+    <div className="flex flex-col min-h-0 flex-1" data-testid="brief-selection-view">
+      <div className="flex items-start gap-3 shrink-0">
         <Button
           variant="ghost"
           size="icon"
@@ -65,12 +65,12 @@ export function BriefSelectionView({
             Select Population Research
           </h3>
           <p className="text-sm text-muted-foreground" data-testid="text-brief-selection-subtitle">
-            Choose from your previous research to generate personas
+            Choose existing research, then click "Use This Research" to generate personas
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-end gap-4 mt-4 shrink-0">
         <div className="space-y-2">
           <Label>Persona count</Label>
           <Select value={personaCount} onValueChange={setPersonaCount}>
@@ -110,7 +110,7 @@ export function BriefSelectionView({
       </div>
 
       {isLoading && (
-        <div className="space-y-3" data-testid="brief-list-loading">
+        <div className="space-y-3 mt-4" data-testid="brief-list-loading">
           {[1, 2, 3].map((i) => (
             <div key={i} className="space-y-2 p-4 rounded-md border">
               <Skeleton className="h-4 w-3/4" />
@@ -141,8 +141,8 @@ export function BriefSelectionView({
       )}
 
       {!isLoading && briefs && briefs.length > 0 && (
-        <ScrollArea className="max-h-[400px]" data-testid="brief-list-scroll">
-          <div className="space-y-3 pr-2">
+        <ScrollArea className="flex-1 min-h-0 mt-4" data-testid="brief-list-scroll">
+          <div className="space-y-3 pr-3">
             {briefs.map((summary) => (
               <PopulationBriefCard
                 key={summary.id}

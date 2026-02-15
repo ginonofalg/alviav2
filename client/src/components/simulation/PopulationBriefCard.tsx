@@ -3,7 +3,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ChevronDown,
   AlertTriangle,
@@ -110,8 +109,7 @@ function ExpandedContent({ summary, projectId, onSelect }: {
   const sources = brief.sources.slice(0, 6);
 
   return (
-    <ScrollArea className="max-h-[400px]">
-      <div className="space-y-4 pt-3 pr-2" data-testid={`brief-detail-${summary.id}`}>
+      <div className="space-y-4 pt-3" data-testid={`brief-detail-${summary.id}`}>
         <div>
           <h4 className="text-sm font-medium flex items-center gap-1.5 mb-1.5">
             <Users className="w-3.5 h-3.5 text-muted-foreground" />
@@ -244,18 +242,7 @@ function ExpandedContent({ summary, projectId, onSelect }: {
           </div>
         )}
 
-        <div className="pt-2 pb-1">
-          <Button
-            onClick={() => onSelect(summary.id)}
-            className="w-full"
-            data-testid={`button-select-brief-${summary.id}`}
-          >
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Select This Brief
-          </Button>
-        </div>
       </div>
-    </ScrollArea>
   );
 }
 
@@ -292,19 +279,13 @@ export function PopulationBriefCard({
             <p className="text-sm font-medium leading-snug" data-testid={`text-population-${summary.id}`}>
               {truncatedPopulation}
             </p>
-            <div className="flex items-center gap-2 shrink-0">
-              <Badge
-                variant="outline"
-                className={`text-[10px] no-default-hover-elevate ${CONFIDENCE_BADGE_CLASSES[summary.confidence]}`}
-                data-testid={`badge-confidence-${summary.id}`}
-              >
-                {summary.confidence}
-              </Badge>
-              <ChevronDown
-                className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-                data-testid={`icon-expand-${summary.id}`}
-              />
-            </div>
+            <Badge
+              variant="outline"
+              className={`text-[10px] no-default-hover-elevate shrink-0 ${CONFIDENCE_BADGE_CLASSES[summary.confidence]}`}
+              data-testid={`badge-confidence-${summary.id}`}
+            >
+              {summary.confidence}
+            </Badge>
           </div>
 
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed" data-testid={`text-prompt-${summary.id}`}>
@@ -339,6 +320,28 @@ export function PopulationBriefCard({
             )}
           </div>
         </button>
+
+        <div className="flex items-center gap-2 mt-3">
+          <Button
+            variant="default"
+            className="flex-1"
+            onClick={() => onSelect(summary.id)}
+            data-testid={`button-use-brief-${summary.id}`}
+          >
+            <CheckCircle className="w-4 h-4 mr-2" />
+            Use This Research
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onToggleExpand}
+            data-testid={`button-details-brief-${summary.id}`}
+          >
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+            />
+          </Button>
+        </div>
 
         {isExpanded && (
           <ExpandedContent
