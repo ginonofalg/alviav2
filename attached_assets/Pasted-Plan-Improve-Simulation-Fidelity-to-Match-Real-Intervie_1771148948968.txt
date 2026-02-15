@@ -1,0 +1,250 @@
+Plan: Improve Simulation Fidelity to Match Real Interview Behavior                                                                
+                                                        
+ Context
+
+ The persona simulation engine (server/simulation/) runs entirely text-based synthetic interviews that diverge from real voice
+ interviews in ways that silently affect result quality. The biggest issue: Barbara guidance is synchronous and always available,
+ whereas in real interviews she runs async and may not finish before Alvia needs to respond. Additionally, simulations don't pass
+ cross-interview context or analytics-guided hypotheses to Barbara, additional questions get no probing, and persona text is
+ unrealistically clean.
+
+ The fix mirrors the real architecture: add realistic response-proportional delays, run Barbara concurrently during those delays
+ (with the same timeout/confidence gate as real interviews), and pass both context sources to Barbara when enabled on the project.
+
+ ---
+ Fix 1: Realistic Pacing + Async Barbara (mirrors real architecture)
+
+ Problem: Barbara is synchronous and always available. Real interviews: Barbara runs in the background during the respondent's
+ speaking time, with a 10s timeout and confidence > 0.6 gate (voice-interview.ts:2128,2141).
+
+ Approach: After generating the persona response, calculate a realistic "speaking delay" proportional to response length, then run
+  Barbara concurrently via Promise.race — exactly like the real interview does.
+
+ Files to modify:
+ - server/simulation/engine.ts — Restructure the Barbara call at lines 130-165
+
+ Engine changes (replace the sequential Barbara call block at lines 130-165):
+
+ // Calculate realistic respondent speaking delay (~150 WPM)
+ const wordCount = personaResponse.split(/\s+/).filter(w => w.length > 0).length;
+ const speakingDelayMs = Math.max(
+   ctx.interTurnDelayMs,
+   (wordCount / 150) * 60 * 1000  // ~150 words per minute
+ );
+
+ let barbaraGuidance: string | undefined;
+ if (ctx.enableBarbara) {
+   const BARBARA_TIMEOUT_MS = 10_000; // Same as real interviews
+
+   const barbaraMetrics: QuestionMetrics = { /* ...existing... */ };
+
+   const barbaraPromise = analyzeWithBarbara({
+     transcriptLog: transcript,
+     previousQuestionSummaries: questionSummaries,
+     currentQuestionIndex: questionIndex,
+     currentQuestion: { text: question.questionText, guidance: question.guidance || "" },
+     allQuestions: ctx.questions.map(q => ({ text: q.questionText, guidance: q.guidance || "" })),
+     questionMetrics: barbaraMetrics,
+     templateObjective: ctx.template.objective || "",
+     templateTone: ctx.template.tone || "professional",
+     crossInterviewContext: crossInterviewCtx?.enabled ? crossInterviewCtx : undefined,
+     analyticsHypotheses: analyticsHypothesesCtx?.enabled ? {
+       totalProjectSessions: analyticsHypothesesCtx.totalProjectSessions!,
+       analyticsGeneratedAt: analyticsHypothesesCtx.analyticsGeneratedAt ?? null,
+       hypotheses: analyticsHypothesesCtx.hypotheses?.map(h => ({
+         hypothesis: h.hypothesis,
+         source: h.source,
+         priority: h.priority,
+         isCurrentQuestionRelevant:
+           h.relatedQuestionIndices.includes(questionIndex) ||
+           h.relatedQuestionIndices.length === 0,
+       })) || [],
+     } : undefined,
+   }, usageCtx);
+
+   // Race Barbara against the respondent's speaking time + timeout
+   // (mirrors voice-interview.ts:2123-2128)
+   const timeoutMs = Math.min(speakingDelayMs, BARBARA_TIMEOUT_MS);
+   const timeoutPromise = new Promise<null>(resolve =>
+     setTimeout(() => resolve(null), timeoutMs)
+   );
+
+   try {
+     const result = await Promise.race([barbaraPromise, timeoutPromise]);
+     if (result && result.confidence > 0.6 && result.action !== "none") {
+       barbaraGuidance = result.message;
+       if (result.action === "suggest_next_question") {
+         barbaraSuggestedNext = true;
+       }
+     }
+   } catch (err) {
+     console.error(`[Simulation] Barbara analysis failed:`, err);
+   }
+
+   // Wait out the rest of the speaking delay (if Barbara finished early)
+   const elapsed = Date.now() - turnStartTime;
+   const remaining = speakingDelayMs - elapsed;
+   if (remaining > 0) await delay(remaining);
+ } else {
+   await delay(speakingDelayMs);
+ }
+
+ Why this is better than probabilistic simulation: The timing dynamics emerge naturally. Short persona answers (reluctant persona,
+  10 words) give Barbara ~4 seconds — she'll usually finish. Long answers (enthusiastic persona, 200 words) give Barbara ~80
+ seconds — she'll always finish. This creates realistic variation without tuning probabilities.
+
+ Complexity: Medium. Restructures ~35 lines in engine.ts, same number of lines.
+
+ ---
+ Fix 2: Cross-Interview Context + Analytics-Guided Hypotheses
+
+ Problem: analyzeWithBarbara() in simulations never receives crossInterviewContext or analyticsHypotheses. Both functions already
+ exist in server/voice-interview/context-builders.ts and should be used when enabled on the project.
+
+ Approach: Import both builders, call them once per simulation session, pass results to every analyzeWithBarbara() call.
+
+ Files to modify:
+ - server/simulation/engine.ts — Import and call both context builders
+
+ Engine changes (in runSingleSimulation(), around line 68):
+
+ import {
+   buildCrossInterviewRuntimeContext,
+   buildAnalyticsHypothesesRuntimeContext,
+ } from "../voice-interview/context-builders";
+
+ // Build once per simulation session (same as voice-interview.ts:788-813):
+ const crossInterviewCtx = buildCrossInterviewRuntimeContext(ctx.project, ctx.collection);
+ const analyticsHypothesesCtx = buildAnalyticsHypothesesRuntimeContext(
+   ctx.project,
+   ctx.questions.map(q => ({ text: q.questionText, guidance: q.guidance })),
+ );
+
+ These are passed into the Barbara call in Fix 1's code above. The guard conditions are built into the functions themselves:
+ - buildCrossInterviewRuntimeContext checks project.crossInterviewContext flag and session count threshold (default 5)
+ - buildAnalyticsHypothesesRuntimeContext checks project.analyticsGuidedHypotheses flag and session count threshold (default 5)
+
+ The analyticsHypotheses injection mirrors voice-interview.ts:2104-2117 exactly — mapping hypotheses and checking
+ isCurrentQuestionRelevant per question index.
+
+ Complexity: Small. ~10 lines added, two new imports.
+
+ ---
+ Fix 3: Additional Questions Get Multi-Turn Probing
+
+ Problem: runAdditionalQuestions() (engine.ts:275-335) does a single Q&A per additional question — no follow-up turns, no Barbara
+ analysis. Real interviews probe AQs with full depth.
+
+ Approach: Refactor runAdditionalQuestions() to mirror the template question loop: multi-turn with Barbara analysis and
+ evaluateQuestionFlow().
+
+ Files to modify:
+ - server/simulation/engine.ts — Rewrite runAdditionalQuestions() (lines 275-335)
+ - shared/types/simulation.ts — Add maxAQTurnsPerQuestion to SimulationConfig (default: 3)
+
+ New config in shared/types/simulation.ts:
+ // Add to SimulationConfig:
+ maxAQTurnsPerQuestion: number; // default: 3
+
+ Rewritten runAdditionalQuestions() — same structure as the template question loop (lines 112-193) but:
+ - Uses the AQ text as the question
+ - Caps follow-ups at maxAQTurnsPerQuestion (default 3, vs 6 for template questions)
+ - Calls analyzeWithBarbara() between turns with the same async/race pattern from Fix 1
+ - Uses evaluateQuestionFlow() with inAdditionalQuestionPhase: true
+ - Generates Alvia follow-ups via generateAlviaResponse() using the AQ text as current question context
+ - Stores full multi-turn transcript in the segment (not just single Q&A)
+
+ Complexity: Medium. ~60 lines rewritten (replacing ~35 lines).
+
+ ---
+ Fix 4: Configurable Turn Cap
+
+ Problem: Hard cap of 8 turns per question is arbitrary. Real interviews have no hard cap.
+
+ Approach: Raise the safety-net hard cap, lower the default so Barbara's suggest_next_question is the primary driver.
+
+ Files to modify:
+ - server/simulation/types.ts — Change HARD_CAP_TURNS_PER_QUESTION from 8 to 12
+ - shared/types/simulation.ts — Change DEFAULT_SIMULATION_CONFIG.maxTurnsPerQuestion from 8 to 6
+
+ Rationale: Default 6 + hard cap 12. Barbara's steering becomes the primary exit condition. The hard cap is a safety net for
+ pathological cases only.
+
+ Complexity: Small. 2 constant changes.
+
+ ---
+ Fix 5: Realistic Persona Disfluencies
+
+ Problem: Persona responses are grammatically perfect LLM text. Real respondents produce "um"s, self-corrections, incomplete
+ thoughts.
+
+ Approach: Add attitude-scaled DISFLUENCY_GUIDANCE to the persona system prompt.
+
+ Files to modify:
+ - server/simulation/persona-prompt.ts — Enhance buildPersonaSystemPrompt() (lines 44-84)
+
+ Add after line 42:
+ const DISFLUENCY_GUIDANCE: Record<string, string> = {
+   cooperative: "Occasionally include natural speech patterns: 'um', 'you know', 'I mean', brief self-corrections ('well,
+ actually...'). About 1 in 4 responses should have a minor disfluency.",
+   reluctant: "Include frequent pauses and hedging: 'I guess...', 'I don't know, maybe...', 'hmm let me think...'. Trail off
+ mid-sentence sometimes. About half your responses should feel halting.",
+   neutral: "Occasionally include a brief 'um' or 'let me think'. Keep disfluencies minimal — about 1 in 5 responses.",
+   evasive: "Use deflection patterns: 'that's a good question...', 'well, it depends...', pivot mid-sentence. Include 'I mean' and
+  restarts. About 1 in 3 responses.",
+   enthusiastic: "Include excited speech patterns: 'oh!', 'right, so...', 'wait, actually...'. Occasionally jump between thoughts
+ mid-sentence. About 1 in 4 responses.",
+ };
+
+ Insert into system prompt (around line 65):
+ prompt += `\n\nSPEECH REALISM: ${DISFLUENCY_GUIDANCE[persona.attitude] || DISFLUENCY_GUIDANCE.neutral}`;
+
+ Update behavioral rule 6 (line 80) to: "Follow the SPEECH REALISM guidance strictly — your text will be compared against real
+ interview transcripts for naturalness"
+
+ Complexity: Small. ~20 lines added.
+
+ ---
+ Fix 6: Config Plumbing
+
+ Problem: New fields need to flow from launch point to engine.
+
+ Files to modify:
+ - server/simulation/types.ts — Add maxAQTurnsPerQuestion to SimulationContext
+ - server/simulation/engine.ts — Wire in executeSimulationRun() at line 422
+ - shared/types/simulation.ts — Add maxAQTurnsPerQuestion: 3 to DEFAULT_SIMULATION_CONFIG
+
+ Note: barbaraRealism doesn't need a separate config — the async behavior is always-on since it mirrors real interview
+ architecture. The confidence gate (>0.6) and timeout (10s) match the real interview constants.
+
+ ---
+ Summary of Files Changed
+
+ File: shared/types/simulation.ts
+ Changes: Add maxAQTurnsPerQuestion, update defaults
+ ────────────────────────────────────────
+ File: server/simulation/types.ts
+ Changes: Add maxAQTurnsPerQuestion to SimulationContext, raise hard cap to 12
+ ────────────────────────────────────────
+ File: server/simulation/engine.ts
+ Changes: Async Barbara with race/timeout, cross-interview + hypotheses context, AQ multi-turn rewrite, realistic delays
+ ────────────────────────────────────────
+ File: server/simulation/persona-prompt.ts
+ Changes: Add DISFLUENCY_GUIDANCE, enhance system prompt
+
+ No new files created. engine.ts is ~467 lines currently; net change is ~+30 lines, well within limits.
+
+ ---
+ Verification
+
+ 1. Type check: npm run check
+ 2. Existing tests: npx vitest
+ 3. Manual test: Launch a simulation run with Barbara enabled and verify:
+   - Console logs show Barbara finishing within the speaking delay (or timing out on very short responses)
+   - Cross-interview context appears when collection has 5+ analyzed sessions and project has crossInterviewContext enabled
+   - Analytics hypotheses appear when project has analyticsGuidedHypotheses enabled with sufficient sessions
+   - AQ segments have multi-turn transcripts (not just single Q&A)
+   - Low-confidence Barbara guidance is skipped (logged but not used)
+   - Persona responses include attitude-appropriate disfluencies
+ 4. Compare timing: Check that short persona responses (~10 words) give Barbara ~4s, long responses (~100 words) give ~40s —
+ creating natural variation in guidance availability
