@@ -31,12 +31,15 @@ export interface SimulationQuestionMetrics {
   startedAt: number;
 }
 
-export interface SimulationProgress {
+export interface RunProgress {
+  currentPersonaIndex: number;
+  totalPersonas: number;
+  currentPersonaName: string;
   currentQuestionIndex: number;
   totalQuestions: number;
-  phase: "questions" | "additional_questions" | "summaries" | "complete";
-  additionalQuestionIndex?: number;
-  totalAdditionalQuestions?: number;
+  phase: "starting" | "interviewing" | "analyzing" | "additional_questions" | "summarizing" | "complete";
+  detail: string;
+  updatedAt: number;
 }
 
 export const SIMULATION_LIMITS = {

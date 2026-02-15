@@ -6,8 +6,19 @@ import { Progress } from "@/components/ui/progress";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Ban, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Ban, Clock, MessageSquare, Brain, ListChecks, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+
+interface RunProgress {
+  currentPersonaIndex: number;
+  totalPersonas: number;
+  currentPersonaName: string;
+  currentQuestionIndex: number;
+  totalQuestions: number;
+  phase: "starting" | "interviewing" | "analyzing" | "additional_questions" | "summarizing" | "complete";
+  detail: string;
+  updatedAt: number;
+}
 
 interface SimulationRun {
   id: string;
@@ -18,6 +29,7 @@ interface SimulationRun {
   completedSimulations: number;
   failedSimulations: number;
   errorMessage: string | null;
+  progress: RunProgress | null;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string | null;
@@ -34,11 +46,82 @@ const STATUS_CONFIG: Record<string, { icon: typeof Clock; label: string; variant
   cancelled: { icon: Ban, label: "Cancelled", variant: "secondary" },
 };
 
+const PHASE_CONFIG: Record<string, { icon: typeof Clock; label: string }> = {
+  starting: { icon: Clock, label: "Starting" },
+  interviewing: { icon: MessageSquare, label: "Interviewing" },
+  analyzing: { icon: Brain, label: "Analyzing" },
+  additional_questions: { icon: ListChecks, label: "Follow-up Questions" },
+  summarizing: { icon: FileText, label: "Summarizing" },
+  complete: { icon: CheckCircle2, label: "Complete" },
+};
+
+function GranularProgress({ progress, totalSimulations, completedSimulations }: {
+  progress: RunProgress;
+  totalSimulations: number;
+  completedSimulations: number;
+}) {
+  const phaseConfig = PHASE_CONFIG[progress.phase] || PHASE_CONFIG.starting;
+  const PhaseIcon = phaseConfig.icon;
+
+  const questionProgress = progress.totalQuestions > 0
+    ? Math.round(((progress.currentQuestionIndex + (progress.phase === "complete" ? 1 : 0.5)) / progress.totalQuestions) * 100)
+    : 0;
+
+  const personaFraction = progress.totalPersonas > 0
+    ? (completedSimulations + (questionProgress / 100)) / totalSimulations
+    : 0;
+  const overallProgress = Math.min(Math.round(personaFraction * 100), 99);
+
+  return (
+    <div className="space-y-2" data-testid="granular-progress">
+      <Progress value={overallProgress} className="h-2" />
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <PhaseIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0 animate-pulse" />
+          <span className="text-xs text-muted-foreground truncate" data-testid="text-progress-detail">
+            {progress.detail}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0" data-testid="text-progress-overall">
+          {overallProgress}%
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span data-testid="text-progress-persona">
+          Persona {completedSimulations + 1}/{totalSimulations}: {progress.currentPersonaName}
+        </span>
+        {progress.phase === "interviewing" && (
+          <span data-testid="text-progress-question">
+            Question {progress.currentQuestionIndex + 1}/{progress.totalQuestions}
+          </span>
+        )}
+        {progress.phase === "analyzing" && (
+          <Badge variant="outline" className="text-[10px]">
+            {phaseConfig.label}
+          </Badge>
+        )}
+        {progress.phase === "additional_questions" && (
+          <Badge variant="outline" className="text-[10px]">
+            {phaseConfig.label}
+          </Badge>
+        )}
+        {progress.phase === "summarizing" && (
+          <Badge variant="outline" className="text-[10px]">
+            {phaseConfig.label}
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SimulationRunCard({ run }: { run: SimulationRun }) {
   const { toast } = useToast();
   const config = STATUS_CONFIG[run.status] || STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
-  const progress = run.totalSimulations > 0 ? ((run.completedSimulations + run.failedSimulations) / run.totalSimulations) * 100 : 0;
+  const basicProgress = run.totalSimulations > 0 ? ((run.completedSimulations + run.failedSimulations) / run.totalSimulations) * 100 : 0;
 
   const cancelMutation = useMutation({
     mutationFn: async () => {
@@ -76,9 +159,17 @@ function SimulationRunCard({ run }: { run: SimulationRun }) {
         )}
       </CardHeader>
       <CardContent className="space-y-2">
-        {run.status === "running" && (
+        {run.status === "running" && run.progress && (
+          <GranularProgress
+            progress={run.progress}
+            totalSimulations={run.totalSimulations}
+            completedSimulations={run.completedSimulations}
+          />
+        )}
+
+        {run.status === "running" && !run.progress && (
           <div className="space-y-1">
-            <Progress value={progress} className="h-2" />
+            <Progress value={basicProgress} className="h-2" />
             <p className="text-xs text-muted-foreground">
               {run.completedSimulations} of {run.totalSimulations} complete
               {run.failedSimulations > 0 && ` (${run.failedSimulations} failed)`}
@@ -122,7 +213,7 @@ export function SimulationProgressList({ collectionId }: SimulationProgressProps
     refetchInterval: (query) => {
       const data = query.state.data as SimulationRun[] | undefined;
       const hasActive = data?.some((r) => r.status === "running" || r.status === "pending");
-      return hasActive ? 3000 : false;
+      return hasActive ? 2000 : false;
     },
   });
 

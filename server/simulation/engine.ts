@@ -10,7 +10,7 @@ import {
 import { generateAlviaResponse } from "./alvia-adapter";
 import { generatePersonaResponse } from "./persona-prompt";
 import { evaluateQuestionFlow, getNextQuestionIndex } from "./question-flow";
-import type { SimulationContext, SimulationQuestionMetrics } from "./types";
+import type { SimulationContext, SimulationQuestionMetrics, RunProgress } from "./types";
 import { SIMULATION_LIMITS } from "./types";
 import type { LLMUsageAttribution, Question } from "@shared/schema";
 import {
@@ -53,6 +53,17 @@ function buildUsageContext(ctx: SimulationContext, sessionId: string): LLMUsageA
     collectionId: ctx.collection.id,
     sessionId,
   };
+}
+
+async function reportProgress(
+  runId: string,
+  progress: RunProgress,
+): Promise<void> {
+  try {
+    await updateSimulationRun(runId, { progress });
+  } catch (err) {
+    console.error(`[Simulation] Failed to update progress for run ${runId}:`, err);
+  }
 }
 
 function buildBarbaraContextFields(
@@ -155,7 +166,10 @@ async function runBarbaraWithRacing(
   return { guidance, suggestedNext };
 }
 
-async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
+async function runSingleSimulation(
+  ctx: SimulationContext,
+  onProgress: (phase: RunProgress["phase"], questionIndex: number, detail: string) => Promise<void>,
+): Promise<void> {
   const respondent = await storage.createRespondent({
     collectionId: ctx.collection.id,
     displayName: `[Sim] ${ctx.persona.name}`,
@@ -180,6 +194,7 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
   }
 
   await storage.updateSession(session.id, { startedAt: new Date() });
+  await onProgress("starting", 0, `Setting up interview for ${ctx.persona.name}`);
 
   const usageCtx = buildUsageContext(ctx, session.id);
   const transcript: TranscriptEntry[] = [];
@@ -203,6 +218,8 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
       }
 
       const question = ctx.questions[questionIndex];
+      await onProgress("interviewing", questionIndex, `Q${questionIndex + 1}/${ctx.questions.length}: ${question.questionText.slice(0, 60)}`);
+
       const metrics: SimulationQuestionMetrics = {
         questionIndex,
         wordCount: 0,
@@ -322,6 +339,8 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
         await delay(ctx.interTurnDelayMs);
       }
 
+      await onProgress("analyzing", questionIndex, `Analyzing Q${questionIndex + 1} responses`);
+
       try {
         const barbaraMetrics: QuestionMetrics = {
           questionIndex: metrics.questionIndex,
@@ -359,6 +378,7 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
     }
 
     if (ctx.enableAdditionalQuestions && (ctx.collection.maxAdditionalQuestions ?? 0) > 0) {
+      await onProgress("additional_questions", ctx.questions.length, "Generating follow-up questions");
       await runAdditionalQuestions(
         ctx, session.id, transcript, questionSummaries, usageCtx,
         crossInterviewCtx, analyticsHypothesesCtx,
@@ -366,6 +386,7 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
     }
 
     if (ctx.enableSummaries) {
+      await onProgress("summarizing", ctx.questions.length, "Generating session summary");
       try {
         const summary = await generateSessionSummary({
           transcript,
@@ -383,6 +404,8 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
         console.error(`[Simulation] Session summary failed:`, err);
       }
     }
+
+    await onProgress("complete", ctx.questions.length, `${ctx.persona.name} interview complete`);
 
     await storage.updateSession(session.id, {
       status: "completed",
@@ -652,7 +675,8 @@ export async function executeSimulationRun(
 
       const batch = validPersonas.slice(i, i + PARALLEL_LIMIT);
       const results = await Promise.allSettled(
-        batch.map(async (persona) => {
+        batch.map(async (persona, batchIdx) => {
+          const personaIndex = i + batchIdx;
           const ctx: SimulationContext = {
             project, template, collection, questions, persona, runId,
             enableBarbara: options.enableBarbara,
@@ -664,7 +688,19 @@ export async function executeSimulationRun(
             maxAQTurnsPerQuestion: options.maxAQTurnsPerQuestion ?? 3,
             interTurnDelayMs: 200,
           };
-          await runSingleSimulation(ctx);
+          const onProgress = async (phase: RunProgress["phase"], questionIndex: number, detail: string) => {
+            await reportProgress(runId, {
+              currentPersonaIndex: personaIndex,
+              totalPersonas: validPersonas.length,
+              currentPersonaName: persona.name,
+              currentQuestionIndex: questionIndex,
+              totalQuestions: questions.length,
+              phase,
+              detail,
+              updatedAt: Date.now(),
+            });
+          };
+          await runSingleSimulation(ctx, onProgress);
         }),
       );
 
