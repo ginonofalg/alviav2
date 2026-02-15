@@ -227,8 +227,11 @@ async function runSingleSimulation(ctx: SimulationContext): Promise<void> {
 
       let barbaraSuggestedNext = false;
       const questionStartTime = Date.now();
+      const effectiveTurns = question.recommendedFollowUps
+        ?? ctx.template.defaultRecommendedFollowUps
+        ?? ctx.maxTurnsPerQuestion;
       const hardCap = Math.min(
-        ctx.maxTurnsPerQuestion,
+        effectiveTurns,
         SIMULATION_LIMITS.HARD_CAP_TURNS_PER_QUESTION,
       );
 
