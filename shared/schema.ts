@@ -552,6 +552,28 @@ export const insertPopulationBriefSchema = createInsertSchema(populationBriefs).
 export type PopulationBriefRecord = typeof populationBriefs.$inferSelect;
 export type InsertPopulationBrief = z.infer<typeof insertPopulationBriefSchema>;
 
+export const synthesisJobs = pgTable("synthesis_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  briefId: varchar("brief_id").notNull()
+    .references(() => populationBriefs.id, { onDelete: "cascade" }),
+  personaCount: integer("persona_count").notNull(),
+  diversityMode: text("diversity_mode").notNull().default("balanced"),
+  edgeCases: boolean("edge_cases").notNull().default(false),
+  status: text("status").notNull().default("synthesizing"),
+  personas: jsonb("personas"),
+  validationWarnings: jsonb("validation_warnings"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_synthesis_job_project").on(table.projectId),
+]);
+
+export const insertSynthesisJobSchema = createInsertSchema(synthesisJobs).omit({ id: true, createdAt: true });
+export type SynthesisJobRecord = typeof synthesisJobs.$inferSelect;
+export type InsertSynthesisJob = z.infer<typeof insertSynthesisJobSchema>;
+
 export const insertPersonaSchema = createInsertSchema(personas).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSimulationRunSchema = createInsertSchema(simulationRuns).omit({ id: true, createdAt: true });
 
