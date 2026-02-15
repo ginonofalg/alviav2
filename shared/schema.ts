@@ -533,6 +533,7 @@ export const populationBriefs = pgTable("population_briefs", {
   brief: jsonb("brief"),
   confidence: text("confidence"),
   isUngrounded: boolean("is_ungrounded").default(false).notNull(),
+  citations: jsonb("citations"),
   status: text("status").notNull().default("researching"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),

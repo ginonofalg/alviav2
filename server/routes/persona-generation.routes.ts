@@ -136,7 +136,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
           status: "completed",
           briefId: briefRecord.id,
           brief,
-          citations: [],
+          citations: (briefRecord.citations as any[]) ?? [],
           ungrounded: briefRecord.isUngrounded,
         });
       }
@@ -312,6 +312,7 @@ async function runResearchInBackground(params: {
       brief: brief as any,
       confidence: brief.confidence,
       isUngrounded: ungrounded ?? false,
+      citations: citations as any,
       status: "completed",
     });
 
