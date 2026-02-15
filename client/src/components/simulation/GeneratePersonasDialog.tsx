@@ -321,7 +321,8 @@ export function GeneratePersonasDialog({
     setRemovedIndices(new Set());
     setBriefExpanded(false);
     setUploadedFileName(null);
-    setUploadedDocumentText(null);
+    setUploadedFileData(null);
+    setUploadedFileMimeType(null);
     setIsUngrounded(false);
     setValidationWarnings([]);
     onOpenChange(false);

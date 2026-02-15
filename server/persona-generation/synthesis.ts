@@ -1,15 +1,20 @@
 import OpenAI from "openai";
 import { getBarbaraConfig } from "../barbara-orchestrator";
 import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
-import type { PopulationBrief, GenerationConfig, GeneratedPersona } from "./types";
+import type {
+  PopulationBrief,
+  GenerationConfig,
+  GeneratedPersona,
+} from "./types";
 import { generatedPersonasJsonSchema } from "./types";
 import type { LLMUsageAttribution } from "@shared/schema";
 
 function buildSynthesisSystemPrompt(config: GenerationConfig): string {
-  const diversityBlock = config.diversityMode === "balanced"
-    ? `- Use at least 2 distinct values for attitude, verbosity, and domainKnowledge
+  const diversityBlock =
+    config.diversityMode === "balanced"
+      ? `- Use at least 2 distinct values for attitude, verbosity, and domainKnowledge
 - No single enum value should appear on more than 40% of personas`
-    : `- Every persona must have a unique (attitude, verbosity, domainKnowledge) combination
+      : `- Every persona must have a unique (attitude, verbosity, domainKnowledge) combination
 - Use at least 3 distinct values for each enum if generating 5+ personas`;
 
   const edgeCaseBlock = config.edgeCases
@@ -111,7 +116,7 @@ export async function synthesizePersonas(params: {
     provider: "openai",
     model: barbaraConfig.model,
     useCase: "barbara_persona_generation",
-    timeoutMs: 60_000,
+    timeoutMs: 180_000,
     callFn: async () => {
       return await openai.responses.create({
         model: barbaraConfig.model,

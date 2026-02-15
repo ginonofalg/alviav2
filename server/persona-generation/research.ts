@@ -72,18 +72,29 @@ function buildResearchUserPrompt(
   const parts: string[] = [`RESEARCH CONTEXT:\n${researchPrompt}`];
 
   const projectParts: string[] = [`Project: ${project.name}`];
-  if (project.objective) projectParts.push(`Research Objectives: ${project.objective}`);
-  if (project.audienceContext) projectParts.push(`Target Audience: ${project.audienceContext}`);
-  if (project.contextType) projectParts.push(`Context Type: ${project.contextType}`);
-  if (project.strategicContext) projectParts.push(`Strategic Context: ${project.strategicContext}`);
-  if (project.avoidRules?.length) projectParts.push(`Topics/Rules to Avoid: ${project.avoidRules.join(", ")}`);
+  if (project.objective)
+    projectParts.push(`Research Objectives: ${project.objective}`);
+  if (project.audienceContext)
+    projectParts.push(`Target Audience: ${project.audienceContext}`);
+  if (project.contextType)
+    projectParts.push(`Context Type: ${project.contextType}`);
+  if (project.strategicContext)
+    projectParts.push(`Strategic Context: ${project.strategicContext}`);
+  if (project.avoidRules?.length)
+    projectParts.push(
+      `Topics/Rules to Avoid: ${project.avoidRules.join(", ")}`,
+    );
   parts.push(`\nPROJECT CONTEXT:\n${projectParts.join("\n")}`);
 
   if (additionalContext) {
-    parts.push(`\nADDITIONAL CONTEXT PROVIDED BY RESEARCHER:\n${additionalContext}`);
+    parts.push(
+      `\nADDITIONAL CONTEXT PROVIDED BY RESEARCHER:\n${additionalContext}`,
+    );
   }
 
-  parts.push("\nResearch this population thoroughly using web search. Produce a structured population brief with citations.");
+  parts.push(
+    "\nResearch this population thoroughly using web search. Produce a structured population brief with citations.",
+  );
   return parts.join("\n");
 }
 
@@ -92,9 +103,7 @@ function buildInputMessages(
   userPrompt: string,
   uploadedFile?: UploadedFile,
 ): any[] {
-  const messages: any[] = [
-    { role: "system", content: systemPrompt },
-  ];
+  const messages: any[] = [{ role: "system", content: systemPrompt }];
 
   if (uploadedFile) {
     messages.push({
@@ -123,13 +132,20 @@ function isRateLimitError(error: any): boolean {
   const status = error.status ?? error.statusCode;
   if (status === 429) return true;
   const msg = String(error.message ?? "").toLowerCase();
-  return msg.includes("rate limit") || msg.includes("rate_limit") || msg.includes("too many requests");
+  return (
+    msg.includes("rate limit") ||
+    msg.includes("rate_limit") ||
+    msg.includes("too many requests")
+  );
 }
 
 function isWebSearchUnavailable(error: any): boolean {
   if (!error) return false;
   const msg = String(error.message ?? "").toLowerCase();
-  return msg.includes("web_search") || msg.includes("tool") && msg.includes("unavailable");
+  return (
+    msg.includes("web_search") ||
+    (msg.includes("tool") && msg.includes("unavailable"))
+  );
 }
 
 function delay(ms: number): Promise<void> {
@@ -168,11 +184,15 @@ export async function researchPopulation(params: {
         provider: "openai",
         model: config.model,
         useCase: "barbara_persona_research",
-        timeoutMs: 90_000,
+        timeoutMs: 180_000,
         callFn: async () => {
           return await openai.responses.create({
             model: config.model,
-            input: buildInputMessages(RESEARCH_SYSTEM_PROMPT, userPrompt, params.uploadedFile),
+            input: buildInputMessages(
+              RESEARCH_SYSTEM_PROMPT,
+              userPrompt,
+              params.uploadedFile,
+            ),
             tools: [{ type: "web_search" as any }],
             text: {
               format: {
@@ -195,7 +215,9 @@ export async function researchPopulation(params: {
       const citations = extractCitations(result);
 
       if (brief.confidence === "low" && citations.length === 0) {
-        console.warn("[PersonaGeneration] Web search returned no useful results, flagging as ungrounded");
+        console.warn(
+          "[PersonaGeneration] Web search returned no useful results, flagging as ungrounded",
+        );
         return { brief, citations, ungrounded: true };
       }
 
@@ -204,13 +226,17 @@ export async function researchPopulation(params: {
       lastError = error;
 
       if (isRateLimitError(error) && attempt === 0) {
-        console.warn("[PersonaGeneration] Rate limited by OpenAI, retrying in 5s...");
+        console.warn(
+          "[PersonaGeneration] Rate limited by OpenAI, retrying in 5s...",
+        );
         await delay(5000);
         continue;
       }
 
       if (isWebSearchUnavailable(error)) {
-        console.warn("[PersonaGeneration] Web search unavailable, falling back to prompt-only generation");
+        console.warn(
+          "[PersonaGeneration] Web search unavailable, falling back to prompt-only generation",
+        );
         useFallback = true;
         break;
       }
@@ -243,11 +269,15 @@ async function researchWithoutWebSearch(
     provider: "openai",
     model: config.model,
     useCase: "barbara_persona_research",
-    timeoutMs: 90_000,
+    timeoutMs: 180_000,
     callFn: async () => {
       return await openai.responses.create({
         model: config.model,
-        input: buildInputMessages(FALLBACK_SYSTEM_PROMPT, userPrompt, params.uploadedFile),
+        input: buildInputMessages(
+          FALLBACK_SYSTEM_PROMPT,
+          userPrompt,
+          params.uploadedFile,
+        ),
         text: {
           format: {
             type: "json_schema",
