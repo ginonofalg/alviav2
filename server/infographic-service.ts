@@ -1,15 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import { fileURLToPath } from 'url';
 import type { NormalizedTokenUsage } from "@shared/schema";
 
-const __filename = import.meta.url ? fileURLToPath(import.meta.url) : "";
-const __dirname = __filename ? path.dirname(__filename) : process.cwd();
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const INFOGRAPHICS_DIR = path.join(__dirname, '../generated-infographics');
-const MAX_STORED_INFOGRAPHICS = 100;
 
 interface InfographicConfig {
   model?: 'gemini-3-pro-image-preview' | 'gemini-2.5-flash-image';
@@ -48,21 +40,12 @@ export class InfographicService {
       const imageData = this.extractImageData(response);
 
       const id = `infographic-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const filename = `${id}.png`;
-      const filepath = path.join(INFOGRAPHICS_DIR, filename);
 
-      await fs.mkdir(INFOGRAPHICS_DIR, { recursive: true });
-      await fs.writeFile(filepath, Buffer.from(imageData, 'base64'));
-
-      console.log('[Infographic] Saved to:', filepath);
-
-      this.cleanupOldInfographics().catch(err => 
-        console.error('[Infographic] Cleanup failed:', err)
-      );
+      console.log('[Infographic] Generated successfully, returning base64 data URL | id:', id, '| size:', imageData.length);
 
       return {
         id,
-        imageUrl: `/infographics/${filename}`,
+        imageUrl: `data:image/png;base64,${imageData}`,
         prompt,
         model,
         usage: response.usageMetadata ? {
@@ -76,35 +59,6 @@ export class InfographicService {
     } catch (error) {
       console.error('[Infographic] Generation failed:', error);
       throw new Error(`Failed to generate infographic: ${(error as Error).message}`);
-    }
-  }
-
-  private async cleanupOldInfographics(): Promise<void> {
-    try {
-      const files = await fs.readdir(INFOGRAPHICS_DIR);
-      const pngFiles = files.filter(f => f.endsWith('.png'));
-      
-      if (pngFiles.length <= MAX_STORED_INFOGRAPHICS) {
-        return;
-      }
-
-      const fileStats = await Promise.all(
-        pngFiles.map(async (file) => {
-          const filepath = path.join(INFOGRAPHICS_DIR, file);
-          const stat = await fs.stat(filepath);
-          return { file, mtime: stat.mtime.getTime() };
-        })
-      );
-
-      fileStats.sort((a, b) => a.mtime - b.mtime);
-
-      const filesToDelete = fileStats.slice(0, fileStats.length - MAX_STORED_INFOGRAPHICS);
-      for (const { file } of filesToDelete) {
-        await fs.unlink(path.join(INFOGRAPHICS_DIR, file));
-        console.log('[Infographic] Cleaned up old file:', file);
-      }
-    } catch (error) {
-      console.error('[Infographic] Cleanup error:', error);
     }
   }
 

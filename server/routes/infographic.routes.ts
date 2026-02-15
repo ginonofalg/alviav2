@@ -1,7 +1,4 @@
 import type { Express } from "express";
-import path from "path";
-import express from "express";
-import { fileURLToPath } from "url";
 import { isAuthenticated } from "../replit_integrations/auth";
 import { storage } from "../storage";
 import { getInfographicService } from "../infographic-service";
@@ -9,11 +6,7 @@ import { InfographicPromptBuilder } from "../infographic-prompts";
 import { recordLlmUsageEvent } from "../llm-usage";
 import type { LLMUsageAttribution, CollectionAnalytics, ProjectAnalytics } from "@shared/schema";
 
-const __filename = import.meta.url ? fileURLToPath(import.meta.url) : "";
-const __dirname = __filename ? path.dirname(__filename) : process.cwd();
-
 export function registerInfographicRoutes(app: Express) {
-  app.use('/infographics', express.static(path.join(__dirname, '../../generated-infographics')));
 
   app.post("/api/collections/:collectionId/infographic/summary", isAuthenticated, async (req, res) => {
     try {
