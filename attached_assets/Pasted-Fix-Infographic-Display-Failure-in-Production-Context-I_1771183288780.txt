@@ -1,0 +1,81 @@
+Fix: Infographic Display Failure in Production         
+
+ Context
+
+ Infographic generation succeeds (Gemini API calls log as success in LLM usage events) but images fail to display in the production deployment. The Replit diagnosis identified the correct
+ symptom but misidentified the root cause.
+
+ Replit's diagnosis vs. actual root cause
+
+ Replit claimed: The production catch-all route (static.ts line 16) intercepts /infographics/* before the Express static file handler.
+
+ Actual root cause: After esbuild bundles all server code into dist/index.cjs, every file's __dirname resolves to dist/ instead of the original source directory. The two infographic files use
+ different relative paths that only work from their original locations:
+
+ ┌────────────────────────┬──────────────────────────────┬───────────────────────────────────┬───────────────────────────────────┐
+ │          File          │        Relative path         │        Source resolves to         │      Production resolves to       │
+ ├────────────────────────┼──────────────────────────────┼───────────────────────────────────┼───────────────────────────────────┤
+ │ infographic-service.ts │ ../generated-infographics    │ workspace/generated-infographics/ │ workspace/generated-infographics/ │
+ ├────────────────────────┼──────────────────────────────┼───────────────────────────────────┼───────────────────────────────────┤
+ │ infographic.routes.ts  │ ../../generated-infographics │ workspace/generated-infographics/ │ runner/generated-infographics/    │
+ └────────────────────────┴──────────────────────────────┴───────────────────────────────────┴───────────────────────────────────┘
+
+ The service writes files correctly, but the Express static route serves from a non-existent directory one level above the project root. Express.static silently calls next(), and then the
+ catch-all returns index.html (HTML instead of PNG).
+
+ Fix: Return base64 data URL inline
+
+ Instead of writing to disk and serving via a separate HTTP request, return the image data directly in the API response as a base64 data URL. This eliminates: the path mismatch, filesystem
+ ephemeral issues, and the need for cleanup logic.
+
+ Files to modify
+
+ 1. server/infographic-service.ts (lines 50-75)
+
+ - Remove file writing logic (fs.mkdir, fs.writeFile)
+ - Remove cleanupOldInfographics() method and its call
+ - Remove INFOGRAPHICS_DIR, MAX_STORED_INFOGRAPHICS constants
+ - Remove fs, path, fileURLToPath imports (no longer needed)
+ - Return imageData (the base64 string from Gemini) directly in the result as a data:image/png;base64, URL
+ - Change return shape: imageUrl becomes the full data URL instead of a relative path
+
+ // Before:
+ return {
+   id,
+   imageUrl: `/infographics/${filename}`,
+   ...
+ };
+
+ // After:
+ return {
+   id,
+   imageUrl: `data:image/png;base64,${imageData}`,
+   ...
+ };
+
+ 2. server/routes/infographic.routes.ts (line 16)
+
+ - Remove the express.static('/infographics', ...) middleware registration
+ - Remove path, express (static), fileURLToPath imports that are no longer needed
+ - Keep the POST route handlers unchanged (they already return result.imageUrl)
+
+ 3. client/src/components/InfographicGenerator.tsx (lines 106-116)
+
+ - Update handleDownload to work with data URLs (currently uses link.href = imageUrl which works with data URLs natively, but the download filename logic should be verified)
+ - The <img src={imageUrl}> tag already works with data URLs — no change needed there
+
+ What stays the same
+
+ - All 6 POST route handlers in infographic.routes.ts — they pass through result.imageUrl unchanged
+ - Client-side <img src={imageUrl}> — data URLs work natively
+ - LLM usage tracking — unaffected
+ - The InfographicResponse interface — imageUrl field still a string
+
+ Verification
+
+ 1. Run npm run build — confirm clean build
+ 2. Start production: NODE_ENV=production node dist/index.cjs — confirm no errors
+ 3. Generate an infographic via the UI — confirm image displays immediately
+ 4. Click "Download PNG" — confirm file downloads with correct name
+ 5. Regenerate — confirm new image replaces old one
+ 6. Run npx vitest — confirm no test regressions
