@@ -530,9 +530,11 @@ export const populationBriefs = pgTable("population_briefs", {
     .references(() => projects.id, { onDelete: "cascade" }),
   researchPrompt: text("research_prompt").notNull(),
   additionalContext: text("additional_context"),
-  brief: jsonb("brief").notNull(),
-  confidence: text("confidence").notNull(),
+  brief: jsonb("brief"),
+  confidence: text("confidence"),
   isUngrounded: boolean("is_ungrounded").default(false).notNull(),
+  status: text("status").notNull().default("researching"),
+  errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_population_brief_project").on(table.projectId),

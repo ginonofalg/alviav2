@@ -1678,6 +1678,11 @@ export class DatabaseStorage implements IStorage {
     return create(data);
   }
 
+  async updatePopulationBrief(id: string, data: Partial<InsertPopulationBrief>): Promise<PopulationBriefRecord | undefined> {
+    const { updatePopulationBrief: update } = await import("./storage/simulation");
+    return update(id, data);
+  }
+
   async getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined> {
     const { getPopulationBrief: get } = await import("./storage/simulation");
     return get(id);

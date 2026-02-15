@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Dialog,
@@ -46,11 +46,18 @@ import { apiRequest } from "@/lib/queryClient";
 import type { PopulationBrief, GeneratedPersona } from "@shared/types/persona-generation";
 import { BriefSelectionView } from "./BriefSelectionView";
 
-interface ResearchResponse {
+interface ResearchStartResponse {
   briefId: string;
-  brief: PopulationBrief;
-  citations: Array<{ url: string; title: string }>;
+  status: string;
+}
+
+interface ResearchStatusResponse {
+  status: "researching" | "completed" | "failed";
+  briefId: string;
+  brief?: PopulationBrief;
+  citations?: Array<{ url: string; title: string }>;
   ungrounded?: boolean;
+  errorMessage?: string;
 }
 
 interface SynthesizeResponse {
@@ -97,6 +104,8 @@ const MIME_TYPES: Record<string, string> = {
   ".pdf": "application/pdf",
 };
 
+const RESEARCH_POLL_INTERVAL_MS = 3000;
+
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -134,6 +143,7 @@ export function GeneratePersonasDialog({
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const briefsQuery = useQuery<{ id: string }[]>({
     queryKey: ["/api/projects", projectId, "personas", "briefs"],
@@ -150,6 +160,49 @@ export function GeneratePersonasDialog({
       return () => clearInterval(interval);
     }
   }, [dialogState]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback((pollBriefId: string) => {
+    stopPolling();
+    pollingRef.current = setInterval(async () => {
+      try {
+        const status = await apiRequestJson<ResearchStatusResponse>(
+          "GET",
+          `/api/projects/${projectId}/personas/research/${pollBriefId}/status`,
+          undefined,
+          { timeoutMs: 15000 },
+        );
+
+        if (status.status === "completed" && status.brief) {
+          stopPolling();
+          setBrief(status.brief);
+          setIsUngrounded(status.ungrounded ?? false);
+          setDialogState("synthesizing");
+          synthesizeMutation.mutate(pollBriefId);
+        } else if (status.status === "failed") {
+          stopPolling();
+          setDialogState("input");
+          toast({
+            title: "Research failed",
+            description: status.errorMessage || "Please try again with a different prompt.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("[GeneratePersonas] Polling error:", error);
+      }
+    }, RESEARCH_POLL_INTERVAL_MS);
+  }, [projectId, stopPolling, toast]);
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -208,19 +261,16 @@ export function GeneratePersonasDialog({
           mimeType: uploadedFileMimeType,
         };
       }
-      return await apiRequestJson<ResearchResponse>(
+      return await apiRequestJson<ResearchStartResponse>(
         "POST",
         `/api/projects/${projectId}/personas/research`,
         body,
-        { timeoutMs: 610000 },
+        { timeoutMs: 30000 },
       );
     },
     onSuccess: (data) => {
       setBriefId(data.briefId);
-      setBrief(data.brief);
-      setIsUngrounded(data.ungrounded ?? false);
-      setDialogState("synthesizing");
-      synthesizeMutation.mutate(data.briefId);
+      startPolling(data.briefId);
     },
     onError: (error: Error) => {
       setDialogState("input");
@@ -234,7 +284,7 @@ export function GeneratePersonasDialog({
 
   const synthesizeMutation = useMutation({
     mutationFn: async (overrideBriefId?: string) => {
-      const id = overrideBriefId ?? briefId ?? researchMutation.data?.briefId;
+      const id = overrideBriefId ?? briefId;
       if (!id) throw new Error("No research data");
       return await apiRequestJson<SynthesizeResponse>(
         "POST",
@@ -339,6 +389,7 @@ export function GeneratePersonasDialog({
   };
 
   const handleClose = () => {
+    stopPolling();
     setDialogState("input");
     setResearchPrompt("");
     setPersonaCount("5");
@@ -613,162 +664,137 @@ export function GeneratePersonasDialog({
               </div>
             )}
 
-            {dialogState === "synthesizing" && (
-              <div className="space-y-2 px-4">
-                {Array.from({ length: parseInt(personaCount) }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            )}
-
-            <p className="text-xs text-center text-muted-foreground" data-testid="text-generation-notice">
-              Research can take up to 10 minutes for complex populations with web search
-            </p>
           </div>
         )}
 
         {dialogState === "review" && (
           <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
             {isUngrounded && (
-              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20 shrink-0">
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                 <div className="text-sm">
                   <p className="font-medium text-amber-600 dark:text-amber-400">
                     Limited web research
                   </p>
                   <p className="text-muted-foreground">
-                    Web search returned limited results. Personas are based on general knowledge and may not fully reflect current population data.
+                    Web search was unavailable. Personas are based on AI knowledge only and may be less grounded.
                   </p>
                 </div>
               </div>
             )}
 
             {validationWarnings.length > 0 && (
-              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20 shrink-0">
+              <div className="flex items-start gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
                 <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-amber-600 dark:text-amber-400">
-                    Diversity check warnings
-                  </p>
-                  <p className="text-muted-foreground">
-                    Some personas may lack diversity. Consider regenerating or manually adjusting after saving.
-                  </p>
+                <div className="text-sm space-y-1">
+                  <p className="font-medium text-amber-600 dark:text-amber-400">Diversity warnings</p>
+                  {validationWarnings.map((w, i) => (
+                    <p key={i} className="text-muted-foreground">{w}</p>
+                  ))}
                 </div>
               </div>
             )}
 
             {brief && (
-              <Collapsible open={briefExpanded} onOpenChange={setBriefExpanded} className="shrink-0">
+              <Collapsible open={briefExpanded} onOpenChange={setBriefExpanded}>
                 <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-between"
-                    data-testid="button-toggle-brief"
-                  >
-                    <span className="flex items-center gap-2 text-sm">
-                      <Globe className="w-4 h-4" />
-                      Population Brief
-                      <Badge variant="outline" className="text-xs">
-                        {brief.sources.length} sources
-                      </Badge>
-                      <span className={`text-xs ${CONFIDENCE_COLORS[brief.confidence]}`}>
-                        {brief.confidence} confidence
-                      </span>
+                  <Button variant="ghost" size="sm" className="w-full justify-between" data-testid="button-toggle-brief">
+                    <span className="text-sm text-muted-foreground">
+                      Research brief: {brief.targetPopulation}
                     </span>
                     <ChevronDown className={`w-4 h-4 transition-transform ${briefExpanded ? "rotate-180" : ""}`} />
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="p-3 rounded-md bg-muted/50 space-y-2 text-sm">
-                    <p className="font-medium">{brief.targetPopulation}</p>
-                    <p className="text-muted-foreground">{brief.demographics.summary}</p>
-                    {brief.sources.length > 0 && (
-                      <div className="space-y-1 pt-1">
-                        <p className="text-xs font-medium text-muted-foreground">Sources:</p>
-                        {brief.sources.slice(0, 5).map((s, i) => (
-                          <a
-                            key={i}
-                            href={s.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block text-xs text-primary hover:underline truncate"
-                            data-testid={`link-source-${i}`}
-                          >
-                            {s.title}
-                          </a>
-                        ))}
+                  <Card>
+                    <CardContent className="p-3 space-y-2 text-sm">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">
+                          Confidence: {brief.confidence}
+                        </Badge>
+                        <Badge variant="outline">
+                          {brief.sources.length} sources
+                        </Badge>
                       </div>
-                    )}
-                  </div>
+                      {brief.demographics?.distributions?.map((d, i) => (
+                        <p key={i} className="text-muted-foreground">
+                          <span className="font-medium">{d.dimension}:</span>{" "}
+                          {d.breakdown}
+                        </p>
+                      ))}
+                    </CardContent>
+                  </Card>
                 </CollapsibleContent>
               </Collapsible>
             )}
 
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="space-y-2 pr-1">
-                {generatedPersonas.map((persona, index) => {
-                  if (removedIndices.has(index)) return null;
-                  return (
-                    <Card key={index} data-testid={`card-generated-persona-${index}`}>
-                      <CardContent className="p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 shrink-0">
-                              <User className="w-4 h-4 text-primary" />
-                            </div>
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-sm">{persona.name}</span>
-                                {persona.ageRange && (
-                                  <span className="text-xs text-muted-foreground">{persona.ageRange}</span>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {persona.occupation} {persona.location ? `\u00b7 ${persona.location}` : ""}
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                <Badge variant="secondary" className="text-xs">
-                                  {ATTITUDE_LABELS[persona.attitude] || persona.attitude}
-                                </Badge>
-                                <Badge variant="secondary" className="text-xs">
-                                  {persona.verbosity}
-                                </Badge>
-                                <Badge variant="secondary" className="text-xs">
-                                  {DOMAIN_LABELS[persona.domainKnowledge] || persona.domainKnowledge}
-                                </Badge>
-                              </div>
-                              {persona.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-2 pt-0.5">{persona.description}</p>
-                              )}
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemovePersona(index)}
-                            className="shrink-0"
-                            data-testid={`button-remove-persona-${index}`}
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 flex-wrap shrink-0">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-sm font-medium">
+                {activePersonas.length} persona{activePersonas.length !== 1 ? "s" : ""} generated
+              </p>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={handleRegenerate}
                 disabled={synthesizeMutation.isPending}
-                data-testid="button-regenerate-personas"
+                data-testid="button-regenerate"
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${synthesizeMutation.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw className="w-4 h-4 mr-2" />
                 Regenerate
               </Button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+              {generatedPersonas.map((persona, index) => {
+                if (removedIndices.has(index)) return null;
+                return (
+                  <Card key={index}>
+                    <CardContent className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <User className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-sm truncate">{persona.name}</p>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemovePersona(index)}
+                              data-testid={`button-remove-persona-${index}`}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {persona.description}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {persona.ageRange && (
+                              <Badge variant="secondary" className="text-xs">{persona.ageRange}</Badge>
+                            )}
+                            {persona.gender && (
+                              <Badge variant="secondary" className="text-xs">{persona.gender}</Badge>
+                            )}
+                            {persona.occupation && (
+                              <Badge variant="secondary" className="text-xs">{persona.occupation}</Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {ATTITUDE_LABELS[persona.attitude] ?? persona.attitude}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {DOMAIN_LABELS[persona.domainKnowledge] ?? persona.domainKnowledge}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <DialogFooter className="gap-2 flex-wrap">
               <Button variant="outline" onClick={handleClose} data-testid="button-cancel-review">
                 Cancel
               </Button>
@@ -778,11 +804,16 @@ export function GeneratePersonasDialog({
                 data-testid="button-save-personas"
               >
                 {saveMutation.isPending ? (
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
                 ) : (
-                  <Check className="w-4 h-4 mr-2" />
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Save {activePersonas.length} Persona{activePersonas.length !== 1 ? "s" : ""}
+                  </>
                 )}
-                Save {activePersonas.length} Persona{activePersonas.length !== 1 ? "s" : ""}
               </Button>
             </DialogFooter>
           </div>

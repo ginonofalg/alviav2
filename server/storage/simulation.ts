@@ -119,6 +119,17 @@ export async function createPopulationBrief(data: InsertPopulationBrief): Promis
   return brief;
 }
 
+export async function updatePopulationBrief(
+  id: string,
+  data: Partial<InsertPopulationBrief>,
+): Promise<PopulationBriefRecord | undefined> {
+  const [brief] = await db.update(populationBriefs)
+    .set(data)
+    .where(eq(populationBriefs.id, id))
+    .returning();
+  return brief;
+}
+
 export async function getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined> {
   const [brief] = await db.select().from(populationBriefs).where(eq(populationBriefs.id, id));
   return brief;

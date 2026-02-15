@@ -227,6 +227,7 @@ export interface IStorage {
   reconcileUsageRollups(hoursBack: number): Promise<number>;
 
   createPopulationBrief(data: InsertPopulationBrief): Promise<PopulationBriefRecord>;
+  updatePopulationBrief(id: string, data: Partial<InsertPopulationBrief>): Promise<PopulationBriefRecord | undefined>;
   getPopulationBrief(id: string): Promise<PopulationBriefRecord | undefined>;
   getPopulationBriefsByProject(projectId: string): Promise<PopulationBriefRecord[]>;
 }
