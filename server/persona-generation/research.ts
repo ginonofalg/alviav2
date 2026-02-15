@@ -37,8 +37,8 @@ represent the key segments of this population. For each, explain:
 OUTPUT FORMAT:
 Return a JSON object matching the PopulationBrief schema. Every claim should
 include a source URL where possible. Do not fabricate sources -- if you cannot
-find data for a dimension, set the source field to an empty string and note
-this in your confidence assessment.`;
+find data for a dimension, omit the source field and note this in your
+confidence assessment.`;
 
 const FALLBACK_SYSTEM_PROMPT = `You are a research population analyst. Your task is to produce a structured
 population brief for a qualitative interview study based on your existing knowledge.
