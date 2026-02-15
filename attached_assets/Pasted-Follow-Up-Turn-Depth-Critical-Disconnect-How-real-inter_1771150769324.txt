@@ -1,0 +1,40 @@
+Follow-Up Turn Depth: Critical Disconnect
+
+ How real interviews handle it
+
+ The template/question system provides advisory guidance to Alvia:
+
+ - Per-question: questions.recommendedFollowUps (integer, nullable) — schema.ts:169
+ - Per-template default: interviewTemplates.defaultRecommendedFollowUps (integer, nullable) — schema.ts:146
+ - Lookup: question-level overrides template-level — voice-interview.ts:1000-1003
+ - Prompt injection: "The researcher recommends approximately N follow-up probes. You've asked M so far. This is guidance, not a
+ strict limit." — instructions.ts:54-58
+ - No hard cap: The respondent decides when to click "Next Question". There is zero enforcement.
+
+ How simulation handles it
+
+ The simulation has its own separate turn limit system:
+
+ - maxTurnsPerQuestion: defaults to 6, passed as option to executeSimulationRun() — engine.ts:660
+ - maxAQTurnsPerQuestion: defaults to 3 — engine.ts:661
+ - Hard cap: HARD_CAP_TURNS_PER_QUESTION = 12 — types.ts:47
+ - Enforcement: evaluateQuestionFlow() checks followUpCount >= maxTurnsPerQuestion — question-flow.ts:17,26
+ - Barbara can also terminate early: if barbaraSuggestedNext is true (confidence > 0.6) — question-flow.ts:17,26
+
+ The disconnect
+
+ The simulation's maxTurnsPerQuestion = 6 is a flat default that ignores the researcher's per-question/per-template settings:
+
+ 1. If a researcher sets recommendedFollowUps: 2 on a simple question, the simulation still allows up to 6 turns
+ 2. If a researcher sets recommendedFollowUps: 8 on a deep-dive question, the simulation caps at 6 turns
+ 3. The recommendedFollowUps value IS still passed to Alvia's prompt (via buildInterviewInstructions) and to Barbara's metrics,
+ but the hard progression logic ignores it
+
+ The simulation could (and arguably should) use question.recommendedFollowUps ?? template.defaultRecommendedFollowUps ??
+ maxTurnsPerQuestion as the per-question cap, so that the researcher's configured depth per question is respected.
+
+ What the simulation DOES share for follow-up context
+
+ - recommendedFollowUps is correctly passed to Barbara's metrics — engine.ts:264
+ - followUpContext with recommendedFollowUps is correctly passed to generateAlviaResponse() — engine.ts:310
+ - So Alvia "knows" the recommended depth and Barbara "knows" it — but the hard cutoff in evaluateQuestionFlow() doesn't use it
