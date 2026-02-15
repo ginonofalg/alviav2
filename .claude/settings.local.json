@@ -11,7 +11,8 @@
       "WebFetch(domain:elevenlabs.io)",
       "WebFetch(domain:frankfu.blog)",
       "WebFetch(domain:ai.google.dev)",
-      "WebFetch(domain:docs.cloud.google.com)"
+      "WebFetch(domain:docs.cloud.google.com)",
+      "WebFetch(domain:developers.openai.com)"
     ]
   }
 }
