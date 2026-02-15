@@ -6,7 +6,7 @@ import { populationBriefJsonSchema } from "./types";
 import type { Project } from "@shared/schema";
 import type { LLMUsageAttribution } from "@shared/schema";
 
-const RESEARCH_TIMEOUT_MS = 600_000;
+const RESEARCH_TIMEOUT_MS = 900_000;
 
 const RESEARCH_SYSTEM_PROMPT = `You are a research population analyst. Your task is to research a target population
 for a qualitative interview study and produce a structured population brief.
@@ -214,7 +214,7 @@ export async function researchPopulation(params: {
               },
             },
             reasoning: { effort: config.reasoningEffort as any },
-          } as any, { signal, timeout: RESEARCH_TIMEOUT_MS });
+          } as any, { signal, maxRetries: 0 });
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
       });
@@ -305,7 +305,7 @@ async function researchWithoutWebSearch(
           },
         },
         reasoning: { effort: config.reasoningEffort as any },
-      } as any, { signal, timeout: RESEARCH_TIMEOUT_MS });
+      } as any, { signal, maxRetries: 0 });
     },
     extractUsage: makeResponsesUsageExtractor(config.model),
   });

@@ -9,7 +9,7 @@ import {
   validatePersonaDiversity,
   buildCorrectionPrompt,
 } from "../persona-generation";
-import type { PopulationBrief } from "../persona-generation";
+import type { PopulationBrief, DiversityMode } from "../persona-generation";
 const researchRateLimits = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -132,6 +132,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
 
       if (briefRecord.status === "completed") {
         const brief = briefRecord.brief as unknown as PopulationBrief;
+        console.log(`[PersonaGeneration] Research status: completed | brief=${briefId}`);
         return res.json({
           status: "completed",
           briefId: briefRecord.id,
@@ -142,6 +143,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (briefRecord.status === "failed") {
+        console.log(`[PersonaGeneration] Research status: failed | brief=${briefId} | error=${briefRecord.errorMessage}`);
         return res.json({
           status: "failed",
           briefId: briefRecord.id,
@@ -149,6 +151,26 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
+      const ageMs = Date.now() - new Date(briefRecord.createdAt!).getTime();
+      const MAX_RESEARCH_AGE_MS = 15 * 60 * 1000;
+      if (ageMs > MAX_RESEARCH_AGE_MS) {
+        console.warn(`[PersonaGeneration] Research stuck for ${Math.round(ageMs / 1000)}s, auto-failing | brief=${briefId}`);
+        try {
+          await storage.updatePopulationBrief(briefId, {
+            status: "failed",
+            errorMessage: "Research took too long and was automatically cancelled. Please try again.",
+          });
+        } catch (e) {
+          console.error(`[PersonaGeneration] Failed to auto-fail stuck research | brief=${briefId}`, e);
+        }
+        return res.json({
+          status: "failed",
+          briefId: briefRecord.id,
+          errorMessage: "Research took too long and was automatically cancelled. Please try again.",
+        });
+      }
+
+      console.log(`[PersonaGeneration] Research status: researching | brief=${briefId} | age=${Math.round(ageMs / 1000)}s`);
       res.json({ status: "researching", briefId: briefRecord.id });
     } catch (error) {
       console.error("[PersonaGeneration] GET /research/:briefId/status failed:", error);
@@ -289,6 +311,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (job.status === "completed") {
+        console.log(`[PersonaGeneration] Synthesis status: completed | job=${jobId}`);
         return res.json({
           status: "completed",
           jobId: job.id,
@@ -298,6 +321,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (job.status === "failed") {
+        console.log(`[PersonaGeneration] Synthesis status: failed | job=${jobId} | error=${job.errorMessage}`);
         return res.json({
           status: "failed",
           jobId: job.id,
@@ -305,6 +329,26 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
+      const ageMs = Date.now() - new Date(job.createdAt!).getTime();
+      const MAX_SYNTHESIS_AGE_MS = 10 * 60 * 1000;
+      if (ageMs > MAX_SYNTHESIS_AGE_MS) {
+        console.warn(`[PersonaGeneration] Synthesis stuck for ${Math.round(ageMs / 1000)}s, auto-failing | job=${jobId}`);
+        try {
+          await storage.updateSynthesisJob(jobId, {
+            status: "failed",
+            errorMessage: "Persona generation took too long and was automatically cancelled. Please try again.",
+          });
+        } catch (e) {
+          console.error(`[PersonaGeneration] Failed to auto-fail stuck synthesis | job=${jobId}`, e);
+        }
+        return res.json({
+          status: "failed",
+          jobId: job.id,
+          errorMessage: "Persona generation took too long and was automatically cancelled. Please try again.",
+        });
+      }
+
+      console.log(`[PersonaGeneration] Synthesis status: synthesizing | job=${jobId} | age=${Math.round(ageMs / 1000)}s`);
       res.json({ status: "synthesizing", jobId: job.id });
     } catch (error) {
       console.error("[PersonaGeneration] GET /synthesize/:jobId/status failed:", error);
@@ -376,7 +420,7 @@ async function runSynthesisInBackground(params: {
   jobId: string;
   projectId: string;
   brief: PopulationBrief;
-  config: { personaCount: number; diversityMode: string; edgeCases: boolean };
+  config: { personaCount: number; diversityMode: DiversityMode; edgeCases: boolean };
   attribution: { workspaceId: string; projectId: string };
   requestStart: number;
 }) {

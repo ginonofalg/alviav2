@@ -1,0 +1,124 @@
+ Root cause: Both research.ts:217 and synthesis.ts:146 pass a duplicate timeout parameter to the OpenAI SDK alongside the signal from withTrackedLlmCall. These two independent abort mechanisms 
+  race — and when the SDK's timeout fires first, it triggers internal retries, which the outer AbortController then kills with an AbortError. The result: OpenAI logs show success (the API call  
+  completed), but our server catches the abort and marks the DB as "failed".                                                                                                                      
+                                                        
+  The fix is across 3 layers:
+  1. Server SDK calls: Remove the duplicate timeout parameter, add maxRetries: 0, increase research timeout to 15 min
+  2. Server stuck job detection: Status endpoints auto-fail jobs that have been "researching" for >15 min (safety net for crashes/restarts)
+  3. Client polling resilience: Error counting (bail after 5 consecutive failures), max polling duration, cancel button, fix broken failure state transitions (synthesis failure was sending to
+  "review" with no personas), and cache invalidation for the briefs query
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Ready to code?
+                                                                                                                                                                                                  
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Fix: Persona Generation Pipeline Failing in Production 
+
+ Context
+
+ The persona generation pipeline (research → synthesis) works in development but fails in production. The production DB shows a population_briefs row with status: "failed" and errorMessage:
+ "Research timed out. Please try again with a more specific prompt." — yet OpenAI logs confirm the API call completed successfully on their side.
+
+ There are two layers of problems: a server-side timeout race condition (root cause) and fragile client-side polling (makes failures invisible to the user).
+
+ ---
+ Layer 1: Server-Side Timeout Race Condition (Root Cause)
+
+ Problem
+
+ In research.ts:217 and synthesis.ts:146, the OpenAI SDK call passes both:
+ - signal — from withTrackedLlmCall's AbortController (600s / 300s timeout)
+ - timeout: RESEARCH_TIMEOUT_MS — the SDK's own internal timeout (same value)
+
+ These two independent abort mechanisms race. When the SDK's internal timeout fires first, the SDK may retry the request (default maxRetries: 2), extending the wall-clock time. When
+ withTrackedLlmCall's signal fires during a retry, it throws an AbortError that the background job catches and marks as "failed" — even though OpenAI had already completed the original call.
+
+ Fixes
+
+ File: server/persona-generation/research.ts
+ 1. Line 9: Increase RESEARCH_TIMEOUT_MS from 600_000 → 900_000 (15 min). Web search calls legitimately take 5-8 min for complex populations.
+ 2. Line 217: Remove timeout: RESEARCH_TIMEOUT_MS from SDK options, add maxRetries: 0. Change { signal, timeout: RESEARCH_TIMEOUT_MS } → { signal, maxRetries: 0 }
+ 3. Line 308: Same fix for the fallback (no-web-search) call.
+
+ File: server/persona-generation/synthesis.ts
+ 4. Line 146: Same fix. Change { signal, timeout: SYNTHESIS_TIMEOUT_MS } → { signal, maxRetries: 0 }
+
+ Rationale: withTrackedLlmCall already provides a properly managed AbortController signal with timeout. The SDK's timeout option creates a redundant second timer that races against it.
+ maxRetries: 0 prevents the SDK from internally retrying — our own retry logic in research.ts:189 already handles rate-limit retries explicitly.
+
+ ---
+ Layer 2: Server-Side Stuck Job Detection
+
+ Problem
+
+ If the background process crashes, the Node process restarts, or the DB update fails, the population_briefs / synthesisJobs record stays in "researching"/"synthesizing" forever. There's no
+ cleanup mechanism.
+
+ Fixes
+
+ File: server/routes/persona-generation.routes.ts
+
+ 5. Research status endpoint (~line 152): Before returning { status: "researching" }, check createdAt age. If >15 min old, auto-fail the record and return { status: "failed" } with an
+ appropriate message.
+ 6. Synthesis status endpoint (~line 308): Same pattern with 10-min threshold.
+ 7. Add logging to both status endpoints — log when terminal states (completed/failed) are returned, and log elapsed time for in-progress states. This provides production diagnostics.
+
+ ---
+ Layer 3: Client-Side Polling Resilience
+
+ Problem
+
+ In GeneratePersonasDialog.tsx:
+ - Lines 220-222, 252-254: Polling errors are console.error'd but silently swallowed. If every poll request fails (auth expired, network issue), the user is stuck forever.
+ - No max polling duration: If DB never transitions, user sees "researching" indefinitely.
+ - No cancel button: User can't abort the operation from the UI.
+ - Synthesis failure → "review" state (line 213): Sends user to review screen with zero personas.
+ - Stale briefs cache: Global staleTime: Infinity means the briefs query never refetches, so existing completed briefs don't appear when reopening the dialog.
+
+ Fixes
+
+ File: client/src/components/simulation/GeneratePersonasDialog.tsx
+
+ 8. Add constants: MAX_CONSECUTIVE_POLL_ERRORS = 5, MAX_RESEARCH_POLL_DURATION_S = 720 (12 min), MAX_SYNTHESIS_POLL_DURATION_S = 480 (8 min).
+ 9. Add refs: researchErrorCountRef, synthesisErrorCountRef, pollingStartTimeRef.
+ 10. Research polling (startResearchPolling):
+   - Reset error counter at start
+   - On each successful poll response, reset counter to 0
+   - On catch: increment counter. If ≥ 5 consecutive errors → stop polling, go to "input" state, show "Connection lost" toast
+   - Check pollingStartTimeRef elapsed time. If > 12 min → stop polling, show timeout toast
+ 11. Synthesis polling (startSynthesisPolling): Same pattern with 8-min max duration.
+ 12. Fix failure state transitions:
+   - Synthesis polling status === "failed" (line 213): Change setDialogState("review") → setDialogState("input")
+   - synthesizeMutation.onError (line 361): Change setDialogState("review") → setDialogState("input")
+ 13. Add Cancel button: Add a "Cancel" button to the researching/synthesizing phase UI (between lines 719-721). On click: stop all polling, go to "input" state.
+ 14. Invalidate briefs cache on dialog open: Add useEffect that calls queryClient.invalidateQueries for the briefs query key when open transitions to true.
+ 15. Reset error counters in handleClose and handleGenerate.
+
+ ---
+ Files Modified (5 files)
+
+ ┌─────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                            File                             │                                                 Changes                                                 │
+ ├─────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/persona-generation/research.ts                       │ Remove duplicate SDK timeout (lines 217, 308), increase timeout to 900s                                 │
+ ├─────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/persona-generation/synthesis.ts                      │ Remove duplicate SDK timeout (line 146)                                                                 │
+ ├─────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ server/routes/persona-generation.routes.ts                  │ Stuck job detection on status endpoints, diagnostic logging                                             │
+ ├─────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ client/src/components/simulation/GeneratePersonasDialog.tsx │ Polling resilience (error counter, max duration, cancel button), fix failure states, cache invalidation │
+ └─────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ---
+ Verification
+
+ 1. Type check: npm run check — confirm no TypeScript errors
+ 2. Existing tests: npx vitest — confirm no regressions
+ 3. Manual test in dev: Open Generate Personas dialog → start research → verify:
+   - Elapsed timer shows correctly
+   - Cancel button works during both phases
+   - Closing and reopening dialog shows any completed briefs via "Use Existing Research"
+ 4. Simulate polling failure: Temporarily break the status endpoint (return 500) → verify client shows "Connection lost" after ~15 seconds (5 errors × 3s interval)
+ 5. Simulate stuck job: Manually insert a population_briefs row with status: "researching" and createdAt 20 min ago → poll the status endpoint → verify it returns "failed"
+ 6. Production deploy: After deploying, run a real research request and monitor server logs for the [PersonaGeneration] entries to confirm the timeout fix works

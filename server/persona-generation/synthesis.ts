@@ -143,7 +143,7 @@ export async function synthesizePersonas(params: {
             },
           },
           reasoning: { effort: barbaraConfig.reasoningEffort as any },
-        } as any, { signal, timeout: SYNTHESIS_TIMEOUT_MS });
+        } as any, { signal, maxRetries: 0 });
       },
       extractUsage: makeResponsesUsageExtractor(barbaraConfig.model),
     });

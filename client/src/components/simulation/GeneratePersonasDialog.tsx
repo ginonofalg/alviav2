@@ -114,6 +114,9 @@ const MIME_TYPES: Record<string, string> = {
 
 const RESEARCH_POLL_INTERVAL_MS = 3000;
 const SYNTHESIS_POLL_INTERVAL_MS = 3000;
+const MAX_CONSECUTIVE_POLL_ERRORS = 5;
+const MAX_RESEARCH_POLL_DURATION_S = 720;
+const MAX_SYNTHESIS_POLL_DURATION_S = 480;
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -155,12 +158,22 @@ export function GeneratePersonasDialog({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const synthesisPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const researchErrorCountRef = useRef(0);
+  const synthesisErrorCountRef = useRef(0);
+  const researchPollingStartRef = useRef(0);
+  const synthesisPollingStartRef = useRef(0);
 
   const briefsQuery = useQuery<{ id: string }[]>({
     queryKey: ["/api/projects", projectId, "personas", "briefs"],
     enabled: open,
   });
   const existingBriefCount = briefsQuery.data?.length ?? 0;
+
+  useEffect(() => {
+    if (open) {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "personas", "briefs"] });
+    }
+  }, [open, projectId]);
 
   useEffect(() => {
     if (dialogState === "researching" || dialogState === "synthesizing") {
@@ -191,9 +204,25 @@ export function GeneratePersonasDialog({
     stopSynthesisPolling();
   }, [stopResearchPolling, stopSynthesisPolling]);
 
+  const synthesizeMutateRef = useRef<((briefId: string) => void) | null>(null);
+
   const startSynthesisPolling = useCallback((jobId: string) => {
     stopSynthesisPolling();
+    synthesisErrorCountRef.current = 0;
+    synthesisPollingStartRef.current = Date.now();
     synthesisPollingRef.current = setInterval(async () => {
+      const elapsedS = (Date.now() - synthesisPollingStartRef.current) / 1000;
+      if (elapsedS > MAX_SYNTHESIS_POLL_DURATION_S) {
+        stopSynthesisPolling();
+        setDialogState("input");
+        toast({
+          title: "Persona generation timed out",
+          description: "The process took too long. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       try {
         const status = await apiRequestJson<SynthesisStatusResponse>(
           "GET",
@@ -201,6 +230,8 @@ export function GeneratePersonasDialog({
           undefined,
           { timeoutMs: 15000 },
         );
+
+        synthesisErrorCountRef.current = 0;
 
         if (status.status === "completed" && status.personas) {
           stopSynthesisPolling();
@@ -210,7 +241,7 @@ export function GeneratePersonasDialog({
           setDialogState("review");
         } else if (status.status === "failed") {
           stopSynthesisPolling();
-          setDialogState("review");
+          setDialogState("input");
           toast({
             title: "Persona generation failed",
             description: status.errorMessage || "Please try regenerating.",
@@ -218,14 +249,38 @@ export function GeneratePersonasDialog({
           });
         }
       } catch (error) {
-        console.error("[GeneratePersonas] Synthesis polling error:", error);
+        synthesisErrorCountRef.current++;
+        console.error(`[GeneratePersonas] Synthesis polling error (${synthesisErrorCountRef.current}/${MAX_CONSECUTIVE_POLL_ERRORS}):`, error);
+        if (synthesisErrorCountRef.current >= MAX_CONSECUTIVE_POLL_ERRORS) {
+          stopSynthesisPolling();
+          setDialogState("input");
+          toast({
+            title: "Connection lost",
+            description: "Unable to check persona generation progress. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     }, SYNTHESIS_POLL_INTERVAL_MS);
   }, [projectId, stopSynthesisPolling, toast]);
 
   const startResearchPolling = useCallback((pollBriefId: string) => {
     stopResearchPolling();
+    researchErrorCountRef.current = 0;
+    researchPollingStartRef.current = Date.now();
     pollingRef.current = setInterval(async () => {
+      const elapsedS = (Date.now() - researchPollingStartRef.current) / 1000;
+      if (elapsedS > MAX_RESEARCH_POLL_DURATION_S) {
+        stopResearchPolling();
+        setDialogState("input");
+        toast({
+          title: "Research timed out",
+          description: "The research process took too long. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       try {
         const status = await apiRequestJson<ResearchStatusResponse>(
           "GET",
@@ -234,12 +289,14 @@ export function GeneratePersonasDialog({
           { timeoutMs: 15000 },
         );
 
+        researchErrorCountRef.current = 0;
+
         if (status.status === "completed" && status.brief) {
           stopResearchPolling();
           setBrief(status.brief);
           setIsUngrounded(status.ungrounded ?? false);
           setDialogState("synthesizing");
-          synthesizeMutation.mutate(pollBriefId);
+          synthesizeMutateRef.current?.(pollBriefId);
         } else if (status.status === "failed") {
           stopResearchPolling();
           setDialogState("input");
@@ -250,7 +307,17 @@ export function GeneratePersonasDialog({
           });
         }
       } catch (error) {
-        console.error("[GeneratePersonas] Research polling error:", error);
+        researchErrorCountRef.current++;
+        console.error(`[GeneratePersonas] Research polling error (${researchErrorCountRef.current}/${MAX_CONSECUTIVE_POLL_ERRORS}):`, error);
+        if (researchErrorCountRef.current >= MAX_CONSECUTIVE_POLL_ERRORS) {
+          stopResearchPolling();
+          setDialogState("input");
+          toast({
+            title: "Connection lost",
+            description: "Unable to check research progress. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     }, RESEARCH_POLL_INTERVAL_MS);
   }, [projectId, stopResearchPolling, toast]);
@@ -358,7 +425,7 @@ export function GeneratePersonasDialog({
       startSynthesisPolling(data.jobId);
     },
     onError: (error: Error) => {
-      setDialogState("review");
+      setDialogState("input");
       toast({
         title: "Persona generation failed",
         description: error.message || "Please try regenerating.",
@@ -366,6 +433,10 @@ export function GeneratePersonasDialog({
       });
     },
   });
+
+  useEffect(() => {
+    synthesizeMutateRef.current = (id: string) => synthesizeMutation.mutate(id);
+  }, [synthesizeMutation.mutate]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -415,6 +486,8 @@ export function GeneratePersonasDialog({
     setBriefId(null);
     setIsUngrounded(false);
     setValidationWarnings([]);
+    researchErrorCountRef.current = 0;
+    synthesisErrorCountRef.current = 0;
     researchMutation.mutate();
   };
 
@@ -441,6 +514,11 @@ export function GeneratePersonasDialog({
     setRemovedIndices((prev) => new Set([...prev, index]));
   };
 
+  const handleCancel = () => {
+    stopAllPolling();
+    setDialogState("input");
+  };
+
   const handleClose = () => {
     stopAllPolling();
     setDialogState("input");
@@ -459,6 +537,8 @@ export function GeneratePersonasDialog({
     setIsUngrounded(false);
     setValidationWarnings([]);
     setSynthesisJobId(null);
+    researchErrorCountRef.current = 0;
+    synthesisErrorCountRef.current = 0;
     onOpenChange(false);
   };
 
@@ -718,6 +798,12 @@ export function GeneratePersonasDialog({
               </div>
             )}
 
+            <DialogFooter className="gap-2 flex-wrap">
+              <Button variant="outline" onClick={handleCancel} data-testid="button-cancel-process">
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+            </DialogFooter>
           </div>
         )}
 
