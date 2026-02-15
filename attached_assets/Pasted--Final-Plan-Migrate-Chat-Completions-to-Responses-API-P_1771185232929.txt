@@ -1,0 +1,405 @@
+# Final Plan: Migrate Chat Completions to Responses API
+
+ ## Principles (from critique)
+
+ 1. **No `as any` on API calls or responses.** Use proper SDK types: `Response`, `ResponseUsage`, `ResponseCreateParamsNonStreaming` from `openai/resources/responses/responses`.
+ 2. **Keep `json_object` mode initially.** Strict JSON schemas are a separate enhancement — they require defining 11 schemas and are out of scope for this API migration.
+ 3. **Keep `temperature` for simulation calls.** The Responses API supports `temperature`. Removing it would change persona behavioral diversity. Not equivalent to `reasoning.effort`.
+ 4. **No model upgrade.** `gpt-4o-mini → gpt-5-mini` is a separate cost/quality decision, not an API migration.
+ 5. **Proper verification.** Type check + unit tests + targeted smoke testing.
+
+ ## Type Import Pattern
+
+ ```typescript
+ // Import Response type for result typing
+ import type { Response as OAIResponse } from "openai/resources/responses/responses";
+ // Alternatively, for specific sub-types:
+ import type { ResponseUsage } from "openai/resources/responses/responses";
+ ```
+
+ The SDK's `Response` type has:
+ - `output_text: string` — direct text output
+ - `usage: ResponseUsage` — with `input_tokens`, `output_tokens`, `total_tokens`, `input_tokens_details.cached_tokens`
+ - `status: string` — completion status
+ - `incomplete_details` — why it stopped, if incomplete
+
+ ## Phase 1: Fix `extractOpenAIResponsesUsage()` bug
+
+ **File:** `server/llm-usage.ts` (lines 172-209)
+
+ **What:** The function's type signature and field access use Chat Completions field names (`prompt_tokens`, `completion_tokens`, `prompt_tokens_details`) but the Responses API returns
+ `input_tokens`, `output_tokens`, `input_tokens_details`. This silently reports 0 tokens for the 2 existing persona generation calls.
+
+ **Changes:**
+ 1. Update the type signature to use `ResponseUsage` field names
+ 2. Update field access: `u.prompt_tokens` → `u.input_tokens`, `u.completion_tokens` → `u.output_tokens`, `u.prompt_tokens_details` → `u.input_tokens_details`
+ 3. Update `makeResponsesUsageExtractor()` to accept `{ usage?: ResponseUsage | null }` instead of `any`
+
+ **Before:**
+ ```typescript
+ export function extractOpenAIResponsesUsage(
+   response: {
+     usage?: {
+       prompt_tokens?: number;
+       completion_tokens?: number;
+       total_tokens?: number;
+       prompt_tokens_details?: { cached_tokens?: number };
+       completion_tokens_details?: { reasoning_tokens?: number };
+     } | null;
+   },
+   model: string,
+ ): { usage: NormalizedTokenUsage; status: LLMUsageStatus } {
+   // ...
+   const u = response.usage;
+   return {
+     usage: {
+       promptTokens: u.prompt_tokens ?? 0,
+       completionTokens: u.completion_tokens ?? 0,
+       totalTokens: u.total_tokens ?? (u.prompt_tokens ?? 0) + (u.completion_tokens ?? 0),
+       // ...
+       inputCachedTokens: u.prompt_tokens_details?.cached_tokens ?? 0,
+     },
+     status: "success",
+   };
+ }
+ ```
+
+ **After:**
+ ```typescript
+ import type { ResponseUsage } from "openai/resources/responses/responses";
+
+ export function extractOpenAIResponsesUsage(
+   response: { usage?: ResponseUsage | null },
+   model: string,
+ ): { usage: NormalizedTokenUsage; status: LLMUsageStatus } {
+   // ...
+   const u = response.usage;
+   return {
+     usage: {
+       promptTokens: u.input_tokens ?? 0,
+       completionTokens: u.output_tokens ?? 0,
+       totalTokens: u.total_tokens ?? (u.input_tokens ?? 0) + (u.output_tokens ?? 0),
+       // ...
+       inputCachedTokens: u.input_tokens_details?.cached_tokens ?? 0,
+     },
+     status: "success",
+   };
+ }
+ ```
+
+ This is a standalone fix — it improves existing persona generation tracking regardless of whether the rest of the migration happens.
+
+ ---
+
+ ## Phase 2: Migrate `server/barbara-orchestrator.ts` (8 calls)
+
+ **All 8 calls follow the same mechanical pattern.** Each call changes from:
+
+ ```typescript
+ import type { ChatCompletion } from "openai/resources/chat/completions";
+
+ const tracked = await withTrackedLlmCall({
+   // ...attribution, provider, model, useCase...
+   callFn: async () => {
+     return (await openai.chat.completions.create({
+       model: config.model,
+       messages: [
+         { role: "system", content: systemPrompt },
+         { role: "user", content: userPrompt },
+       ],
+       response_format: { type: "json_object" },
+       max_completion_tokens: 500,
+       reasoning_effort: config.reasoningEffort,
+       verbosity: config.verbosity,
+     } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+   },
+   extractUsage: makeBarbaraUsageExtractor(config.model),
+ });
+
+ const content = tracked.result.choices[0]?.message?.content;
+ // ...
+ if (response.usage) {
+   console.log(`... ${response.usage.prompt_tokens} input, ${response.usage.completion_tokens} output ...`);
+ }
+ ```
+
+ To:
+
+ ```typescript
+ import type { Response as OAIResponse } from "openai/resources/responses/responses";
+
+ const tracked = await withTrackedLlmCall({
+   // ...attribution, provider, model, useCase...
+   callFn: async () => {
+     return await openai.responses.create({
+       model: config.model,
+       input: [
+         { role: "system", content: systemPrompt },
+         { role: "user", content: userPrompt },
+       ],
+       text: {
+         format: { type: "json_object" },
+         ...(config.verbosity ? { verbosity: config.verbosity } : {}),
+       },
+       max_output_tokens: 500,
+       reasoning: { effort: config.reasoningEffort },
+     });
+   },
+   extractUsage: makeResponsesUsageExtractor(config.model),
+ });
+
+ const response = tracked.result;
+ const content = response.output_text;
+ // ...
+ if (response.usage) {
+   console.log(`... ${response.usage.input_tokens} input, ${response.usage.output_tokens} output ...`);
+ }
+ ```
+
+ ### Per-function specifics:
+
+ | # | Function | Token param | Timeout | Extra changes |
+ |---|----------|-------------|---------|---------------|
+ | 1 | `analyzeWithBarbara` | `max_output_tokens: 500` | None | Update usage log line |
+ | 2 | `detectTopicOverlap` | `max_output_tokens: 200` | Yes (keep) | Check `response` null/validity differently (no `choices` check) |
+ | 3 | `generateQuestionSummary` | `max_output_tokens: 1500` | Yes (keep) | **`finish_reason` → `status` check**: `finishReason === "length"` → `response.status === "incomplete"` |
+ | 4 | `generateCrossInterviewAnalysis` | `max_output_tokens: 16000` | None | — |
+ | 5 | `generateProjectAnalytics` | `max_output_tokens: 20000` | Yes (keep) | — |
+ | 6 | `generateTemplateFromProject` | `max_output_tokens: 10000` | None | — |
+ | 7 | `generateAdditionalQuestions` | `max_output_tokens: 20000` | None | — |
+ | 8 | `generateSessionSummary` | (none — omit `max_output_tokens`) | None | Simplest migration — no max tokens, no reasoning_effort, no verbosity in original |
+
+ ### Special handling for `detectTopicOverlap`:
+
+ The current code checks `if (!response || !("choices" in response))`. Replace with:
+ ```typescript
+ const response = tracked.result;
+ if (!response || !response.output_text) {
+   console.log(`[TopicOverlap] No valid response after ${elapsed}ms`);
+   return null;
+ }
+ const content = response.output_text;
+ ```
+
+ ### Special handling for `generateQuestionSummary`:
+
+ Replace finish_reason check:
+ ```typescript
+ // Before:
+ const finishReason = response.choices[0]?.finish_reason;
+ if (finishReason === "length") { ... }
+
+ // After:
+ if (response.status === "incomplete") {
+   console.warn(`[Summary] Q${questionIndex + 1}: WARNING - Response truncated! Consider increasing max_output_tokens.`);
+ }
+ ```
+
+ Replace empty content debug logging:
+ ```typescript
+ // Before: logs response.choices structure
+ // After: log response.status and response.incomplete_details
+ if (!content) {
+   console.log(`[Summary] Q${questionIndex + 1}: OpenAI returned empty content!`, {
+     status: response.status,
+     incompleteDetails: response.incomplete_details,
+   });
+   return createEmptySummary(questionIndex, questionText, metrics);
+ }
+ ```
+
+ ### Import changes for barbara-orchestrator.ts:
+
+ ```typescript
+ // Remove:
+ import type { ChatCompletion } from "openai/resources/chat/completions";
+ import { makeBarbaraUsageExtractor } from "./llm-usage";
+
+ // Add:
+ import { makeResponsesUsageExtractor } from "./llm-usage";
+ ```
+
+ No `as any` needed — the Responses API types support `json_object` format, `verbosity`, `reasoning.effort`, and `temperature` natively.
+
+ ---
+
+ ## Phase 3: Migrate simulation calls (2 calls)
+
+ ### `server/simulation/persona-prompt.ts`
+
+ **Key decision: Keep `temperature`.** The Responses API supports `temperature`. Persona diversity depends on it.
+
+ ```typescript
+ // Before:
+ return (await openai.chat.completions.create({
+   model,
+   messages,
+   temperature,
+   max_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
+ })) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model,
+   input: messages,
+   temperature,
+   max_output_tokens: VERBOSITY_MAX_TOKENS[persona.verbosity] || 500,
+ });
+ ```
+
+ Response consumption:
+ ```typescript
+ // Before:
+ tracked.result.choices[0]?.message?.content?.trim() || "I'm not sure how to answer that."
+
+ // After:
+ tracked.result.output_text?.trim() || "I'm not sure how to answer that."
+ ```
+
+ Import changes:
+ ```typescript
+ // Remove:
+ import type { ChatCompletion } from "openai/resources/chat/completions";
+ import { makeBarbaraUsageExtractor } from "../llm-usage";
+
+ // Add:
+ import { makeResponsesUsageExtractor } from "../llm-usage";
+ ```
+
+ Keep `VERBOSITY_TEMP` map and temperature logic — no changes there.
+
+ ### `server/simulation/alvia-adapter.ts`
+
+ Same pattern — keep `temperature: 0.7`:
+
+ ```typescript
+ // Before:
+ return (await openai.chat.completions.create({
+   model,
+   messages,
+   temperature: 0.7,
+   max_tokens: 600,
+ })) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model,
+   input: messages,
+   temperature: 0.7,
+   max_output_tokens: 600,
+ });
+ ```
+
+ Response consumption and import changes: same pattern as persona-prompt.ts.
+
+ ---
+
+ ## Phase 4: Migrate `server/question-parser.ts` (1 call)
+
+ ```typescript
+ // Before:
+ return (await openai.chat.completions.create({
+   model: QUESTION_PARSING_MODEL,
+   messages: [
+     { role: "system", content: systemPrompt },
+     { role: "user", content: userPrompt },
+   ],
+   response_format: { type: "json_object" },
+   max_completion_tokens: 10000,
+   reasoning_effort: QUESTION_PARSING_REASONING_EFFORT,
+ } as Parameters<typeof openai.chat.completions.create>[0])) as ChatCompletion;
+
+ // After:
+ return await openai.responses.create({
+   model: QUESTION_PARSING_MODEL,
+   input: [
+     { role: "system", content: systemPrompt },
+     { role: "user", content: userPrompt },
+   ],
+   text: { format: { type: "json_object" } },
+   max_output_tokens: 10000,
+   reasoning: { effort: QUESTION_PARSING_REASONING_EFFORT },
+ });
+ ```
+
+ Response consumption:
+ ```typescript
+ // Before:
+ const content = tracked.result.choices[0]?.message?.content;
+
+ // After:
+ const content = tracked.result.output_text;
+ ```
+
+ ---
+
+ ## Phase 5: Migrate seed scripts (3 calls)
+
+ These are simpler — no `withTrackedLlmCall`, just direct API calls.
+
+ ### Pattern for all 3 files:
+
+ ```typescript
+ // Before:
+ const response = await openai.chat.completions.create({
+   model: SEED_CONFIG.model,
+   messages: [{ role: 'user', content: prompt }],
+   response_format: { type: "json_object" }
+ });
+ const content = response.choices[0].message.content;
+
+ // After:
+ const response = await openai.responses.create({
+   model: SEED_CONFIG.model,
+   input: [{ role: 'user', content: prompt }],
+   text: { format: { type: "json_object" } },
+ });
+ const content = response.output_text;
+ ```
+
+ Files:
+ - `scripts/seed-test-data/generators/conversations.ts`
+ - `scripts/seed-test-data/generators/summaries.ts`
+ - `scripts/seed-test-data/generators/personas.ts`
+
+ ---
+
+ ## Phase 6: Clean up dead code
+
+ After all calls are migrated:
+
+ 1. **Remove `extractOpenAIChatUsage()`** from `server/llm-usage.ts` (lines 12-33) — no callers remain
+ 2. **Remove `makeBarbaraUsageExtractor()`** from `server/llm-usage.ts` (lines 211-216) — no callers remain
+ 3. **Remove `ChatCompletion` type imports** from all migrated files
+ 4. **Remove `as Parameters<typeof openai.chat.completions.create>[0]` casts** — no longer needed
+
+ ---
+
+ ## Phase 7: Fix `as any` in existing persona-generation files
+
+ While we're standardizing, clean up the existing `as any` casts in:
+ - `server/persona-generation/research.ts` (7 casts)
+ - `server/persona-generation/synthesis.ts` (3 casts)
+
+ Replace with proper types — the SDK exports `Response`, `ResponseUsage`, `WebSearchTool`, and the `ResponseCreateParamsNonStreaming` type supports all the fields used. The `reasoning.effort`
+ field accepts the `ReasoningEffort` type (`'low' | 'medium' | 'high'` etc.) which matches the Barbara config values.
+
+ ---
+
+ ## Verification
+
+ 1. **Type check:** `npm run check` — must pass with zero errors
+ 2. **Unit tests:** `npx vitest` — existing tests must pass
+ 3. **LLM usage tracking verification:** After Phase 1, if possible trigger a persona research call and verify `llmUsageEvents` shows non-zero `prompt_tokens`/`completion_tokens` values
+ (confirms the bug fix works)
+ 4. **Smoke test priority** (if dev server available):
+    - Trigger a simulation run → exercises persona-prompt.ts + alvia-adapter.ts (Phase 3)
+    - Paste questions into template builder → exercises question-parser.ts (Phase 4)
+    - View/refresh collection analytics → exercises generateCrossInterviewAnalysis (Phase 2)
+
+ ## What's Deferred (separate tickets)
+
+ - **Strict JSON schemas** (`json_schema` with `strict: true`): Requires defining 11 schemas. Biggest quality win but biggest piece of work. Should be layered on after the API migration is
+ stable.
+ - **Model upgrade** (`gpt-4o-mini → gpt-5-mini` for simulation): Separate cost/quality decision.
+ - **`previous_response_id` chaining**: Privacy implications with `store: true` for interview data. Needs separate design review.
