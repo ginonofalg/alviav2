@@ -15,7 +15,9 @@
       "WebFetch(domain:developers.openai.com)",
       "WebFetch(domain:madhub081011.medium.com)",
       "WebFetch(domain:thenewstack.io)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:apply-for-innovation-funding.service.gov.uk)",
+      "WebFetch(domain:smartworkingrevolution.com)"
     ]
   }
 }
