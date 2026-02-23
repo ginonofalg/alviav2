@@ -812,7 +812,7 @@ export default function CollectionDetailPage() {
       />
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Collection Settings</DialogTitle>
             <DialogDescription>
@@ -820,7 +820,7 @@ export default function CollectionDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
-            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 overflow-y-auto flex-1 pr-2">
               <FormField
                 control={editForm.control}
                 name="name"
