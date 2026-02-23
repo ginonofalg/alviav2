@@ -117,6 +117,7 @@ const editCollectionSchema = z.object({
   voiceProvider: z.enum(["openai", "grok"]),
   maxAdditionalQuestions: z.number().min(0).max(3).default(1),
   endOfInterviewSummaryEnabled: z.boolean().default(false),
+  vadEagernessMode: z.enum(["auto", "high"]).default("auto"),
 });
 
 type EditCollectionForm = z.infer<typeof editCollectionSchema>;
@@ -187,6 +188,7 @@ export default function CollectionDetailPage() {
       voiceProvider: "openai",
       maxAdditionalQuestions: 1,
       endOfInterviewSummaryEnabled: false,
+      vadEagernessMode: "auto",
     },
   });
 
@@ -203,6 +205,7 @@ export default function CollectionDetailPage() {
           voiceProvider: data.voiceProvider,
           maxAdditionalQuestions: data.maxAdditionalQuestions,
           endOfInterviewSummaryEnabled: data.endOfInterviewSummaryEnabled,
+          vadEagernessMode: data.vadEagernessMode,
         },
       );
     },
@@ -235,6 +238,7 @@ export default function CollectionDetailPage() {
         voiceProvider: (collection.voiceProvider as "openai" | "grok") || "openai",
         maxAdditionalQuestions: collection.maxAdditionalQuestions ?? 1,
         endOfInterviewSummaryEnabled: collection.endOfInterviewSummaryEnabled ?? false,
+        vadEagernessMode: (collection.vadEagernessMode as "auto" | "high") || "auto",
       });
       setEditDialogOpen(true);
     }
@@ -916,6 +920,33 @@ export default function CollectionDetailPage() {
                   </FormItem>
                 )}
               />
+
+              {editForm.watch("voiceProvider") === "openai" && (
+                <FormField
+                  control={editForm.control}
+                  name="vadEagernessMode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Response Speed</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? "auto"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-vad-eagerness">
+                            <SelectValue placeholder="Select response speed" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="auto" data-testid="option-eagerness-auto">Balanced (default)</SelectItem>
+                          <SelectItem value="high" data-testid="option-eagerness-high">Fast (experimental)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Controls how quickly Alvia responds after the respondent stops speaking. "Fast" reduces perceived delay but may occasionally cut off longer pauses mid-thought. If this happens frequently, the system will automatically switch back to balanced.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={editForm.control}
