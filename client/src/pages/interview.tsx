@@ -365,6 +365,7 @@ export default function InterviewPage() {
 
   const {
     isPausedDueToSilence,
+    isSilent,
     secondsOfSilence,
     startMonitoring: startSilenceMonitoring,
     stopMonitoring: stopSilenceMonitoring,
@@ -1487,7 +1488,7 @@ export default function InterviewPage() {
 
           <div className="flex flex-col items-center gap-6">
             <WaveformVisualizer
-              isActive={isListening && !silencePauseActive}
+              isActive={isListening && !silencePauseActive && !isSilent}
               isAiSpeaking={isAiSpeaking}
             />
 
