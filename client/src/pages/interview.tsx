@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,9 +68,14 @@ function WaveformVisualizer({
   isActive: boolean;
   isAiSpeaking?: boolean;
 }) {
+  const barHeights = useMemo(
+    () => Array.from({ length: 24 }, () => Math.random() * 48 + 8),
+    [],
+  );
+
   return (
     <div className="flex items-center justify-center gap-1 h-16">
-      {[...Array(24)].map((_, i) => (
+      {barHeights.map((peakHeight, i) => (
         <motion.div
           key={i}
           className={`w-1 rounded-full ${
@@ -78,9 +83,7 @@ function WaveformVisualizer({
           }`}
           animate={
             isActive || isAiSpeaking
-              ? {
-                  height: [8, Math.random() * 48 + 8, 8],
-                }
+              ? { height: [8, peakHeight, 8] }
               : { height: 8 }
           }
           transition={{

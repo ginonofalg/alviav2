@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 export function useAudioPlayback() {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -9,6 +9,7 @@ export function useAudioPlayback() {
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const suppressPlaybackRef = useRef(false);
   const suppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speakingHoldoffRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
@@ -27,10 +28,17 @@ export function useAudioPlayback() {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       audioSourceRef.current = null;
-      setIsAiSpeaking(false);
+      speakingHoldoffRef.current = setTimeout(() => {
+        setIsAiSpeaking(false);
+        speakingHoldoffRef.current = null;
+      }, 150);
       return;
     }
 
+    if (speakingHoldoffRef.current) {
+      clearTimeout(speakingHoldoffRef.current);
+      speakingHoldoffRef.current = null;
+    }
     isPlayingRef.current = true;
     setIsAiSpeaking(true);
 
@@ -81,6 +89,10 @@ export function useAudioPlayback() {
   const stopAiPlayback = useCallback(() => {
     audioQueueRef.current = [];
     suppressPlaybackRef.current = true;
+    if (speakingHoldoffRef.current) {
+      clearTimeout(speakingHoldoffRef.current);
+      speakingHoldoffRef.current = null;
+    }
     if (suppressTimeoutRef.current) {
       clearTimeout(suppressTimeoutRef.current);
     }
@@ -106,6 +118,14 @@ export function useAudioPlayback() {
       clearTimeout(suppressTimeoutRef.current);
       suppressTimeoutRef.current = null;
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (speakingHoldoffRef.current) {
+        clearTimeout(speakingHoldoffRef.current);
+      }
+    };
   }, []);
 
   return {
