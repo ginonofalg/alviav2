@@ -1,0 +1,211 @@
+Interview flow and in-call UX
+
+ Edit transcript function at the end of the interview
+
+ Last question detection still flaky, not reliably switching to “complete interview”
+
+ Does “next question” only work when the mic is active?
+
+ Sustained silence UX
+
+ Rotate the “Barbara is analysing” status text (noodling, cogitating, etc.)
+
+ Have Alvia highlight the “next question” and “complete interview” buttons
+
+ Remove occasional copy/prompt references to “next question” button, when it should say “complete interview”
+
+ Alvia needs to know that she’s Alvia, not just “what she introduces herself as”
+
+ Cross-interview threshold, set minimum 5 and make it the default
+
+ Summarisation tidy-up, ensure we’re checking project vs template objectives correctly
+
+ Add section headings for questions
+
+Editor and workspace (projects, templates, sessions)
+
+ Add a bulk session manager
+
+ Need a delete project function
+
+ UI clarity, make it more obvious what is a Project vs Template vs Collection
+
+ Add drag-to-reorder for template questions
+
+ Check date formats used for “last update”, etc.
+
+ Paste questions, robustly extract questions from pasted text, add regression tests (the core function exists, this is the hardening)
+
+Analytics, infographics, simulations, personas
+
+ Update the project analytics refresh, propose updating stale collections/templates where needed
+
+ Infographic storage policy, label Beta, encourage download, no server storage
+
+ [[Max output tokens for persona functionality]]
+
+ Interview simulations, based on digital personas
+
+ Analytics only show if you select all, although all interview sessions for the project are Real
+
+ Analytics staleness indicators are a mess
+
+ Auto-generate personas from data/report/insight
+
+ Pass uploaded files directly to GPT-5, test
+
+ Personas need sub-personas, single persona set is not enough for a whole population
+
+ Check bill logging!!!!
+
+ Launch simulation, add a “select all personas” button
+
+ Simulation runs card not updating in realtime, show granular progress; define reconnection behaviour on disconnect
+
+ Simulation run bar chart goes down and up!
+
+Platform, models, integrations
+
+ Consider switchability between LLMs, and whether an AWS solution is best long term
+
+ [[Domain Intelligence Layer]] assessment
+
+ TTS/STT workflow, drop the custom route for now, go with [[Gemini 3 Alvia Implementation]]
+
+ Test Grok implementation, [[OAI vs Grok in Alvia Report]]; follow verification steps at end
+
+ Test Grok voice, then either support it properly or drop it
+
+ Add langsmith, [[Alvia Langsmith Addition]]
+
+ How could I make her fully API-able?
+
+ Remind myself what the Babs:Alvia API JavaScript looks like
+
+ Responses API, decide whether we want strict JSON schema
+
+ Review [[Claude Code]] recommendation on clipping, reinstate previous commit (which was buggy I think)
+
+Performance, cost, reliability, observability
+
+ Analyse code for token consumption and cost gaps
+
+ Test whether revised token count functionality is more accurate for realtime
+
+ Test token reconciliation
+
+ Reduce the audio bit rate
+
+ Page loads are quite slow
+
+ Log device type, vary “eagerness” on phones based on feedback
+
+ Test a couple of conversations given recent ordering bugs
+
+ Production testing, given extent of LLM changes made tonight
+
+ Create a complete sequenced log of Alvia and Barbara interactions
+
+ 8.27, Feb 10th was the last checkpoint prior to the refactoring
+
+ Barbara guidance usage, Phase 2 analysis based on actual data (Phase 1 is marked done)
+
+Commercial and product strategy
+
+ Put in a payment layer
+
+ Create a fix-for-free interview version
+
+ Get [[Fergus Macintosh]] to start flogging the product
+
+ Create a [[boiler installs survey]]
+
+ What’s your Monday metric? You hate work, but you don’t want it automated
+
+ Develop a vertical scaffold, Claude Code style, make Alvia’s value obvious fast
+
+ Think about how a persona generator could integrate with Alvia
+
+Security and assurance
+
+ Review the [[Endpoint Report]]
+
+ Run an endpoint security audit
+
+Research and notes
+
+ Download the latest CogRev YouTube and summarise what he’s saying about personal OS, especially the point about pain in legacy businesses
+
+ Review the [[Alvia Competitor Report]]
+
+ Study on adversarial coding, sycophancy towards me vs a 3rd party’s challenge
+
+ Benjy ideas, [[13-02-2026 0915]]
+
+COMPLETED (26)
+
+Evaluation, review, and analysis
+
+ what are my evals? ✅ 2026-02-23
+
+ do a one-time pass of the completed interviews, extract key quotes and ✅ 2026-02-23
+
+Prompting and interview behaviour
+
+ should I have specific user added instructions for Babs? ✅ 2026-02-23
+
+ Review Babs prompting/framing in Alvia prompt, reference the Orchestrator guidance in amongst the follow up questions [[Alvia Prompt Code Locations]] ✅ 2026-02-13
+
+ check the rules aren't too loose for associating Barbara guidance with Alvia output ✅ 2026-02-13 [[Tighten Guidance Adherence Scoring]]
+
+ check the logic for AQs and make sure they're pulling in strategic context ✅ 2026-02-14
+
+ Fix the Next Question/Last Question issue and tidied up the Barbara prompt ✅ 2026-02-14
+
+ Cross-interview context for AQ generation is disabled in real interviews? Why? ✅ 2026-02-15
+
+ That was a BUGGY interview. Test some more. ✅ 2026-02-13
+
+Token tracking
+
+ [[Realtime Token Tracking]] ✅ 2026-02-12
+
+ token reconciliation issues remain, [[Token Reconciliation Fix]] ✅ 2026-02-13
+
+Guidance usage tracking
+
+ How can I check how often Barbara's guidance is being used by Alvia? Going to need a logic/schema change, Phase 1 complete, phase 2 (analysis) to be based on actual data ✅ 2026-02-13
+
+UI and editing
+
+ [[Paste Questions Function]] ✅ 2026-02-13
+
+ mobile display of Dashboard[[Alvia Mobile Display]] ✅ 2026-02-14
+
+Simulations and infographics
+
+ Infographics won't run because project analytics are reportedly out of date, probably related to the issue above ✅ 2026-02-14
+
+ Default scope should be All ✅ 2026-02-14
+
+ 90 second timeout on research is too short ✅ 2026-02-15
+
+ check how the alvia simulation works. Claude just referenced a 4o mini call. why isn't it just using existing functionality? ✅ 2026-02-15
+
+ cancel and x buttons on generate personas with AI box don't work ✅ 2026-02-15
+
+ check whether the simulation uses actual alvia/barbara functionality - [[check where the simulation uses actual functionality]] ✅ 2026-02-15
+
+ [[fixes to simulation]] ✅ 2026-02-15
+
+ how to get simulated alvia as close as poss to realtime? gpt-4o-mini? ✅ 2026-02-15
+
+ change the persona synthesis model to gpt-5-mini ✅ 2026-02-15
+
+ Fix infographics in production ✅ 2026-02-15
+
+Responses API migration
+
+ [[migrate to responses API ]] ✅ 2026-02-23
+
+ 7.55 Feb 15th is the rollback point prior to responses migration ✅ 2026-02-23
