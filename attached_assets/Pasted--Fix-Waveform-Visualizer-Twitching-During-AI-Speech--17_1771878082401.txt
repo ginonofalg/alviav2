@@ -1,0 +1,71 @@
+ Fix: Waveform Visualizer Twitching During AI Speech                                                                                                              │
+     │                                                                                                                                                                  │
+     │ Context                                                                                                                                                          │
+     │                                                                                                                                                                  │
+     │ The WaveformVisualizer on the interview page twitches at the left edge when Alvia speaks, instead of animating smoothly like it does when the respondent speaks. │
+     │ Two bugs combine to cause this:                                                                                                                                  │
+     │                                                                                                                                                                  │
+     │ 1. Random heights regenerate on every render. Math.random() is called inside Framer Motion's animate prop, so each re-render produces new target heights, causing│
+     │  bars to jump.                                                                                                                                                   │
+     │ 2. isAiSpeaking toggles rapidly between audio chunks. In use-audio-playback.ts, when one chunk finishes and the queue is momentarily empty, isAiSpeaking flips   │
+     │ false → true in quick succession. Each flip triggers a re-render (→ new random values → twitch). The status text ("Alvia is speaking...") also flickers from     │
+     │ this.                                                                                                                                                            │
+     │                                                                                                                                                                  │
+     │ When the user speaks, isActive stays steadily true, so the animation loops smoothly without re-randomizing.                                                      │
+     │                                                                                                                                                                  │
+     │ Changes                                                                                                                                                          │
+     │                                                                                                                                                                  │
+     │ 1. Stabilize bar heights with useMemo — client/src/pages/interview.tsx                                                                                           │
+     │                                                                                                                                                                  │
+     │ - Add useMemo to the React import on line 1                                                                                                                      │
+     │ - Pre-compute 24 random peak heights once per mount                                                                                                              │
+     │ - Map over the stable array instead of [...Array(24)]                                                                                                            │
+     │                                                                                                                                                                  │
+     │ function WaveformVisualizer({ isActive, isAiSpeaking }: { ... }) {                                                                                               │
+     │   const barHeights = useMemo(                                                                                                                                    │
+     │     () => Array.from({ length: 24 }, () => Math.random() * 48 + 8),                                                                                              │
+     │     []                                                                                                                                                           │
+     │   );                                                                                                                                                             │
+     │                                                                                                                                                                  │
+     │   return (                                                                                                                                                       │
+     │     <div className="flex items-center justify-center gap-1 h-16">                                                                                                │
+     │       {barHeights.map((peakHeight, i) => (                                                                                                                       │
+     │         <motion.div                                                                                                                                              │
+     │           key={i}                                                                                                                                                │
+     │           className={`w-1 rounded-full ${...}`}                                                                                                                  │
+     │           animate={                                                                                                                                              │
+     │             isActive || isAiSpeaking                                                                                                                             │
+     │               ? { height: [8, peakHeight, 8] }                                                                                                                   │
+     │               : { height: 8 }                                                                                                                                    │
+     │           }                                                                                                                                                      │
+     │           transition={{ duration: 0.6, repeat: ..., delay: i * 0.03, ease: "easeInOut" }}                                                                        │
+     │         />                                                                                                                                                       │
+     │       ))}                                                                                                                                                        │
+     │     </div>                                                                                                                                                       │
+     │   );                                                                                                                                                             │
+     │ }                                                                                                                                                                │
+     │                                                                                                                                                                  │
+     │ 2. Debounce isAiSpeaking going false — client/src/hooks/use-audio-playback.ts                                                                                    │
+     │                                                                                                                                                                  │
+     │ - Add a speakingHoldoffRef timer ref                                                                                                                             │
+     │ - In playNextChunk: when queue is empty, delay setIsAiSpeaking(false) by 150ms instead of calling immediately                                                    │
+     │ - In playNextChunk: when processing a new chunk, clear any pending holdoff timer                                                                                 │
+     │ - In stopAiPlayback (barge-in): clear the holdoff timer, keep the immediate setIsAiSpeaking(false) for responsive interruption                                   │
+     │                                                                                                                                                                  │
+     │ Files Modified                                                                                                                                                   │
+     │                                                                                                                                                                  │
+     │                                                                                                                                                                  │
+     │ ┌──────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────┐                                          │
+     │ │                               File                               │                      Change                      │                                          │
+     │ ├──────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤                                          │
+     │ │ client/src/pages/interview.tsx (lines 1, 64-96)                  │ Add useMemo import; stabilize random bar heights │                                          │
+     │ ├──────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤                                          │
+     │ │ client/src/hooks/use-audio-playback.ts (lines 11, 27-31, 34, 81) │ Add 150ms holdoff before clearing isAiSpeaking   │                                          │
+     │ └──────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┘                                          │
+     │                                                                                                                                                                  │
+     │ Verification                                                                                                                                                     │
+     │                                                                                                                                                                  │
+     │ - Run npm run check for type safety                                                                                                                              │
+     │ - Manual test: start an interview, observe waveform during AI speech — bars should oscillate smoothly without left-edge twitching                                │
+     │ - Manual test: barge-in (interrupt Alvia) — waveform should stop immediately (no 150ms lag)                                                                      │
+     │ - Manual test: status text should not flicker between "Alvia is speaking" and idle   
