@@ -1508,33 +1508,34 @@ export default function InterviewPage() {
             </AnimatePresence>
 
             <div className="flex items-center gap-4">
-              <Button
-                variant={isTextOnlyMode ? "default" : "outline"}
-                size="icon"
-                onClick={() => {
-                  if (isConnected && !isPaused) {
-                    // If switching modes while active, stop audio capture
-                    if (!isTextOnlyMode && isListening) {
-                      stopAudioCapture();
-                      setIsListening(false);
+              <div className="w-16 flex justify-center">
+                <Button
+                  variant={isTextOnlyMode ? "default" : "outline"}
+                  size="icon"
+                  onClick={() => {
+                    if (isConnected && !isPaused) {
+                      if (!isTextOnlyMode && isListening) {
+                        stopAudioCapture();
+                        setIsListening(false);
+                      }
                     }
+                    setIsTextOnlyMode(!isTextOnlyMode);
+                  }}
+                  disabled={isConnecting}
+                  title={
+                    isTextOnlyMode
+                      ? "Switch to voice input"
+                      : "Switch to text-only input (for noisy environments)"
                   }
-                  setIsTextOnlyMode(!isTextOnlyMode);
-                }}
-                disabled={isConnecting}
-                title={
-                  isTextOnlyMode
-                    ? "Switch to voice input"
-                    : "Switch to text-only input (for noisy environments)"
-                }
-                data-testid="button-text-mode-toggle"
-              >
-                {isTextOnlyMode ? (
-                  <Mic className="w-4 h-4" />
-                ) : (
-                  <MessageSquareText className="w-4 h-4" />
-                )}
-              </Button>
+                  data-testid="button-text-mode-toggle"
+                >
+                  {isTextOnlyMode ? (
+                    <Mic className="w-4 h-4" />
+                  ) : (
+                    <MessageSquareText className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
 
               <MicButton
                 isListening={isListening}
