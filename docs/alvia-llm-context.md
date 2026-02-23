@@ -1,6 +1,6 @@
 # Alvia Context Brief for External LLMs
 
-Last updated: February 12, 2026  
+Last updated: February 23, 2026
 Repository snapshot scope: `/home/runner/workspace`
 
 ## 1) What Alvia Is
@@ -117,10 +117,13 @@ Browser <-> Express REST (`/api/*`) <-> PostgreSQL
 
 - `client/src/pages/*`: route-level UX and state orchestration
 - `client/src/hooks/*`: audio playback, reconnection, silence detection
+- `client/src/components/simulation/*`: persona management, simulation launch, progress tracking
 - `server/routes/*.routes.ts`: modular API domains
 - `server/voice-interview.ts` + `server/voice-interview/*`: real-time interview runtime and helpers
 - `server/barbara-orchestrator.ts`: Barbara prompting/analysis/summaries
 - `server/realtime-providers.ts`: provider abstraction layer
+- `server/simulation/*`: persona simulation engine, text-mode Alvia adapter, question flow
+- `server/persona-generation/*`: population research (web search), persona synthesis, diversity validation
 - `server/storage.ts`: DB-backed storage implementation for all core operations
 - `shared/schema.ts` + `shared/types/*`: canonical schema/types for cross-layer consistency
 
@@ -130,9 +133,15 @@ Strict hierarchy:
 
 `Workspace -> Project -> InterviewTemplate -> Collection -> InterviewSession -> Segment`
 
+Additional entities:
+- `Persona` — project-level simulated respondent profiles (demographics, attitude, verbosity, domain knowledge, traits)
+- `SimulationRun` — batch execution state for persona simulations against a collection
+- `PopulationBrief` — AI-generated population research for persona generation
+- `SynthesisJob` — background job tracking persona generation from a brief
+
 Important implications:
-- Multi-tenant access control follows this chain.
-- Analytics roll up along this chain.
+- Multi-tenant access control follows the main hierarchy chain.
+- Analytics roll up along this chain, with session scope filtering (real/simulated/combined).
 - LLM usage/cost attribution follows this chain.
 
 ### Key persisted artifacts by session
@@ -171,6 +180,8 @@ Barbara has configurable use cases (model/verbosity/reasoning settings):
 - `templateGeneration`
 - `additionalQuestions`
 - `sessionSummary`
+- `personaResearch` — web-search-powered population research for persona generation
+- `personaGeneration` — synthesize diverse personas from population briefs
 
 ## 7) Interview Runtime Behavior
 
@@ -199,6 +210,33 @@ Common quality flags include:
 - Repeated clarification loops
 - Foreign-language hallucination patterns
 - Repeated-word glitching
+
+## 7b) Persona Simulation & AI Persona Generation
+
+### Persona Simulation (Synthetic Audience Testing)
+
+Researchers can test interview templates with AI-generated respondents before fielding to real participants. Simulations are text-based (no voice) but follow the same interview flow — questions, follow-ups, Barbara orchestration, additional questions, and session summaries.
+
+Key mechanics:
+- Personas are project-level entities with demographics, attitude (cooperative/reluctant/neutral/evasive/enthusiastic), verbosity (low/medium/high), domain knowledge (none/basic/intermediate/expert), traits, communication style, background story, and biases
+- Simulation runs process 1–10 personas in parallel batches of 3, with PostgreSQL advisory lock concurrency control (max 2 concurrent runs)
+- Simulated sessions carry `isSimulated = true` and produce the same artifacts as real interviews (transcripts, summaries, segments, analytics)
+- Progress tracked granularly: current persona, question index, phase (starting → interviewing → analyzing → additional_questions → summarizing → complete)
+- Cancellation is DB-backed, checked between personas and questions
+
+### AI Persona Generation
+
+Two-phase pipeline for automatically generating research-grounded personas:
+
+1. **Population Research**: OpenAI Responses API with `web_search` tool researches the target population → produces a `PopulationBrief` (demographics, behavioral patterns, communication norms, domain knowledge, biases, suggested archetypes with source citations). Supports optional document upload (CSV/TXT/PDF). Falls back to knowledge-only mode if web search unavailable (flagged as `ungrounded`).
+
+2. **Persona Synthesis**: Generates 3–10 personas from the brief with configurable diversity mode (balanced/maximize) and optional edge cases. Automatic diversity validation checks enum distribution, name uniqueness, trait overlap, and demographic spread. Failed validation triggers a retry with correction prompt; second failure accepts personas with warnings.
+
+Both phases run as background jobs with client-side polling. Completed briefs persist for reuse across multiple synthesis runs.
+
+### Session Scope Filtering
+
+Analytics can be filtered by session scope — `real`, `simulated`, or `combined` (default). Each analytics level stores which scope it was last analyzed with. Switching scopes triggers staleness and re-analysis. Cascade refresh respects scope filtering at every hierarchy level.
 
 ## 8) Analytics Capability
 
@@ -250,6 +288,8 @@ Why this matters:
 Tracked use-case families include:
 - Alvia realtime interaction + transcription
 - Barbara analysis/topic-overlap/question-summary/additional-questions/session-summary
+- Barbara persona research + persona generation
+- Simulation persona + simulation alvia (text-mode interview simulation)
 - Cross-interview analytics generation
 - Infographic generation variants
 
@@ -279,39 +319,36 @@ Tracked use-case families include:
 - Voice provider abstraction allows OpenAI vs Grok switching via config/environment.
 - System is optimized for real-time resilience over minimal complexity.
 
-## 13) Where Alvia Can Go Next (Domain Intelligence)
+## 13) Where Alvia Can Go Next
+
+### Recently Built (since Feb 12, 2026)
+
+- **Persona simulation** — text-based synthetic audience testing with configurable personas (Section 7b)
+- **AI persona generation** — two-phase pipeline: web-search population research → persona synthesis with diversity validation (Section 7b)
+- **Session scope filtering** — analytics filterable by real/simulated/combined data (Section 7b)
+- **Cross-interview context for AQ** — additional questions informed by prior session summaries
+- **Infographic base64 responses** — images returned as data URLs (no filesystem dependency)
+
+### Future Directions: Domain Intelligence
 
 Potential evolution path: move from generic interviewing to **domain-aware interviewing intelligence**.
 
 Concrete directions:
 
-1. **Domain packs**
-   - Reusable industry lenses (healthcare, fintech, ecommerce, B2B SaaS, public sector, etc.).
-   - Each pack defines hypotheses, probe frameworks, terminology maps, and risk flags.
+1. **Domain packs** — reusable industry lenses (healthcare, fintech, ecommerce, B2B SaaS, public sector) with hypotheses, probe frameworks, terminology maps, and risk flags
+2. **Objective-aware probing policies** — convert project objective into evidence requirements, track coverage in-session
+3. **Cross-session memory with confidence** — evolving theme graph per collection/project, weighted by confidence and sample diversity
+4. **Insight quality scoring** — score claims by support quality, contradiction level, and novelty
+5. **Role-specific analytics views** — product owners (prioritization), researchers (saturation checks), executives (decision-ready synthesis)
+6. **Interviewer coaching intelligence** — guardrails to avoid leading questions or premature closure
+7. **Compliance-aware intelligence layers** — domain-specific redaction/compliance packs
 
-2. **Objective-aware probing policies**
-   - Convert project objective into explicit evidence requirements.
-   - Track evidence coverage in-session and trigger probes for uncovered areas.
+### Future Directions: Simulation Intelligence
 
-3. **Cross-session memory with confidence**
-   - Build evolving theme graph per collection/project.
-   - Weight new evidence by confidence and sample diversity.
-
-4. **Insight quality scoring**
-   - Score claims by support quality, contradiction level, and novelty.
-   - Separate weak anecdote from repeated, high-confidence signal.
-
-5. **Role-specific analytics views**
-   - Product owners: prioritization and opportunity sizing.
-   - Researchers: methodological quality and saturation checks.
-   - Executives: decision-ready synthesis and risk summary.
-
-6. **Interviewer coaching intelligence**
-   - Teach Alvia when to slow down, clarify, or challenge contradictions.
-   - Real-time guardrails to avoid leading questions or premature closure.
-
-7. **Compliance-aware intelligence layers**
-   - Domain-specific redaction/compliance packs (HIPAA-like, finance-sensitive, regional privacy patterns).
+- **Simulation benchmarking** — compare simulated vs. real data to calibrate persona realism
+- **Template A/B testing** — simulate template variants to optimize before fielding
+- **Saturation prediction** — predict diminishing returns from additional interviews
+- **Persona libraries** — shareable persona sets for common research populations
 
 ## 14) Prompt Starter for Other LLMs
 
@@ -325,7 +362,9 @@ System facts:
 - Hierarchy: Workspace -> Project -> Template -> Collection -> Session -> Segment.
 - Real-time voice interviews run over WebSocket with provider abstraction (OpenAI Realtime or xAI Grok).
 - Barbara provides real-time guidance, summaries, additional questions, and higher-level analytics.
-- Analytics roll up from collection to template to project to command-center aggregate.
+- Persona simulation: text-based AI interviews using configurable personas (attitude, verbosity, domain knowledge) for template testing before real fielding.
+- AI persona generation: two-phase pipeline — web-search population research → persona synthesis with diversity validation.
+- Analytics roll up from collection to template to project to command-center aggregate, with session scope filtering (real/simulated/combined).
 - LLM usage is tracked in billing-grade events and hourly rollups by hierarchy + use case.
 - Interview UX supports consent, resume tokens, optional post-interview review, and additional-question phase.
 
@@ -338,11 +377,14 @@ Given this context, answer the following question with implementation-level deta
 - `server/voice-interview.ts` + `server/voice-interview/*`: real-time interview runtime
 - `server/barbara-orchestrator.ts`: orchestration and analytics generation logic
 - `server/realtime-providers.ts`: OpenAI/Grok abstraction
+- `server/simulation/*`: persona simulation engine (engine, persona-prompt, alvia-adapter, question-flow)
+- `server/persona-generation/*`: AI persona generation pipeline (research, synthesis, validation)
 - `server/routes/*.routes.ts`: REST endpoints
 - `server/storage.ts` + `server/storage/types.ts`: DB access layer contract/implementation
 - `shared/schema.ts` + `shared/types/*`: schema and cross-layer types
 - `client/src/pages/interview.tsx`: core respondent interview UI
 - `client/src/components/analytics/*`: analytics visualization + PDF export
+- `client/src/components/simulation/*`: persona management, generation dialog, simulation launcher
 
 ---
 

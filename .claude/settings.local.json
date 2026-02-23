@@ -17,7 +17,11 @@
       "WebFetch(domain:thenewstack.io)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:apply-for-innovation-funding.service.gov.uk)",
-      "WebFetch(domain:smartworkingrevolution.com)"
+      "WebFetch(domain:smartworkingrevolution.com)",
+      "WebFetch(domain:docs.pipecat.ai)",
+      "WebFetch(domain:openai.com)",
+      "Bash(git -C /home/runner/workspace log --oneline -20)",
+      "Bash(git show 4236414 --no-stat)"
     ]
   }
 }
