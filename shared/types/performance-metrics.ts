@@ -67,6 +67,17 @@ export type BarbaraTokensByUseCase = {
   total: BarbaraTokenBucket;
 };
 
+export type VadEagernessMode = "auto" | "low" | "high";
+
+export type EagernessMetrics = {
+  initialMode: VadEagernessMode;
+  finalMode: VadEagernessMode;
+  switched: boolean;
+  switchedAtTurn: number | null;
+  rapidBargeInCount: number;
+  totalBargeInCount: number;
+};
+
 export type RealtimePerformanceMetrics = {
   sessionId: string;
   recordedAt: number;
@@ -77,4 +88,5 @@ export type RealtimePerformanceMetrics = {
   openaiConnectionCount: number;
   terminationReason?: string;
   barbaraTokens?: BarbaraTokensByUseCase;
+  eagerness?: EagernessMetrics;
 };

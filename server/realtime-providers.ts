@@ -19,12 +19,12 @@ export interface RealtimeProvider {
   getWebSocketUrl(): string;
   getWebSocketHeaders(): Record<string, string>;
 
-  buildSessionConfig(instructions: string): Record<string, any>;
+  buildSessionConfig(instructions: string, initialEagerness?: "auto" | "low" | "high"): Record<string, any>;
 
   buildInstructionsUpdate(instructions: string): Record<string, any>;
 
   buildTurnDetectionUpdate(
-    eagerness: "auto" | "low",
+    eagerness: "auto" | "low" | "high",
   ): Record<string, any> | null;
 
   buildTextOnlySessionConfig(instructions: string): Record<string, any>;
@@ -63,7 +63,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     };
   }
 
-  buildSessionConfig(instructions: string): Record<string, any> {
+  buildSessionConfig(instructions: string, initialEagerness?: "auto" | "low" | "high"): Record<string, any> {
     return {
       type: "realtime",
       instructions: instructions,
@@ -80,7 +80,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
           },
           turn_detection: {
             type: "semantic_vad",
-            eagerness: "auto",
+            eagerness: initialEagerness || "auto",
             create_response: true,
             interrupt_response: true,
           },
@@ -101,7 +101,7 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
   }
 
   buildTurnDetectionUpdate(
-    eagerness: "auto" | "low",
+    eagerness: "auto" | "low" | "high",
   ): Record<string, any> | null {
     return {
       type: "realtime",
@@ -205,7 +205,7 @@ export class GrokRealtimeProvider implements RealtimeProvider {
     };
   }
 
-  buildSessionConfig(instructions: string): Record<string, any> {
+  buildSessionConfig(instructions: string, _initialEagerness?: "auto" | "low" | "high"): Record<string, any> {
     return {
       modalities: ["text", "audio"],
       instructions: instructions,
@@ -234,7 +234,7 @@ export class GrokRealtimeProvider implements RealtimeProvider {
   }
 
   buildTurnDetectionUpdate(
-    eagerness: "auto" | "low",
+    eagerness: "auto" | "low" | "high",
   ): Record<string, any> | null {
     return null;
   }

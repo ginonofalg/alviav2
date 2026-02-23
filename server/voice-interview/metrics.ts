@@ -40,6 +40,17 @@ export function createEmptyMetricsTracker(): MetricsTracker {
     barbaraTokens: {
       total: emptyTokenBucket(),
     },
+    eagernessTracking: {
+      initialMode: "auto",
+      currentMode: "auto",
+      switchedAt: null,
+      switchReason: null,
+      rapidBargeInCount: 0,
+      totalBargeInCount: 0,
+      recentTurnBargeIns: [],
+      eagernessDowngraded: false,
+      respondentTurnCount: 0,
+    },
   };
 }
 

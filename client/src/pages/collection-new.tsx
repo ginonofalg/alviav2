@@ -45,6 +45,7 @@ const collectionFormSchema = z.object({
   voiceProvider: z.enum(["openai", "grok"]).default("openai"),
   maxAdditionalQuestions: z.number().min(0).max(3).default(1),
   endOfInterviewSummaryEnabled: z.boolean().default(false),
+  vadEagernessMode: z.enum(["auto", "high"]).default("auto"),
 });
 
 type CollectionFormData = z.infer<typeof collectionFormSchema>;
@@ -73,6 +74,7 @@ export default function CollectionNewPage() {
       voiceProvider: "openai",
       maxAdditionalQuestions: 1,
       endOfInterviewSummaryEnabled: false,
+      vadEagernessMode: "auto",
     },
   });
 
@@ -345,6 +347,33 @@ export default function CollectionNewPage() {
                   </FormItem>
                 )}
               />
+
+              {form.watch("voiceProvider") === "openai" && (
+                <FormField
+                  control={form.control}
+                  name="vadEagernessMode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Response Speed</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? "auto"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-vad-eagerness">
+                            <SelectValue placeholder="Select response speed" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="auto" data-testid="option-eagerness-auto">Balanced (default)</SelectItem>
+                          <SelectItem value="high" data-testid="option-eagerness-high">Fast (experimental)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-xs">
+                        Controls how quickly Alvia responds after the respondent stops speaking. "Fast" reduces perceived delay but may occasionally cut off longer pauses mid-thought. If this happens frequently, the system will automatically switch back to balanced.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

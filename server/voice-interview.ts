@@ -641,6 +641,7 @@ export function handleVoiceInterview(
     additionalQuestionsGenerating: false,
     maxAdditionalQuestions: 0, // Will be set from collection later
     endOfInterviewSummaryEnabled: false, // Will be set from collection later
+    vadEagernessMode: "auto", // Will be set from collection later
     isGeneratingAlviaSummary: false,
     alviaSummaryResolve: null,
     alviaSummaryReject: null,
@@ -785,6 +786,10 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
     state.endOfInterviewSummaryEnabled =
       collection.endOfInterviewSummaryEnabled ?? false;
+    const collectionEagerness = (collection.vadEagernessMode === "high" ? "high" : "auto") as "auto" | "high";
+    state.vadEagernessMode = collectionEagerness;
+    state.metricsTracker.eagernessTracking.initialMode = collectionEagerness;
+    state.metricsTracker.eagernessTracking.currentMode = collectionEagerness;
 
     state.crossInterviewRuntimeContext = buildCrossInterviewRuntimeContext(
       project,
@@ -1013,10 +1018,11 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
         state.strategicContext,
         state.alviaHasSpokenOnCurrentQuestion,
+        state.vadEagernessMode,
       );
     }
 
-    const sessionConfig = provider.buildSessionConfig(instructions);
+    const sessionConfig = provider.buildSessionConfig(instructions, state.vadEagernessMode);
 
     providerWs.send(
       JSON.stringify({
@@ -1040,6 +1046,26 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           JSON.stringify({
             type: "session.update",
             session: vadUpdate,
+          }),
+        );
+      }
+    }
+
+    // Re-apply collection-level eagerness mode if not "auto" (and not already downgraded)
+    if (
+      state.vadEagernessMode !== "auto" &&
+      !state.transcriptionQualitySignals.vadEagernessReduced &&
+      provider.supportsSemanticVAD()
+    ) {
+      console.log(
+        `[VoiceInterview] Re-applying VAD eagerness "${state.vadEagernessMode}" after provider reconnect for session: ${sessionId}`,
+      );
+      const eagernessUpdate = provider.buildTurnDetectionUpdate(state.vadEagernessMode);
+      if (eagernessUpdate) {
+        providerWs.send(
+          JSON.stringify({
+            type: "session.update",
+            session: eagernessUpdate,
           }),
         );
       }
@@ -1125,7 +1151,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           : undefined,
         vadEagerness: state.transcriptionQualitySignals.vadEagernessReduced
           ? "low"
-          : "auto",
+          : state.vadEagernessMode,
         // Include pause/resume state for client reconnection logic
         awaitingResume: state.awaitingResume,
         isPaused: state.isPaused,
@@ -1553,11 +1579,12 @@ async function handleProviderEvent(
           }
 
           // Restore eagerness when quality improves (10 consecutive good utterances)
+          // Restores to the current vadEagernessMode (which respects confusion downgrade)
           if (shouldRestoreVadEagerness(state.transcriptionQualitySignals)) {
             state.transcriptionQualitySignals.vadEagernessReduced = false;
             state.transcriptionQualitySignals.vadEagernessReducedAt = null;
             state.transcriptionQualitySignals.consecutiveGoodUtterances = 0;
-            sendVadEagernessUpdate(state, sessionId, "auto");
+            sendVadEagernessUpdate(state, sessionId, state.vadEagernessMode);
           }
 
           // Add to transcript log (both in-memory and persistence buffer)
@@ -1626,6 +1653,23 @@ async function handleProviderEvent(
           now - state.metricsTracker.alviaSpeaking.currentResponseStartAt;
         state.metricsTracker.alviaSpeaking.totalMs += elapsed;
         state.metricsTracker.alviaSpeaking.turnCount++;
+
+        // Rapid barge-in detection for eagerness tracking
+        // If respondent interrupts within 1500ms of Alvia starting audio,
+        // this is a strong signal that Alvia responded prematurely
+        state.metricsTracker.eagernessTracking.totalBargeInCount++;
+        const RAPID_BARGEIN_THRESHOLD_MS = 1500;
+        if (elapsed <= RAPID_BARGEIN_THRESHOLD_MS) {
+          state.metricsTracker.eagernessTracking.rapidBargeInCount++;
+          const recentArr = state.metricsTracker.eagernessTracking.recentTurnBargeIns;
+          if (recentArr.length > 0) {
+            recentArr[recentArr.length - 1] = true;
+          } else {
+            recentArr.push(true);
+          }
+          checkEagernessConfusionSwitch(state, sessionId);
+        }
+
         state.metricsTracker.alviaSpeaking.currentResponseStartAt = null;
         state.metricsTracker.silenceTracking.lastAlviaEndAt = now;
         state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
@@ -1673,6 +1717,14 @@ async function handleProviderEvent(
       // Track silence - respondent finished speaking
       state.metricsTracker.silenceTracking.lastRespondentEndAt = now;
       state.metricsTracker.silenceTracking.lastSpeechStartAt = null;
+
+      // Track respondent turn for eagerness sliding window
+      // Record whether THIS turn had a rapid barge-in (false — barge-in is detected on speech_started, not speech_stopped)
+      state.metricsTracker.eagernessTracking.respondentTurnCount++;
+      state.metricsTracker.eagernessTracking.recentTurnBargeIns.push(false);
+      if (state.metricsTracker.eagernessTracking.recentTurnBargeIns.length > 6) {
+        state.metricsTracker.eagernessTracking.recentTurnBargeIns.shift();
+      }
 
       clientWs?.send(JSON.stringify({ type: "user_speaking_stopped" }));
       break;
@@ -1913,6 +1965,7 @@ Then continue the interview naturally once they acknowledge.`;
       { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
       state.strategicContext,
       state.alviaHasSpokenOnCurrentQuestion,
+      state.vadEagernessMode,
     );
 
     state.providerWs.send(
@@ -1937,10 +1990,104 @@ Then continue the interview naturally once they acknowledge.`;
   );
 }
 
+function checkEagernessConfusionSwitch(
+  state: InterviewState,
+  sessionId: string,
+): void {
+  const tracking = state.metricsTracker.eagernessTracking;
+  if (tracking.currentMode !== "high" || tracking.eagernessDowngraded) {
+    return;
+  }
+
+  const recentBargeIns = tracking.recentTurnBargeIns;
+  if (recentBargeIns.length < 3) {
+    return;
+  }
+
+  const recentRapidCount = recentBargeIns.filter(Boolean).length;
+  if (recentRapidCount >= 3) {
+    console.log(
+      `[VadEagerness] Session ${sessionId}: Confusion detected — ${recentRapidCount} rapid barge-ins in last ${recentBargeIns.length} turns. Switching from "high" to "auto".`,
+    );
+
+    tracking.eagernessDowngraded = true;
+    tracking.currentMode = "auto";
+    tracking.switchedAt = Date.now();
+    tracking.switchReason = "rapid_bargein_threshold";
+    state.vadEagernessMode = "auto";
+
+    sendCombinedEagernessSwitch(state, sessionId, "auto");
+  }
+}
+
+function sendCombinedEagernessSwitch(
+  state: InterviewState,
+  sessionId: string,
+  newMode: "auto" | "high",
+): void {
+  if (!state.providerInstance.supportsSemanticVAD()) {
+    return;
+  }
+  if (state.providerWs?.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  const vadUpdate = state.providerInstance.buildTurnDetectionUpdate(newMode);
+  if (!vadUpdate) {
+    return;
+  }
+
+  const currentQuestion = state.questions[state.currentQuestionIndex];
+  const metrics = state.questionMetrics.get(state.currentQuestionIndex);
+  const recommendedFollowUps =
+    currentQuestion?.recommendedFollowUps ??
+    state.template?.defaultRecommendedFollowUps ??
+    null;
+  const updatedInstructions = buildInterviewInstructions(
+    state.template,
+    currentQuestion,
+    state.currentQuestionIndex,
+    state.questions.length,
+    undefined,
+    state.respondentInformalName,
+    state.questions,
+    { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+    state.strategicContext,
+    state.alviaHasSpokenOnCurrentQuestion,
+    newMode,
+  );
+
+  const instructionsUpdate = state.providerInstance.buildInstructionsUpdate(updatedInstructions);
+  const combined = {
+    ...vadUpdate,
+    ...instructionsUpdate,
+  };
+
+  state.providerWs.send(
+    JSON.stringify({
+      type: "session.update",
+      session: combined,
+    }),
+  );
+
+  if (state.clientWs?.readyState === WebSocket.OPEN) {
+    state.clientWs.send(
+      JSON.stringify({
+        type: "vad_eagerness_update",
+        eagerness: newMode,
+      }),
+    );
+  }
+
+  console.log(
+    `[VadEagerness] Session ${sessionId}: Combined eagerness+instructions switch to "${newMode}"`,
+  );
+}
+
 function sendVadEagernessUpdate(
   state: InterviewState,
   sessionId: string,
-  eagerness: "auto" | "low",
+  eagerness: "auto" | "low" | "high",
 ): void {
   if (!state.providerInstance.supportsSemanticVAD()) {
     return;
@@ -1961,6 +2108,8 @@ function sendVadEagernessUpdate(
       session: vadUpdate,
     }),
   );
+
+  state.metricsTracker.eagernessTracking.currentMode = eagerness;
 
   // Also notify client of eagerness change (for debugging indicator)
   if (state.clientWs?.readyState === WebSocket.OPEN) {
@@ -2180,6 +2329,7 @@ async function triggerBarbaraAnalysis(
           { followUpCount: metrics.followUpCount, recommendedFollowUps },
           state.strategicContext,
           state.alviaHasSpokenOnCurrentQuestion,
+          state.vadEagernessMode,
         );
 
         // Log the complete Alvia prompt when Barbara issues guidance
@@ -2625,6 +2775,7 @@ INSTRUCTIONS:
           },
           state.strategicContext,
           state.alviaHasSpokenOnCurrentQuestion,
+          state.vadEagernessMode,
         );
 
         if (state.providerWs.readyState === WebSocket.OPEN) {
@@ -3713,6 +3864,16 @@ function finalizeAndPersistMetrics(
     openaiConnectionCount: tracker.openaiConnectionCount,
     terminationReason,
     barbaraTokens: tracker.barbaraTokens,
+    eagerness: {
+      initialMode: tracker.eagernessTracking.initialMode,
+      finalMode: tracker.eagernessTracking.currentMode,
+      switched: tracker.eagernessTracking.eagernessDowngraded,
+      switchedAtTurn: tracker.eagernessTracking.switchedAt
+        ? tracker.eagernessTracking.respondentTurnCount
+        : null,
+      rapidBargeInCount: tracker.eagernessTracking.rapidBargeInCount,
+      totalBargeInCount: tracker.eagernessTracking.totalBargeInCount,
+    },
   };
 
   // Per-response alvia_realtime usage events are now written in the response.done handler.

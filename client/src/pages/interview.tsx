@@ -263,7 +263,7 @@ export default function InterviewPage() {
   const [silencePauseActive, setSilencePauseActive] = useState(false);
   
   // VAD eagerness state - for debugging indicator (controlled by VITE_SHOW_VAD_INDICATOR)
-  const [vadEagerness, setVadEagerness] = useState<"auto" | "low">("auto");
+  const [vadEagerness, setVadEagerness] = useState<"auto" | "low" | "high">("auto");
   const showVadIndicator = import.meta.env.VITE_SHOW_VAD_INDICATOR !== "false";
   
   const wsRef = useRef<WebSocket | null>(null);
@@ -642,7 +642,7 @@ export default function InterviewPage() {
             }
           }
           // Sync VAD eagerness state on connect/reconnect
-          if (message.vadEagerness === "auto" || message.vadEagerness === "low") {
+          if (message.vadEagerness === "auto" || message.vadEagerness === "low" || message.vadEagerness === "high") {
             setVadEagerness(message.vadEagerness);
           }
           
@@ -1546,6 +1546,8 @@ export default function InterviewPage() {
                   className={`w-16 h-9 flex items-center justify-center rounded-md text-xs font-mono ${
                     vadEagerness === "low"
                       ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                      : vadEagerness === "high"
+                      ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
                       : "bg-muted text-muted-foreground"
                   }`}
                   title={`VAD eagerness: ${vadEagerness}`}

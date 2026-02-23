@@ -1,5 +1,6 @@
 import type { InterviewState } from "./types";
 import type { TopicOverlapResult } from "../barbara-orchestrator";
+import type { VadEagernessMode } from "@shared/types/performance-metrics";
 
 export function buildInterviewInstructions(
   template: any,
@@ -15,6 +16,7 @@ export function buildInterviewInstructions(
   },
   strategicContext?: string | null,
   alviaHasSpokenOnCurrentQuestion?: boolean,
+  eagernessMode?: VadEagernessMode,
 ): string {
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
@@ -65,7 +67,10 @@ ${upcomingQuestions}
 `
       : ""
   }
-INSTRUCTIONS:
+${eagernessMode === "high" ? `RESPONSE TIMING (IMPORTANT):
+The voice detection is set to respond quickly, which means you may occasionally receive an utterance that seems cut off or incomplete (e.g., ends mid-sentence, is unusually brief, or trails off). When this happens, briefly acknowledge what was said and invite the respondent to continue (e.g., "Go on...", "Please continue...", "Sorry, carry on with that thought") rather than treating it as a complete answer.
+
+` : ""}INSTRUCTIONS:
 1. ${questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the first question.` : `Continue from the respondent's latest point. Do not re-introduce yourself and do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.

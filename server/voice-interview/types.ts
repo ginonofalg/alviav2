@@ -23,6 +23,7 @@ import type {
   TranscriptionQualitySignals,
   QualityFlag,
 } from "@shared/schema";
+import type { VadEagernessMode } from "@shared/types/performance-metrics";
 
 // Feature flag for additional questions
 export const ADDITIONAL_QUESTIONS_ENABLED =
@@ -161,6 +162,7 @@ export interface InterviewState {
   additionalQuestionsGenerating: boolean;
   maxAdditionalQuestions: number;
   endOfInterviewSummaryEnabled: boolean;
+  vadEagernessMode: VadEagernessMode;
   isGeneratingAlviaSummary: boolean;
   alviaSummaryResolve: ((text: string) => void) | null;
   alviaSummaryReject: ((error: Error) => void) | null;
@@ -294,6 +296,18 @@ export interface MetricsTracker {
   openaiConnectionCount: number;
   // Barbara token usage tracking
   barbaraTokens: BarbaraTokensByUseCase;
+  // VAD eagerness tracking for dynamic switching
+  eagernessTracking: {
+    initialMode: VadEagernessMode;
+    currentMode: VadEagernessMode;
+    switchedAt: number | null;
+    switchReason: string | null;
+    rapidBargeInCount: number;
+    totalBargeInCount: number;
+    recentTurnBargeIns: boolean[];
+    eagernessDowngraded: boolean;
+    respondentTurnCount: number;
+  };
 }
 
 export interface SessionWatchdogState {

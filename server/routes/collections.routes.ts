@@ -91,6 +91,7 @@ export function registerCollectionRoutes(app: Express) {
     voiceProvider: z.enum(["openai", "grok"]).optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).optional(),
     endOfInterviewSummaryEnabled: z.boolean().optional(),
+    vadEagernessMode: z.enum(["auto", "high"]).optional(),
   });
 
   app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
@@ -135,6 +136,7 @@ export function registerCollectionRoutes(app: Express) {
     targetResponses: z.number().min(1).optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).default(1),
     endOfInterviewSummaryEnabled: z.boolean().default(false),
+    vadEagernessMode: z.enum(["auto", "high"]).default("auto"),
   });
 
   app.post("/api/templates/:templateId/collections", isAuthenticated, async (req: any, res) => {

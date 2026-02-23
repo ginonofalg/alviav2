@@ -183,6 +183,7 @@ export const collections = pgTable("collections", {
   // Additional Questions configuration (0-3, default 1)
   maxAdditionalQuestions: integer("max_additional_questions").default(1),
   endOfInterviewSummaryEnabled: boolean("end_of_interview_summary_enabled").default(false),
+  vadEagernessMode: text("vad_eagerness_mode").default("auto"),
   createdAt: timestamp("created_at").defaultNow(),
   closedAt: timestamp("closed_at"),
   // Analytics metadata

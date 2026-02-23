@@ -196,7 +196,7 @@ vitest.config.ts            # Vitest test configuration
 - `workspaces`, `workspaceMembers` - Multi-tenant workspace system
 - `projects` - Contains objective, audience context, tone, consent settings, PII redaction flags, avoidRules, strategicContext, contextType
 - `interviewTemplates`, `questions` - Template structure with conditional logic, question types (open, yes_no, scale, numeric, multi_select)
-- `collections` - Launched templates with analytics data (JSONB), voiceProvider field, `maxAdditionalQuestions` (0-3), `endOfInterviewSummaryEnabled`
+- `collections` - Launched templates with analytics data (JSONB), voiceProvider field, `maxAdditionalQuestions` (0-3), `endOfInterviewSummaryEnabled`, `vadEagernessMode` ("auto"|"high")
 - `respondents`, `interviewSessions` - Respondent data and session state
 - `segments` - Response storage with transcripts, summaries, key quotes, quality flags. Nullable `questionId` for additional questions, with `additionalQuestionIndex` and `additionalQuestionText`
 - `redactionMaps` - PII pseudonymization
@@ -347,6 +347,18 @@ vitest.config.ts            # Vitest test configuration
 - `AlviaSessionSummary`: themes, overall summary, objective satisfaction (covered areas + gaps)
 - `BarbaraSessionSummary`: themes with supporting evidence + sentiment, objective satisfaction with rating, respondent engagement level
 - Manually regenerable via `POST /api/sessions/:id/generate-summary`
+
+**Configurable VAD eagerness** (per collection):
+- Collections have `vadEagernessMode` field: `"auto"` (default) or `"high"` (faster response, experimental)
+- "high" mode reduces perceived latency by making OpenAI's semantic VAD trigger responses more quickly
+- Conditional RESPONSE TIMING prompt instruction tells Alvia to recover gracefully when utterances seem cut off
+- Dynamic mid-session fallback: if 3+ rapid barge-ins detected in last 6 respondent turns, auto-downgrades to "auto"
+- Rapid barge-in = respondent interrupts within 1500ms of Alvia starting audio (signals premature response)
+- One-directional: once downgraded, stays at "auto" for rest of session (no oscillation)
+- Eagerness hierarchy: high > auto > low — each system can only move downward
+- Composes with existing transcription quality system: quality issues can still reduce from "auto" to "low"
+- Eagerness metrics persisted in `performanceMetrics.eagerness` (initial/final mode, switch info, barge-in counts)
+- Only applies to OpenAI provider (Grok uses server_vad without eagerness control); UI hidden for Grok collections
 
 **Transcription quality monitoring** (`server/transcription-quality.ts`):
 - Real-time detection of: garbled audio, environment noise, repeated clarification, foreign language hallucination, repeated word glitches
