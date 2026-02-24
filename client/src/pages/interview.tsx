@@ -155,7 +155,7 @@ function MicButton({
           transition={{ duration: 1.5, repeat: Infinity }}
         />
       )}
-      <div className="w-16 h-16 rounded-full overflow-hidden pointer-events-none select-none">
+      <div className="w-16 h-16 rounded-full overflow-hidden pointer-events-none select-none" style={{ clipPath: "circle(50%)" }}>
         <img
           src={imageUrl}
           alt={`Alvia ${state}`}
