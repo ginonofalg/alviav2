@@ -1,0 +1,146 @@
+Plan: 8-bit Alvia Avatar Roundel
+
+ Context
+
+ The interview page (client/src/pages/interview.tsx) has a MicButton component (lines 101-158) that shows Lucide icons (Mic, MicOff, Play, Keyboard, Loader2) depending
+ on state. We want to replace these icons with circular 8-bit character PNGs of Alvia, while keeping the outer pulsating ring animation. Each state can have multiple
+ image variants that rotate periodically during sustained states.
+
+ New Files
+
+ 1. client/src/assets/alvia/ — PNG image assets
+
+ Naming convention: {state}_{variant}.png (e.g., listening_1.png, listening_2.png)
+
+ Recommended specs: 160x160px (2x for retina), transparent background, pixel-art style.
+
+ States to provide art for:
+
+ ┌──────────────┬──────────────┬────────────────────────┐
+ │    State     │ Min variants │        Concept         │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ listening    │ 2-3          │ Leaning in, ear cupped │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ talking      │ 2-3          │ Mouth open, speaking   │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ paused       │ 2            │ Sleeping, snoozing     │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ connecting   │ 1-2          │ Powering up            │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ text_mode    │ 1-2          │ At a keyboard          │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ silence      │ 2            │ Waiting, tapping foot  │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ reconnecting │ 1-2          │ Running, scrambling    │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ noisy        │ 1-2          │ Covering ears          │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ thinking     │ 2            │ Lightbulb, pondering   │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ ready        │ 1-2          │ Waving hello           │
+ ├──────────────┼──────────────┼────────────────────────┤
+ │ offline      │ 1            │ Shrugging              │
+ └──────────────┴──────────────┴────────────────────────┘
+
+ 2. client/src/lib/alvia-avatar-registry.ts (~60 lines)
+
+ - Static ES module imports for every PNG (Vite hashes at build time)
+ - AlviaAvatarState type union: "listening" | "talking" | "paused" | "connecting" | "text_mode" | "silence" | "reconnecting" | "noisy" | "thinking" | "ready" |
+ "offline"
+ - ALVIA_AVATAR_VARIANTS record mapping each state to its string[] of image URLs
+ - preloadAlviaAvatars() function — creates new Image() for each URL (idempotent, ~120-360KB total)
+
+ Adding new variants = add an import + append to the array. No dynamic glob/discovery.
+
+ 3. client/src/hooks/use-alvia-avatar.ts (~90 lines)
+
+ Input: Flat object of boolean signals (all already in scope in the interview page):
+
+ isListening, isAiSpeaking, isPaused, isConnecting, isConnected,
+ isTextOnlyMode, silencePauseActive, isReconnecting,
+ showQualitySwitchPrompt, aqGenerating, isFinalizingInterview,
+ isCompletingAQ, readyPhase
+
+ Output: { imageUrl: string, state: AlviaAvatarState }
+
+ Priority-based state resolution (highest first):
+
+ ┌──────────┬──────────────┬─────────────────────────────────────────────────────────┐
+ │ Priority │    State     │                        Condition                        │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P0       │ reconnecting │ isReconnecting                                          │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P1       │ connecting   │ isConnecting && !isReconnecting                         │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P2       │ noisy        │ showQualitySwitchPrompt && !isTextOnlyMode              │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P3       │ thinking     │ aqGenerating || isFinalizingInterview || isCompletingAQ │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P4       │ paused       │ isPaused                                                │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P5       │ silence      │ silencePauseActive                                      │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P6       │ talking      │ isAiSpeaking && isConnected                             │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P7       │ text_mode    │ isTextOnlyMode && isConnected && !isPaused              │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P8       │ listening    │ isListening && !isAiSpeaking                            │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P9       │ ready        │ readyPhase                                              │
+ ├──────────┼──────────────┼─────────────────────────────────────────────────────────┤
+ │ P10      │ offline      │ fallback                                                │
+ └──────────┴──────────────┴─────────────────────────────────────────────────────────┘
+
+ Variant rotation:
+ - 10-second interval between variants
+ - Resets to variant 0 on state change (primary image shown first)
+ - No interval created for single-variant states
+ - Hard-cut swap (authentic 8-bit feel, no crossfade)
+
+ Preloading: Calls preloadAlviaAvatars() on first mount via useEffect.
+
+ Modified Files
+
+ 4. client/src/pages/interview.tsx
+
+ MicButton component (lines 101-158):
+
+ - Expand props to include: isAiSpeaking, silencePauseActive, isReconnecting, showQualitySwitchPrompt, aqGenerating, isFinalizingInterview, isCompletingAQ, readyPhase
+ - Call useAlviaAvatar(signals) inside the component
+ - Replace the icon conditional block (lines 141-155) with:
+ <img
+   src={imageUrl}
+   alt={`Alvia ${state}`}
+   className="w-16 h-16 rounded-full object-cover pointer-events-none select-none"
+   draggable={false}
+ />
+ - Replace the nested ternary background colors (lines 120-130) with a STATE_BG_COLORS lookup keyed by state
+ - Update pulsating ring conditions (line 134) to pulse for listening, talking, text_mode, silence states, with color varying by state
+ - Update disabled to cover connecting, reconnecting, thinking
+
+ MicButton call site (lines 1540-1547):
+
+ - Thread the additional props — all variables already in scope:
+   - isAiSpeaking from useAudioPlayback() (line 225)
+   - silencePauseActive (line 266)
+   - isReconnecting from useReconnection() (line 286)
+   - showQualitySwitchPrompt (line 263)
+   - aqGenerating (line 256)
+   - isFinalizingInterview (line 250)
+   - isCompletingAQ (line 258)
+   - readyPhase (line 247)
+
+ No new files needed for TypeScript — vite/client is already in tsconfig.json types (line 18), which includes PNG module declarations.
+
+ Verification
+
+ 1. Start dev server with npm run dev
+ 2. Navigate to an interview session
+ 3. Confirm: 8-bit image renders inside the circular button with pulsating ring
+ 4. Test each state transition manually:
+   - Page load (connecting) → connected (listening) → pause/resume → text mode toggle
+   - Stay in listening state 30+ seconds to confirm variant rotation
+   - Trigger silence detection (stay quiet 30s) to see silence avatar
+ 5. Run npm run check to verify no TypeScript errors
+ 6. Note: readyPhase and overlay states (thinking, noisy, reconnecting) are harder to trigger manually — verify the priority logic by reviewing the hook unit test or
+ adding console.log(state) temporarily
