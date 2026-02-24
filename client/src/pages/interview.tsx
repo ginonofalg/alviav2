@@ -27,6 +27,7 @@ import {
 import { useSilenceDetection } from "@/hooks/use-silence-detection";
 import { useAudioPlayback } from "@/hooks/use-audio-playback";
 import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnection";
+import { useAlviaAvatar, type AlviaAvatarSignals } from "@/hooks/use-alvia-avatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import type {
@@ -98,61 +99,69 @@ function WaveformVisualizer({
   );
 }
 
+const AVATAR_BG_COLORS: Record<string, string> = {
+  listening: "bg-primary",
+  talking: "bg-primary",
+  paused: "bg-yellow-500",
+  connecting: "bg-muted cursor-wait",
+  text_mode: "bg-green-500",
+  silence: "bg-primary/80",
+  reconnecting: "bg-muted cursor-wait",
+  noisy: "bg-orange-500",
+  thinking: "bg-muted",
+  ready: "bg-primary",
+  offline: "bg-muted",
+};
+
+const AVATAR_PULSE_STATES = new Set(["listening", "talking", "text_mode", "silence"]);
+
+const AVATAR_PULSE_COLORS: Record<string, string> = {
+  listening: "border-primary",
+  talking: "border-primary",
+  text_mode: "border-green-500",
+  silence: "border-primary/60",
+};
+
+const AVATAR_DISABLED_STATES = new Set(["connecting", "reconnecting", "thinking"]);
+
 function MicButton({
-  isListening,
-  isPaused,
-  isConnecting,
-  isTextOnlyMode,
-  isConnected,
+  signals,
   onToggle,
 }: {
-  isListening: boolean;
-  isPaused: boolean;
-  isConnecting: boolean;
-  isTextOnlyMode: boolean;
-  isConnected: boolean;
+  signals: AlviaAvatarSignals;
   onToggle: () => void;
 }) {
+  const { imageUrl, state } = useAlviaAvatar(signals);
+
+  const ariaLabel = state === "listening" ? "Pause interview"
+    : state === "paused" ? "Resume interview"
+    : state === "connecting" || state === "reconnecting" ? "Connecting..."
+    : state === "thinking" ? "Processing..."
+    : "Toggle microphone";
+
   return (
     <motion.button
       onClick={onToggle}
-      disabled={isConnecting}
-      className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-colors ${
-        isConnecting
-          ? "bg-muted text-muted-foreground cursor-wait"
-          : isTextOnlyMode && isConnected && !isPaused
-            ? "bg-green-500 text-white"
-            : isListening
-              ? "bg-primary text-primary-foreground"
-              : isPaused
-                ? "bg-yellow-500 text-white"
-                : "bg-muted text-muted-foreground"
-      }`}
+      disabled={AVATAR_DISABLED_STATES.has(state)}
+      aria-label={ariaLabel}
+      className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-colors ${AVATAR_BG_COLORS[state] || "bg-muted"}`}
       whileTap={{ scale: 0.95 }}
       data-testid="button-mic-toggle"
     >
-      {(isListening || (isTextOnlyMode && isConnected && !isPaused)) && (
+      {AVATAR_PULSE_STATES.has(state) && (
         <motion.div
-          className={`absolute inset-0 rounded-full border-4 ${isTextOnlyMode ? "border-green-500" : "border-primary"}`}
+          className={`absolute inset-0 rounded-full border-4 ${AVATAR_PULSE_COLORS[state] || "border-primary"}`}
           animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
           transition={{ duration: 1.5, repeat: Infinity }}
         />
       )}
-      {isConnecting ? (
-        <Loader2 className="w-8 h-8 animate-spin" />
-      ) : isPaused ? (
-        <Play className="w-8 h-8" />
-      ) : isTextOnlyMode ? (
-        isConnected ? (
-          <Keyboard className="w-8 h-8" />
-        ) : (
-          <Keyboard className="w-8 h-8" />
-        )
-      ) : isListening ? (
-        <Mic className="w-8 h-8" />
-      ) : (
-        <MicOff className="w-8 h-8" />
-      )}
+      <img
+        src={imageUrl}
+        alt={`Alvia ${state}`}
+        className="w-16 h-16 rounded-full object-cover pointer-events-none select-none"
+        draggable={false}
+        data-testid="img-alvia-avatar"
+      />
     </motion.button>
   );
 }
@@ -1538,11 +1547,21 @@ export default function InterviewPage() {
               </div>
 
               <MicButton
-                isListening={isListening}
-                isPaused={isPaused}
-                isConnecting={isConnecting}
-                isTextOnlyMode={isTextOnlyMode}
-                isConnected={isConnected}
+                signals={{
+                  isListening,
+                  isAiSpeaking,
+                  isPaused,
+                  isConnecting,
+                  isConnected,
+                  isTextOnlyMode,
+                  silencePauseActive,
+                  isReconnecting,
+                  showQualitySwitchPrompt,
+                  aqGenerating,
+                  isFinalizingInterview,
+                  isCompletingAQ,
+                  readyPhase,
+                }}
                 onToggle={toggleListening}
               />
 
