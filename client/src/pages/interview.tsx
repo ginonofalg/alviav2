@@ -155,13 +155,15 @@ function MicButton({
           transition={{ duration: 1.5, repeat: Infinity }}
         />
       )}
-      <img
-        src={imageUrl}
-        alt={`Alvia ${state}`}
-        className="w-16 h-16 rounded-full object-cover pointer-events-none select-none"
-        draggable={false}
-        data-testid="img-alvia-avatar"
-      />
+      <div className="w-16 h-16 rounded-full overflow-hidden pointer-events-none select-none">
+        <img
+          src={imageUrl}
+          alt={`Alvia ${state}`}
+          className="w-full h-full object-cover"
+          draggable={false}
+          data-testid="img-alvia-avatar"
+        />
+      </div>
     </motion.button>
   );
 }
