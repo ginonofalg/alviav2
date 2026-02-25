@@ -1525,9 +1525,9 @@ export default function InterviewPage() {
               )}
             </AnimatePresence>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center gap-4">
               <div
-                className="flex items-center gap-1.5"
+                className="w-20 flex items-center justify-end gap-1.5"
                 title={
                   isTextOnlyMode
                     ? "Switch to voice input"
@@ -1583,7 +1583,7 @@ export default function InterviewPage() {
 
               {showVadIndicator && isConnected ? (
                 <div
-                  className={`w-16 h-9 flex items-center justify-center rounded-md text-xs font-mono ${
+                  className={`w-20 h-9 flex items-center justify-center rounded-md text-xs font-mono ${
                     vadEagerness === "low"
                       ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
                       : vadEagerness === "high"
@@ -1596,7 +1596,7 @@ export default function InterviewPage() {
                   VAD:{vadEagerness}
                 </div>
               ) : (
-                <div className="w-16" />
+                <div className="w-20" />
               )}
             </div>
 
