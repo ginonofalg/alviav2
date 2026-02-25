@@ -1536,24 +1536,25 @@ export default function InterviewPage() {
               >
                 <Mic className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-muted-foreground/40" : "text-foreground"}`} />
                 <Switch
-                  checked={isTextOnlyMode}
-                  onCheckedChange={(checked) => {
+                  checked={!isTextOnlyMode}
+                  onCheckedChange={(voiceOn) => {
+                    const switchingToText = !voiceOn;
                     if (isConnected && !isPaused) {
-                      if (!isTextOnlyMode && isListening) {
+                      if (switchingToText && isListening) {
                         stopAudioCapture();
                         setIsListening(false);
                       }
-                      if (!isTextOnlyMode && isAiSpeaking) {
+                      if (switchingToText && isAiSpeaking) {
                         stopAiPlayback();
                       }
-                      if (isTextOnlyMode) {
+                      if (!switchingToText) {
                         setIsPaused(true);
                         if (wsRef.current?.readyState === WebSocket.OPEN) {
                           wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
                         }
                       }
                     }
-                    setIsTextOnlyMode(checked);
+                    setIsTextOnlyMode(!voiceOn);
                   }}
                   disabled={isConnecting}
                   data-testid="button-text-mode-toggle"
