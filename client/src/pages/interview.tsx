@@ -1527,13 +1527,16 @@ export default function InterviewPage() {
             <div className="flex items-center gap-4">
               <div className="w-16 flex justify-center">
                 <Button
-                  variant={isTextOnlyMode ? "default" : "outline"}
+                  variant="outline"
                   size="icon"
                   onClick={() => {
                     if (isConnected && !isPaused) {
                       if (!isTextOnlyMode && isListening) {
                         stopAudioCapture();
                         setIsListening(false);
+                      }
+                      if (!isTextOnlyMode && isAiSpeaking) {
+                        stopAiPlayback();
                       }
                       if (isTextOnlyMode) {
                         setIsPaused(true);
