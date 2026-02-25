@@ -66,6 +66,10 @@ export function useSilenceDetection(config: SilenceDetectionConfig) {
   const calibrationStartTimeRef = useRef<number | null>(null);
   const isCalibrating = useRef<boolean>(false);
   const dynamicThresholdRef = useRef<number | null>(null);
+  const consecutiveSilentRef = useRef(0);
+  const consecutiveLoudRef = useRef(0);
+  const SILENT_SAMPLES_REQUIRED = 3;
+  const LOUD_SAMPLES_REQUIRED = 2;
 
   const MAX_BUFFER_CHUNKS = Math.ceil((bufferDurationSeconds * 24000) / 4096);
 
@@ -193,22 +197,30 @@ export function useSilenceDetection(config: SilenceDetectionConfig) {
     const hasSpeech = checkAmplitude();
 
     if (!hasSpeech) {
-      if (silenceStartTimeRef.current === null) {
-        silenceStartTimeRef.current = now;
-        setState(prev => ({ ...prev, isSilent: true, silenceStartedAt: now }));
-      }
+      consecutiveSilentRef.current += 1;
+      consecutiveLoudRef.current = 0;
 
-      const silenceDuration = (now - silenceStartTimeRef.current) / 1000;
-      setState(prev => ({ ...prev, secondsOfSilence: silenceDuration }));
-      onSilenceProgress?.(silenceDuration);
+      if (consecutiveSilentRef.current >= SILENT_SAMPLES_REQUIRED) {
+        if (silenceStartTimeRef.current === null) {
+          silenceStartTimeRef.current = now;
+          setState(prev => ({ ...prev, isSilent: true, silenceStartedAt: now }));
+        }
 
-      if (silenceDuration >= silenceThresholdSeconds && !isPausedDueToSilenceRef.current) {
-        isPausedDueToSilenceRef.current = true;
-        setState(prev => ({ ...prev, isPausedDueToSilence: true }));
-        onSilenceStart?.();
+        const silenceDuration = (now - silenceStartTimeRef.current) / 1000;
+        setState(prev => ({ ...prev, secondsOfSilence: silenceDuration }));
+        onSilenceProgress?.(silenceDuration);
+
+        if (silenceDuration >= silenceThresholdSeconds && !isPausedDueToSilenceRef.current) {
+          isPausedDueToSilenceRef.current = true;
+          setState(prev => ({ ...prev, isPausedDueToSilence: true }));
+          onSilenceStart?.();
+        }
       }
     } else {
-      if (silenceStartTimeRef.current !== null) {
+      consecutiveLoudRef.current += 1;
+      consecutiveSilentRef.current = 0;
+
+      if (consecutiveLoudRef.current >= LOUD_SAMPLES_REQUIRED && silenceStartTimeRef.current !== null) {
         if (isPausedDueToSilenceRef.current) {
           const bufferedAudio = getBufferedAudio();
           isPausedDueToSilenceRef.current = false;
@@ -247,6 +259,8 @@ export function useSilenceDetection(config: SilenceDetectionConfig) {
     calibrationStartTimeRef.current = Date.now();
     isCalibrating.current = true;
     dynamicThresholdRef.current = null;
+    consecutiveSilentRef.current = 0;
+    consecutiveLoudRef.current = 0;
 
     console.log('[SilenceDetection] Starting ambient calibration...');
 
@@ -283,6 +297,8 @@ export function useSilenceDetection(config: SilenceDetectionConfig) {
     calibrationStartTimeRef.current = null;
     isCalibrating.current = false;
     dynamicThresholdRef.current = null;
+    consecutiveSilentRef.current = 0;
+    consecutiveLoudRef.current = 0;
 
     setState({
       isSilent: false,
@@ -295,6 +311,8 @@ export function useSilenceDetection(config: SilenceDetectionConfig) {
   const resetSilenceTimer = useCallback(() => {
     silenceStartTimeRef.current = null;
     isPausedDueToSilenceRef.current = false;
+    consecutiveSilentRef.current = 0;
+    consecutiveLoudRef.current = 0;
     setState(prev => ({
       ...prev,
       isSilent: false,
