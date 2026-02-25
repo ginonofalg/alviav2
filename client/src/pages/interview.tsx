@@ -1529,6 +1529,12 @@ export default function InterviewPage() {
                         stopAudioCapture();
                         setIsListening(false);
                       }
+                      if (isTextOnlyMode) {
+                        setIsPaused(true);
+                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                          wsRef.current.send(JSON.stringify({ type: "pause_interview" }));
+                        }
+                      }
                     }
                     setIsTextOnlyMode(!isTextOnlyMode);
                   }}
