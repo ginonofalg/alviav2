@@ -8,6 +8,7 @@ import paused1 from "@/assets/alvia/paused_1.png";
 import paused2 from "@/assets/alvia/paused_2.png";
 import connecting1 from "@/assets/alvia/connecting_1.png";
 import textMode1 from "@/assets/alvia/text_mode_1.png";
+import textMode2 from "@/assets/alvia/text_mode_2.png";
 import silence1 from "@/assets/alvia/silence_1.png";
 import silence2 from "@/assets/alvia/silence_2.png";
 import reconnecting1 from "@/assets/alvia/reconnecting_1.png";
@@ -36,7 +37,7 @@ export const ALVIA_AVATAR_VARIANTS: Record<AlviaAvatarState, string[]> = {
   talking: [talking1, talking2, talking3],
   paused: [paused1, paused2],
   connecting: [connecting1],
-  text_mode: [textMode1],
+  text_mode: [textMode1, textMode2],
   silence: [silence1, silence2],
   reconnecting: [reconnecting1],
   noisy: [noisy1, noisy2],
