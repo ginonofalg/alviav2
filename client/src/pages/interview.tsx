@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Mic,
   MicOff,
@@ -1525,11 +1526,18 @@ export default function InterviewPage() {
             </AnimatePresence>
 
             <div className="flex items-center gap-4">
-              <div className="w-16 flex justify-center">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
+              <div
+                className="flex items-center gap-1.5"
+                title={
+                  isTextOnlyMode
+                    ? "Switch to voice input"
+                    : "Switch to text-only input (for noisy environments)"
+                }
+              >
+                <Mic className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-muted-foreground/40" : "text-foreground"}`} />
+                <Switch
+                  checked={isTextOnlyMode}
+                  onCheckedChange={(checked) => {
                     if (isConnected && !isPaused) {
                       if (!isTextOnlyMode && isListening) {
                         stopAudioCapture();
@@ -1545,22 +1553,12 @@ export default function InterviewPage() {
                         }
                       }
                     }
-                    setIsTextOnlyMode(!isTextOnlyMode);
+                    setIsTextOnlyMode(checked);
                   }}
                   disabled={isConnecting}
-                  title={
-                    isTextOnlyMode
-                      ? "Switch to voice input"
-                      : "Switch to text-only input (for noisy environments)"
-                  }
                   data-testid="button-text-mode-toggle"
-                >
-                  {isTextOnlyMode ? (
-                    <Mic className="w-4 h-4" />
-                  ) : (
-                    <MessageSquareText className="w-4 h-4" />
-                  )}
-                </Button>
+                />
+                <Keyboard className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-foreground" : "text-muted-foreground/40"}`} />
               </div>
 
               <MicButton
