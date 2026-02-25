@@ -1534,7 +1534,7 @@ export default function InterviewPage() {
                     : "Switch to text-only input (for noisy environments)"
                 }
               >
-                <Mic className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-muted-foreground/40" : "text-foreground"}`} />
+                <Keyboard className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-foreground" : "text-muted-foreground/40"}`} />
                 <Switch
                   checked={!isTextOnlyMode}
                   onCheckedChange={(voiceOn) => {
@@ -1559,7 +1559,7 @@ export default function InterviewPage() {
                   disabled={isConnecting}
                   data-testid="button-text-mode-toggle"
                 />
-                <Keyboard className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-foreground" : "text-muted-foreground/40"}`} />
+                <Mic className={`w-4 h-4 transition-colors ${isTextOnlyMode ? "text-muted-foreground/40" : "text-foreground"}`} />
               </div>
 
               <MicButton
