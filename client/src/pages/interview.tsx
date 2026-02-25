@@ -134,13 +134,13 @@ function MicButton({
   const { imageUrl, state } = useAlviaAvatar(signals);
 
   const tooltip = state === "listening" ? "Click to pause the interview"
-    : state === "talking" ? "Alvia is speaking"
+    : state === "talking" ? "Alvia is speaking — click to pause"
     : state === "paused" ? "Click to resume the interview"
     : state === "connecting" || state === "reconnecting" ? "Connecting..."
     : state === "thinking" ? "Processing..."
-    : state === "text_mode" ? "Text-only mode active"
+    : state === "text_mode" ? "Text-only mode active — click to pause"
     : state === "silence" ? "Silence detected — click to pause"
-    : state === "noisy" ? "Noisy environment detected"
+    : state === "noisy" ? "Noisy environment detected — click to pause"
     : state === "ready" ? "Click to start the interview"
     : "Click to start the interview";
 
