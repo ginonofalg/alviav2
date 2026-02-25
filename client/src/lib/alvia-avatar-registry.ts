@@ -1,4 +1,6 @@
 import listening1 from "@/assets/alvia/listening_1.png";
+import listening2 from "@/assets/alvia/listening_2.png";
+import listening3 from "@/assets/alvia/listening_3.png";
 import talking1 from "@/assets/alvia/talking_1.png";
 import talking2 from "@/assets/alvia/talking_2.png";
 import talking3 from "@/assets/alvia/talking_3.png";
@@ -30,7 +32,7 @@ export type AlviaAvatarState =
   | "offline";
 
 export const ALVIA_AVATAR_VARIANTS: Record<AlviaAvatarState, string[]> = {
-  listening: [listening1],
+  listening: [listening1, listening2, listening3],
   talking: [talking1, talking2, talking3],
   paused: [paused1, paused2],
   connecting: [connecting1],

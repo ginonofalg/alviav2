@@ -133,17 +133,23 @@ function MicButton({
 }) {
   const { imageUrl, state } = useAlviaAvatar(signals);
 
-  const ariaLabel = state === "listening" ? "Pause interview"
-    : state === "paused" ? "Resume interview"
+  const tooltip = state === "listening" ? "Click to pause the interview"
+    : state === "talking" ? "Alvia is speaking"
+    : state === "paused" ? "Click to resume the interview"
     : state === "connecting" || state === "reconnecting" ? "Connecting..."
     : state === "thinking" ? "Processing..."
-    : "Toggle microphone";
+    : state === "text_mode" ? "Text-only mode active"
+    : state === "silence" ? "Silence detected — click to pause"
+    : state === "noisy" ? "Noisy environment detected"
+    : state === "ready" ? "Click to start the interview"
+    : "Click to start the interview";
 
   return (
     <motion.button
       onClick={onToggle}
       disabled={AVATAR_DISABLED_STATES.has(state)}
-      aria-label={ariaLabel}
+      aria-label={tooltip}
+      title={tooltip}
       className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-colors ${AVATAR_BG_COLORS[state] || "bg-muted"}`}
       whileTap={{ scale: 0.95 }}
       data-testid="button-mic-toggle"
