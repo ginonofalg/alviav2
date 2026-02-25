@@ -175,6 +175,7 @@ export interface InterviewState {
   lastResponseDoneAt: number | null;
   // Cross-interview context snapshot (precomputed at init, never updated during session)
   crossInterviewRuntimeContext: CrossInterviewRuntimeContext;
+  processedResponseIds: Set<string>;
   // Analytics-guided hypothesis testing context (precomputed at init, never updated during session)
   analyticsHypothesesRuntimeContext: AnalyticsHypothesesRuntimeContext;
   // Client-side performance metrics (e.g., calibration data)

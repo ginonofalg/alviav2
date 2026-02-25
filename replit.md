@@ -34,11 +34,17 @@ Preferred communication style: Simple, everyday language.
 -   **Database Operations**: All database interactions are centralized through a `DatabaseStorage` class implementing an `IStorage` interface.
 -   **Analytics Session Scope Filtering**: Analytics endpoints support filtering by real, simulated, or combined sessions.
 
+## Database Architecture
+
+-   **Dev Database**: Local PostgreSQL (`heliumdb` on host `helium`) — accessed via `DATABASE_URL` env var or `executeSql()` tool.
+-   **Production Database**: Neon PostgreSQL — accessed via `PRODUCTION_DATABASE_URL` secret. Can be queried from dev via `psql "$PRODUCTION_DATABASE_URL"`.
+-   **LLM Usage Dedup**: The `llm_usage_events` table has a unique partial index on `request_id` (where not null) to prevent duplicate event recording. The `response.done` handler also deduplicates in-memory via `processedResponseIds` Set on `InterviewState`.
+
 ## External Dependencies
 
 -   **OpenAI API**: Used for Alvia's voice conversations (e.g., `gpt-realtime-mini`) and Barbara's orchestration logic (various GPT models like `gpt-5-mini`, `gpt-4o`).
 -   **xAI Grok API**: An alternative voice provider (e.g., `grok-3-fast`) for Alvia.
 -   **Google Gemini API**: Used for generating AI-powered visual summaries (infographics) (e.g., `gemini-3-pro-image-preview`).
--   **PostgreSQL**: The primary database for all application data.
+-   **PostgreSQL**: The primary database for all application data (dev: local, production: Neon).
 -   **Replit OpenID Connect**: For user authentication.
 -   **jsPDF**: For generating PDF exports of analytics reports.

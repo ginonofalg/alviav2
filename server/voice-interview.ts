@@ -91,6 +91,7 @@ import {
   type AnalyticsHypothesesRuntimeContext,
   type CompactQuestionQualityInsight,
 } from "./voice-interview/types";
+import { recordRealtimeResponseUsage } from "./voice-interview/usage-recording";
 import {
   buildAnalyticsHypothesesRuntimeContext,
   buildCrossInterviewRuntimeContext,
@@ -651,6 +652,7 @@ export function handleVoiceInterview(
     responseInProgress: false,
     responseStartedAt: null,
     lastResponseDoneAt: null,
+    processedResponseIds: new Set(),
     crossInterviewRuntimeContext: { enabled: false, reason: "not_initialized" },
     analyticsHypothesesRuntimeContext: {
       enabled: false,
@@ -1736,52 +1738,9 @@ async function handleProviderEvent(
       state.responseStartedAt = null;
       state.lastResponseDoneAt = Date.now();
 
-      // Use cached provider instance to avoid allocation on every response
       const tokenUsage = state.providerInstance.parseTokenUsage(event);
       if (tokenUsage) {
-        state.metricsTracker.tokens.inputTokens += tokenUsage.inputTokens;
-        state.metricsTracker.tokens.outputTokens += tokenUsage.outputTokens;
-        state.metricsTracker.tokens.inputAudioTokens +=
-          tokenUsage.inputAudioTokens;
-        state.metricsTracker.tokens.outputAudioTokens +=
-          tokenUsage.outputAudioTokens;
-        state.metricsTracker.tokens.inputTextTokens +=
-          tokenUsage.inputTextTokens;
-        state.metricsTracker.tokens.outputTextTokens +=
-          tokenUsage.outputTextTokens;
-        state.metricsTracker.tokens.rawResponses.push(event.response?.usage);
-        console.log(
-          `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
-        );
-
-        recordLlmUsageEvent(
-          buildUsageAttribution(state),
-          state.providerInstance.name === "grok"
-            ? ("xai" as const)
-            : ("openai" as const),
-          state.providerInstance.getModelName(),
-          "alvia_realtime",
-          {
-            promptTokens: tokenUsage.inputTextTokens,
-            completionTokens: tokenUsage.outputTextTokens,
-            totalTokens: tokenUsage.inputTokens + tokenUsage.outputTokens,
-            inputAudioTokens: tokenUsage.inputAudioTokens,
-            outputAudioTokens: tokenUsage.outputAudioTokens,
-            inputTokensTotal: tokenUsage.inputTokens,
-            outputTokensTotal: tokenUsage.outputTokens,
-            inputCachedTokens: tokenUsage.inputCachedTokens,
-          },
-          "success",
-          {
-            rawUsage: event.response?.usage,
-            requestId: event.response?.id ?? undefined,
-          },
-        ).catch((err) =>
-          console.error(
-            "[LLM Usage] Failed to record per-response alvia_realtime:",
-            err,
-          ),
-        );
+        recordRealtimeResponseUsage(state, sessionId, event, tokenUsage);
       }
 
       if (state.isGeneratingAlviaSummary) {

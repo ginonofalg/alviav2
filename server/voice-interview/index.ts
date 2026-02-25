@@ -5,3 +5,4 @@ export * from "./instructions";
 export * from "./transcript";
 export * from "./text-utils";
 export * from "./guidance-tracking";
+export * from "./usage-recording";

@@ -1430,10 +1430,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(llmUsageEvents.createdAt));
   }
 
-  async createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent> {
+  async createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent | null> {
     const now = new Date();
     return await db.transaction(async (tx) => {
-      const [created] = await tx.insert(llmUsageEvents).values(event).returning();
+      const rows = await tx.insert(llmUsageEvents).values(event).onConflictDoNothing().returning();
+      const created = rows[0];
+      if (!created) {
+        console.warn(`[LLM Usage] Duplicate request_id skipped: ${event.requestId}`);
+        return null;
+      }
       const eventTime = created.createdAt ?? now;
       const bucketStart = new Date(eventTime);
       bucketStart.setMinutes(0, 0, 0);

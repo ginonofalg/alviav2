@@ -217,7 +217,7 @@ export interface IStorage {
   
   createLlmUsageEvent(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
   createLlmUsageEvents(events: InsertLlmUsageEvent[]): Promise<LlmUsageEvent[]>;
-  createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent>;
+  createEventAndUpsertRollup(event: InsertLlmUsageEvent): Promise<LlmUsageEvent | null>;
   getUsageRollupBySession(sessionId: string): Promise<UsageRollup>;
   getUsageRollupByCollection(collectionId: string): Promise<UsageRollup>;
   getUsageRollupByTemplate(templateId: string): Promise<UsageRollup>;
