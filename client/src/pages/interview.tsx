@@ -31,6 +31,7 @@ import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnectio
 import { useAlviaAvatar, type AlviaAvatarSignals } from "@/hooks/use-alvia-avatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { useUiSounds } from "@/hooks/use-ui-sounds";
 import type {
   InterviewSession,
   Question,
@@ -234,6 +235,7 @@ export default function InterviewPage() {
   const sessionId = params.sessionId;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { playChime } = useUiSounds();
 
   const [isListening, setIsListening] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -799,7 +801,8 @@ export default function InterviewPage() {
           if (message.currentQuestion) {
             setCurrentQuestionText(message.currentQuestion);
           }
-          setHighlightNextButton(false); // Reset highlight when moving to next question
+          setHighlightNextButton(false);
+          playChime();
           break;
 
         case "interview_complete":
@@ -938,7 +941,7 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, clearSuppression, onReconnectSuccess],
+    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, clearSuppression, onReconnectSuccess, playChime],
   );
 
   // Track silence pause state in a ref for use in audio processor callback
