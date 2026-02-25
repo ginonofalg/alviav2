@@ -1609,14 +1609,14 @@ export default function InterviewPage() {
                   : isAiSpeaking
                     ? "Alvia is speaking..."
                     : isPaused
-                      ? "Interview paused. Click to resume."
+                      ? "Interview paused — click Alvia to resume"
                       : isTextOnlyMode
                         ? isConnected
-                          ? "Text-only mode - type your responses below"
-                          : "Click to start the interview in text-only mode"
+                          ? "Text-only mode — type your responses below"
+                          : "Click Alvia to start the interview in text-only mode"
                         : isListening
                           ? "Listening... speak naturally"
-                          : "Click the microphone to start the interview"}
+                          : "Click Alvia to start the interview"}
             </p>
           </div>
 
