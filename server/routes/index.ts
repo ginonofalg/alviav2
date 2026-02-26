@@ -15,3 +15,4 @@ export { registerParseQuestionsRoutes } from "./parse-questions.routes";
 export { registerPersonaRoutes } from "./persona.routes";
 export { registerSimulationRoutes } from "./simulation.routes";
 export { registerPersonaGenerationRoutes } from "./persona-generation.routes";
+export { registerAdminSetupRoutes } from "./admin-setup.routes";

@@ -22,7 +22,8 @@
       "WebFetch(domain:openai.com)",
       "Bash(git -C /home/runner/workspace log --oneline -20)",
       "Bash(git show 4236414 --no-stat)",
-      "Bash(git log --since=\"2026-02-22\" --all --pretty=format:\"%h %ad %s\" --date=short | grep -v \"Transitioned from Plan\\\\|Saved your changes\\\\|Saved progress\\\\|Published your App\" | sort -k2)"
+      "Bash(git log --since=\"2026-02-22\" --all --pretty=format:\"%h %ad %s\" --date=short | grep -v \"Transitioned from Plan\\\\|Saved your changes\\\\|Saved progress\\\\|Published your App\" | sort -k2)",
+      "Bash(npx vitest --run 2>&1)"
     ]
   }
 }

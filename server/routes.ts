@@ -21,6 +21,7 @@ import {
   registerPersonaRoutes,
   registerSimulationRoutes,
   registerPersonaGenerationRoutes,
+  registerAdminSetupRoutes,
 } from "./routes/index";
 
 export async function registerRoutes(
@@ -58,6 +59,7 @@ export async function registerRoutes(
   registerPersonaRoutes(app);
   registerSimulationRoutes(app);
   registerPersonaGenerationRoutes(app);
+  registerAdminSetupRoutes(app);
 
   return httpServer;
 }
