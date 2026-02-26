@@ -278,7 +278,7 @@ export default function ProjectEditPage() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Alvia uses this to introduce and steer each interview. Barbara uses it to evaluate whether responses are on-track and to guide follow-up probing. Be specific — vague objectives produce vague interviews.
+                        Sets the broader research goal for this project. Barbara and Alvia reference it in end-of-interview summaries to assess objective satisfaction and identify gaps. Each template's own objective drives the live interview — this frames the bigger picture.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
