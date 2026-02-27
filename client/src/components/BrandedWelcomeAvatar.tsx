@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Bot } from "lucide-react";
+import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
 
 interface BrandedWelcomeAvatarProps {
   brandingLogo?: string | null;
@@ -21,7 +22,7 @@ export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAva
           />
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Bot className="w-4 h-4" />
+          <img src={alviaSprite} alt="Alvia" className="w-5 h-5 object-contain" />
           <span>Powered by Alvia</span>
         </div>
       </div>
@@ -30,7 +31,7 @@ export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAva
 
   return (
     <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto" data-testid="default-avatar">
-      <Bot className="w-8 h-8 text-primary" />
+      <img src={alviaSprite} alt="Alvia" className="w-10 h-10 object-contain" />
     </div>
   );
 }

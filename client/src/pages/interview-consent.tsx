@@ -13,7 +13,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Bot,
   Shield,
   FileText,
   Volume2,
@@ -21,6 +20,7 @@ import {
   RotateCcw,
   User,
 } from "lucide-react";
+import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Collection, Project, InterviewSession } from "@shared/schema";
@@ -297,7 +297,7 @@ export default function InterviewConsentPage() {
             {respondentName ? (
               <User className="w-8 h-8 text-primary" />
             ) : (
-              <Bot className="w-8 h-8 text-primary" />
+              <img src={alviaSprite} alt="Alvia" className="w-10 h-10 object-contain" />
             )}
           </div>
           <div>

@@ -24,8 +24,8 @@ import {
   MessageSquareText,
   ArrowRight,
   Clock,
-  Bot,
 } from "lucide-react";
+import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
 import { useSilenceDetection } from "@/hooks/use-silence-detection";
 import { useAudioPlayback } from "@/hooks/use-audio-playback";
 import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnection";
@@ -1400,7 +1400,7 @@ export default function InterviewPage() {
         <Card className="w-full max-w-2xl">
           <CardContent className="p-8 space-y-8 text-center">
             <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <Bot className="w-10 h-10 text-primary" />
+              <img src={alviaSprite} alt="Alvia" className="w-12 h-12 object-contain" />
             </div>
             
             <div className="space-y-3">
