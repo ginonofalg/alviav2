@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Mic,
+  Bot,
   Shield,
   FileText,
   Volume2,
@@ -297,7 +297,7 @@ export default function InterviewConsentPage() {
             {respondentName ? (
               <User className="w-8 h-8 text-primary" />
             ) : (
-              <Mic className="w-8 h-8 text-primary" />
+              <Bot className="w-8 h-8 text-primary" />
             )}
           </div>
           <div>

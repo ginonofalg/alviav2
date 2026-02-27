@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -26,11 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Mic, Shield, Settings2, Target, Sparkles } from "lucide-react";
+import { ArrowLeft, Mic, Shield, Settings2, Target, Sparkles, ImageIcon, Upload, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
+import ImageCropDialog from "@/components/ImageCropDialog";
+import { validateImageFile, fileToDataUrl } from "@/lib/image-utils";
+import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(100),
@@ -64,6 +67,10 @@ export default function ProjectEditPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("details");
+  const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -106,12 +113,45 @@ export default function ProjectEditPage() {
         strategicContext: project.strategicContext || "",
         contextType: project.contextType || undefined,
       });
+      setBrandingLogo(project.brandingLogo ?? null);
     }
   }, [project, form]);
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const error = validateImageFile(file);
+    if (error) {
+      toast({ title: "Invalid file", description: error, variant: "destructive" });
+      return;
+    }
+    const dataUrl = await fileToDataUrl(file);
+    setCropImageSrc(dataUrl);
+    setCropDialogOpen(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleCropConfirm = (croppedDataUrl: string) => {
+    setBrandingLogo(croppedDataUrl);
+    setCropDialogOpen(false);
+    setCropImageSrc(null);
+  };
+
+  const handleCropCancel = () => {
+    setCropDialogOpen(false);
+    setCropImageSrc(null);
+  };
+
+  const handleRemoveLogo = () => {
+    setBrandingLogo(null);
+  };
+
   const updateProject = useMutation({
     mutationFn: async (data: ProjectFormData) => {
-      const response = await apiRequest("PATCH", `/api/projects/${projectId}`, data);
+      const response = await apiRequest("PATCH", `/api/projects/${projectId}`, {
+        ...data,
+        brandingLogo,
+      });
       return response;
     },
     onSuccess: () => {
@@ -171,6 +211,7 @@ export default function ProjectEditPage() {
 
   const tabs = [
     { id: "details", label: "Details", icon: Mic },
+    { id: "branding", label: "Branding", icon: ImageIcon },
     { id: "privacy", label: "Privacy", icon: Shield },
     { id: "advanced", label: "Advanced", icon: Settings2 },
     { id: "strategic", label: "Strategic Context", icon: Target },
@@ -331,6 +372,108 @@ export default function ProjectEditPage() {
                       <FormMessage />
                     </FormItem>
                   )}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTab === "branding" && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle>Branding</CardTitle>
+                    <CardDescription>Add your logo to the interview welcome page</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex flex-col items-center gap-4 p-6 rounded-lg border border-dashed">
+                    {brandingLogo ? (
+                      <>
+                        <div className="w-20 h-20 rounded-lg bg-muted/30 flex items-center justify-center p-1">
+                          <img
+                            src={brandingLogo}
+                            alt="Branding logo preview"
+                            className="w-full h-full rounded-md object-contain"
+                            data-testid="img-branding-preview"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fileInputRef.current?.click()}
+                            data-testid="button-change-logo"
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            Change
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRemoveLogo}
+                            data-testid="button-remove-logo"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Remove
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-16 h-16 rounded-lg bg-muted/50 flex items-center justify-center">
+                          <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                        </div>
+                        <div className="text-center space-y-1">
+                          <p className="text-sm font-medium">Upload your logo</p>
+                          <p className="text-xs text-muted-foreground">PNG, JPG, WebP, or SVG — max 2MB</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          data-testid="button-upload-logo"
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          Choose File
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    data-testid="input-logo-file"
+                  />
+
+                  <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                    <p className="text-sm font-medium">Preview</p>
+                    <div className="flex justify-center py-4">
+                      <BrandedWelcomeAvatar brandingLogo={brandingLogo} />
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      This is how your branding will appear on the interview welcome page
+                    </p>
+                  </div>
+                </div>
+
+                <ImageCropDialog
+                  open={cropDialogOpen}
+                  imageSrc={cropImageSrc}
+                  onConfirm={handleCropConfirm}
+                  onCancel={handleCropCancel}
                 />
               </CardContent>
             </Card>

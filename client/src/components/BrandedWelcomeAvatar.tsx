@@ -1,0 +1,36 @@
+import { useState } from "react";
+import { Bot } from "lucide-react";
+
+interface BrandedWelcomeAvatarProps {
+  brandingLogo?: string | null;
+}
+
+export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAvatarProps) {
+  const [imgError, setImgError] = useState(false);
+
+  if (brandingLogo && !imgError) {
+    return (
+      <div className="flex flex-col items-center gap-2" data-testid="branded-avatar">
+        <div className="w-20 h-20 rounded-lg bg-muted/30 flex items-center justify-center p-1">
+          <img
+            src={brandingLogo}
+            alt="Organization logo"
+            className="w-full h-full rounded-md object-contain"
+            onError={() => setImgError(true)}
+            data-testid="img-branding-logo"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Bot className="w-4 h-4" />
+          <span>Powered by Alvia</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto" data-testid="default-avatar">
+      <Bot className="w-8 h-8 text-primary" />
+    </div>
+  );
+}

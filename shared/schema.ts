@@ -131,6 +131,7 @@ export const projects = pgTable("projects", {
   analyzedTemplateCount: integer("analyzed_template_count").default(0),
   analyzedSessionScope: text("analyzed_session_scope"),
   analyticsData: jsonb("analytics_data"),
+  brandingLogo: text("branding_logo"),
 });
 
 // Interview Templates (versioned)

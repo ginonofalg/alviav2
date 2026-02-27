@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mic, ArrowRight, User, AlertCircle } from "lucide-react";
+import { ArrowRight, User, AlertCircle, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { InterviewSession } from "@shared/schema";
+import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 
 export default function InterviewWelcomePage() {
   const params = useParams<{ sessionId: string }>();
@@ -20,7 +21,7 @@ export default function InterviewWelcomePage() {
   const [fullName, setFullName] = useState("");
   const [informalName, setInformalName] = useState("");
 
-  const { data: interviewData, isLoading } = useQuery<{ session: InterviewSession & { respondentId: string } }>({
+  const { data: interviewData, isLoading } = useQuery<{ session: InterviewSession & { respondentId: string }; brandingLogo?: string | null }>({
     queryKey: ["/api/interview", sessionId],
     enabled: !!sessionId,
   });
@@ -96,9 +97,7 @@ export default function InterviewWelcomePage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-            <Mic className="w-8 h-8 text-primary" />
-          </div>
+          <BrandedWelcomeAvatar brandingLogo={interviewData?.brandingLogo} />
           <div>
             <CardTitle className="text-2xl font-serif">Welcome to Your Interview</CardTitle>
             <CardDescription className="text-base mt-2">
@@ -126,7 +125,7 @@ export default function InterviewWelcomePage() {
 
             <div className="space-y-2">
               <Label htmlFor="informalName" className="flex items-center gap-2">
-                <Mic className="w-4 h-4 text-muted-foreground" />
+                <Bot className="w-4 h-4 text-muted-foreground" />
                 What should Alvia call you?
                 <span className="text-xs text-muted-foreground">(optional)</span>
               </Label>

@@ -1,3 +1,4 @@
+import express from "express";
 import type { Express } from "express";
 import { isAuthenticated } from "../replit_integrations/auth";
 import { storage } from "../storage";
@@ -80,9 +81,10 @@ export function registerProjectRoutes(app: Express) {
     avoidRules: z.array(z.string()).optional(),
     strategicContext: z.string().max(2000).optional(),
     contextType: z.enum(["content", "product", "marketing", "cx", "other"]).optional(),
+    brandingLogo: z.string().max(200_000).nullable().optional(),
   });
 
-  app.post("/api/projects", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects", express.json({ limit: "1mb" }), isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       
@@ -112,7 +114,7 @@ export function registerProjectRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/projects/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/projects/:id", express.json({ limit: "1mb" }), isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
 
