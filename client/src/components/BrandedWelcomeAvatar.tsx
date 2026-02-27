@@ -29,7 +29,6 @@ export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAva
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <img src={alviaSprite} alt="Alvia" className="w-5 h-5 object-contain" />
           <span>Powered by Alvia</span>
         </div>
       </div>
