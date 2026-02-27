@@ -73,7 +73,7 @@ export default function ImageCropDialog({
               onCropChange={setCrop}
               onZoomChange={setZoom}
               onCropComplete={onCropComplete}
-              cropShape="rect"
+              cropShape="round"
               showGrid={false}
             />
           )}

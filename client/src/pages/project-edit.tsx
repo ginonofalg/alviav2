@@ -395,11 +395,11 @@ export default function ProjectEditPage() {
                   <div className="flex flex-col items-center gap-4 p-6 rounded-lg border border-dashed">
                     {brandingLogo ? (
                       <>
-                        <div className="w-20 h-20 rounded-lg bg-muted/30 flex items-center justify-center p-1">
+                        <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center overflow-hidden">
                           <img
                             src={brandingLogo}
                             alt="Branding logo preview"
-                            className="w-full h-full rounded-md object-contain"
+                            className="w-full h-full object-cover"
                             data-testid="img-branding-preview"
                           />
                         </div>
