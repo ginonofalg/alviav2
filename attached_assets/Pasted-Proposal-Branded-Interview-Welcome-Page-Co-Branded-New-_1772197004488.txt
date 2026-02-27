@@ -1,0 +1,203 @@
+Proposal: Branded Interview Welcome Page (Co-Branded + New Alvia Sprite)
+                                                     
+ Context                                                  
+                                                                        
+ The public interview flow pages (consent, welcome, interview-ready) currently show a generic Lucide Mic icon. We want to:             
+ 1. Replace the Mic icon with a new Alvia sprite PNG (to be uploaded by the team) across all pre-interview pages
+ 2. On the welcome page only, allow users to upload their own logo that appears alongside Alvia ("co-branded")
+ 3. Provide a square-frame crop tool for the logo upload
+ 4. Optimize images for fast loading
+
+ Decisions Made
+
+ - Attribution model: Co-branded - user's logo is prominent, with a small "Powered by Alvia" sprite + text badge
+ - Branding scope: Welcome page only. Consent and interview-ready pages get the new Alvia sprite but not the user's logo
+ - Alvia sprite: New PNG to be provided (not the existing 8-bit avatar registry sprite)
+ - v1 scope: Logo only. No custom accent colors.
+
+ Current State
+
+ - Welcome page (client/src/pages/interview-welcome.tsx): Card layout, Mic icon in bg-primary/10 circle, name inputs, 190 lines
+ - Consent page (client/src/pages/interview-consent.tsx): Card layout, Mic icon, collection name, consent checkboxes
+ - Interview page (client/src/pages/interview.tsx): Uses 8-bit Alvia sprites during live interview, but "ready" phase still shows Mic icon
+ - No branding fields on any DB table
+ - No image upload infrastructure - only base64-in-JSON for persona generation docs
+ - No image processing libraries (no sharp, no multer)
+
+ ---
+ Implementation Plan
+
+ Part A: New Alvia Sprite (All Pre-Interview Pages)
+
+ Task: Replace the Lucide Mic icon on three pages with the new Alvia sprite PNG.
+
+ 1. Add the new sprite to client/src/assets/ (e.g., alvia-welcome.png) once provided
+ 2. Replace <Mic> icon blocks on:
+   - Consent page (interview-consent.tsx, lines ~296-301) - hero icon
+   - Welcome page (interview-welcome.tsx, lines ~99-101) - hero icon
+   - Interview ready phase (interview.tsx, lines ~1401-1403) - pre-start icon
+ 3. Render as <img> tag with appropriate sizing (w-16 h-16 or w-20 h-20 to match current icon containers)
+
+ This is a simple asset swap. No infrastructure changes needed.
+
+ Part B: White-Label Logo on Welcome Page
+
+ B1. Database Schema
+
+ Add brandingLogo column to the projects table in shared/schema.ts:
+
+ brandingLogo: text("branding_logo"), // data URL: "data:image/webp;base64,..."
+
+ Why project level: A project represents one research engagement/client. All collections under it inherit the brand. This matches how objective, audienceContext, and tone are already
+ scoped. If a user later needs per-collection override, that can be a v2 addition.
+
+ B2. Image Storage: Base64 Data URL in DB
+
+ After client-side processing (crop to 256x256, compress to WebP at 0.85 quality), the resulting data URL is ~15-30KB. This:
+ - Is negligible for PostgreSQL
+ - Requires zero new infrastructure (no S3, no file directories, no cloud storage)
+ - Follows the existing base64 pattern (persona generation file uploads)
+ - Serves directly in <img src={dataUrl}> - no extra HTTP request
+ - Travels with the project data already fetched by interview flow pages
+
+ B3. Image Processing Pipeline (Client-Side Only)
+
+ 1. User selects image (accepts PNG, JPG, WebP, SVG)
+ 2. react-easy-crop opens in a Radix Dialog - 1:1 aspect ratio locked, zoom slider, pan
+ 3. On confirm: Canvas API crops + resizes to 256x256 + exports as WebP 0.85
+ 4. Result (~20-30KB data URL) sent via existing PATCH /api/projects/:id
+ 5. No server-side processing - no new server dependencies
+
+ ┌────────────────────┬─────────────────────────────────────────────────────┐
+ │      Property      │                        Value                        │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Output dimensions  │ 256x256 px (displayed at 64-80px CSS = 3-4x retina) │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Aspect ratio       │ 1:1 (enforced by crop tool)                         │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Format             │ WebP (PNG fallback for unsupported browsers)        │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Quality            │ 0.85                                                │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Max processed size │ ~50KB                                               │
+ ├────────────────────┼─────────────────────────────────────────────────────┤
+ │ Max raw upload     │ 2MB (validated before crop)                         │
+ └────────────────────┴─────────────────────────────────────────────────────┘
+
+ New dependency: react-easy-crop (~12KB gzipped, MIT, 3.5M weekly downloads)
+
+ B4. Visual Layout on Welcome Page
+
+ When user logo exists (co-branded):
+     +-----------+
+     | User Logo |    64-80px, rounded-lg, bg-muted/30 behind for transparency
+     +-----------+
+
+   [alvia-sprite] Powered by Alvia    20px sprite + text-xs text-muted-foreground
+
+   "Welcome to Your Interview"
+   "Before we begin, let's get to know you..."
+
+ When no logo exists (default):
+     +---------------+
+     | Alvia Sprite  |    64-80px, rounded-2xl (new alvia-welcome.png)
+     +---------------+
+
+   "Welcome to Your Interview"
+   "Before we begin, let's get to know you..."
+
+ Graceful fallback: no logo uploaded = just the Alvia sprite. No visual regression.
+
+ B5. Upload Location: Project Edit Page
+
+ Add a "Branding" tab to the project edit page (client/src/pages/project-edit.tsx) alongside existing tabs (Details, Privacy, Advanced, Strategic Context).
+
+ Tab contains:
+ - Current logo preview (if set) with "Remove" button
+ - Upload button that opens the crop dialog
+ - Post-crop preview showing how it will appear on the welcome page
+ - Help text explaining where the logo appears
+
+ B6. API Changes
+
+ server/routes/projects.routes.ts: Add brandingLogo to create/update validation schemas:
+ brandingLogo: z.string().max(200_000).nullable().optional(),
+
+ server/routes/interview-access.routes.ts: Extend GET /api/interview/:sessionId response to include branding data from the project. The welcome page already fetches this endpoint - it
+ just needs the additional field in the response.
+
+ ---
+ Files Changed
+
+ New Files (~340 lines total)
+
+ ┌────────────────────────────────────────────────┬───────────────────────────────────────────────────────────┬────────┐
+ │                      File                      │                          Purpose                          │ ~Lines │
+ ├────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┼────────┤
+ │ client/src/components/ImageCropDialog.tsx      │ Radix Dialog + react-easy-crop crop UI                    │ ~200   │
+ ├────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┼────────┤
+ │ client/src/lib/image-utils.ts                  │ cropAndCompress(), validateImageFile() helpers            │ ~60    │
+ ├────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┼────────┤
+ │ client/src/components/BrandedWelcomeAvatar.tsx │ Renders user logo + "Powered by Alvia", or Alvia fallback │ ~80    │
+ └────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┴────────┘
+
+ Modified Files
+
+ ┌──────────────────────────────────────────┬─────────────────────────────────────────────────────┐
+ │                   File                   │                       Change                        │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ shared/schema.ts                         │ Add brandingLogo text column to projects table      │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ server/routes/projects.routes.ts         │ Add brandingLogo to validation schemas              │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ server/routes/interview-access.routes.ts │ Include project branding in interview data response │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ client/src/pages/project-edit.tsx        │ Add "Branding" tab with upload + crop + preview     │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ client/src/pages/interview-welcome.tsx   │ Replace Mic with BrandedWelcomeAvatar               │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ client/src/pages/interview-consent.tsx   │ Replace Mic with new Alvia sprite <img>             │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ client/src/pages/interview.tsx           │ Replace ready-phase Mic with new Alvia sprite <img> │
+ ├──────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+ │ package.json                             │ Add react-easy-crop dependency                      │
+ └──────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+
+ New Asset (to be provided)
+
+ ┌─────────────────────────────────────┬──────────────────────────────────────────┐
+ │                File                 │                 Purpose                  │
+ ├─────────────────────────────────────┼──────────────────────────────────────────┤
+ │ client/src/assets/alvia-welcome.png │ New Alvia sprite for pre-interview pages │
+ └─────────────────────────────────────┴──────────────────────────────────────────┘
+
+ No new server dependencies. No sharp, no multer, no cloud storage.
+
+ ---
+ Edge Cases
+
+ - No logo uploaded: brandingLogo is null. Welcome page shows Alvia sprite only. No regression.
+ - Logo removed: User clicks "Remove" in project edit. Sets brandingLogo: null. Welcome page reverts to Alvia sprite.
+ - Transparent logos: WebP supports transparency. Container has subtle bg-muted/30 background to ensure visibility.
+ - SVG uploads: Rasterized to WebP bitmap via Canvas API during crop. No XSS risk from SVG content.
+ - Corrupt data URL: <img> onerror handler falls back to Alvia sprite.
+ - Express body limit: Default 100KB. Processed images are 15-30KB + other project fields. Should be fine, but can increase limit on the project PATCH route if needed.
+
+ Future Considerations (Not v1)
+
+ - Collection-level branding override
+ - Workspace-level default branding (set once for all projects)
+ - Custom accent colors for interview flow pages
+ - Custom welcome text per project
+ - Cloud storage migration if DB size becomes a concern at scale
+
+ Verification Plan
+
+ 1. npm run db:push - schema migration
+ 2. npm run check - TypeScript passes
+ 3. npx vitest - existing tests pass
+ 4. Manual: verify Alvia sprite appears on consent, welcome, and interview-ready pages (replacing Mic icon)
+ 5. Manual: upload logo on project edit Branding tab, verify crop dialog works, verify preview
+ 6. Manual: navigate to welcome page for a collection under that project, verify co-branded layout
+ 7. Manual: remove logo, verify fallback to Alvia sprite
+ 8. Manual: test with new project (no logo), verify Alvia sprite default
