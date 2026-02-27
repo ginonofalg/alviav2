@@ -12,11 +12,11 @@ export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAva
   if (brandingLogo && !imgError) {
     return (
       <div className="flex flex-col items-center gap-2" data-testid="branded-avatar">
-        <div className="w-20 h-20 rounded-lg bg-muted/30 flex items-center justify-center p-1">
+        <div className="w-20 h-20 rounded-full bg-muted/30 flex items-center justify-center overflow-hidden">
           <img
             src={brandingLogo}
             alt="Organization logo"
-            className="w-full h-full rounded-md object-contain"
+            className="w-full h-full object-cover"
             onError={() => setImgError(true)}
             data-testid="img-branding-logo"
           />
@@ -30,7 +30,7 @@ export default function BrandedWelcomeAvatar({ brandingLogo }: BrandedWelcomeAva
   }
 
   return (
-    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto" data-testid="default-avatar">
+    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto overflow-hidden" data-testid="default-avatar">
       <img src={alviaSprite} alt="Alvia" className="w-10 h-10 object-contain" />
     </div>
   );

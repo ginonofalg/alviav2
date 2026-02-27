@@ -293,7 +293,7 @@ export default function InterviewConsentPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto overflow-hidden">
             {respondentName ? (
               <User className="w-8 h-8 text-primary" />
             ) : (
