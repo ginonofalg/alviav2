@@ -20,7 +20,7 @@ import {
   RotateCcw,
   User,
 } from "lucide-react";
-import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
+import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Collection, Project, InterviewSession } from "@shared/schema";

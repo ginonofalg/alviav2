@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bot } from "lucide-react";
-import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
+import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 
 interface BrandedWelcomeAvatarProps {
   brandingLogo?: string | null;

@@ -25,7 +25,7 @@ import {
   ArrowRight,
   Clock,
 } from "lucide-react";
-import alviaSprite from "@assets/WELCOMEINTERVIEW.png";
+import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 import { useSilenceDetection } from "@/hooks/use-silence-detection";
 import { useAudioPlayback } from "@/hooks/use-audio-playback";
 import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnection";
