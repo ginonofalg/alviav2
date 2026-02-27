@@ -20,6 +20,7 @@ import {
   RotateCcw,
   User,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -293,12 +294,19 @@ export default function InterviewConsentPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto overflow-hidden">
-            {respondentName ? (
-              <User className="w-8 h-8 text-primary" />
-            ) : (
-              <img src={alviaSprite} alt="Alvia" className="w-10 h-10 object-contain" />
-            )}
+          <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
+            <motion.div
+              className="absolute inset-0 rounded-full border-4 border-primary"
+              animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+            <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
+              {respondentName ? (
+                <User className="w-8 h-8 text-primary" />
+              ) : (
+                <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
+              )}
+            </div>
           </div>
           <div>
             <CardTitle className="text-2xl font-serif">

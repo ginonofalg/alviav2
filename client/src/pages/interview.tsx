@@ -1399,8 +1399,15 @@ export default function InterviewPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
           <CardContent className="p-8 space-y-8 text-center">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto overflow-hidden">
-              <img src={alviaSprite} alt="Alvia" className="w-12 h-12 object-contain" />
+            <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
+              <motion.div
+                className="absolute inset-0 rounded-full border-4 border-primary"
+                animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              />
+              <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
+              </div>
             </div>
             
             <div className="space-y-3">
