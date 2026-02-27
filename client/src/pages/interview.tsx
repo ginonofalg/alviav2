@@ -31,6 +31,7 @@ import { useAudioPlayback } from "@/hooks/use-audio-playback";
 import { useReconnection, RECONNECT_MAX_ATTEMPTS } from "@/hooks/use-reconnection";
 import { useAlviaAvatar, type AlviaAvatarSignals } from "@/hooks/use-alvia-avatar";
 import { motion, AnimatePresence } from "framer-motion";
+import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 import { useToast } from "@/hooks/use-toast";
 import { useUiSounds } from "@/hooks/use-ui-sounds";
 import type {
@@ -47,6 +48,7 @@ interface InterviewData {
   template: InterviewTemplate;
   questions: Question[];
   respondent?: Respondent;
+  brandingLogo?: string | null;
   features?: {
     additionalQuestionsEnabled?: boolean;
   };
@@ -1399,16 +1401,20 @@ export default function InterviewPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
           <CardContent className="p-8 space-y-8 text-center">
-            <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
-              <motion.div
-                className="absolute inset-0 rounded-full border-4 border-primary"
-                animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              />
-              <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
-                <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
+            {interviewData?.brandingLogo ? (
+              <BrandedWelcomeAvatar brandingLogo={interviewData.brandingLogo} />
+            ) : (
+              <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
+                <motion.div
+                  className="absolute inset-0 rounded-full border-4 border-primary"
+                  animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+                <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                  <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
+                </div>
               </div>
-            </div>
+            )}
             
             <div className="space-y-3">
               <h1 className="text-2xl font-serif font-medium" data-testid="text-ready-greeting">

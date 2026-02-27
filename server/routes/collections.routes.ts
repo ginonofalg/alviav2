@@ -83,6 +83,37 @@ export function registerCollectionRoutes(app: Express) {
     }
   });
 
+  app.get("/api/collections/:id/public", async (req, res) => {
+    try {
+      const collection = await storage.getCollection(req.params.id);
+      if (!collection) {
+        return res.status(404).json({ message: "Collection not found" });
+      }
+
+      const template = await storage.getTemplate(collection.templateId);
+      let brandingLogo = null;
+      let consentAudioRecording = true;
+      if (template) {
+        const project = await storage.getProject(template.projectId);
+        if (project) {
+          brandingLogo = project.brandingLogo || null;
+          consentAudioRecording = project.consentAudioRecording !== false;
+        }
+      }
+
+      res.json({
+        id: collection.id,
+        name: collection.name,
+        isActive: collection.isActive,
+        brandingLogo,
+        consentAudioRecording,
+      });
+    } catch (error) {
+      console.error("Error fetching public collection info:", error);
+      res.status(500).json({ message: "Failed to fetch collection info" });
+    }
+  });
+
   const updateCollectionSchema = z.object({
     name: z.string().min(1).max(100).optional(),
     description: z.string().max(500).nullable().optional(),

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
+import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Collection, Project, InterviewSession } from "@shared/schema";
@@ -125,6 +126,17 @@ export default function InterviewConsentPage() {
     enabled: !!collectionId,
   });
 
+  const { data: publicInfo } = useQuery<{
+    id: string;
+    name: string;
+    isActive: boolean;
+    brandingLogo: string | null;
+    consentAudioRecording: boolean;
+  }>({
+    queryKey: ["/api/collections", collectionId, "public"],
+    enabled: !!collectionId,
+  });
+
   // Fetch invitation data if token is present
   const { data: invitationData, isLoading: invitationLoading } =
     useQuery<InvitationData>({
@@ -196,7 +208,8 @@ export default function InterviewConsentPage() {
 
   const allConsentsGiven = consents.participation && consents.dataProcessing;
   const project = collection?.project;
-  const requiresAudioConsent = project?.consentAudioRecording !== false;
+  const brandingLogo = project?.brandingLogo || publicInfo?.brandingLogo || null;
+  const requiresAudioConsent = project?.consentAudioRecording !== false || publicInfo?.consentAudioRecording !== false;
 
   const canProceed =
     allConsentsGiven && (!requiresAudioConsent || consents.audioRecording);
@@ -294,20 +307,24 @@ export default function InterviewConsentPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
-            <motion.div
-              className="absolute inset-0 rounded-full border-4 border-primary"
-              animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            />
-            <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
-              {respondentName ? (
-                <User className="w-8 h-8 text-primary" />
-              ) : (
-                <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
-              )}
+          {brandingLogo ? (
+            <BrandedWelcomeAvatar brandingLogo={brandingLogo} />
+          ) : (
+            <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
+              <motion.div
+                className="absolute inset-0 rounded-full border-4 border-primary"
+                animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              />
+              <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                {respondentName ? (
+                  <User className="w-8 h-8 text-primary" />
+                ) : (
+                  <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
+                )}
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <CardTitle className="text-2xl font-serif">
               {respondentName
