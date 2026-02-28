@@ -542,6 +542,9 @@ export function handleVoiceInterview(
       existingState.isConnectionRefresh = false;
       existingState.useRefreshInstructions = true;
       existingState.autoTriggerAfterRefresh = true;
+      existingState.isInitialSession = true;
+      existingState.sessionConfigured = false;
+      existingState.clientAudioReady = false;
       connectToRealtimeProvider(sessionId, clientWs);
       return;
     }
@@ -1669,13 +1672,6 @@ async function handleProviderEvent(
 
           // Schedule debounced persist
           scheduleDebouncedPersist(sessionId);
-
-          // Trigger Barbara analysis asynchronously (non-blocking)
-          // Her guidance will apply to the NEXT turn, not this one
-          // Response is automatically created by provider due to create_response: true
-          triggerBarbaraAnalysis(sessionId).catch((error) => {
-            console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
-          });
         }
         // Re-fetch clientWs from state in case of reconnection during async processing
         const currentClientWs = interviewStates.get(sessionId)?.clientWs;
@@ -1691,6 +1687,13 @@ async function handleProviderEvent(
           refreshConnection(sessionId, refreshDeps);
           return;
         }
+
+        // Trigger Barbara analysis asynchronously (non-blocking)
+        // Her guidance will apply to the NEXT turn, not this one
+        // Response is automatically created by provider due to create_response: true
+        triggerBarbaraAnalysis(sessionId).catch((error) => {
+          console.error(`[Barbara] Analysis failed for ${sessionId}:`, error);
+        });
       })();
       break;
 
@@ -2451,14 +2454,15 @@ async function handleClientMessage(
       state.providerWs &&
       state.providerWs.readyState === WebSocket.OPEN
     ) {
-      // Skip auto-trigger for restored sessions - user must click mic to trigger resume
-      if (state.isRestoredSession) {
+      // Skip auto-trigger for restored sessions — unless this is a planned refresh
+      if (state.isRestoredSession && !state.autoTriggerAfterRefresh) {
         console.log(
           `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
         );
         state.isInitialSession = false;
         return;
       }
+      state.autoTriggerAfterRefresh = false;
 
       state.isInitialSession = false;
       if (!canCreateResponse(state)) {
@@ -4378,7 +4382,6 @@ function runWatchdogCycle(): void {
       clientWsAge > CONNECTION_REFRESH_FALLBACK_MS &&
       state.clientWs?.readyState === WebSocket.OPEN &&
       !state.isConnectionRefresh &&
-      !state.needsConnectionRefresh &&
       !state.pendingRefreshAfterTranscript &&
       !state.clientDisconnectedAt &&
       !state.responseInProgress &&

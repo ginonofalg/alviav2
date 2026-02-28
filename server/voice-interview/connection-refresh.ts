@@ -6,16 +6,17 @@ import {
 } from "./types";
 
 const REFRESH_CLIENT_CLOSE_DELAY_MS = 100;
+const FLUSH_PERSIST_TIMEOUT_MS = 2000;
 
 export interface RefreshDependencies {
   getState: (sessionId: string) => InterviewState | undefined;
   flushPersist: (sessionId: string) => Promise<void>;
 }
 
-export function refreshConnection(
+export async function refreshConnection(
   sessionId: string,
   deps: RefreshDependencies,
-): void {
+): Promise<void> {
   const state = deps.getState(sessionId);
   if (!state || !state.clientWs || state.isConnectionRefresh) {
     return;
@@ -29,12 +30,24 @@ export function refreshConnection(
   state.needsConnectionRefresh = false;
   state.pendingRefreshAfterTranscript = false;
 
-  deps.flushPersist(sessionId).catch((error) => {
+  try {
+    await Promise.race([
+      deps.flushPersist(sessionId),
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          console.warn(
+            `[ConnectionRefresh] flushPersist timed out for ${sessionId}, proceeding with refresh`,
+          );
+          resolve();
+        }, FLUSH_PERSIST_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (error) {
     console.error(
       `[ConnectionRefresh] flushPersist failed for ${sessionId}:`,
       error,
     );
-  });
+  }
 
   safeSend(
     state.clientWs,
