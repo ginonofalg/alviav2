@@ -1,0 +1,46 @@
+1. High: planned refresh can reconnect without generating any Alvia response
+
+  - In planned refresh reconnect, state does not re-enter initial-response flow:
+      - Planned branch sets refresh flags and reconnects provider, but not isInitialSession/sessionConfigured reset: voice-interview.ts:537.
+      - Response auto-trigger is gated by state.isInitialSession in both session.updated and audio_ready: voice-interview.ts:1340, voice-interview.ts:2449.
+  - Result: refresh can complete and UI reconnects, but Alvia never answers the just-finished respondent turn.
+  - Change needed:
+      1. In planned refresh branch, set existingState.isInitialSession = true and existingState.sessionConfigured = false before connectToRealtimeProvider.
+      2. In audio_ready, allow auto-trigger when autoTriggerAfterRefresh is true (same carve-out already present in session.updated).
+
+  2. High: watchdog fallback refresh is blocked by its own flag logic
+
+  - Fallback requires !state.needsConnectionRefresh: voice-interview.ts:4381.
+  - But primary threshold sets needsConnectionRefresh = true at 13.5m and it stays true during long silence: voice-interview.ts:4372.
+  - Result: 14.5m forced fallback often never fires in the exact “no boundary” case.
+  - Change needed:
+      1. Remove !state.needsConnectionRefresh from fallback condition.
+      2. Keep the safety gates (!pendingRefreshAfterTranscript, !isConnectionRefresh, !responseInProgress, !speakingStartTime, etc.).
+
+  3. Medium: Barbara analysis still runs before refresh in transcript path
+
+  - In transcription completion, triggerBarbaraAnalysis() runs before checking pendingRefreshAfterTranscript: voice-interview.ts:1673, voice-interview.ts:1689.
+  - Result: unnecessary LLM calls/cost and potentially stale guidance right before intentional reconnect.
+  - Change needed:
+      1. Move refresh check ahead of triggerBarbaraAnalysis().
+
+  4. Medium: persist-before-close is best-effort, not guaranteed
+
+  - Refresh path calls flushPersist without awaiting it, then closes sockets shortly after: connection-refresh.ts:32, connection-refresh.ts:57.
+  - Result: under DB latency, latest turn persistence can race with disconnect.
+  - Change needed:
+      1. Make refresh flow async and await flushPersist with a short timeout guard.
+      2. Proceed with close even on timeout/error, but after explicit wait boundary.
+
+  5. Medium: test coverage gap for refresh state machine
+
+  - Current suite passes, but no targeted tests for refresh sequencing/fallback.
+  - Change needed:
+      1. Add unit tests for watchdog flag+fallback transitions.
+      2. Add tests for planned refresh reconnect ensuring one response is auto-triggered and no stall.
+      3. Add client reconnection tests for close code 4000 immediate path + fallback behavior.
+
+  Verification run:
+
+  - npm run check: pass.
+  - npx vitest: pass (67 tests).
