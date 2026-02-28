@@ -157,6 +157,7 @@ export interface InterviewState {
   isConnectionRefresh: boolean; // True during refresh cycle
   useRefreshInstructions: boolean; // Use buildRefreshInstructions instead of buildResumeInstructions
   autoTriggerAfterRefresh: boolean; // Auto-trigger response.create after provider ready (no mic click)
+  refreshResetTimeout: ReturnType<typeof setTimeout> | null; // Timeout to reset isConnectionRefresh if client never reconnects
   // Realtime API performance metrics
   metricsTracker: MetricsTracker;
   // Transcription quality tracking (noisy environment detection)
@@ -344,4 +345,6 @@ export const WS_PING_INTERVAL_MS = 30_000; // Send ws.ping() every 30s to keep c
 // Proactive connection refresh constants (Railway 15-min WS limit)
 export const CONNECTION_REFRESH_MS = 810_000; // 13.5 min — set refresh flag
 export const CONNECTION_REFRESH_FALLBACK_MS = 870_000; // 14.5 min — force refresh if no conversation boundary
+export const CONNECTION_REFRESH_LAST_RESORT_MS = 895_000; // 14 min 55 sec — force refresh regardless of response state
 export const WS_CLOSE_CODE_REFRESH = 4000; // Custom close code for planned connection refresh
+export const REFRESH_RESET_TIMEOUT_MS = 30_000; // Reset isConnectionRefresh if client never reconnects

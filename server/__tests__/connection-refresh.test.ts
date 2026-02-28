@@ -7,8 +7,10 @@ import {
   type InterviewState,
   CONNECTION_REFRESH_MS,
   CONNECTION_REFRESH_FALLBACK_MS,
+  CONNECTION_REFRESH_LAST_RESORT_MS,
   WS_CLOSE_CODE_REFRESH,
 } from "../voice-interview/types";
+import { buildRefreshInstructions } from "../voice-interview/instructions";
 
 function createMockWs(readyState = 1): any {
   return {
@@ -96,6 +98,7 @@ function createMockState(overrides: Partial<InterviewState> = {}): InterviewStat
     processedResponseIds: new Set(),
     crossInterviewRuntimeContext: { enabled: false },
     analyticsHypothesesRuntimeContext: { enabled: false },
+    refreshResetTimeout: null,
     ...overrides,
   } as InterviewState;
 }
@@ -246,64 +249,131 @@ describe("Connection Refresh", () => {
     });
   });
 
-  describe("Planned refresh reconnect state", () => {
-    it("sets correct flags for planned refresh reconnect", () => {
-      state.isConnectionRefresh = true;
-      const isPlannedRefresh = state.isConnectionRefresh;
+  describe("Stale clientWs guard", () => {
+    it("does not close a replaced clientWs in the timeout", async () => {
+      vi.useFakeTimers();
+      await refreshConnection("test-session", deps);
 
-      if (isPlannedRefresh) {
-        state.isRestoredSession = true;
-        state.isConnectionRefresh = false;
-        state.useRefreshInstructions = true;
-        state.autoTriggerAfterRefresh = true;
-        state.isInitialSession = true;
-        state.sessionConfigured = false;
-        state.clientAudioReady = false;
-        state.awaitingResume = false;
-      }
+      const oldClientWs = state.clientWs;
+      const newClientWs = createMockWs();
+      state.clientWs = newClientWs;
 
-      expect(state.isRestoredSession).toBe(true);
+      vi.advanceTimersByTime(400);
+
+      expect(oldClientWs!.close).not.toHaveBeenCalled();
+      expect(state.clientDisconnectedAt).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it("closes the original clientWs when it has not been replaced", async () => {
+      vi.useFakeTimers();
+      await refreshConnection("test-session", deps);
+
+      vi.advanceTimersByTime(400);
+
+      expect(state.clientWs!.close).toHaveBeenCalledWith(4000, "Planned connection refresh");
+      expect(state.clientDisconnectedAt).not.toBeNull();
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("isConnectionRefresh reset timeout", () => {
+    it("sets refreshResetTimeout during refresh", async () => {
+      vi.useFakeTimers();
+      await refreshConnection("test-session", deps);
+
+      expect(state.refreshResetTimeout).not.toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it("resets isConnectionRefresh after 30s if no reconnect", async () => {
+      vi.useFakeTimers();
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await refreshConnection("test-session", deps);
+
+      expect(state.isConnectionRefresh).toBe(true);
+
+      vi.advanceTimersByTime(30_000);
+
       expect(state.isConnectionRefresh).toBe(false);
-      expect(state.useRefreshInstructions).toBe(true);
-      expect(state.autoTriggerAfterRefresh).toBe(true);
-      expect(state.isInitialSession).toBe(true);
-      expect(state.sessionConfigured).toBe(false);
-      expect(state.clientAudioReady).toBe(false);
-      expect(state.awaitingResume).toBe(false);
+      expect(state.refreshResetTimeout).toBeNull();
+
+      const resetWarnings = warnSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && call[0].includes("resetting isConnectionRefresh"),
+      );
+      expect(resetWarnings).toHaveLength(1);
+
+      warnSpy.mockRestore();
+      vi.useRealTimers();
     });
 
-    it("does not set awaitingResume for planned refresh", () => {
-      const isPlannedRefresh = true;
-      state.awaitingResume = !isPlannedRefresh;
+    it("does not reset if isConnectionRefresh was already cleared (reconnect happened)", async () => {
+      vi.useFakeTimers();
+      await refreshConnection("test-session", deps);
 
-      expect(state.awaitingResume).toBe(false);
-    });
-
-    it("sets awaitingResume for non-refresh reconnect", () => {
-      const isPlannedRefresh = false;
-      state.awaitingResume = !isPlannedRefresh;
-
-      expect(state.awaitingResume).toBe(true);
-    });
-
-    it("preserves isPaused across planned refresh reconnect", () => {
-      state.isPaused = true;
-      state.isConnectionRefresh = true;
-
-      state.isRestoredSession = true;
       state.isConnectionRefresh = false;
-      state.useRefreshInstructions = true;
-      state.autoTriggerAfterRefresh = true;
-      state.isInitialSession = true;
-      state.sessionConfigured = false;
-      state.clientAudioReady = false;
+
+      vi.advanceTimersByTime(30_000);
+
+      expect(state.isConnectionRefresh).toBe(false);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("Last-resort fallback", () => {
+    it("CONNECTION_REFRESH_LAST_RESORT_MS is 14 min 55 sec", () => {
+      expect(CONNECTION_REFRESH_LAST_RESORT_MS).toBe(895_000);
+    });
+
+    it("last-resort fires even with responseInProgress", () => {
+      state.responseInProgress = true;
+      state.speakingStartTime = Date.now();
+      state.clientWsConnectedAt = Date.now() - CONNECTION_REFRESH_LAST_RESORT_MS - 1000;
+
+      const shouldLastResort =
+        !state.isConnectionRefresh &&
+        !state.isFinalizing;
+
+      expect(shouldLastResort).toBe(true);
+    });
+
+    it("last-resort does NOT fire during active refresh", () => {
+      state.isConnectionRefresh = true;
+      state.clientWsConnectedAt = Date.now() - CONNECTION_REFRESH_LAST_RESORT_MS - 1000;
+
+      const shouldLastResort =
+        !state.isConnectionRefresh &&
+        !state.isFinalizing;
+
+      expect(shouldLastResort).toBe(false);
+    });
+
+    it("last-resort does NOT fire during finalization", () => {
+      state.isFinalizing = true;
+      state.clientWsConnectedAt = Date.now() - CONNECTION_REFRESH_LAST_RESORT_MS - 1000;
+
+      const shouldLastResort =
+        !state.isConnectionRefresh &&
+        !state.isFinalizing;
+
+      expect(shouldLastResort).toBe(false);
+    });
+  });
+
+  describe("Paused session refresh behavior", () => {
+    it("refreshConnection does not alter isPaused", async () => {
+      state.isPaused = true;
+      await refreshConnection("test-session", deps);
 
       expect(state.isPaused).toBe(true);
+      expect(state.isConnectionRefresh).toBe(true);
     });
 
-    it("skips auto-trigger when isPaused is true after refresh", () => {
-      state.isInitialSession = true;
-      state.sessionConfigured = true;
+    it("isPaused blocks auto-trigger when autoTriggerAfterRefresh was set", () => {
       state.isRestoredSession = true;
       state.autoTriggerAfterRefresh = true;
       state.isPaused = true;
@@ -312,25 +382,7 @@ describe("Connection Refresh", () => {
       expect(shouldSkipForRestore).toBe(false);
 
       state.autoTriggerAfterRefresh = false;
-
-      const shouldSkipForPause = state.isPaused;
-      expect(shouldSkipForPause).toBe(true);
-    });
-
-    it("allows auto-trigger when isPaused is false after refresh", () => {
-      state.isInitialSession = true;
-      state.sessionConfigured = true;
-      state.isRestoredSession = true;
-      state.autoTriggerAfterRefresh = true;
-      state.isPaused = false;
-
-      const shouldSkipForRestore = state.isRestoredSession && !state.autoTriggerAfterRefresh;
-      expect(shouldSkipForRestore).toBe(false);
-
-      state.autoTriggerAfterRefresh = false;
-
-      const shouldSkipForPause = state.isPaused;
-      expect(shouldSkipForPause).toBe(false);
+      expect(state.isPaused).toBe(true);
     });
   });
 
@@ -349,6 +401,26 @@ describe("Connection Refresh", () => {
       expect(timeoutWarnings).toHaveLength(0);
 
       warnSpy.mockRestore();
+    });
+  });
+
+  describe("AQ phase resume context", () => {
+    it("uses AQ question text when in additional questions phase", () => {
+      const aqState = createMockState({
+        isInAdditionalQuestionsPhase: true,
+        additionalQuestions: [
+          { questionText: "What trends do you see?", rationale: "test", questionType: "open" as const, index: 0 },
+          { questionText: "Any final thoughts?", rationale: "test", questionType: "open" as const, index: 1 },
+        ],
+        currentAdditionalQuestionIndex: 0,
+        transcriptLog: [
+          { speaker: "alvia", text: "Let me ask you about trends.", timestamp: Date.now(), questionIndex: 3 },
+        ],
+      });
+
+      const instructions = buildRefreshInstructions(aqState);
+      expect(instructions).toContain("What trends do you see?");
+      expect(instructions).not.toContain("Test question?");
     });
   });
 });

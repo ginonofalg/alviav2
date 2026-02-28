@@ -3,9 +3,10 @@ import {
   type InterviewState,
   safeSend,
   WS_CLOSE_CODE_REFRESH,
+  REFRESH_RESET_TIMEOUT_MS,
 } from "./types";
 
-const REFRESH_CLIENT_CLOSE_DELAY_MS = 100;
+const REFRESH_CLIENT_CLOSE_DELAY_MS = 300;
 const FLUSH_PERSIST_TIMEOUT_MS = 2000;
 
 export interface RefreshDependencies {
@@ -75,9 +76,22 @@ export async function refreshConnection(
 
   const clientWs = state.clientWs;
   setTimeout(() => {
+    if (state.clientWs !== clientWs) {
+      return;
+    }
     if (clientWs.readyState === WebSocket.OPEN) {
       state.clientDisconnectedAt = Date.now();
       clientWs.close(WS_CLOSE_CODE_REFRESH, "Planned connection refresh");
     }
   }, REFRESH_CLIENT_CLOSE_DELAY_MS);
+
+  state.refreshResetTimeout = setTimeout(() => {
+    state.refreshResetTimeout = null;
+    if (state.isConnectionRefresh) {
+      console.warn(
+        `[ConnectionRefresh] No reconnect within ${REFRESH_RESET_TIMEOUT_MS / 1000}s for ${sessionId}, resetting isConnectionRefresh`,
+      );
+      state.isConnectionRefresh = false;
+    }
+  }, REFRESH_RESET_TIMEOUT_MS);
 }

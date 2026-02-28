@@ -149,14 +149,47 @@ interface ResumeContext {
 
 function buildResumeContext(state: InterviewState): ResumeContext {
   const template = state.template;
-  const currentQuestion = state.questions[state.currentQuestionIndex];
-  const questionIndex = state.currentQuestionIndex;
-  const totalQuestions = state.questions.length;
+  const isAQ = state.isInAdditionalQuestionsPhase;
 
   const recentTranscript = state.transcriptLog.slice(-15);
   const transcriptSummary = recentTranscript
     .map((entry) => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
     .join("\n");
+
+  if (isAQ && state.additionalQuestions.length > 0) {
+    const aqIndex = state.currentAdditionalQuestionIndex;
+    const aqQuestion = state.additionalQuestions[aqIndex];
+    const totalAQ = state.additionalQuestions.length;
+    const coreCount = state.questions.length;
+
+    const questionState = state.questionStates.find(
+      (qs) => qs.questionIndex === coreCount + aqIndex,
+    );
+
+    return {
+      objective: template?.objective || "Conduct a thorough interview",
+      tone: template?.tone || "professional",
+      questionIndex: coreCount + aqIndex,
+      totalQuestions: coreCount + totalAQ,
+      respondentName: state.respondentInformalName,
+      transcriptSummary,
+      currentQuestionText: aqQuestion?.questionText || "Please share your thoughts.",
+      status: questionState?.status || "in_progress",
+      barbaraSuggestedMoveOn: questionState?.barbaraSuggestedMoveOn || false,
+      guidance: "",
+      recommendedFollowUps: null,
+      followUpCount: 0,
+      upcomingQuestions: state.additionalQuestions
+        .slice(aqIndex + 1)
+        .map((q, i) => `AQ${aqIndex + 2 + i}: ${q.questionText}`)
+        .join("\n"),
+      lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
+    };
+  }
+
+  const currentQuestion = state.questions[state.currentQuestionIndex];
+  const questionIndex = state.currentQuestionIndex;
+  const totalQuestions = state.questions.length;
 
   const questionState = state.questionStates.find(
     (qs) => qs.questionIndex === questionIndex,

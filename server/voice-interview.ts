@@ -89,6 +89,7 @@ import {
   WS_PING_INTERVAL_MS,
   CONNECTION_REFRESH_MS,
   CONNECTION_REFRESH_FALLBACK_MS,
+  CONNECTION_REFRESH_LAST_RESORT_MS,
   WS_CLOSE_CODE_REFRESH,
   type CrossInterviewRuntimeContext,
   type AnalyticsHypothesesRuntimeContext,
@@ -545,6 +546,10 @@ export function handleVoiceInterview(
       existingState.isInitialSession = true;
       existingState.sessionConfigured = false;
       existingState.clientAudioReady = false;
+      if (existingState.refreshResetTimeout) {
+        clearTimeout(existingState.refreshResetTimeout);
+        existingState.refreshResetTimeout = null;
+      }
       connectToRealtimeProvider(sessionId, clientWs);
       return;
     }
@@ -670,6 +675,7 @@ export function handleVoiceInterview(
     isConnectionRefresh: false,
     useRefreshInstructions: false,
     autoTriggerAfterRefresh: false,
+    refreshResetTimeout: null,
     // Realtime API performance metrics
     metricsTracker: createEmptyMetricsTracker(),
     // Transcription quality tracking (noisy environment detection)
@@ -4403,6 +4409,18 @@ function runWatchdogCycle(): void {
       !state.speakingStartTime &&
       !state.isFinalizing
     ) {
+      sessionsToRefresh.push(sessionId);
+      continue;
+    }
+    if (
+      clientWsAge > CONNECTION_REFRESH_LAST_RESORT_MS &&
+      state.clientWs?.readyState === WebSocket.OPEN &&
+      !state.isConnectionRefresh &&
+      !state.isFinalizing
+    ) {
+      console.warn(
+        `[ConnectionRefresh] Last-resort refresh for session ${sessionId} (WS age: ${Math.round(clientWsAge / 1000)}s) — overriding response/speaking state`,
+      );
       sessionsToRefresh.push(sessionId);
       continue;
     }

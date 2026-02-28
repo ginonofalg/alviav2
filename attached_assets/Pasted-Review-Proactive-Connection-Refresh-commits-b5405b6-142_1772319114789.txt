@@ -1,0 +1,103 @@
+Review: Proactive Connection Refresh (commits b5405b6, 142ecab, 6e40696)
+
+ What Was Built
+
+ A proactive WebSocket connection refresh system to beat Railway's 15-minute WS timeout. At 13.5 min, the watchdog sets a flag; at the next conversation boundary (speech_stopped
+ → transcription.completed), it flushes state to DB, signals the client, tears down the provider WS, closes the client WS with custom code 4000, and the client immediately
+ reconnects. A 14.5-min fallback force-refreshes if no conversation boundary occurs.
+
+ What's Good
+
+ 1. Clean module extraction. connection-refresh.ts is 83 lines, well-isolated with a dependency-injected interface (RefreshDependencies). Easy to test, easy to reason about.
+ 2. Conversation-boundary triggering. Waiting for speech_stopped → transcription.completed before disconnecting is smart — it avoids cutting off mid-utterance or losing the last
+ transcript segment.
+ 3. Flush-before-disconnect with timeout. The Promise.race with a 2s timeout is pragmatic — persists data when possible, proceeds regardless. The timeout cleanup (clearing the
+ handle on success) was correctly fixed in commit 2.
+ 4. Pause guards (commit 3). The isPaused checks before auto-trigger after refresh are essential. Good that these were caught and added quickly.
+ 5. Token-based reconnect versioning. The reconnectTokenRef pattern in use-reconnection.ts prevents stale reconnect attempts from interfering — solid defensive pattern.
+ 6. Fallback to exponential backoff. If the immediate reconnect fails (5s timeout), it falls back to scheduleReconnect(2, token) — graceful degradation.
+
+ ---
+ Issues and Concerns
+
+ High Severity
+
+ 1. Race condition: 100ms close delay vs. message delivery
+ connection-refresh.ts:77-82 — After sending connection_refresh, the client WS is closed after a fixed 100ms setTimeout. If the client's network is slow or the event loop is
+ busy, the connection_refresh message may not have arrived before the close frame. The client would then see a code-4000 close without the preceding connection_refresh message,
+ meaning shouldAutoResumeRef, stopAiPlayback(), and isRefreshSuppressAudioRef never get set.
+
+ Suggestion: Instead of a fixed 100ms delay, consider having the client acknowledge the connection_refresh message (e.g., send connection_refresh_ack), then close server-side. Or
+  at minimum, increase the delay and add a comment about the trade-off.
+
+ 2. state.clientWs reference captured in closure may go stale
+ connection-refresh.ts:76 — const clientWs = state.clientWs captures the reference before the 100ms timeout. If the client disconnects and reconnects in that 100ms window,
+ clientWs points to the old (already closed) socket while state.clientWs now points to the new connection. The close() would fire on the old socket (harmless), but
+ state.clientDisconnectedAt would be set incorrectly, potentially causing the new connection to be treated as disconnected.
+
+ Suggestion: Inside the timeout, check state.clientWs === clientWs before proceeding.
+
+ 3. isConnectionRefresh flag is never reset if client doesn't reconnect
+ If the client WS closes with code 4000 but the client never reconnects (browser closed, network died), state.isConnectionRefresh remains true indefinitely. The guard on line 21
+ (state.isConnectionRefresh) would then prevent any future refresh attempts. The watchdog's heartbeat timeout would eventually clean up the session, but until then the state is
+ in limbo.
+
+ Suggestion: Reset isConnectionRefresh = false in the watchdog when the session is cleaned up, or add a timeout on the refresh cycle itself (e.g., if no reconnect within 30s,
+ reset the flag).
+
+ Medium Severity
+
+ 4. Provider WS closed without waiting for close confirmation
+ connection-refresh.ts:65-71 — removeAllListeners() is called before close(), which means the close event from the provider is silently dropped. If the provider's close handshake
+  sends a final message (e.g., usage data, final transcript), it's lost. This is likely fine for the refresh scenario but should be documented.
+
+ 5. Audio suppression flag (isRefreshSuppressAudioRef) cleared too early
+ interview.tsx:662 — isRefreshSuppressAudioRef is set to false on the connected message. But between connected and the provider actually being ready, there could be queued audio
+ from the previous provider connection that arrives. The flag should perhaps be cleared only after the first response.audio.delta of the new provider session, or after a
+ session.created event.
+
+ 6. No explicit handling of refresh during additional questions phase
+ The refresh logic checks !state.isFinalizing but doesn't special-case the AQ phase. If a refresh happens mid-AQ, buildRefreshInstructions() uses buildResumeContext() which
+ includes AQ state, but the CONTINUATION INSTRUCTIONS reference "Current Question X of Y" and "next question in the list" — which may be confusing when the AI is in the
+ additional questions phase where there's no traditional question list.
+
+ 7. Fallback refresh condition is overly cautious
+ voice-interview.ts watchdog at 14.5 min — the fallback requires !state.responseInProgress && !state.speakingStartTime && !state.isFinalizing. If the respondent happens to be
+ speaking continuously (long answer), and the AI keeps responding, the fallback never fires and Railway kills the connection at 15 min. Consider allowing the fallback to
+ interrupt a response if the WS age exceeds, say, 14 min 55 sec.
+
+ Low Severity
+
+ 8. Tests duplicate production logic instead of testing it
+ connection-refresh.test.ts:249-334 — The "Planned refresh reconnect state" tests manually set flags in the same order as production code, then assert them. They're testing that
+ state.isRestoredSession = true results in state.isRestoredSession === true — a tautology. These tests would pass even if the production reconnect handler was completely broken.
+ They should instead call the actual reconnect handler (or at minimum, extract the flag-setting into a shared function that both production and tests use).
+
+ 9. startImmediateReconnect doesn't close the existing WS before connecting
+ use-reconnection.ts:177-178 — It calls connectWebSocketRef.current?.() directly. If the old WS is still in CLOSING state (close frame sent but not yet acknowledged), the new
+ connection attempt may run into issues depending on how connectWebSocket handles an existing wsRef.current. The regular scheduleReconnect path doesn't close the old WS either,
+ but the timing is more forgiving due to the delay.
+
+ 10. response.cancel sent at speech_stopped may race with provider
+ voice-interview.ts:1802-1803 — When needsConnectionRefresh is true at speech_stopped, it sends response.cancel to prevent the provider from auto-responding (since
+ create_response: true). But speech_stopped fires before transcription.completed, and the provider may have already started generating a response between speech_stopped and the
+ response.cancel. The response is then partially generated and abandoned, wasting tokens.
+
+ ---
+ Structural Observations
+
+ - Seven new state fields for one feature (clientWsConnectedAt, needsConnectionRefresh, pendingRefreshAfterTranscript, isConnectionRefresh, useRefreshInstructions,
+ autoTriggerAfterRefresh, isRefreshSuppressAudioRef on the client). This is a lot of boolean flags to coordinate. Consider a state-machine enum like refreshPhase: 'idle' |
+ 'flagged' | 'pending_boundary' | 'flushing' | 'closing' | 'reconnecting' to make illegal states unrepresentable.
+ - The three commits in 26 minutes suggest rapid iteration. Commit 3 fixes bugs introduced in commit 1 (pause guards, unmount guards). Consider squashing these into a single
+ coherent commit for the history.
+
+ ---
+ Recommended Follow-ups
+
+ 1. Add the state.clientWs === clientWs guard in the 100ms timeout closure
+ 2. Add a timeout to reset isConnectionRefresh if no reconnect arrives within 30s
+ 3. Replace the tautological tests with integration-style tests that call actual handler functions
+ 4. Verify behavior during AQ phase refreshes (manual test)
+ 5. Consider the state-machine refactor for long-term maintainability
+ 6. Add a last-resort fallback at ~14:55 that force-closes regardless of response state
