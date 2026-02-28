@@ -1,0 +1,269 @@
+Proactive WebSocket Connection Refresh for Railway's 15-Minute Limit
+
+ Context
+
+ Railway.app terminates persistent WebSocket connections after 15 minutes regardless of keepalive activity. Voice interviews routinely run 20-45+ minutes, causing forced
+ mid-interview disconnections. This plan adds a proactive, transparent connection refresh at a natural conversation boundary, reusing existing reconnection scaffolding but with
+ dedicated refresh semantics distinct from pause/resume.
+
+ Design
+
+ Trigger: Flag → Conversation Boundary
+
+ 1. Watchdog sets flag (needsConnectionRefresh) when client WS age > 13.5 min
+ 2. speech_stopped handler checks flag → cancels provider's auto-response, sets pendingRefreshAfterTranscript
+ 3. transcription.completed handler checks that flag → saves transcript, sends it to client, then triggers refresh (skips Barbara analysis)
+ 4. Text-input path checks flag before response.create → triggers refresh instead
+ 5. Fallback: Watchdog forces refresh at 14.5 min if no boundary has occurred (long silence, paused)
+
+ Refresh vs Resume: Separate Semantics
+
+ The existing resume_interview path sends "welcome back" language via buildResumeInstructions() (instructions.ts:180-260). A planned refresh must be invisible to the respondent —
+  Alvia should respond to the last utterance naturally as if nothing happened.
+
+ Solution: add buildRefreshInstructions() that includes the same transcript context as resume but with "Continue the conversation naturally. Respond to the respondent's last
+ statement." instead of "Welcome them back." The reconnect handler detects isConnectionRefresh and uses this path, skipping awaitingResume and auto-triggering response creation
+ (no mic click needed).
+
+ Partial Audio Leakage
+
+ Despite response.cancel at speech_stopped, audio deltas can race ahead. Client-side mitigation: when connection_refresh message is received, suppress audio playback until the
+ new connected message arrives.
+
+ Files to Modify
+
+ 1. server/voice-interview/types.ts (after line 335)
+
+ Constants:
+ export const CONNECTION_REFRESH_MS = 810_000;          // 13.5 min — set refresh flag
+ export const CONNECTION_REFRESH_FALLBACK_MS = 870_000; // 14.5 min — force if no boundary
+ export const WS_CLOSE_CODE_REFRESH = 4000;             // Custom close code for planned refresh
+
+ InterviewState fields (after clientDisconnectedAt ~line 151):
+ clientWsConnectedAt: number;              // When current client WS connected (resets per reconnect)
+ needsConnectionRefresh: boolean;          // Set by watchdog at 13.5 min
+ pendingRefreshAfterTranscript: boolean;   // Set at speech_stopped, consumed at transcription.completed
+ isConnectionRefresh: boolean;             // True during refresh cycle
+
+ 2. server/voice-interview/instructions.ts
+
+ New function buildRefreshInstructions(state) — similar to buildResumeInstructions but with different resume section:
+
+ CONTINUATION INSTRUCTIONS:
+ 1. Continue the conversation naturally. Respond to the respondent's last statement.
+ 2. Do NOT acknowledge any interruption, pause, or reconnection.
+ 3. Do NOT welcome them back or ask if they're ready to continue.
+ 4. Simply respond as if the conversation never stopped.
+
+ Same transcript context, question state, Barbara guidance, style policy as buildResumeInstructions. Could extract shared logic into a helper to avoid duplication.
+
+ 3. server/voice-interview.ts
+
+ A. State init (~line 627): Init new fields to defaults.
+
+ B. speech_stopped handler (~line 1731, before break):
+ // Connection refresh: cancel auto-response so Alvia doesn't start speaking during refresh
+ if (state.needsConnectionRefresh && !state.isFinalizing) {
+   state.pendingRefreshAfterTranscript = true;
+   state.needsConnectionRefresh = false;
+   if (state.providerWs?.readyState === WebSocket.OPEN) {
+     state.providerWs.send(JSON.stringify({ type: "response.cancel" }));
+   }
+ }
+ Note: no AQ phase exclusion — allow refresh during AQ too (critique #6).
+
+ C. transcription.completed handler (~after line 1635, after user_transcript is sent to client):
+ if (state.pendingRefreshAfterTranscript) {
+   state.pendingRefreshAfterTranscript = false;
+   refreshConnection(sessionId);
+   return; // Skip Barbara — new provider will respond after reconnect
+ }
+
+ D. text_input handler (~line 2520, before response.create):
+ // Connection refresh boundary for text mode
+ if (state.needsConnectionRefresh && !state.isFinalizing) {
+   state.needsConnectionRefresh = false;
+   refreshConnection(sessionId);
+   return; // Skip response.create — new provider will respond after reconnect
+ }
+
+ E. Watchdog (runWatchdogCycle ~line 4273):
+
+ Add sessionsToRefresh array. In loop before termination checks:
+ clientWsAge = now - state.clientWsConnectedAt
+
+ // Set flag (primary path — waits for conversation boundary)
+ if clientWsAge > CONNECTION_REFRESH_MS && !needsConnectionRefresh
+    && !pendingRefreshAfterTranscript && !isConnectionRefresh:
+   state.needsConnectionRefresh = true
+
+ // Forced fallback — no boundary within extra minute
+ if clientWsAge > CONNECTION_REFRESH_FALLBACK_MS
+    && WS open && !isConnectionRefresh && !clientDisconnectedAt
+    && !responseInProgress && !speakingStartTime && !isFinalizing:
+   sessionsToRefresh.push(sessionId); continue
+
+ F. New refreshConnection(sessionId) (near warnSessionTermination):
+ 1. Guard: return if no state, no clientWs, or already isConnectionRefresh
+ 2. state.isConnectionRefresh = true; clear needsConnectionRefresh, pendingRefreshAfterTranscript
+ 3. flushPersist(sessionId) — bypass debounce
+ 4. Send { type: "connection_refresh" } to client
+ 5. Close provider WS: removeAllListeners(), close(), null out
+    - Suppress `disconnected` event: check isConnectionRefresh in providerWs.on("close")
+      before sending { type: "disconnected" } (critique #3)
+ 6. Reset responseInProgress/responseStartedAt
+ 7. After 100ms: close client WS with code 4000, set clientDisconnectedAt
+
+ G. Provider close handler (~line 1195, fix critique #3):
+ // Suppress disconnected event during planned refresh — client already knows
+ if (!currentState.isConnectionRefresh) {
+   safeSend(currentState.clientWs, { type: "disconnected" }, ...);
+ }
+
+ H. Reconnection handler (~lines 442-546):
+
+ After timestamp resets (line 452):
+ existingState.clientWsConnectedAt = Date.now();
+ existingState.needsConnectionRefresh = false;
+ existingState.pendingRefreshAfterTranscript = false;
+
+ Planned refresh path (new block before existing connected send at line 519):
+ if (existingState.isConnectionRefresh) {
+   // Planned refresh: skip awaitingResume, use refresh instructions, auto-trigger response
+   existingState.isRestoredSession = true;
+   existingState.awaitingResume = false; // No mic click needed
+   existingState.isConnectionRefresh = false; // Clear before provider setup
+   // connectToRealtimeProvider uses buildRefreshInstructions when state has refresh context
+   // Set a flag so the provider open handler knows to use refresh instructions
+   existingState.useRefreshInstructions = true;
+   connectToRealtimeProvider(sessionId, clientWs);
+   return;
+ }
+
+ I. Provider WS open handler (~line 1000):
+ let instructions: string;
+ if (state.useRefreshInstructions && state.transcriptLog.length > 0) {
+   instructions = buildRefreshInstructions(state);
+   state.useRefreshInstructions = false;
+ } else if (state.isRestoredSession && state.transcriptLog.length > 0) {
+   instructions = buildResumeInstructions(state);
+ } else {
+   instructions = buildInterviewInstructions(...);
+ }
+
+ J. Provider connected message (~line 1132): Add isConnectionRefresh field (true when refresh). After the connected message is sent, add auto-trigger for response if refresh:
+ // For planned refresh: auto-trigger response (respondent already spoke, Alvia needs to reply)
+ if (state.useRefreshInstructions === false && /* just cleared above */ isRefresh) {
+   // Actually track this with a separate flag set before connectToRealtimeProvider
+ }
+
+ Simpler approach: in the session.updated handler (~line 1297) which currently skips auto-trigger for restored sessions:
+ if (state.isRestoredSession && !state.isPlannedRefreshAutoTrigger) {
+   // Wait for mic click
+   break;
+ }
+ // For planned refresh or new session: auto-trigger
+ state.isPlannedRefreshAutoTrigger = false;
+ // ... existing response.create logic
+
+ Set state.isPlannedRefreshAutoTrigger = true in the reconnection handler's refresh path.
+
+ K. Session transitioning tolerance (critique #4): The 100ms delay before closing client WS and setting clientDisconnectedAt means the old WS should be fully closed before the
+ client's 50ms reconnect fires. But if first attempt gets 1013, the client falls back to backoff — acceptable. Document this in a code comment.
+
+ 4. client/src/hooks/use-reconnection.ts
+
+ Add isPlannedRefreshRef and startImmediateReconnect():
+ - Sets isPlannedRefreshRef = true, reconnecting state
+ - 50ms delay then reconnect (no backoff)
+ - On 5s timeout: clear refresh flag, fall back to scheduleReconnect(2, ...)
+ - onReconnectSuccess clears isPlannedRefreshRef
+ - Export both
+
+ 5. client/src/pages/interview.tsx
+
+ A. Handle connection_refresh message (new case):
+ case "connection_refresh":
+   shouldAutoResumeRef.current = isListeningRef.current && !isPausedRef.current;
+   // Suppress any in-flight audio from the dying provider connection (critique #2)
+   stopAiPlayback();
+   setIsRefreshingSuppressAudio(true); // New state flag
+   break;
+
+ B. Handle close code 4000 (before isUnexpectedClose ~line 571):
+ if (event.code === 4000) {
+   startImmediateReconnect();
+   return;
+ }
+
+ C. Audio suppression during refresh (critique #2): In the audio message handler (~line 715):
+ case "audio":
+   if (isRefreshingSuppressAudioRef.current) break; // Suppress leaked audio
+   playAudio(message.delta);
+   break;
+ Clear isRefreshingSuppressAudio when new connected message arrives.
+
+ D. Auto-resume on refresh (~line 688): When isPlannedRefreshRef.current, always auto-resume. Since awaitingResume is false server-side for refresh, client sends resume_interview
+  only if server says awaitingResume: true (which it won't for refresh). Audio capture auto-starts.
+
+ E. UI text: "Refreshing connection..." when isReconnecting && isPlannedRefreshRef.current
+
+ 6. server/voice-interview/types.ts — InterviewState additions
+
+ useRefreshInstructions: boolean;        // Use buildRefreshInstructions instead of buildResumeInstructions
+ isPlannedRefreshAutoTrigger: boolean;   // Auto-trigger response.create after provider ready (no mic click)
+
+ Summary of Critique Fixes
+
+ ┌─────┬────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │  #  │                   Issue                    │                                                           Fix                                                           │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 1   │ Resume sends "welcome back" language       │ New buildRefreshInstructions() with "continue naturally" semantics; useRefreshInstructions flag; auto-trigger response  │
+ │     │                                            │ (no mic click)                                                                                                          │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 2   │ Partial audio leakage despite cancel       │ Client suppresses audio playback after connection_refresh until new connected; stopAiPlayback() on refresh message      │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 3   │ Provider close sends conflicting           │ Guard safeSend(disconnected) with !isConnectionRefresh check                                                            │
+ │     │ disconnected                               │                                                                                                                         │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 4   │ 1013 SESSION_TRANSITIONING on first        │ 100ms server delay + 50ms client delay should avoid; if hit, fallback to backoff is acceptable; documented              │
+ │     │ reconnect                                  │                                                                                                                         │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 5   │ Text mode not covered                      │ Add refresh check in text_input handler before response.create                                                          │
+ ├─────┼────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ 6   │ AQ phase excluded unnecessarily            │ Remove AQ exclusion — allow boundary refresh in all phases                                                              │
+ └─────┴────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Edge Cases
+
+ ┌──────────────────────────────────┬────────────────────────────────────────────────────────────┐
+ │             Scenario             │                          Behavior                          │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Respondent talking when flag set │ Flag waits for speech_stopped                              │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Alvia speaking when flag set     │ Flag waits for respondent's next speech_stopped            │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Text mode                        │ text_input handler triggers refresh before response.create │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Long silence / paused            │ Watchdog fallback at 14.5 min forces refresh               │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Partial audio races cancel       │ Client suppresses audio after connection_refresh           │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Provider close during refresh    │ disconnected event suppressed                              │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ 1013 on first reconnect          │ Falls back to exponential backoff                          │
+ ├──────────────────────────────────┼────────────────────────────────────────────────────────────┤
+ │ Multiple cycles per session      │ clientWsConnectedAt resets each reconnect                  │
+ └──────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
+ Verification
+
+ 1. Quick test: Set CONNECTION_REFRESH_MS=30000, CONNECTION_REFRESH_FALLBACK_MS=45000
+   - Start interview, speak, verify refresh triggers at next turn boundary
+   - Confirm: no "welcome back" from Alvia — she responds naturally to last utterance
+   - Confirm: no partial audio before disconnect
+   - Confirm: transcript intact, auto-resume, "Refreshing connection..." UI
+ 2. Text mode test: Switch to text input, verify refresh triggers before response
+ 3. Fallback test: Stay silent — verify watchdog fallback at 14.5 min
+ 4. Multi-cycle: Let 2-3 refresh cycles occur
+ 5. npm run check and npx vitest
