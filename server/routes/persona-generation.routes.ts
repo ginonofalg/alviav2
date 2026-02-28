@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -58,7 +58,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
     console.log(`[PersonaGeneration] POST /research received | project=${projectId}`);
 
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
@@ -119,7 +119,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.get("/api/projects/:projectId/personas/research/:briefId/status", isAuthenticated, async (req: any, res) => {
     const { projectId, briefId } = req.params;
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -181,7 +181,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.get("/api/projects/:projectId/personas/briefs", isAuthenticated, async (req: any, res) => {
     const { projectId } = req.params;
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -215,7 +215,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.get("/api/projects/:projectId/personas/briefs/:briefId", isAuthenticated, async (req: any, res) => {
     const { projectId, briefId } = req.params;
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -238,7 +238,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
     console.log(`[PersonaGeneration] POST /synthesize received | project=${projectId}`);
 
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
@@ -299,7 +299,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.get("/api/projects/:projectId/personas/synthesize/:jobId/status", isAuthenticated, async (req: any, res) => {
     const { projectId, jobId } = req.params;
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });

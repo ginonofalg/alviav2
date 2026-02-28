@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { getAuth } from "@clerk/express";
 import crypto from "crypto";
 import { storage } from "../storage";
 import type { ReviewRatings } from "@shared/schema";
@@ -30,7 +31,7 @@ async function validateReviewAccess(sessionId: string, tokenHeader: string | und
     return { valid: false, session: null, error: "Session not found", statusCode: 404 };
   }
 
-  if (req.isAuthenticated?.()) {
+  if (getAuth(req)?.userId) {
     return { valid: true, session };
   }
 

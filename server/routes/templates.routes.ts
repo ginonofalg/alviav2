@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { generateTemplateFromProject } from "../barbara-orchestrator";
 import { insertTemplateSchema } from "@shared/schema";
@@ -10,7 +10,7 @@ import { fromError } from "zod-validation-error";
 export function registerTemplateRoutes(app: Express) {
   app.get("/api/templates", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const templates = await storage.getTemplatesByUser(userId);
       const templatesWithCounts = await Promise.all(
         templates.map(async (template) => {
@@ -30,7 +30,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/templates", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
       if (!hasAccess) {
@@ -63,7 +63,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/templates", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
       if (!hasAccess) {
@@ -101,7 +101,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/generate-template", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const projectId = req.params.projectId;
       
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
@@ -136,7 +136,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/templates/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const template = await storage.getTemplate(req.params.id);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -176,7 +176,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.patch("/api/templates/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const template = await storage.getTemplate(req.params.id);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });

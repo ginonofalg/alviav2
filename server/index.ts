@@ -6,6 +6,7 @@ import { startUsageMaintenanceJobs } from "./usage-maintenance";
 import { cleanupOrphanedSimulationRuns } from "./storage/simulation";
 
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 httpServer.timeout = 660_000;

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { getInfographicService } from "../infographic-service";
 import { InfographicPromptBuilder } from "../infographic-prompts";
@@ -160,7 +160,7 @@ export function registerInfographicRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/infographic/summary", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);
@@ -216,7 +216,7 @@ export function registerInfographicRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/infographic/themes", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);
@@ -272,7 +272,7 @@ export function registerInfographicRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/infographic/insights", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { projectId } = req.params;
 
       const project = await storage.getProject(projectId);

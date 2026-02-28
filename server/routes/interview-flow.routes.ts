@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { getOptionalUserId } from "../auth";
 import { storage } from "../storage";
 import { generateResumeToken, hashToken, getTokenExpiryDate } from "../resume-token";
 import { insertSegmentSchema } from "@shared/schema";
@@ -73,7 +74,7 @@ export function registerInterviewFlowRoutes(app: Express) {
         return res.status(400).json({ message: "This collection is no longer accepting responses" });
       }
 
-      const userId = req.user?.claims?.sub || null;
+      const userId = getOptionalUserId(req);
       
       let respondent;
       if (userId) {

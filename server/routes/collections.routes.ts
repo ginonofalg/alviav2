@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { insertCollectionSchema } from "@shared/schema";
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { fromError } from "zod-validation-error";
 export function registerCollectionRoutes(app: Express) {
   app.get("/api/collections", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { templateId } = req.query;
       
       let collections;
@@ -42,7 +42,7 @@ export function registerCollectionRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/collections", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
       if (!hasAccess) {
@@ -59,7 +59,7 @@ export function registerCollectionRoutes(app: Express) {
 
   app.get("/api/collections/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const collection = await storage.getCollection(req.params.id);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
@@ -130,7 +130,7 @@ export function registerCollectionRoutes(app: Express) {
 
   app.patch("/api/collections/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const collection = await storage.getCollection(req.params.id);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
@@ -175,7 +175,7 @@ export function registerCollectionRoutes(app: Express) {
 
   app.post("/api/templates/:templateId/collections", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
       if (!hasAccess) {

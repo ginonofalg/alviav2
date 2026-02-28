@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { generateResumeToken, hashToken, getTokenExpiryDate } from "../resume-token";
 import { scoreGuidanceAdherence, computeAdherenceSummary } from "../guidance-adherence";
@@ -9,7 +9,7 @@ import { z } from "zod";
 export function registerSessionRoutes(app: Express) {
   app.get("/api/sessions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const sessions = await storage.getSessionsByUser(userId, limit);
       res.json(sessions);
@@ -21,7 +21,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.get("/api/sessions/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const session = await storage.getSessionWithRespondent(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
@@ -41,7 +41,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.delete("/api/sessions/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const session = await storage.getSession(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
@@ -66,7 +66,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.patch("/api/sessions/:id/notes", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
       if (!hasAccess) {
@@ -89,7 +89,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.patch("/api/sessions/:id/flags", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
       if (!hasAccess) {
@@ -121,7 +121,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.patch("/api/sessions/:id/status", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
       if (!hasAccess) {
@@ -147,7 +147,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.get("/api/sessions/:id/export", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
       if (!hasAccess) {
@@ -219,7 +219,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.get("/api/sessions/:id/siblings", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToSession(userId, req.params.id);
       if (!hasAccess) {
@@ -273,7 +273,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.post("/api/sessions/:id/resume-link", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const session = await storage.getSession(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
@@ -309,7 +309,7 @@ export function registerSessionRoutes(app: Express) {
 
   app.get("/api/sessions/:id/guidance-effectiveness", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const session = await storage.getSession(req.params.id);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });

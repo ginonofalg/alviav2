@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { WebSocketServer } from "ws";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { clerkAuthMiddleware, registerAuthRoutes, registerWebhookRoutes } from "./auth";
 import { handleVoiceInterview } from "./voice-interview";
 import {
   registerAnalyticsRoutes,
@@ -28,7 +28,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  await setupAuth(app);
+  registerWebhookRoutes(app);
+  app.use(clerkAuthMiddleware());
   registerAuthRoutes(app);
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws/interview" });

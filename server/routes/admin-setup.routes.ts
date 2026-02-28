@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 import { db } from "../db";
@@ -61,7 +61,7 @@ const quickSetupSchema = z.object({
 export function registerAdminSetupRoutes(app: Express) {
   app.post("/api/admin/quick-setup", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
 
       const parseResult = quickSetupSchema.safeParse(req.body);
       if (!parseResult.success) {

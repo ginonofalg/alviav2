@@ -1,6 +1,6 @@
 import express from "express";
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { insertProjectSchema, brandingColorsSchema } from "@shared/schema";
 import { z } from "zod";
@@ -9,7 +9,7 @@ import { fromError } from "zod-validation-error";
 export function registerProjectRoutes(app: Express) {
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const projects = await storage.getProjectsByUser(userId);
       
       const projectsWithCounts = await Promise.all(
@@ -42,7 +42,7 @@ export function registerProjectRoutes(app: Express) {
 
   app.get("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const project = await storage.getProject(req.params.id);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -87,7 +87,7 @@ export function registerProjectRoutes(app: Express) {
 
   app.post("/api/projects", express.json({ limit: "1mb" }), isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const parseResult = createProjectSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -117,7 +117,7 @@ export function registerProjectRoutes(app: Express) {
 
   app.patch("/api/projects/:id", express.json({ limit: "1mb" }), isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.id);
       if (!hasAccess) {

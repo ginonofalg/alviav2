@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { SignInButton } from "@clerk/clerk-react";
 
 const features = [
   {
@@ -101,17 +102,17 @@ export default function LandingPage() {
 
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <a href="/api/login">
+              <SignInButton mode="modal">
                 <Button variant="ghost" size="sm" data-testid="button-sign-in">
                   Sign in
                 </Button>
-              </a>
-              <a href="/api/login">
+              </SignInButton>
+              <SignInButton mode="modal">
                 <Button size="sm" data-testid="button-get-started">
                   Get Started
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
-              </a>
+              </SignInButton>
             </div>
           </div>
         </div>
@@ -140,7 +141,7 @@ export default function LandingPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <a href="/api/login">
+                  <SignInButton mode="modal">
                     <Button
                       size="lg"
                       className="w-full sm:w-auto"
@@ -149,7 +150,7 @@ export default function LandingPage() {
                       Start Free Trial
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                  </a>
+                  </SignInButton>
                   <a
                     href="https://youtube.com/shorts/L9nMTfokgxA?feature=share"
                     target="_blank"
@@ -361,7 +362,7 @@ export default function LandingPage() {
               Join teams running scalable, voice-led interviews that capture
               insights traditional surveys miss.
             </p>
-            <a href="/api/login">
+            <SignInButton mode="modal">
               <Button
                 size="lg"
                 variant="secondary"
@@ -371,7 +372,7 @@ export default function LandingPage() {
                 Get Started Free
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-            </a>
+            </SignInButton>
           </div>
         </section>
       </main>

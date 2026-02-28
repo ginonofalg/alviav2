@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import type { CollectionAnalytics, TemplateAnalytics, ProjectAnalytics } from "@shared/schema";
 import { z } from "zod";
@@ -25,7 +25,7 @@ function parseSessionScope(query: any): SessionScope {
 export function registerAnalyticsRoutes(app: Express) {
   app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const scope = parseSessionScope(req.query);
       const stats = await storage.getDashboardStats(userId, scope);
       res.json(stats);
@@ -37,7 +37,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/dashboard/enhanced-stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const scope = parseSessionScope(req.query);
       const stats = await storage.getEnhancedDashboardStats(userId, scope);
       res.json(stats);
@@ -49,7 +49,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/analytics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const projectId = req.query.projectId as string | undefined;
       const collectionId = req.query.collectionId as string | undefined;
       
@@ -81,7 +81,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/analytics/aggregated", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const scope = parseSessionScope(req.query);
       const aggregated = await storage.getAggregatedAnalytics(userId, scope);
       res.json(aggregated);
@@ -93,7 +93,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/collections/:collectionId/analytics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
@@ -124,7 +124,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.post("/api/collections/:collectionId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });
@@ -168,7 +168,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/templates/:templateId/analytics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -209,7 +209,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.post("/api/templates/:templateId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const template = await storage.getTemplate(req.params.templateId);
       if (!template) {
         return res.status(404).json({ message: "Template not found" });
@@ -254,7 +254,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/analytics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -295,7 +295,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/analytics/refresh", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -338,7 +338,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/analytics/dependencies", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -425,7 +425,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/analytics/cascade-refresh", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -554,7 +554,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.get("/api/templates/:templateId/analytics/dependencies", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -616,7 +616,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   app.post("/api/templates/:templateId/analytics/cascade-refresh", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToTemplate(userId, req.params.templateId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });

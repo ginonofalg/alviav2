@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -21,7 +21,7 @@ const launchSimulationSchema = z.object({
 export function registerSimulationRoutes(app: Express) {
   app.post("/api/collections/:collectionId/simulate", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { collectionId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToCollection(userId, collectionId);
@@ -83,7 +83,7 @@ export function registerSimulationRoutes(app: Express) {
 
   app.get("/api/collections/:collectionId/simulation-runs", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { collectionId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToCollection(userId, collectionId);
@@ -106,7 +106,7 @@ export function registerSimulationRoutes(app: Express) {
         return res.status(404).json({ message: "Simulation run not found" });
       }
 
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToCollection(userId, run.collectionId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -126,7 +126,7 @@ export function registerSimulationRoutes(app: Express) {
         return res.status(404).json({ message: "Simulation run not found" });
       }
 
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToCollection(userId, run.collectionId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });

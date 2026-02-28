@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { aggregateGuidance } from "../guidance-aggregation";
 import type { GuidanceAggregationScopeInfo, GuidanceAggregationWindow } from "@shared/types";
@@ -42,7 +42,7 @@ function sessionProjection(session: any) {
 export function registerGuidanceRoutes(app: Express) {
   app.get("/api/guidance/collection/:collectionId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { collectionId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToCollection(userId, collectionId);
@@ -70,7 +70,7 @@ export function registerGuidanceRoutes(app: Express) {
 
   app.get("/api/guidance/template/:templateId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { templateId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToTemplate(userId, templateId);
@@ -99,7 +99,7 @@ export function registerGuidanceRoutes(app: Express) {
 
   app.get("/api/guidance/project/:projectId", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const { projectId } = req.params;
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);

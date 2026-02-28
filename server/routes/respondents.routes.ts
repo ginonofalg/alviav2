@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import crypto from "crypto";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
@@ -8,7 +8,7 @@ import { fromError } from "zod-validation-error";
 export function registerRespondentRoutes(app: Express) {
   app.get("/api/collections/:collectionId/respondents", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
       if (!hasAccess) {
@@ -33,7 +33,7 @@ export function registerRespondentRoutes(app: Express) {
 
   app.post("/api/collections/:collectionId/respondents", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
       if (!hasAccess) {
@@ -83,7 +83,7 @@ export function registerRespondentRoutes(app: Express) {
 
   app.post("/api/collections/:collectionId/respondents/bulk", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       
       const hasAccess = await storage.verifyUserAccessToCollection(userId, req.params.collectionId);
       if (!hasAccess) {

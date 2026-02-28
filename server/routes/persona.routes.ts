@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { insertPersonaSchema } from "@shared/schema";
 import { z } from "zod";
@@ -33,7 +33,7 @@ const personaCreateSchema = insertPersonaSchema.omit({ projectId: true }).extend
 export function registerPersonaRoutes(app: Express) {
   app.get("/api/projects/:projectId/personas", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -52,7 +52,7 @@ export function registerPersonaRoutes(app: Express) {
       if (!persona) {
         return res.status(404).json({ message: "Persona not found" });
       }
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, persona.projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -66,7 +66,7 @@ export function registerPersonaRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/personas", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, req.params.projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -93,7 +93,7 @@ export function registerPersonaRoutes(app: Express) {
       if (!persona) {
         return res.status(404).json({ message: "Persona not found" });
       }
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, persona.projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
@@ -118,7 +118,7 @@ export function registerPersonaRoutes(app: Express) {
       if (!persona) {
         return res.status(404).json({ message: "Persona not found" });
       }
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const hasAccess = await storage.verifyUserAccessToProject(userId, persona.projectId);
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });

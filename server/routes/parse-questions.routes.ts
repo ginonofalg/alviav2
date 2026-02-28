@@ -4,13 +4,7 @@ import { fromError } from "zod-validation-error";
 import { storage } from "../storage";
 import { parseQuestions } from "../question-parser";
 import type { LLMUsageAttribution } from "@shared/schema";
-
-const isAuthenticated = (req: any, res: any, next: any) => {
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-  next();
-};
+import { isAuthenticated, getUserId } from "../auth";
 
 const parseQuestionsSchema = z.object({
   rawText: z.string().min(1, "Paste content is required").max(10000, "Content exceeds 10,000 character limit"),
@@ -21,7 +15,7 @@ const parseQuestionsSchema = z.object({
 export function registerParseQuestionsRoutes(app: Express) {
   app.post("/api/projects/:projectId/parse-questions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const projectId = req.params.projectId;
 
       const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);

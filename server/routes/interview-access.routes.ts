@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { isAuthenticated } from "../replit_integrations/auth";
+import { isAuthenticated, getUserId } from "../auth";
 import { storage } from "../storage";
 import { hashToken, isTokenExpired } from "../resume-token";
 
@@ -137,7 +137,7 @@ export function registerInterviewAccessRoutes(app: Express) {
 
   app.get("/api/sessions/:sessionId/metrics", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const session = await storage.getSession(req.params.sessionId);
       if (!session) {
         return res.status(404).json({ message: "Session not found" });
@@ -171,7 +171,7 @@ export function registerInterviewAccessRoutes(app: Express) {
 
   app.get("/api/collections/:collectionId/sessions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = getUserId(req);
       const collection = await storage.getCollection(req.params.collectionId);
       if (!collection) {
         return res.status(404).json({ message: "Collection not found" });

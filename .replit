@@ -47,3 +47,4 @@ integrations = ["javascript_database:1.0.0", "javascript_log_in_with_replit:2.0.
 [userenv.shared]
 VITE_SHOW_VAD_INDICATOR = "false"
 DEBUG_BARBARA_PROMPTS = "true"
+VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cHJvbW90ZWQtc3BhcnJvdy04Ny5jbGVyay5hY2NvdW50cy5kZXYk"
