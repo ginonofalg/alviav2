@@ -31,16 +31,23 @@ export async function refreshConnection(
   state.pendingRefreshAfterTranscript = false;
 
   try {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     await Promise.race([
-      deps.flushPersist(sessionId),
-      new Promise<void>((resolve) =>
-        setTimeout(() => {
+      deps.flushPersist(sessionId).then(() => {
+        if (timeoutHandle !== null) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+      }),
+      new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          timeoutHandle = null;
           console.warn(
             `[ConnectionRefresh] flushPersist timed out for ${sessionId}, proceeding with refresh`,
           );
           resolve();
-        }, FLUSH_PERSIST_TIMEOUT_MS),
-      ),
+        }, FLUSH_PERSIST_TIMEOUT_MS);
+      }),
     ]);
   } catch (error) {
     console.error(

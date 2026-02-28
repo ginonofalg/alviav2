@@ -571,6 +571,10 @@ export default function InterviewPage() {
       
       // Handle planned connection refresh close code (4000) — immediate reconnect, no backoff
       if (event.code === 4000) {
+        if (!allowReconnectRef.current || isUnmountingRef.current) {
+          console.log("[Interview] Planned refresh close code 4000 but reconnect not allowed — skipping");
+          return;
+        }
         console.log("[Interview] Planned connection refresh — starting immediate reconnect");
         startImmediateReconnect();
         return;

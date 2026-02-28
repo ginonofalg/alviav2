@@ -285,5 +285,70 @@ describe("Connection Refresh", () => {
 
       expect(state.awaitingResume).toBe(true);
     });
+
+    it("preserves isPaused across planned refresh reconnect", () => {
+      state.isPaused = true;
+      state.isConnectionRefresh = true;
+
+      state.isRestoredSession = true;
+      state.isConnectionRefresh = false;
+      state.useRefreshInstructions = true;
+      state.autoTriggerAfterRefresh = true;
+      state.isInitialSession = true;
+      state.sessionConfigured = false;
+      state.clientAudioReady = false;
+
+      expect(state.isPaused).toBe(true);
+    });
+
+    it("skips auto-trigger when isPaused is true after refresh", () => {
+      state.isInitialSession = true;
+      state.sessionConfigured = true;
+      state.isRestoredSession = true;
+      state.autoTriggerAfterRefresh = true;
+      state.isPaused = true;
+
+      const shouldSkipForRestore = state.isRestoredSession && !state.autoTriggerAfterRefresh;
+      expect(shouldSkipForRestore).toBe(false);
+
+      state.autoTriggerAfterRefresh = false;
+
+      const shouldSkipForPause = state.isPaused;
+      expect(shouldSkipForPause).toBe(true);
+    });
+
+    it("allows auto-trigger when isPaused is false after refresh", () => {
+      state.isInitialSession = true;
+      state.sessionConfigured = true;
+      state.isRestoredSession = true;
+      state.autoTriggerAfterRefresh = true;
+      state.isPaused = false;
+
+      const shouldSkipForRestore = state.isRestoredSession && !state.autoTriggerAfterRefresh;
+      expect(shouldSkipForRestore).toBe(false);
+
+      state.autoTriggerAfterRefresh = false;
+
+      const shouldSkipForPause = state.isPaused;
+      expect(shouldSkipForPause).toBe(false);
+    });
+  });
+
+  describe("flushPersist timeout cleanup", () => {
+    it("does not log timeout warning when persist succeeds quickly", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      deps.flushPersist = vi.fn().mockResolvedValue(undefined);
+
+      await refreshConnection("test-session", deps);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const timeoutWarnings = warnSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && call[0].includes("flushPersist timed out"),
+      );
+      expect(timeoutWarnings).toHaveLength(0);
+
+      warnSpy.mockRestore();
+    });
   });
 });

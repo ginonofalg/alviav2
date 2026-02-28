@@ -1361,6 +1361,13 @@ async function handleProviderEvent(
           }
           state.autoTriggerAfterRefresh = false;
 
+          if (state.isPaused) {
+            console.log(
+              `[VoiceInterview] Session is paused — skipping auto-trigger after refresh for ${sessionId}`,
+            );
+            break;
+          }
+
           if (!canCreateResponse(state)) {
             console.log(
               `[Response] Skipping initial response - response already in progress for ${sessionId}`,
@@ -2463,6 +2470,14 @@ async function handleClientMessage(
         return;
       }
       state.autoTriggerAfterRefresh = false;
+
+      if (state.isPaused) {
+        console.log(
+          `[VoiceInterview] Session is paused — skipping auto-trigger after refresh (audio_ready) for ${sessionId}`,
+        );
+        state.isInitialSession = false;
+        return;
+      }
 
       state.isInitialSession = false;
       if (!canCreateResponse(state)) {
