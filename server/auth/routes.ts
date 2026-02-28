@@ -11,28 +11,22 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const clerkUserId = getUserId(req);
 
-      let email: string | undefined;
-      let firstName: string | undefined;
-      let lastName: string | undefined;
-      let imageUrl: string | undefined;
+      let user = await authStorage.getUser(clerkUserId);
 
-      try {
-        const { clerkClient } = await import("@clerk/express");
-        const clerkUser = await clerkClient.users.getUser(clerkUserId);
-        email = clerkUser.emailAddresses?.[0]?.emailAddress;
-        firstName = clerkUser.firstName ?? undefined;
-        lastName = clerkUser.lastName ?? undefined;
-        imageUrl = clerkUser.imageUrl ?? undefined;
-      } catch (err) {
-        console.error("[auth] Failed to fetch Clerk user details, falling back to DB lookup:", err);
-      }
-
-      let user;
-      if (email) {
-        user = await syncClerkUser(clerkUserId, email, firstName ?? null, lastName ?? null, imageUrl ?? null);
-      } else {
-        user = await authStorage.getUser(clerkUserId);
-        if (!user) {
+      if (!user) {
+        try {
+          const { clerkClient } = await import("@clerk/express");
+          const clerkUser = await clerkClient.users.getUser(clerkUserId);
+          const email = clerkUser.emailAddresses?.[0]?.emailAddress;
+          user = await syncClerkUser(
+            clerkUserId,
+            email ?? "",
+            clerkUser.firstName ?? null,
+            clerkUser.lastName ?? null,
+            clerkUser.imageUrl ?? null
+          );
+        } catch (err) {
+          console.error("[auth] Failed to fetch Clerk user details for initial sync:", err);
           user = await authStorage.upsertUser({
             id: clerkUserId,
             email: null,
