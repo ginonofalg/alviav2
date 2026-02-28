@@ -23,9 +23,11 @@ export function registerInterviewAccessRoutes(app: Express) {
       const respondent = await storage.getRespondent(session.respondentId);
 
       let brandingLogo: string | null = null;
+      let brandingColors: any = null;
       if (template?.projectId) {
         const project = await storage.getProject(template.projectId);
         brandingLogo = project?.brandingLogo ?? null;
+        brandingColors = project?.brandingColors ?? null;
       }
       
       const aqState = session.additionalQuestionPhase && session.additionalQuestions
@@ -47,6 +49,7 @@ export function registerInterviewAccessRoutes(app: Express) {
         questions,
         respondent,
         brandingLogo,
+        brandingColors,
         features: {
           additionalQuestionsEnabled: ADDITIONAL_QUESTIONS_ENABLED,
         },
@@ -87,9 +90,11 @@ export function registerInterviewAccessRoutes(app: Express) {
       const questions = await storage.getQuestionsByTemplate(collection.templateId);
 
       let brandingLogo: string | null = null;
+      let brandingColors: any = null;
       if (template?.projectId) {
         const project = await storage.getProject(template.projectId);
         brandingLogo = project?.brandingLogo ?? null;
+        brandingColors = project?.brandingColors ?? null;
       }
       
       res.json({
@@ -98,6 +103,7 @@ export function registerInterviewAccessRoutes(app: Express) {
         template,
         questions,
         brandingLogo,
+        brandingColors,
         isResume: true,
         features: {
           additionalQuestionsEnabled: ADDITIONAL_QUESTIONS_ENABLED,

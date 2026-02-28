@@ -40,7 +40,9 @@ import type {
   Collection,
   InterviewTemplate,
   Respondent,
+  BrandingColors,
 } from "@shared/schema";
+import { BrandingThemeProvider } from "@/components/BrandingThemeProvider";
 
 interface InterviewData {
   session: InterviewSession;
@@ -49,6 +51,7 @@ interface InterviewData {
   questions: Question[];
   respondent?: Respondent;
   brandingLogo?: string | null;
+  brandingColors?: BrandingColors | null;
   features?: {
     additionalQuestionsEnabled?: boolean;
   };
@@ -412,6 +415,13 @@ export default function InterviewPage() {
   const collection = interviewData?.collection;
   const questions = interviewData?.questions;
   const respondent = interviewData?.respondent;
+  const brandingColors = interviewData?.brandingColors ?? null;
+
+  useEffect(() => {
+    if (brandingColors) {
+      sessionStorage.setItem("alvia_branding_colors", JSON.stringify(brandingColors));
+    }
+  }, [brandingColors]);
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress = isInAQPhase
     ? ((currentAQIndex + 1) / aqQuestions.length) * 100
@@ -1362,15 +1372,17 @@ export default function InterviewPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-3xl">
-          <CardContent className="p-8 space-y-6">
-            <Skeleton className="h-8 w-48 mx-auto" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </CardContent>
-        </Card>
-      </div>
+      <BrandingThemeProvider brandingColors={brandingColors}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-3xl">
+            <CardContent className="p-8 space-y-6">
+              <Skeleton className="h-8 w-48 mx-auto" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-64 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </BrandingThemeProvider>
     );
   }
 
@@ -1398,6 +1410,7 @@ export default function InterviewPage() {
       : "Alvia's ready when you are";
     
     return (
+      <BrandingThemeProvider brandingColors={brandingColors}>
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl">
           <CardContent className="p-8 space-y-8 text-center">
@@ -1437,6 +1450,7 @@ export default function InterviewPage() {
           </CardContent>
         </Card>
       </div>
+      </BrandingThemeProvider>
     );
   }
 
@@ -1446,6 +1460,7 @@ export default function InterviewPage() {
     "Loading question...";
 
   return (
+    <BrandingThemeProvider brandingColors={brandingColors}>
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
@@ -1980,5 +1995,6 @@ export default function InterviewPage() {
         )}
       </AnimatePresence>
     </div>
+    </BrandingThemeProvider>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import type { BrandingColors } from "@shared/schema";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -34,6 +35,7 @@ import type { Project } from "@shared/schema";
 import ImageCropDialog from "@/components/ImageCropDialog";
 import { validateImageFile, fileToDataUrl } from "@/lib/image-utils";
 import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
+import BrandingColorPicker from "@/components/BrandingColorPicker";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(100),
@@ -68,6 +70,7 @@ export default function ProjectEditPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("details");
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
+  const [brandingColors, setBrandingColors] = useState<BrandingColors | null>(null);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +117,7 @@ export default function ProjectEditPage() {
         contextType: project.contextType || undefined,
       });
       setBrandingLogo(project.brandingLogo ?? null);
+      setBrandingColors((project.brandingColors as BrandingColors) ?? null);
     }
   }, [project, form]);
 
@@ -151,6 +155,7 @@ export default function ProjectEditPage() {
       const response = await apiRequest("PATCH", `/api/projects/${projectId}`, {
         ...data,
         brandingLogo,
+        brandingColors,
       });
       return response;
     },
@@ -475,6 +480,14 @@ export default function ProjectEditPage() {
                   onConfirm={handleCropConfirm}
                   onCancel={handleCropCancel}
                 />
+
+                <div className="border-t pt-6">
+                  <BrandingColorPicker
+                    brandingLogo={brandingLogo}
+                    colors={brandingColors}
+                    onChange={setBrandingColors}
+                  />
+                </div>
               </CardContent>
             </Card>
           )}

@@ -132,6 +132,7 @@ export const projects = pgTable("projects", {
   analyzedSessionScope: text("analyzed_session_scope"),
   analyticsData: jsonb("analytics_data"),
   brandingLogo: text("branding_logo"),
+  brandingColors: jsonb("branding_colors"),
 });
 
 // Interview Templates (versioned)
@@ -419,6 +420,15 @@ export type InviteListEntry = typeof inviteList.$inferSelect;
 export type InsertInviteListEntry = z.infer<typeof insertInviteListSchema>;
 export type WaitlistEntry = typeof waitlistEntries.$inferSelect;
 export type InsertWaitlistEntry = z.infer<typeof insertWaitlistEntrySchema>;
+
+// Branding colors schema
+export const brandingColorsSchema = z.object({
+  primary: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  foreground: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+});
+export type BrandingColors = z.infer<typeof brandingColorsSchema>;
 
 // Insert schemas
 export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({ id: true, createdAt: true, updatedAt: true });

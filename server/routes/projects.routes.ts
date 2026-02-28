@@ -2,7 +2,7 @@ import express from "express";
 import type { Express } from "express";
 import { isAuthenticated } from "../replit_integrations/auth";
 import { storage } from "../storage";
-import { insertProjectSchema } from "@shared/schema";
+import { insertProjectSchema, brandingColorsSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
@@ -82,6 +82,7 @@ export function registerProjectRoutes(app: Express) {
     strategicContext: z.string().max(2000).optional(),
     contextType: z.enum(["content", "product", "marketing", "cx", "other"]).optional(),
     brandingLogo: z.string().max(200_000).nullable().optional(),
+    brandingColors: brandingColorsSchema.nullable().optional(),
   });
 
   app.post("/api/projects", express.json({ limit: "1mb" }), isAuthenticated, async (req: any, res) => {

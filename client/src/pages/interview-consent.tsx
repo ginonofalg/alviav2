@@ -25,7 +25,8 @@ import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Collection, Project, InterviewSession } from "@shared/schema";
+import type { Collection, Project, InterviewSession, BrandingColors } from "@shared/schema";
+import { BrandingThemeProvider } from "@/components/BrandingThemeProvider";
 
 interface ResumeData {
   session: InterviewSession;
@@ -132,6 +133,7 @@ export default function InterviewConsentPage() {
     isActive: boolean;
     brandingLogo: string | null;
     consentAudioRecording: boolean;
+    brandingColors: BrandingColors | null;
   }>({
     queryKey: ["/api/collections", collectionId, "public"],
     enabled: !!collectionId,
@@ -209,6 +211,7 @@ export default function InterviewConsentPage() {
   const allConsentsGiven = consents.participation && consents.dataProcessing;
   const project = collection?.project;
   const brandingLogo = project?.brandingLogo || publicInfo?.brandingLogo || null;
+  const brandingColors: BrandingColors | null = (project as any)?.brandingColors || publicInfo?.brandingColors || null;
   const requiresAudioConsent = project?.consentAudioRecording !== false || publicInfo?.consentAudioRecording !== false;
 
   const canProceed =
@@ -238,72 +241,77 @@ export default function InterviewConsentPage() {
     (invitationToken && invitationLoading)
   ) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardContent className="p-8 space-y-6">
-            <Skeleton className="h-8 w-48 mx-auto" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-48 w-full" />
-          </CardContent>
-        </Card>
-      </div>
+      <BrandingThemeProvider brandingColors={brandingColors}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl">
+            <CardContent className="p-8 space-y-6">
+              <Skeleton className="h-8 w-48 mx-auto" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </BrandingThemeProvider>
     );
   }
 
   // Show resume option if there's an existing session
   if (resumeInfo) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardHeader className="text-center space-y-4 pb-2">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <RotateCcw className="w-8 h-8 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-serif">
-                Welcome Back
-              </CardTitle>
-              <CardDescription className="text-base mt-2">
-                You have an interview in progress
-              </CardDescription>
-            </div>
-          </CardHeader>
+      <BrandingThemeProvider brandingColors={brandingColors}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl">
+            <CardHeader className="text-center space-y-4 pb-2">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+                <RotateCcw className="w-8 h-8 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl font-serif">
+                  Welcome Back
+                </CardTitle>
+                <CardDescription className="text-base mt-2">
+                  You have an interview in progress
+                </CardDescription>
+              </div>
+            </CardHeader>
 
-          <CardContent className="space-y-6 pt-4">
-            <div className="bg-muted/50 rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                It looks like you were in the middle of an interview. Would you
-                like to continue where you left off?
-              </p>
-            </div>
+            <CardContent className="space-y-6 pt-4">
+              <div className="bg-muted/50 rounded-lg p-4 text-center">
+                <p className="text-sm text-muted-foreground">
+                  It looks like you were in the middle of an interview. Would you
+                  like to continue where you left off?
+                </p>
+              </div>
 
-            <div className="flex flex-col gap-3">
-              <Button
-                onClick={handleResume}
-                size="lg"
-                className="w-full"
-                data-testid="button-resume-interview"
-              >
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Resume Interview
-              </Button>
-              <Button
-                onClick={handleStartFresh}
-                variant="outline"
-                size="lg"
-                className="w-full"
-                data-testid="button-start-fresh"
-              >
-                Start a New Interview
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={handleResume}
+                  size="lg"
+                  className="w-full"
+                  data-testid="button-resume-interview"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Resume Interview
+                </Button>
+                <Button
+                  onClick={handleStartFresh}
+                  variant="outline"
+                  size="lg"
+                  className="w-full"
+                  data-testid="button-start-fresh"
+                >
+                  Start a New Interview
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </BrandingThemeProvider>
     );
   }
 
   return (
+    <BrandingThemeProvider brandingColors={brandingColors}>
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
@@ -491,5 +499,6 @@ export default function InterviewConsentPage() {
         </CardContent>
       </Card>
     </div>
+    </BrandingThemeProvider>
   );
 }

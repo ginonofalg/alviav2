@@ -92,11 +92,13 @@ export function registerCollectionRoutes(app: Express) {
 
       const template = await storage.getTemplate(collection.templateId);
       let brandingLogo = null;
+      let brandingColors = null;
       let consentAudioRecording = true;
       if (template) {
         const project = await storage.getProject(template.projectId);
         if (project) {
           brandingLogo = project.brandingLogo || null;
+          brandingColors = project.brandingColors || null;
           consentAudioRecording = project.consentAudioRecording !== false;
         }
       }
@@ -106,6 +108,7 @@ export function registerCollectionRoutes(app: Express) {
         name: collection.name,
         isActive: collection.isActive,
         brandingLogo,
+        brandingColors,
         consentAudioRecording,
       });
     } catch (error) {

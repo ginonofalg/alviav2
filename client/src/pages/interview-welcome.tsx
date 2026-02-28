@@ -9,8 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, User, AlertCircle, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InterviewSession } from "@shared/schema";
+import type { InterviewSession, BrandingColors } from "@shared/schema";
 import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
+import { BrandingThemeProvider } from "@/components/BrandingThemeProvider";
 
 export default function InterviewWelcomePage() {
   const params = useParams<{ sessionId: string }>();
@@ -21,7 +22,7 @@ export default function InterviewWelcomePage() {
   const [fullName, setFullName] = useState("");
   const [informalName, setInformalName] = useState("");
 
-  const { data: interviewData, isLoading } = useQuery<{ session: InterviewSession & { respondentId: string }; brandingLogo?: string | null }>({
+  const { data: interviewData, isLoading } = useQuery<{ session: InterviewSession & { respondentId: string }; brandingLogo?: string | null; brandingColors?: BrandingColors | null }>({
     queryKey: ["/api/interview", sessionId],
     enabled: !!sessionId,
   });
@@ -63,37 +64,44 @@ export default function InterviewWelcomePage() {
     navigate(`/interview/${sessionId}`);
   };
 
+  const brandingColors = interviewData?.brandingColors ?? null;
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardContent className="p-8 space-y-6">
-            <Skeleton className="h-8 w-48 mx-auto" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-48 w-full" />
-          </CardContent>
-        </Card>
-      </div>
+      <BrandingThemeProvider brandingColors={brandingColors}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl">
+            <CardContent className="p-8 space-y-6">
+              <Skeleton className="h-8 w-48 mx-auto" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </BrandingThemeProvider>
     );
   }
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="p-8 space-y-6">
-            <AlertCircle className="w-16 h-16 mx-auto text-destructive" />
-            <h2 className="text-xl font-semibold">Session Not Found</h2>
-            <p className="text-muted-foreground">
-              This interview session could not be found. Please try starting again.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <BrandingThemeProvider brandingColors={brandingColors}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-md text-center">
+            <CardContent className="p-8 space-y-6">
+              <AlertCircle className="w-16 h-16 mx-auto text-destructive" />
+              <h2 className="text-xl font-semibold">Session Not Found</h2>
+              <p className="text-muted-foreground">
+                This interview session could not be found. Please try starting again.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </BrandingThemeProvider>
     );
   }
 
   return (
+    <BrandingThemeProvider brandingColors={brandingColors}>
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
@@ -185,5 +193,6 @@ export default function InterviewWelcomePage() {
         </CardContent>
       </Card>
     </div>
+    </BrandingThemeProvider>
   );
 }
