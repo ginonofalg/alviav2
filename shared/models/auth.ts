@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table.
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+// (DEPRECATED) To be removed after Clerk migration validation. Clerk uses stateless JWTs.
 export const sessions = pgTable(
   "sessions",
   {
