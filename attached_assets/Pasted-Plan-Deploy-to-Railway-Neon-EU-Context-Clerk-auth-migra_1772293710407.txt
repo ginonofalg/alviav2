@@ -1,0 +1,154 @@
+Plan: Deploy to Railway + Neon EU                      
+
+ Context
+
+ Clerk auth migration is complete and working in production. The next step is moving hosting to Railway (EU-West, Netherlands) with Neon PostgreSQL (EU) for GDPR
+ data residency.
+
+ BLOCKER FOUND: The legacy Replit OIDC code (openid-client) crashes on Railway because REPL_ID env var doesn't exist. The legacy cleanup is required before
+ Railway deployment, not optional.
+
+ ---
+ Code Change: Add health check endpoint
+
+ Railway uses health checks to monitor service availability. Currently no /health endpoint exists — unknown routes fall through to the React SPA, which would give
+  Railway a 200 with HTML instead of a clean health signal.
+
+ File: server/routes.ts
+
+ Add before registerWebhookRoutes(app):
+
+ app.get("/health", (_req, res) => {
+   res.status(200).json({ status: "ok" });
+ });
+
+ This goes before all middleware so health checks are fast and unauthenticated.
+
+ ---
+ Why no other code changes are needed
+
+ ┌──────────────────────┬───────────────────────────────────────────────────────────────────────┐
+ │       Concern        │                                Status                                 │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Database connection  │ DATABASE_URL env var — just point to Neon                             │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ SSL/TLS              │ Neon connection strings include SSL by default                        │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ WebSocket            │ Shares HTTP server on same port — Railway handles upgrades natively   │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Port binding         │ Reads PORT env var (Railway sets this automatically)                  │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Static files         │ Built to dist/public, served by Express in production                 │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Filesystem writes    │ None — infographics returned as base64 data URLs, not written to disk │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Background jobs      │ Run in-process with PostgreSQL advisory locks — single container safe │
+ ├──────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ Build/start commands │ npm run build / npm start — standard, no changes                      │
+ └──────────────────────┴───────────────────────────────────────────────────────────────────────┘
+
+ ---
+ Infrastructure Setup (Railway + Neon)
+
+ 1. Neon PostgreSQL (EU)
+
+ - Create Neon project in EU region (Germany/Frankfurt or Netherlands)
+ - Copy connection string (includes ?sslmode=require)
+ - Run schema push: DATABASE_URL=<neon-url> npm run db:push
+ - If migrating existing data: pg_dump from current DB, pg_restore to Neon
+
+ 2. Railway Project
+
+ - Connect GitHub repo for auto-deploy on push
+ - Set region to EU-West (Netherlands)
+ - Configure:
+   - Build command: npm run build
+   - Start command: npm start
+   - Health check path: /health
+
+ 3. Environment Variables on Railway
+
+ Required:
+ - DATABASE_URL — Neon EU connection string
+ - OPENAI_API_KEY
+ - CLERK_WEBHOOK_SIGNING_SECRET
+ - NODE_ENV=production
+
+ Optional:
+ - GEMINI_API_KEY — for infographics
+ - XAI_API_KEY — only if using Grok voice provider
+ - REALTIME_PROVIDER — defaults to "openai"
+ - INVITE_ONLY_MODE — defaults to "true"
+ - BASE_URL — set to your Railway domain for generated links
+
+ Not needed (legacy):
+ - SESSION_SECRET, ISSUER_URL, REPL_ID
+
+ 4. Clerk Webhook Update
+
+ - In Clerk Dashboard, add Railway production URL as webhook endpoint: https://<your-railway-domain>/api/webhooks/clerk
+ - Subscribe to: user.created, user.updated, user.deleted
+
+ 5. Data Migration (if needed)
+
+ If the current production database has data to preserve:
+ # Export from current DB
+ pg_dump $CURRENT_DATABASE_URL --no-owner --no-acl > backup.sql
+
+ # Import to Neon
+ psql $NEON_DATABASE_URL < backup.sql
+
+ ---
+ Dev Workflow After Migration
+
+ Replit (dev) ──git push──> GitHub ──auto-deploy──> Railway EU (production)
+
+ - Develop on Replit with local/dev database
+ - Push to GitHub triggers Railway auto-deploy
+ - Replit vite plugins remain (gated behind REPL_ID, harmless on Railway)
+
+ ---
+ REQUIRED: Legacy Replit Cleanup (blocks Railway deployment)
+
+ The legacy openid-client crashes on Railway ("clientId" must be a non-empty string — needs REPL_ID).
+
+ Step 1: Delete legacy code
+
+ - Delete entire server/replit_integrations/ directory
+
+ Step 2: Remove orphaned packages from package.json
+
+ dependencies: passport, passport-local, openid-client, express-session, connect-pg-simple, memoizee, memorystore, @types/memoizee
+ devDependencies: @types/connect-pg-simple, @types/express-session, @types/passport, @types/passport-local
+
+ Step 3: Remove from esbuild allowlist in script/build.ts
+
+ Remove: "connect-pg-simple", "express-session", "memorystore", "passport", "passport-local"
+
+ Step 4: Remove deprecated sessions table from shared/models/auth.ts
+
+ Delete lines 4-14 (the sessions pgTable definition and DEPRECATED comment)
+
+ Step 5: Update docs
+
+ - CLAUDE.md — remove replit_integrations references, SESSION_SECRET, ISSUER_URL
+ - AGENTS.md — same
+ - .replit — remove javascript_log_in_with_replit integration
+
+ Step 6: Rebuild and push
+
+ - npm install (regenerate lockfile)
+ - npm run check (TypeScript)
+ - npm run build (production build)
+ - Push to GitHub → Railway auto-deploys
+
+ ---
+ Verification
+
+ 1. npm run check — TypeScript passes (after health endpoint addition)
+ 2. npm run build — production build succeeds
+ 3. Deploy to Railway — service starts, health check passes
+ 4. https://<railway-domain>/health returns {"status":"ok"}
+ 5. Clerk login works on Railway domain
+ 6. Voice interview WebSocket connects successfully
+ 7. Webhook delivery succeeds (check Clerk Dashboard logs)
