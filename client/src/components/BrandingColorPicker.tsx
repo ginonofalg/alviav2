@@ -118,7 +118,7 @@ function ContrastWarnings({ colors }: { colors: BrandingColors }) {
 
   if (colors.accent) {
     const accentOnBg = getContrastRatio(colors.accent, colors.background);
-    if (accentOnBg < 1.2) {
+    if (accentOnBg < 1.05) {
       warnings.push({
         message: "Accent color is too similar to background",
         severity: "warning",
