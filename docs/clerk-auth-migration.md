@@ -1,0 +1,433 @@
+# Plan: Replace Replit OIDC Authentication with Clerk
+
+## Context
+
+Alvia is moving from Replit-hosted infrastructure to EU-hosted services for GDPR compliance. The Replit OIDC authentication (`REPL_ID` + `https://replit.com/oidc`) only works on Replit. To deploy on an EU platform (Railway, Render, Fly.io), authentication must be replaced with a platform-independent provider.
+
+**Clerk** was selected because: EU data residency (Germany/Ireland), Express.js + React SDKs, stateless JWT sessions, GDPR DPA available, free tier covers 50k users.
+
+**Sign-in methods:** Email + password and Google OAuth.
+
+**Existing users must be preserved** via email-based ID remapping on first Clerk sign-in.
+
+---
+
+## 1. Install dependencies
+
+**Add:** `@clerk/express`, `@clerk/clerk-react`, `svix` (webhook signature verification)
+
+**Remove (deferred to step 11):** `express-session`, `connect-pg-simple`, `passport`, `passport-local`, `openid-client`, `memoizee` and their `@types/*` — removal happens AFTER cutover validation, not immediately.
+
+---
+
+## 2. Create `server/auth/` module
+
+### `server/auth/middleware.ts` (~50 lines)
+
+```ts
+import { clerkMiddleware, getAuth } from "@clerk/express";
+import type { Request, Response, NextFunction } from "express";
+
+// Global middleware — attaches auth to every request
+export const clerkAuthMiddleware = clerkMiddleware;
+
+// Route-level guard (replaces Passport's isAuthenticated)
+export function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  next();
+}
+
+// Extract userId — replaces `req.user.claims.sub`
+export function getUserId(req: Request): string {
+  const auth = getAuth(req);
+  if (!auth?.userId) throw new Error("Not authenticated");
+  return auth.userId;
+}
+
+// Optional userId — for routes that work with or without auth (interview-flow)
+export function getOptionalUserId(req: Request): string | null {
+  const auth = getAuth(req);
+  return auth?.userId ?? null;
+}
+```
+
+**Why `getOptionalUserId`:** `interview-flow.routes.ts:76` uses `req.user?.claims?.sub || null` — interview session creation works for both authenticated researchers and unauthenticated respondents.
+
+**Why custom `isAuthenticated` over Clerk's `requireAuth()`:** Clerk's `requireAuth()` redirects (designed for page routes). Our API routes need a JSON 401 response, matching current behavior.
+
+### `server/auth/sync.ts` (~80 lines)
+
+Migration-safe user sync function, used by BOTH `/api/auth/user` and the webhook handler:
+
+```
+syncClerkUser(clerkUserId, clerkEmail, clerkFirstName, clerkLastName, clerkProfileImageUrl):
+  1. Look up local user by Clerk ID (users.id = clerkUserId)
+  2. If found → upsert (update name/email/image) → return user
+  3. If NOT found → look up by email (users.email = clerkEmail)
+  4. If found by email (returning user, ID remap needed):
+     BEGIN TRANSACTION:
+       - old ID = existing user.id
+       - UPDATE users SET id = clerkUserId WHERE id = oldId
+       - UPDATE workspaces SET owner_id = clerkUserId WHERE owner_id = oldId
+       - UPDATE workspace_members SET user_id = clerkUserId WHERE user_id = oldId
+       - UPDATE respondents SET user_id = clerkUserId WHERE user_id = oldId
+       - UPDATE invite_list SET added_by = clerkUserId WHERE added_by = oldId
+       - UPDATE waitlist_entries SET replit_user_id = clerkUserId WHERE replit_user_id = oldId
+       - UPDATE simulation_runs SET launched_by = clerkUserId WHERE launched_by = oldId
+     COMMIT
+     - Log: "Migrated user {email} from {oldId} to {clerkUserId}"
+     - return updated user
+  5. If NOT found by email (new user):
+     - INSERT into users (id=clerkUserId, email, firstName, lastName, profileImageUrl)
+     - Trigger seedDemoProjectIfNeeded(clerkUserId) (background, non-blocking)
+     - return new user
+```
+
+**Columns updated in remap transaction** (complete list from schema audit):
+- `workspaces.ownerId` (schema.ts:93)
+- `workspaceMembers.userId` (schema.ts:101)
+- `respondents.userId` (schema.ts:210)
+- `inviteList.addedBy` (schema.ts:397)
+- `waitlistEntries.replitUserId` (schema.ts:407)
+- `simulationRuns.launchedBy` (schema.ts:507)
+
+**Race condition handling:** The email uniqueness constraint on `users.email` could cause a conflict if a Clerk `user.created` webhook arrives before the JIT remap in `/api/auth/user`. To prevent this: the sync function uses `SELECT ... FOR UPDATE` on the email lookup, and the webhook handler calls the same `syncClerkUser` function (single code path, no divergence).
+
+### `server/auth/webhook.ts` (~70 lines)
+
+```
+POST /api/webhooks/clerk (no auth middleware — Clerk calls this)
+  - Verify signature using svix + CLERK_WEBHOOK_SIGNING_SECRET
+  - Use req.rawBody (already available via server/index.ts:24 verify callback)
+  - On user.created / user.updated: call syncClerkUser(...)
+  - On user.deleted: optionally flag or soft-delete user
+```
+
+**Raw body:** The existing Express JSON parser in `server/index.ts:21-27` already stores `req.rawBody = buf` in the `verify` callback. The webhook handler reads this directly for svix signature verification. No changes needed to index.ts.
+
+**Registration order:** The webhook route must be registered BEFORE `clerkAuthMiddleware()` in `server/routes.ts` so it's not intercepted by Clerk's JWT validation (Clerk webhook requests don't carry session tokens).
+
+### `server/auth/routes.ts` (~80 lines)
+
+Same four endpoints as current, using new helpers:
+
+- `GET /api/auth/user` — calls `getUserId(req)` → `syncClerkUser()` (JIT sync) → returns local user
+- `GET /api/auth/invite-status` — calls `getUserId(req)` → fetches user from DB → checks email against `inviteList`
+- `POST /api/waitlist` — calls `getUserId(req)` → creates waitlist entry
+- `PATCH /api/auth/onboarding` — calls `getUserId(req)` → updates onboarding state
+
+**Key difference from current:** `invite-status` no longer reads email from `req.user.claims.email`. Instead it fetches the local user by Clerk ID and reads `user.email` from the database. This avoids depending on Clerk session claims for email (which requires custom session token template configuration).
+
+### `server/auth/storage.ts` — copy of current `replit_integrations/auth/storage.ts`
+
+No changes to `AuthStorage` class. Same `getUser`, `upsertUser`, `updateOnboardingState`.
+
+### `server/auth/index.ts` — re-exports
+
+```ts
+export { isAuthenticated, getUserId, getOptionalUserId, clerkAuthMiddleware } from "./middleware";
+export { registerAuthRoutes } from "./routes";
+export { registerWebhookRoutes } from "./webhook";
+```
+
+---
+
+## 3. Update `server/routes.ts`
+
+```diff
+- import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
++ import { clerkAuthMiddleware, registerAuthRoutes } from "./auth";
++ import { registerWebhookRoutes } from "./auth/webhook";
+
+  export async function registerRoutes(httpServer, app) {
+-   await setupAuth(app);
+-   registerAuthRoutes(app);
++   // Webhook routes BEFORE Clerk middleware (no JWT on webhook requests)
++   registerWebhookRoutes(app);
++   // Clerk middleware attaches auth to all subsequent requests
++   app.use(clerkAuthMiddleware());
++   registerAuthRoutes(app);
+    // ... rest unchanged
+  }
+```
+
+---
+
+## 4. Move `app.set("trust proxy", 1)` to `server/index.ts`
+
+Currently lives in `replitAuth.ts:65` inside `setupAuth()`. Removing setupAuth would lose this setting, breaking `req.protocol` behind Railway/Render/Fly reverse proxies (affects `review.routes.ts:227` and `sessions.routes.ts:297` which use `req.protocol`).
+
+**Fix:** Add `app.set("trust proxy", 1)` to `server/index.ts` right after `const app = express()`.
+
+---
+
+## 5. Update all route files (mechanical, ~75 occurrences across 21 files)
+
+### Pattern A: Standard authenticated routes (20 files)
+
+Import change:
+```diff
+- import { isAuthenticated } from "../replit_integrations/auth";
++ import { isAuthenticated, getUserId } from "../auth";
+```
+
+Usage change (every `req.user.claims.sub` → `getUserId(req)`):
+```diff
+- const userId = req.user.claims.sub;
++ const userId = getUserId(req);
+```
+
+Files: `analytics.routes.ts`, `sessions.routes.ts`, `persona-generation.routes.ts`, `templates.routes.ts`, `collections.routes.ts`, `usage.routes.ts`, `persona.routes.ts`, `projects.routes.ts`, `simulation.routes.ts`, `infographic.routes.ts`, `respondents.routes.ts`, `guidance.routes.ts`, `interview-access.routes.ts`, `barbara.routes.ts`, `admin-setup.routes.ts`.
+
+### Pattern B: Custom local middleware (`parse-questions.routes.ts`)
+
+This file defines its own `isAuthenticated` inline (lines 8-13) using `req.isAuthenticated()` (Passport API). Replace:
+```diff
+- const isAuthenticated = (req, res, next) => {
+-   if (!req.isAuthenticated || !req.isAuthenticated()) {
+-     return res.status(401).json({ message: "Not authenticated" });
+-   }
+-   next();
+- };
++ import { isAuthenticated, getUserId } from "../auth";
+```
+And change line 24: `req.user.claims.sub` → `getUserId(req)`.
+
+### Pattern C: Optional auth (`interview-flow.routes.ts:76`)
+
+```diff
+- const userId = req.user?.claims?.sub || null;
++ import { getOptionalUserId } from "../auth";
+  ...
++ const userId = getOptionalUserId(req);
+```
+
+### Pattern D: `req.isAuthenticated?.()` check (`review.routes.ts:33`)
+
+The `validateReviewAccess` function uses `req.isAuthenticated?.()` as a Passport API call. Replace with Clerk's `getAuth()`:
+```diff
++ import { getAuth } from "@clerk/express";
+  ...
+- if (req.isAuthenticated?.()) {
++ if (getAuth(req)?.userId) {
+    return { valid: true, session };
+  }
+```
+
+---
+
+## 6. Frontend changes
+
+### `client/src/App.tsx`
+
+Wrap the app tree with `<ClerkProvider>`:
+```diff
++ import { ClerkProvider } from "@clerk/clerk-react";
+
+  function App() {
+    return (
++     <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider defaultTheme="system">
+            <TooltipProvider>
+              <Router />
+              <Toaster />
+            </TooltipProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
++     </ClerkProvider>
+    );
+  }
+```
+
+### `client/src/hooks/use-auth.ts`
+
+Keep the existing pattern of fetching from `/api/auth/user` as the source of truth for app user state. Layer Clerk's auth state detection on top:
+
+```ts
+import { useAuth as useClerkAuth, useUser as useClerkUser } from "@clerk/clerk-react";
+
+export function useAuth() {
+  const { isSignedIn, isLoaded: clerkLoaded } = useClerkAuth();
+
+  // Fetch local user from our API (same endpoint, same cache key)
+  const { data: user, isLoading: isLoadingUser } = useQuery<User | null>({
+    queryKey: ["/api/auth/user"],
+    queryFn: fetchUser,
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+    enabled: !!isSignedIn,  // Only fetch when Clerk confirms signed in
+  });
+
+  // Invite status (same as current)
+  const { data: inviteStatus, isLoading: isLoadingInvite } = useQuery<InviteStatus | null>({
+    queryKey: ["/api/auth/invite-status"],
+    queryFn: fetchInviteStatus,
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+    enabled: !!user,
+  });
+
+  const isAuthenticated = !!isSignedIn && !!user;
+  // ... same return shape as current
+}
+```
+
+**Why keep `/api/auth/user`:** The `useOnboarding` hook (use-onboarding.ts:19) depends on `user.onboardingState` which is stored in the local database, not in Clerk. The onboarding mutation (use-onboarding.ts:51-53) optimistically updates the `["/api/auth/user"]` query cache key. Replacing this with Clerk's `useUser()` would break onboarding state management. Keeping the same fetch + cache key preserves this behavior exactly.
+
+### `client/src/pages/landing.tsx`
+
+Replace 4 instances of `<a href="/api/login">` with Clerk's `<SignInButton>`:
+```diff
++ import { SignInButton } from "@clerk/clerk-react";
+  ...
+- <a href="/api/login">
+-   <Button>Sign In</Button>
+- </a>
++ <SignInButton mode="modal">
++   <Button>Sign In</Button>
++ </SignInButton>
+```
+
+### `client/src/lib/auth-utils.ts`
+
+Replace the login redirect:
+```diff
+  export function redirectToLogin(toast?) {
+    // ...toast logic unchanged
+    setTimeout(() => {
+-     window.location.href = "/api/login";
++     window.location.href = "/sign-in"; // Or use Clerk's redirect
+    }, 500);
+  }
+```
+
+### `client/src/hooks/use-auth.ts` logout
+
+Replace Passport logout redirect with Clerk signOut:
+```diff
++ import { useClerk } from "@clerk/clerk-react";
+  ...
+- async function logout() { window.location.href = "/api/logout"; }
++ const { signOut } = useClerk();
+  // Use signOut() in the return value instead of logoutMutation
+```
+
+---
+
+## 7. Environment variables
+
+**Add:**
+- `CLERK_PUBLISHABLE_KEY` — Clerk dashboard
+- `CLERK_SECRET_KEY` — Clerk dashboard
+- `CLERK_WEBHOOK_SIGNING_SECRET` — Clerk webhook config
+- `VITE_CLERK_PUBLISHABLE_KEY` — same publishable key, VITE_ prefix for client
+
+**Keep temporarily (until validation):**
+- `SESSION_SECRET` — still needed while sessions table exists during transition
+
+**Remove after cutover validation:**
+- `REPL_ID`
+- `ISSUER_URL`
+- `SESSION_SECRET`
+
+---
+
+## 8. Database: keep `sessions` table during transition
+
+Do NOT drop the `sessions` table immediately. Clerk's stateless JWTs eliminate the need for it, but keep it through a validation window:
+- Phase 1: Deploy with Clerk. Old sessions in the table are inert (Clerk doesn't read them).
+- Phase 2: After confirming everything works (1-2 weeks), drop the table and remove `connect-pg-simple` dependency.
+- Update the comment in `shared/models/auth.ts` from "mandatory for Replit Auth, don't drop" to "deprecated — to be removed after Clerk migration validation".
+
+---
+
+## 9. Remove old auth routes
+
+`setupAuth()` in `replitAuth.ts` registers three Express routes: `GET /api/login`, `GET /api/callback`, `GET /api/logout`. These will no longer exist. Clerk handles sign-in entirely client-side (modal or hosted page). No server-side OAuth callback needed.
+
+The `server/replit_integrations/auth/` directory is NOT deleted immediately — it stays as reference during transition. After validation, delete it.
+
+---
+
+## 10. Clerk dashboard configuration
+
+1. Create Clerk application
+2. Enable **Email + Password** and **Google OAuth** sign-in methods
+3. Set up webhook endpoint → `https://your-domain.com/api/webhooks/clerk`
+4. Subscribe to events: `user.created`, `user.updated`, `user.deleted`
+5. Copy webhook signing secret to `CLERK_WEBHOOK_SIGNING_SECRET`
+6. Configure allowed redirect URLs for production domain
+
+---
+
+## 11. Post-validation cleanup (separate PR)
+
+After 1-2 weeks of successful operation:
+- Drop `sessions` table from schema
+- Delete `server/replit_integrations/` directory
+- Remove packages: `express-session`, `connect-pg-simple`, `passport`, `passport-local`, `openid-client`, `memoizee`
+- Remove env vars: `REPL_ID`, `ISSUER_URL`, `SESSION_SECRET`
+- Remove `@replit/vite-plugin-*` devDependencies if deploying off Replit
+
+---
+
+## Files modified (complete list)
+
+| File | Change type | Notes |
+|------|------------|-------|
+| `package.json` | Edit | Add @clerk/express, @clerk/clerk-react, svix |
+| `server/index.ts` | Edit | Add `app.set("trust proxy", 1)` after line 8 |
+| `server/auth/middleware.ts` | **New** | ~50 lines: clerkAuthMiddleware, isAuthenticated, getUserId, getOptionalUserId |
+| `server/auth/sync.ts` | **New** | ~80 lines: syncClerkUser with transactional ID remap |
+| `server/auth/webhook.ts` | **New** | ~70 lines: Clerk webhook handler with svix verification |
+| `server/auth/routes.ts` | **New** | ~80 lines: /api/auth/* endpoints using new helpers |
+| `server/auth/storage.ts` | **New** | ~50 lines: copy of existing AuthStorage |
+| `server/auth/index.ts` | **New** | Re-exports |
+| `server/routes.ts` | Edit | Swap setupAuth → clerkAuthMiddleware, add webhook registration |
+| `server/routes/analytics.routes.ts` | Edit | Import + getUserId (15 occurrences) |
+| `server/routes/sessions.routes.ts` | Edit | Import + getUserId (11 occurrences) |
+| `server/routes/persona-generation.routes.ts` | Edit | Import + getUserId (6 occurrences) |
+| `server/routes/templates.routes.ts` | Edit | Import + getUserId (6 occurrences) |
+| `server/routes/collections.routes.ts` | Edit | Import + getUserId (5 occurrences) |
+| `server/routes/usage.routes.ts` | Edit | Import + getUserId (5 occurrences) |
+| `server/routes/persona.routes.ts` | Edit | Import + getUserId (5 occurrences) |
+| `server/routes/projects.routes.ts` | Edit | Import + getUserId (4 occurrences) |
+| `server/routes/simulation.routes.ts` | Edit | Import + getUserId (4 occurrences) |
+| `server/routes/infographic.routes.ts` | Edit | Import + getUserId (3 occurrences) |
+| `server/routes/respondents.routes.ts` | Edit | Import + getUserId (3 occurrences) |
+| `server/routes/guidance.routes.ts` | Edit | Import + getUserId (3 occurrences) |
+| `server/routes/interview-access.routes.ts` | Edit | Import + getUserId (2 occurrences) |
+| `server/routes/barbara.routes.ts` | Edit | Import + getUserId (1 occurrence) |
+| `server/routes/admin-setup.routes.ts` | Edit | Import + getUserId (1 occurrence) |
+| `server/routes/parse-questions.routes.ts` | Edit | Remove inline isAuthenticated, import from auth, getUserId |
+| `server/routes/interview-flow.routes.ts` | Edit | Import getOptionalUserId, replace line 76 |
+| `server/routes/review.routes.ts` | Edit | Replace `req.isAuthenticated?.()` with `getAuth(req)?.userId` |
+| `shared/models/auth.ts` | Edit | Update comment on sessions table (keep table for now) |
+| `client/src/App.tsx` | Edit | Wrap with ClerkProvider |
+| `client/src/hooks/use-auth.ts` | Edit | Add Clerk hooks, keep /api/auth/user fetch, update logout |
+| `client/src/hooks/use-onboarding.ts` | No change | Preserved — depends on /api/auth/user cache key (unchanged) |
+| `client/src/pages/landing.tsx` | Edit | Replace 4x `/api/login` links with SignInButton |
+| `client/src/lib/auth-utils.ts` | Edit | Replace `/api/login` redirect |
+
+---
+
+## Verification
+
+1. `npm run check` — no TypeScript errors
+2. `npm run build` — production build succeeds
+3. `npx vitest` — existing tests pass
+4. **Sign in flow:** Click Sign In → Clerk modal → email/password or Google → redirected to dashboard → user record created in local DB → demo project seeded
+5. **Returning user (ID remap):** Sign in with email matching existing Replit user → old user ID remapped to Clerk ID → workspaces, projects, interviews all accessible
+6. **Invite gate:** Authenticated but non-invited user → sees waitlist page → can submit waitlist form
+7. **Route protection:** `GET /api/projects` without auth → 401 JSON response
+8. **Public routes:** `/join/:collectionId` and `/interview/:sessionId` → work without auth
+9. **Optional auth:** `POST /api/collections/:id/sessions` → works with and without auth (interview-flow)
+10. **Review access:** `req.isAuthenticated?.()` path in review.routes.ts → works with Clerk auth
+11. **Webhook:** Create/update user in Clerk dashboard → local users table updated
+12. **Onboarding:** New user completes welcome dialog → onboarding state persists in local DB → survives page refresh
+13. **Proxy:** `req.protocol` returns `https` behind reverse proxy (trust proxy setting)
+14. **Logout:** Sign out → Clerk session cleared → landing page shown

@@ -25,7 +25,8 @@
       "Bash(git log --since=\"2026-02-22\" --all --pretty=format:\"%h %ad %s\" --date=short | grep -v \"Transitioned from Plan\\\\|Saved your changes\\\\|Saved progress\\\\|Published your App\" | sort -k2)",
       "Bash(npx vitest --run 2>&1)",
       "WebFetch(domain:x.ai)",
-      "WebFetch(domain:replit.com)"
+      "WebFetch(domain:replit.com)",
+      "WebFetch(domain:clerk.com)"
     ]
   }
 }
