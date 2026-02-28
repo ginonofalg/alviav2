@@ -39,6 +39,8 @@ export function useReconnection({
     }
   }, []);
 
+  const isPlannedRefreshRef = useRef(false);
+
   const clearConnectionTimeout = useCallback(() => {
     if (connectionTimeoutRef.current) {
       clearTimeout(connectionTimeoutRef.current);
@@ -55,6 +57,7 @@ export function useReconnection({
     reconnectAttemptRef.current = 0;
     reconnectAbortedRef.current = true;
     isAttemptInFlightRef.current = false;
+    isPlannedRefreshRef.current = false;
   }, [clearReconnectTimer, clearConnectionTimeout]);
 
   const scheduleReconnect = useCallback((attempt: number, token?: number) => {
@@ -140,11 +143,47 @@ export function useReconnection({
     clearReconnectTimer();
     clearConnectionTimeout();
     isAttemptInFlightRef.current = false;
+    isPlannedRefreshRef.current = false;
     setIsReconnecting(false);
     setReconnectAttempt(0);
     isReconnectingRef.current = false;
     reconnectAttemptRef.current = 0;
   }, [clearReconnectTimer, clearConnectionTimeout]);
+
+  const startImmediateReconnect = useCallback(() => {
+    clearReconnectTimer();
+    clearConnectionTimeout();
+    reconnectAbortedRef.current = false;
+    isPlannedRefreshRef.current = true;
+    setIsReconnecting(true);
+    isReconnectingRef.current = true;
+    reconnectTokenRef.current += 1;
+    const token = reconnectTokenRef.current;
+    setReconnectAttempt(1);
+    reconnectAttemptRef.current = 1;
+    isAttemptInFlightRef.current = true;
+
+    connectionTimeoutRef.current = setTimeout(() => {
+      if (token !== reconnectTokenRef.current || !isReconnectingRef.current) return;
+      console.log("[Interview] Planned refresh connection attempt timed out, falling back to backoff");
+      isAttemptInFlightRef.current = false;
+      isPlannedRefreshRef.current = false;
+      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        wsRef.current.close();
+      }
+      scheduleReconnect(2, token);
+    }, CONNECTION_TIMEOUT_MS);
+
+    try {
+      connectWebSocketRef.current?.();
+    } catch (err) {
+      console.error("[Interview] Planned refresh connectWebSocket threw error:", err);
+      isAttemptInFlightRef.current = false;
+      isPlannedRefreshRef.current = false;
+      clearConnectionTimeout();
+      scheduleReconnect(2, token);
+    }
+  }, [wsRef, connectWebSocketRef, clearReconnectTimer, clearConnectionTimeout, scheduleReconnect]);
 
   return {
     isReconnecting,
@@ -156,11 +195,13 @@ export function useReconnection({
     wasListeningBeforeDisconnectRef,
     shouldAutoResumeRef,
     isAttemptInFlightRef,
+    isPlannedRefreshRef,
     clearReconnectTimer,
     clearConnectionTimeout,
     stopReconnect,
     scheduleReconnect,
     startReconnect,
+    startImmediateReconnect,
     onReconnectSuccess,
   };
 }

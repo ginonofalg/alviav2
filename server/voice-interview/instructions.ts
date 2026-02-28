@@ -130,126 +130,118 @@ export function buildOverlapInstruction(
   }
 }
 
-export function buildResumeInstructions(state: InterviewState): string {
+interface ResumeContext {
+  objective: string;
+  tone: string;
+  questionIndex: number;
+  totalQuestions: number;
+  respondentName: string | null;
+  transcriptSummary: string;
+  currentQuestionText: string;
+  status: string;
+  barbaraSuggestedMoveOn: boolean;
+  guidance: string;
+  recommendedFollowUps: number | null;
+  followUpCount: number;
+  upcomingQuestions: string;
+  lastBarbaraGuidance: string | undefined;
+}
+
+function buildResumeContext(state: InterviewState): ResumeContext {
   const template = state.template;
   const currentQuestion = state.questions[state.currentQuestionIndex];
   const questionIndex = state.currentQuestionIndex;
   const totalQuestions = state.questions.length;
-  const respondentName = state.respondentInformalName;
 
-  const objective = template?.objective || "Conduct a thorough interview";
-  const tone = template?.tone || "professional";
-  const strategicContext = state.strategicContext;
-  const guidance = currentQuestion?.guidance || "";
-
-  // Build transcript summary (last 10-15 entries)
   const recentTranscript = state.transcriptLog.slice(-15);
   const transcriptSummary = recentTranscript
     .map((entry) => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
     .join("\n");
 
-  // Check question state
   const questionState = state.questionStates.find(
     (qs) => qs.questionIndex === questionIndex,
   );
-  const status = questionState?.status || "in_progress";
-  const barbaraSuggestedMoveOn = questionState?.barbaraSuggestedMoveOn || false;
 
-  // Build personalization context - only use name once when welcoming back
-  const nameContext = respondentName
-    ? `The respondent's name is "${respondentName}". Use their name once in the welcome-back greeting, then do not use it again.`
+  return {
+    objective: template?.objective || "Conduct a thorough interview",
+    tone: template?.tone || "professional",
+    questionIndex,
+    totalQuestions,
+    respondentName: state.respondentInformalName,
+    transcriptSummary,
+    currentQuestionText: currentQuestion?.questionText || "Please share your thoughts.",
+    status: questionState?.status || "in_progress",
+    barbaraSuggestedMoveOn: questionState?.barbaraSuggestedMoveOn || false,
+    guidance: currentQuestion?.guidance || "",
+    recommendedFollowUps:
+      currentQuestion?.recommendedFollowUps ??
+      state.template?.defaultRecommendedFollowUps ??
+      null,
+    followUpCount:
+      state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0,
+    upcomingQuestions: state.questions
+      .slice(questionIndex + 1)
+      .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
+      .join("\n"),
+    lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
+  };
+}
+
+function buildSharedContextBlock(ctx: ResumeContext): string {
+  const nameContext = ctx.respondentName
+    ? `The respondent's name is "${ctx.respondentName}". Do NOT overuse their name — use it at most once, then continue naturally.`
     : "The respondent has not provided their name. Address them in a friendly but general manner.";
 
-  // Build upcoming questions list to avoid duplicating follow-ups
-  const upcomingQuestions = state.questions
-    .slice(questionIndex + 1)
-    .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
-    .join("\n");
-
-  // Follow-up depth tracking
-  const recommendedFollowUps =
-    currentQuestion?.recommendedFollowUps ??
-    state.template?.defaultRecommendedFollowUps ??
-    null;
-  const followUpCount =
-    state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0;
-
-  // Last Barbara guidance from before disconnection
-  const lastBarbaraGuidance = state.lastBarbaraGuidance?.message;
-
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
-
+  let block = `
 INTERVIEW CONTEXT:
-- Objective: ${objective}
-- Tone: ${tone}
-- Current Question: ${questionIndex + 1} of ${totalQuestions}
+- Objective: ${ctx.objective}
+- Tone: ${ctx.tone}
+- Current Question: ${ctx.questionIndex + 1} of ${ctx.totalQuestions}
 
 RESPONDENT:
 ${nameContext}
 
 TRANSCRIPT SUMMARY (recent conversation):
-${transcriptSummary || "(No previous conversation recorded)"}
+${ctx.transcriptSummary || "(No previous conversation recorded)"}
 
-CURRENT QUESTION: "${currentQuestion?.questionText || "Please share your thoughts."}"
-QUESTION STATUS: ${status}
+CURRENT QUESTION: "${ctx.currentQuestionText}"
+QUESTION STATUS: ${ctx.status}
 
 STEER FOR THIS QUESTION:
-${guidance || "Listen carefully and probe for more details when appropriate."}
-${
-  recommendedFollowUps !== null && recommendedFollowUps !== undefined
-    ? `
-FOLLOW-UP DEPTH:
-The researcher recommends approximately ${recommendedFollowUps} follow-up probe${recommendedFollowUps === 1 ? "" : "s"} for this question.
-You've asked ${followUpCount} so far. This is guidance, not a strict limit.
-`
-    : ""
-}${
-    upcomingQuestions
-      ? `
-UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be covered later):
-${upcomingQuestions}
-`
-      : ""
-  }`;
+${ctx.guidance || "Listen carefully and probe for more details when appropriate."}`;
 
-  if (barbaraSuggestedMoveOn) {
-    instructions += `
-NOTE: Before the interruption, the respondent had given a comprehensive answer and you offered to move to the next question.
+  if (ctx.recommendedFollowUps !== null && ctx.recommendedFollowUps !== undefined) {
+    block += `
+FOLLOW-UP DEPTH:
+The researcher recommends approximately ${ctx.recommendedFollowUps} follow-up probe${ctx.recommendedFollowUps === 1 ? "" : "s"} for this question.
+You've asked ${ctx.followUpCount} so far. This is guidance, not a strict limit.
 `;
   }
 
-  instructions += `
-RESUME INSTRUCTIONS:
-1. Welcome them back briefly and warmly${respondentName ? `, using their name "${respondentName}"` : ""}. Keep your welcome-back greeting concise.
-2. ${
-    barbaraSuggestedMoveOn
-      ? "The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything or move to the next question."
-      : "Briefly remind them what you were discussing and invite them to continue their response. Do NOT repeat the full question unless specifically needed."
+  if (ctx.upcomingQuestions) {
+    block += `
+UPCOMING QUESTIONS (DO NOT ask follow-ups that overlap with these, they will be covered later):
+${ctx.upcomingQuestions}
+`;
   }
-3. Listen to the respondent's answer carefully.
-4. Ask follow-up questions if the answer is too brief or unclear.
-5. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
-6. Use the STEER FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the STEER. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
-7. You may want to incorporate BARBARA'S GUIDANCE into your follow-up question. Remember, this is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; only incorporate this guidance naturally if appropriate, and never repeat a question.
-8. Be encouraging and conversational, matching the ${tone} tone.
-9. Keep responses concise, this is a voice conversation.
-10. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
-11. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-12. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-13. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
 
+  return block;
+}
+
+function buildSharedFooter(ctx: ResumeContext, guidanceNote: string): string {
+  let footer = `
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.`;
 
-  if (lastBarbaraGuidance) {
-    instructions += `
+  if (ctx.lastBarbaraGuidance) {
+    footer += `
 
 BARBARA'S GUIDANCE:
-${lastBarbaraGuidance}
-Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage, incorporate this guidance naturally when appropriate.`;
+${ctx.lastBarbaraGuidance}
+${guidanceNote}`;
   }
 
-  instructions += `
+  footer += `
 
 ORCHESTRATOR MESSAGES:
 You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. These are internal guidance from Barbara, your orchestrator. When you see these:
@@ -260,6 +252,80 @@ You will occasionally receive messages wrapped in [ORCHESTRATOR: ...] brackets. 
 - The guidance may be based on a slightly earlier point in the conversation, use your judgment on timing
 
 Remember: You are speaking out loud, so be natural and conversational. Do not use markdown or special formatting.`;
+
+  return footer;
+}
+
+export function buildResumeInstructions(state: InterviewState): string {
+  const ctx = buildResumeContext(state);
+
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.`;
+
+  instructions += buildSharedContextBlock(ctx);
+
+  if (ctx.barbaraSuggestedMoveOn) {
+    instructions += `
+NOTE: Before the interruption, the respondent had given a comprehensive answer and you offered to move to the next question.
+`;
+  }
+
+  instructions += `
+RESUME INSTRUCTIONS:
+1. Welcome them back briefly and warmly${ctx.respondentName ? `, using their name "${ctx.respondentName}"` : ""}. Keep your welcome-back greeting concise.
+2. ${
+    ctx.barbaraSuggestedMoveOn
+      ? "The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything or move to the next question."
+      : "Briefly remind them what you were discussing and invite them to continue their response. Do NOT repeat the full question unless specifically needed."
+  }
+3. Listen to the respondent's answer carefully.
+4. Ask follow-up questions if the answer is too brief or unclear.
+5. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
+6. Use the STEER FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the STEER. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+7. You may want to incorporate BARBARA'S GUIDANCE into your follow-up question. Remember, this is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; only incorporate this guidance naturally if appropriate, and never repeat a question.
+8. Be encouraging and conversational, matching the ${ctx.tone} tone.
+9. Keep responses concise, this is a voice conversation.
+10. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+11. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
+12. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+13. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.`;
+
+  instructions += buildSharedFooter(
+    ctx,
+    "Note: This guidance was provided before the connection interruption. The respondent may need a moment to re-engage, incorporate this guidance naturally when appropriate.",
+  );
+
+  return instructions;
+}
+
+export function buildRefreshInstructions(state: InterviewState): string {
+  const ctx = buildResumeContext(state);
+
+  let instructions = `You are Alvia, a friendly and professional AI interviewer conducting a voice interview in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.`;
+
+  instructions += buildSharedContextBlock(ctx);
+
+  instructions += `
+CONTINUATION INSTRUCTIONS:
+1. Continue the conversation naturally. Respond to the respondent's last statement.
+2. Do NOT acknowledge any interruption, pause, or reconnection.
+3. Do NOT welcome them back or ask if they're ready to continue.
+4. Simply respond as if the conversation never stopped.
+5. Listen to the respondent's answer carefully.
+6. Ask follow-up questions if the answer is too brief or unclear.
+7. IMPORTANT: make sure these follow-up questions don't overlap with an UPCOMING QUESTION.
+8. Use the STEER FOR THIS QUESTION to know what depth of answer is expected. Remember, this is a voice conversation, so don't expect a perfect response vs the STEER. Balance between probing for more detail and the length of the conversation about the CURRENT QUESTION.
+9. You may want to incorporate BARBARA'S GUIDANCE into your follow-up question. Remember, this is based on analysis of the conversation up to a moment ago. The respondent may have said something new since then; only incorporate this guidance naturally if appropriate, and never repeat a question.
+10. Be encouraging and conversational, matching the ${ctx.tone} tone.
+11. Keep responses concise, this is a voice conversation.
+12. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
+13. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
+14. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+15. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.`;
+
+  instructions += buildSharedFooter(
+    ctx,
+    "Note: This guidance is based on analysis of the conversation up to a moment ago. Incorporate it naturally when appropriate.",
+  );
 
   return instructions;
 }

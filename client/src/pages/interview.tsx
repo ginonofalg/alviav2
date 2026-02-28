@@ -293,6 +293,7 @@ export default function InterviewPage() {
   
   // VAD eagerness state - for debugging indicator (controlled by VITE_SHOW_VAD_INDICATOR)
   const [vadEagerness, setVadEagerness] = useState<"auto" | "low" | "high">("auto");
+  const isRefreshSuppressAudioRef = useRef(false);
   const showVadIndicator = import.meta.env.VITE_SHOW_VAD_INDICATOR !== "false";
   
   const wsRef = useRef<WebSocket | null>(null);
@@ -318,11 +319,13 @@ export default function InterviewPage() {
     wasListeningBeforeDisconnectRef,
     shouldAutoResumeRef,
     isAttemptInFlightRef,
+    isPlannedRefreshRef,
     clearReconnectTimer,
     clearConnectionTimeout,
     stopReconnect,
     scheduleReconnect,
     startReconnect,
+    startImmediateReconnect,
     onReconnectSuccess,
   } = useReconnection({
     wsRef,
@@ -566,6 +569,13 @@ export default function InterviewPage() {
         heartbeatIntervalRef.current = null;
       }
       
+      // Handle planned connection refresh close code (4000) — immediate reconnect, no backoff
+      if (event.code === 4000) {
+        console.log("[Interview] Planned connection refresh — starting immediate reconnect");
+        startImmediateReconnect();
+        return;
+      }
+
       // Detect unexpected disconnect and trigger reconnection
       // Close codes: 1005 = no status, 1006 = abnormal, 1011-1013 = server errors
       const isUnexpectedClose = 
@@ -634,13 +644,21 @@ export default function InterviewPage() {
   const handleWebSocketMessage = useCallback(
     (message: any) => {
       switch (message.type) {
+        case "connection_refresh":
+          console.log("[Interview] Server initiated planned connection refresh");
+          shouldAutoResumeRef.current = isListeningRef.current && !isPausedRef.current;
+          stopAiPlayback();
+          isRefreshSuppressAudioRef.current = true;
+          break;
+
         case "connected":
           console.log("[Interview] Session connected:", message);
           setIsConnected(true);
           setIsConnecting(false);
-          // Only set isListening true if NOT a resumed session
+          isRefreshSuppressAudioRef.current = false;
+          // Only set isListening true if NOT a resumed session (unless it's a planned refresh)
           // For resumed sessions, audio capture hasn't started yet - user needs to click mic
-          if (!message.isResumed) {
+          if (!message.isResumed || message.isConnectionRefresh) {
             setIsListening(true);
           }
           setCurrentQuestionIndex(message.questionIndex || 0);
@@ -713,6 +731,7 @@ export default function InterviewPage() {
           break;
 
         case "audio":
+          if (isRefreshSuppressAudioRef.current) break;
           playAudio(message.delta);
           break;
 
@@ -954,7 +973,7 @@ export default function InterviewPage() {
           break;
       }
     },
-    [playAudio, toast, navigate, stopAudioCapture, initAudioContext, clearSuppression, onReconnectSuccess, playChime],
+    [playAudio, toast, navigate, stopAudioCapture, stopAiPlayback, initAudioContext, clearSuppression, onReconnectSuccess, playChime],
   );
 
   // Track silence pause state in a ref for use in audio processor callback
@@ -1633,7 +1652,9 @@ export default function InterviewPage() {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              {isReconnecting
+              {isReconnecting && isPlannedRefreshRef.current
+                ? "Refreshing connection..."
+                : isReconnecting
                 ? `Reconnecting... (Attempt ${reconnectAttempt} of ${RECONNECT_MAX_ATTEMPTS})`
                 : isConnecting
                   ? "Connecting to Alvia..."

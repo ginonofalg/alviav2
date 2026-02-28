@@ -150,6 +150,13 @@ export interface InterviewState {
   terminationWarned: boolean; // Whether client has been warned about impending termination
   clientDisconnectedAt: number | null; // When client WS closed (for watchdog to handle)
   isFinalizing: boolean; // True when finalizeInterview() is in progress — prevents disconnect/watchdog interference
+  // Proactive connection refresh state (Railway 15-min WS limit)
+  clientWsConnectedAt: number; // When current client WS connected (resets per reconnect)
+  needsConnectionRefresh: boolean; // Set by watchdog at 13.5 min
+  pendingRefreshAfterTranscript: boolean; // Set at speech_stopped, consumed at transcription.completed
+  isConnectionRefresh: boolean; // True during refresh cycle
+  useRefreshInstructions: boolean; // Use buildRefreshInstructions instead of buildResumeInstructions
+  autoTriggerAfterRefresh: boolean; // Auto-trigger response.create after provider ready (no mic click)
   // Realtime API performance metrics
   metricsTracker: MetricsTracker;
   // Transcription quality tracking (noisy environment detection)
@@ -333,3 +340,8 @@ export const WATCHDOG_INTERVAL_MS = 30_000; // Run watchdog every 30s
 export const TERMINATION_WARNING_MS = 30_000; // Warn client 30s before termination
 // WebSocket protocol-level ping interval - prevents infrastructure (load balancer/proxy) timeouts
 export const WS_PING_INTERVAL_MS = 30_000; // Send ws.ping() every 30s to keep connection alive at protocol level
+
+// Proactive connection refresh constants (Railway 15-min WS limit)
+export const CONNECTION_REFRESH_MS = 810_000; // 13.5 min — set refresh flag
+export const CONNECTION_REFRESH_FALLBACK_MS = 870_000; // 14.5 min — force refresh if no conversation boundary
+export const WS_CLOSE_CODE_REFRESH = 4000; // Custom close code for planned connection refresh

@@ -87,6 +87,9 @@ import {
   WATCHDOG_INTERVAL_MS,
   TERMINATION_WARNING_MS,
   WS_PING_INTERVAL_MS,
+  CONNECTION_REFRESH_MS,
+  CONNECTION_REFRESH_FALLBACK_MS,
+  WS_CLOSE_CODE_REFRESH,
   type CrossInterviewRuntimeContext,
   type AnalyticsHypothesesRuntimeContext,
   type CompactQuestionQualityInsight,
@@ -106,7 +109,12 @@ import {
   buildInterviewInstructions,
   buildOverlapInstruction,
   buildResumeInstructions,
+  buildRefreshInstructions,
 } from "./voice-interview/instructions";
+import {
+  refreshConnection,
+  type RefreshDependencies,
+} from "./voice-interview/connection-refresh";
 import {
   sanitizeAlviaTranscript,
   addTranscriptEntry,
@@ -122,6 +130,11 @@ function isCurrentConnection(sessionId: string, connectionId: string): boolean {
 }
 
 const interviewStates = new Map<string, InterviewState>();
+
+const refreshDeps: RefreshDependencies = {
+  getState: (id) => interviewStates.get(id),
+  flushPersist: (id) => flushPersist(id),
+};
 
 function scheduleDebouncedPersist(sessionId: string): void {
   const state = interviewStates.get(sessionId);
@@ -451,11 +464,16 @@ export function handleVoiceInterview(
     existingState.lastHeartbeatAt = now;
     existingState.lastActivityAt = now;
     existingState.terminationWarned = false;
+    existingState.clientWsConnectedAt = now;
+    existingState.needsConnectionRefresh = false;
+    existingState.pendingRefreshAfterTranscript = false;
 
-    // Set awaitingResume for server-side defense-in-depth
+    const isPlannedRefresh = existingState.isConnectionRefresh;
+
+    // Set awaitingResume for server-side defense-in-depth (skip for planned refresh)
     // This gates audio forwarding until the client explicitly sends a resume signal
     // Prevents any stray audio from triggering OpenAI VAD after reconnection
-    existingState.awaitingResume = true;
+    existingState.awaitingResume = !isPlannedRefresh;
 
     // Set up message handlers for reconnected client
     clientWs.on("message", (data) => {
@@ -515,6 +533,18 @@ export function handleVoiceInterview(
         }
       }
     });
+
+    if (isPlannedRefresh) {
+      console.log(
+        `[VoiceInterview] Planned refresh reconnection for session: ${sessionId}`,
+      );
+      existingState.isRestoredSession = true;
+      existingState.isConnectionRefresh = false;
+      existingState.useRefreshInstructions = true;
+      existingState.autoTriggerAfterRefresh = true;
+      connectToRealtimeProvider(sessionId, clientWs);
+      return;
+    }
 
     // Send reconnected message to client with current state (including provider for UI sync)
     clientWs.send(
@@ -630,6 +660,13 @@ export function handleVoiceInterview(
     terminationWarned: false,
     clientDisconnectedAt: null,
     isFinalizing: false,
+    // Proactive connection refresh state
+    clientWsConnectedAt: now,
+    needsConnectionRefresh: false,
+    pendingRefreshAfterTranscript: false,
+    isConnectionRefresh: false,
+    useRefreshInstructions: false,
+    autoTriggerAfterRefresh: false,
     // Realtime API performance metrics
     metricsTracker: createEmptyMetricsTracker(),
     // Transcription quality tracking (noisy environment detection)
@@ -998,7 +1035,13 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     const currentQuestion = state.questions[state.currentQuestionIndex];
 
     let instructions: string;
-    if (state.isRestoredSession && state.transcriptLog.length > 0) {
+    if (state.useRefreshInstructions && state.transcriptLog.length > 0) {
+      instructions = buildRefreshInstructions(state);
+      state.useRefreshInstructions = false;
+      console.log(
+        `[VoiceInterview] Using refresh instructions for planned refresh: ${sessionId}`,
+      );
+    } else if (state.isRestoredSession && state.transcriptLog.length > 0) {
       instructions = buildResumeInstructions(state);
       console.log(
         `[VoiceInterview] Using resume instructions for restored session: ${sessionId}`,
@@ -1127,6 +1170,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       }
     }
 
+    const isRefreshReconnect = state.autoTriggerAfterRefresh;
     clientWs.send(
       JSON.stringify({
         type: "connected",
@@ -1135,6 +1179,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         totalQuestions: state.questions.length,
         currentQuestion: currentQuestion?.questionText,
         isResumed: state.isRestoredSession,
+        isConnectionRefresh: isRefreshReconnect || false,
         persistedTranscript: state.isRestoredSession
           ? state.fullTranscriptForPersistence
           : undefined,
@@ -1193,6 +1238,12 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     // Get current state (closure 'state' may reference orphaned object)
     const currentState = interviewStates.get(sessionId);
     if (currentState) {
+      if (currentState.isConnectionRefresh) {
+        console.log(
+          `[VoiceInterview] Provider closed during planned refresh for ${sessionId} — suppressing disconnected event`,
+        );
+        return;
+      }
       currentState.isConnected = false;
       // Reset responseInProgress on disconnect to prevent deadlock
       if (currentState.responseInProgress) {
@@ -1298,13 +1349,14 @@ async function handleProviderEvent(
         ) {
           state.isInitialSession = false; // Mark initial setup complete
 
-          // Skip auto-trigger for restored sessions - user must click mic to trigger resume
-          if (state.isRestoredSession) {
+          // Skip auto-trigger for restored sessions — unless this is a planned refresh
+          if (state.isRestoredSession && !state.autoTriggerAfterRefresh) {
             console.log(
               `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
             );
             break;
           }
+          state.autoTriggerAfterRefresh = false;
 
           if (!canCreateResponse(state)) {
             console.log(
@@ -1633,6 +1685,12 @@ async function handleProviderEvent(
             transcript: event.transcript,
           }),
         );
+
+        if (state.pendingRefreshAfterTranscript) {
+          state.pendingRefreshAfterTranscript = false;
+          refreshConnection(sessionId, refreshDeps);
+          return;
+        }
       })();
       break;
 
@@ -1726,6 +1784,14 @@ async function handleProviderEvent(
       state.metricsTracker.eagernessTracking.recentTurnBargeIns.push(false);
       if (state.metricsTracker.eagernessTracking.recentTurnBargeIns.length > 6) {
         state.metricsTracker.eagernessTracking.recentTurnBargeIns.shift();
+      }
+
+      if (state.needsConnectionRefresh && !state.isFinalizing) {
+        state.pendingRefreshAfterTranscript = true;
+        state.needsConnectionRefresh = false;
+        if (state.providerWs?.readyState === WebSocket.OPEN) {
+          state.providerWs.send(JSON.stringify({ type: "response.cancel" }));
+        }
       }
 
       clientWs?.send(JSON.stringify({ type: "user_speaking_stopped" }));
@@ -2491,6 +2557,12 @@ async function handleClientMessage(
 
           // Schedule debounced persist
           scheduleDebouncedPersist(sessionId);
+
+          if (state.needsConnectionRefresh && !state.isFinalizing) {
+            state.needsConnectionRefresh = false;
+            refreshConnection(sessionId, refreshDeps);
+            return;
+          }
 
           // Add user text as a conversation item
           state.providerWs.send(
@@ -4278,6 +4350,8 @@ function runWatchdogCycle(): void {
   }> = [];
   const sessionsToWarn: string[] = [];
 
+  const sessionsToRefresh: string[] = [];
+
   const sessionEntries = Array.from(interviewStates.entries());
   for (const [sessionId, state] of sessionEntries) {
     // Skip sessions that are in the process of finalizing (completing + generating summaries)
@@ -4286,6 +4360,34 @@ function runWatchdogCycle(): void {
     const age = now - state.createdAt;
     const timeSinceHeartbeat = now - state.lastHeartbeatAt;
     const timeSinceActivity = now - state.lastActivityAt;
+
+    // Proactive connection refresh (Railway 15-min WS limit)
+    const clientWsAge = now - state.clientWsConnectedAt;
+    if (
+      clientWsAge > CONNECTION_REFRESH_MS &&
+      !state.needsConnectionRefresh &&
+      !state.pendingRefreshAfterTranscript &&
+      !state.isConnectionRefresh
+    ) {
+      state.needsConnectionRefresh = true;
+      console.log(
+        `[ConnectionRefresh] Flag set for session ${sessionId} (WS age: ${Math.round(clientWsAge / 1000)}s)`,
+      );
+    }
+    if (
+      clientWsAge > CONNECTION_REFRESH_FALLBACK_MS &&
+      state.clientWs?.readyState === WebSocket.OPEN &&
+      !state.isConnectionRefresh &&
+      !state.needsConnectionRefresh &&
+      !state.pendingRefreshAfterTranscript &&
+      !state.clientDisconnectedAt &&
+      !state.responseInProgress &&
+      !state.speakingStartTime &&
+      !state.isFinalizing
+    ) {
+      sessionsToRefresh.push(sessionId);
+      continue;
+    }
 
     let reason: TerminationReason | null = null;
 
@@ -4323,6 +4425,14 @@ function runWatchdogCycle(): void {
         sessionsToWarn.push(sessionId);
       }
     }
+  }
+
+  // Proactive connection refresh (fallback — no conversation boundary within extra minute)
+  for (const sessionId of sessionsToRefresh) {
+    console.log(
+      `[ConnectionRefresh] Watchdog fallback refresh for session ${sessionId}`,
+    );
+    refreshConnection(sessionId, refreshDeps);
   }
 
   // Warn sessions about impending termination
