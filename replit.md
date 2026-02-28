@@ -16,7 +16,7 @@ Preferred communication style: Simple, everyday language.
 -   **Frontend**: React 18, Wouter, TanStack React Query, Radix UI, Tailwind CSS, Framer Motion.
 -   **Backend**: Express.js with WebSocket support for real-time interactions.
 -   **Database**: PostgreSQL with Drizzle ORM for all data, including multi-tenant workspaces, project configurations, and LLM usage logs.
--   **Authentication**: Clerk (Express.js middleware + React SDK) with stateless JWTs. Sign-in via Email/Password or Google OAuth. User sync with transactional ID remap for returning users. Legacy Replit OIDC code retained in `server/replit_integrations/auth/` during transition.
+-   **Authentication**: Clerk (Express.js middleware + React SDK) with stateless JWTs. Sign-in via Email/Password or Google OAuth. User sync with transactional ID remap for returning users.
 
 **Feature Specifications**:
 -   **Voice Interview Flow**: Respondents connect via WebSocket for real-time audio interaction. The server bridges audio to AI voice providers. Barbara analyzes respondent utterances in real-time, injecting guidance to Alvia (e.g., probe deeper, move on) and dynamically generating follow-up questions. Interview state is persisted every 2 seconds for crash recovery. Transcription quality is monitored in real-time. The MicButton displays an 8-bit pixel art avatar of Alvia that changes based on interview state (listening, talking, paused, connecting, text_mode, silence, noisy, thinking, ready, offline, reconnecting). Avatar images are in `client/src/assets/alvia/`, registered in `client/src/lib/alvia-avatar-registry.ts`, with state resolution via `client/src/hooks/use-alvia-avatar.ts`. Variant rotation (10s interval) is supported by adding `_2.png`, `_3.png` suffixes.

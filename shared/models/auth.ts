@@ -1,17 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
-
-// Session storage table.
-// (DEPRECATED) To be removed after Clerk migration validation. Clerk uses stateless JWTs.
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)]
-);
+import { jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export interface OnboardingState {
   welcomeCompleted: boolean;

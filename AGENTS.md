@@ -25,7 +25,7 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 - **Frontend**: React 18, Wouter (routing), TanStack React Query, Radix UI, Tailwind CSS, Framer Motion
 - **Backend**: Express.js with WebSocket support (ws library)
 - **Database**: PostgreSQL with Drizzle ORM
-- **Auth**: Replit OpenID Connect via Passport, sessions stored in PostgreSQL
+- **Auth**: Clerk (Express.js middleware + React SDK, stateless JWTs) — `server/auth/` module
 - **Voice**: OpenAI Realtime API (`gpt-realtime-mini`) or xAI Grok (`grok-3-fast`) over WebSocket, switchable via env var
 - **Orchestration**: Barbara (8 configurable use cases) monitors interviews and guides Alvia
 - **LLM Usage Tracking**: Billing-grade token tracking with event log + hourly rollups
@@ -137,14 +137,16 @@ server/
   __tests__/                # Server-side tests (Vitest)
     resume-token.test.ts        # Resume token utility tests
     smoke.test.ts               # Module import smoke tests
-  replit_integrations/auth/ # OIDC authentication (~300 lines)
-    replitAuth.ts           # Passport OIDC strategy setup
-    routes.ts               # Auth routes (/api/auth/user, invite-status, waitlist)
-    storage.ts              # Auth data persistence
+  auth/                     # Clerk authentication (~330 lines)
+    middleware.ts           # clerkAuthMiddleware, isAuthenticated, getUserId, getOptionalUserId
+    sync.ts                 # syncClerkUser with transactional ID remap for returning users
+    webhook.ts              # POST /api/webhooks/clerk (svix signature verification)
+    routes.ts               # Auth routes (/api/auth/user, invite-status, waitlist, onboarding)
+    storage.ts              # Auth data persistence (getUser, getUserByEmail, upsertUser)
     index.ts                # Module exports
 shared/
   schema.ts                 # Drizzle schema - source of truth (~510 lines)
-  models/auth.ts            # Auth tables (users, sessions)
+  models/auth.ts            # Auth types and users table
   types/                    # Extracted TypeScript types (~700 lines total)
     index.ts                    # Re-exports all types
     interview-state.ts          # Persisted interview state types
@@ -454,11 +456,9 @@ Optional:
 - `GEMINI_API_KEY` - For infographic generation (Google Gemini API)
 - `REALTIME_PROVIDER` - Voice provider: "openai" (default) or "xai"
 - `XAI_API_KEY` - xAI API key (required if using Grok provider)
-- `SESSION_SECRET` - Session encryption key
 - `INVITE_ONLY_MODE` - Enable invite-only access (default: true, set "false" to disable)
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - "production" or "development"
-- `ISSUER_URL` - OIDC issuer URL (default: `https://replit.com/oidc`)
 - `BASE_URL` - Base URL for generated links (defaults to request protocol/host)
 
 ## Code Size Guidelines

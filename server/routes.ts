@@ -28,6 +28,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
+
   registerWebhookRoutes(app);
   app.use(clerkAuthMiddleware());
   registerAuthRoutes(app);
