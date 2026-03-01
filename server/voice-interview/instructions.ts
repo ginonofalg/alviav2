@@ -67,10 +67,14 @@ ${upcomingQuestions}
 `
       : ""
   }
-${eagernessMode === "high" ? `RESPONSE TIMING (IMPORTANT):
+${
+  eagernessMode === "high"
+    ? `RESPONSE TIMING (IMPORTANT):
 The voice detection is set to respond quickly, which means you may occasionally receive an utterance that seems cut off or incomplete (e.g., ends mid-sentence, is unusually brief, or trails off). When this happens, briefly acknowledge what was said and invite the respondent to continue (e.g., "Go on...", "Please continue...", "Sorry, carry on with that thought") rather than treating it as a complete answer.
 
-` : ""}INSTRUCTIONS:
+`
+    : ""
+}INSTRUCTIONS:
 1. ${questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the first question.` : `Continue from the respondent's latest point. Do not re-introduce yourself and do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`}
 2. Listen to the respondent's answer carefully.
 3. Ask follow-up questions if the answer is too brief or unclear.
@@ -173,7 +177,8 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       totalQuestions: coreCount + totalAQ,
       respondentName: state.respondentInformalName,
       transcriptSummary,
-      currentQuestionText: aqQuestion?.questionText || "Please share your thoughts.",
+      currentQuestionText:
+        aqQuestion?.questionText || "Please share your thoughts.",
       status: questionState?.status || "in_progress",
       barbaraSuggestedMoveOn: questionState?.barbaraSuggestedMoveOn || false,
       guidance: "",
@@ -202,7 +207,8 @@ function buildResumeContext(state: InterviewState): ResumeContext {
     totalQuestions,
     respondentName: state.respondentInformalName,
     transcriptSummary,
-    currentQuestionText: currentQuestion?.questionText || "Please share your thoughts.",
+    currentQuestionText:
+      currentQuestion?.questionText || "Please share your thoughts.",
     status: questionState?.status || "in_progress",
     barbaraSuggestedMoveOn: questionState?.barbaraSuggestedMoveOn || false,
     guidance: currentQuestion?.guidance || "",
@@ -243,7 +249,10 @@ QUESTION STATUS: ${ctx.status}
 STEER FOR THIS QUESTION:
 ${ctx.guidance || "Listen carefully and probe for more details when appropriate."}`;
 
-  if (ctx.recommendedFollowUps !== null && ctx.recommendedFollowUps !== undefined) {
+  if (
+    ctx.recommendedFollowUps !== null &&
+    ctx.recommendedFollowUps !== undefined
+  ) {
     block += `
 FOLLOW-UP DEPTH:
 The researcher recommends approximately ${ctx.recommendedFollowUps} follow-up probe${ctx.recommendedFollowUps === 1 ? "" : "s"} for this question.
@@ -339,7 +348,7 @@ export function buildRefreshInstructions(state: InterviewState): string {
 
   instructions += `
 CONTINUATION INSTRUCTIONS:
-1. Continue the conversation naturally. Respond to the respondent's last statement.
+1. The connection just resumed after a brief reset. Continue the conversation naturally. Either respond to their last statement, or just invite them to continue e.g. "What do you think?". Whatever is most natural.
 2. Do NOT acknowledge any interruption, pause, or reconnection.
 3. Do NOT welcome them back or ask if they're ready to continue.
 4. Simply respond as if the conversation never stopped.
