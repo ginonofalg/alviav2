@@ -1,8 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import type { NormalizedTokenUsage } from "@shared/schema";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
 interface InfographicConfig {
   model?: 'gemini-3-pro-image-preview' | 'gemini-2.5-flash-image';
 }
@@ -19,10 +17,22 @@ export class InfographicService {
   private ai: GoogleGenAI;
 
   constructor() {
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+    const useVertexAI = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+
+    if (useVertexAI) {
+      const project = process.env.GOOGLE_CLOUD_PROJECT;
+      const location = process.env.GOOGLE_CLOUD_LOCATION || 'europe-west1';
+      if (!project) {
+        throw new Error('GOOGLE_CLOUD_PROJECT is required when GOOGLE_GENAI_USE_VERTEXAI=true');
+      }
+      this.ai = new GoogleGenAI({ vertexai: true, project, location });
+    } else {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY environment variable is required');
+      }
+      this.ai = new GoogleGenAI({ apiKey });
     }
-    this.ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   }
 
   async generateInfographic(

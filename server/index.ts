@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startUsageMaintenanceJobs } from "./usage-maintenance";
 import { cleanupOrphanedSimulationRuns } from "./storage/simulation";
+import { validateAndLogLlmConfig } from "./llm-config";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -100,6 +101,7 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      validateAndLogLlmConfig();
       startUsageMaintenanceJobs();
       cleanupOrphanedSimulationRuns().then(count => {
         if (count > 0) log(`Cleaned up ${count} orphaned simulation run(s)`);

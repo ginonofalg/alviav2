@@ -54,7 +54,8 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
   }
 
   getWebSocketUrl(): string {
-    return "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+    return process.env.OPENAI_REALTIME_URL
+      || "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
   }
 
   getWebSocketHeaders(): Record<string, string> {

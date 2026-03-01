@@ -44,9 +44,9 @@ Preferred communication style: Simple, everyday language.
 
 ## External Dependencies
 
--   **OpenAI API**: Used for Alvia's voice conversations (e.g., `gpt-realtime-mini`) and Barbara's orchestration logic (various GPT models like `gpt-5-mini`, `gpt-4o`).
+-   **OpenAI API**: Used for Alvia's voice conversations (e.g., `gpt-realtime-mini`) and Barbara's orchestration logic (various GPT models like `gpt-5-mini`, `gpt-4o`). Supports EU data residency via `OPENAI_BASE_URL` and `OPENAI_REALTIME_URL` env vars.
 -   **xAI Grok API**: An alternative voice provider (e.g., `grok-3-fast`) for Alvia.
--   **Google Gemini API**: Used for generating AI-powered visual summaries (infographics) (e.g., `gemini-3-pro-image-preview`).
+-   **Google Gemini API**: Used for generating AI-powered visual summaries (infographics) (e.g., `gemini-3-pro-image-preview`). Supports Vertex AI mode for EU data residency via `GOOGLE_GENAI_USE_VERTEXAI` env var.
 -   **PostgreSQL**: The primary database for all application data (dev: local, production: Neon).
 -   **Clerk**: For user authentication (stateless JWTs, EU data residency).
 -   **jsPDF**: For generating PDF exports of analytics reports.

@@ -142,7 +142,8 @@ server/
   llm-usage.ts              # LLM usage tracking utilities (~190 lines)
   usage-maintenance.ts      # Automated cleanup and rollup reconciliation (~100 lines)
   transcription-quality.ts  # Transcription quality monitoring (~550 lines)
-  infographic-service.ts    # Google Gemini API integration (~210 lines)
+  infographic-service.ts    # Google Gemini API integration, supports Vertex AI for EU (~175 lines)
+  llm-config.ts             # LLM endpoint validation and startup audit logging (~30 lines)
   infographic-prompts.ts    # Prompt templates for infographics (~270 lines)
   demo-seed.ts              # Demo project data seeding for new users (~130 lines)
   resume-token.ts           # Interview resume token utilities
@@ -509,13 +510,20 @@ Required:
 - `OPENAI_API_KEY` - For voice interviews (OpenAI provider) and Barbara orchestrator
 
 Optional:
-- `GEMINI_API_KEY` - For infographic generation (Google Gemini API)
+- `GEMINI_API_KEY` - For infographic generation (Google Gemini API, required unless using Vertex AI)
 - `REALTIME_PROVIDER` - Voice provider: "openai" (default) or "xai"
 - `XAI_API_KEY` - xAI API key (required if using Grok provider)
 - `INVITE_ONLY_MODE` - Enable invite-only access (default: true, set "false" to disable)
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - "production" or "development"
 - `BASE_URL` - Base URL for generated links (defaults to request protocol/host)
+
+EU Data Residency (all optional — set to switch LLM traffic to EU endpoints):
+- `OPENAI_BASE_URL` - OpenAI SDK base URL (e.g., `https://eu.api.openai.com/v1`). Auto-read by the SDK for all standard API calls.
+- `OPENAI_REALTIME_URL` - Full WebSocket URL for OpenAI Realtime API (e.g., `wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini`)
+- `GOOGLE_GENAI_USE_VERTEXAI` - Set to `true` to use Vertex AI instead of Gemini API key auth (mutually exclusive with `GEMINI_API_KEY`)
+- `GOOGLE_CLOUD_PROJECT` - GCP project ID (required when `GOOGLE_GENAI_USE_VERTEXAI=true`)
+- `GOOGLE_CLOUD_LOCATION` - GCP region (default: `europe-west1`, used with Vertex AI)
 
 ## Code Size Guidelines
 
