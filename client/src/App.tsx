@@ -36,6 +36,7 @@ import InterviewCompletePage from "@/pages/interview-complete";
 import InterviewReviewPage from "@/pages/interview-review";
 import InterviewResumePage from "@/pages/interview-resume";
 import ReviewTokenPage from "@/pages/review-token";
+import TermsPage from "@/pages/terms";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -125,6 +126,7 @@ function Router() {
       <Route path="/interview/complete" component={InterviewCompletePage} />
       <Route path="/interview/resume/:token" component={InterviewResumePage} />
       <Route path="/interview/:sessionId" component={InterviewPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route path="/review/:sessionId">{(params) => {
         if (params.sessionId && params.sessionId.length === 64) {
           return <ReviewTokenPage />;

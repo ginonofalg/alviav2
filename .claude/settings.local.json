@@ -29,7 +29,16 @@
       "WebFetch(domain:clerk.com)",
       "WebFetch(domain:station.railway.com)",
       "WebFetch(domain:docs.railway.com)",
-      "WebFetch(domain:help.openai.com)"
+      "WebFetch(domain:help.openai.com)",
+      "WebFetch(domain:www.usertesting.com)",
+      "WebFetch(domain:otter.ai)",
+      "WebFetch(domain:www.qualtrics.com)",
+      "WebFetch(domain:www.typeform.com)",
+      "WebFetch(domain:www.respondent.io)",
+      "WebFetch(domain:maze.co)",
+      "WebFetch(domain:www.surveymonkey.com)",
+      "WebFetch(domain:dovetail.com)",
+      "WebFetch(domain:prolificresearch.com)"
     ]
   }
 }

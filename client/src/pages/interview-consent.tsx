@@ -493,7 +493,11 @@ export default function InterviewConsentPage() {
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-3">
-              By proceeding, you agree to our terms and privacy policy.
+              By proceeding, you agree to our{" "}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors" data-testid="link-terms-consent">
+                terms and conditions
+              </a>
+              {" "}and privacy policy.
             </p>
           </div>
         </CardContent>

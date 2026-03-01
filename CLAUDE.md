@@ -63,6 +63,7 @@ client/src/
     interview-resume.tsx    # Resume interview via token (public)
     interview-review.tsx    # Post-interview review (authenticated)
     review-token.tsx        # Shareable review via 64-char token (public)
+    terms.tsx               # Terms and conditions (public, no auth)
     not-found.tsx           # 404 page
   components/
     ui/                     # Radix UI wrappers (shadcn conventions, 48 primitives)

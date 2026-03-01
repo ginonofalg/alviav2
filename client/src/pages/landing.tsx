@@ -385,9 +385,14 @@ export default function LandingPage() {
             </div>
             <span className="font-semibold">Alvia</span>
           </div>
-          <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Alvia. All rights reserved.
-          </p>
+          <div className="flex items-center gap-4">
+            <a href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-terms-footer">
+              Terms &amp; Conditions
+            </a>
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} Alvia. All rights reserved.
+            </p>
+          </div>
         </div>
       </footer>
     </div>
