@@ -659,6 +659,9 @@ export default function InterviewPage() {
           console.log("[Interview] Session connected:", message);
           setIsConnected(true);
           setIsConnecting(false);
+          if (isRefreshSuppressAudioRef.current) {
+            console.log("[Interview] Clearing audio suppression after refresh reconnect");
+          }
           isRefreshSuppressAudioRef.current = false;
           // Only set isListening true if NOT a resumed session (unless it's a planned refresh)
           // For resumed sessions, audio capture hasn't started yet - user needs to click mic

@@ -175,6 +175,7 @@ export function useReconnection({
     }, CONNECTION_TIMEOUT_MS);
 
     try {
+      console.log("[Interview] Planned refresh — initiating immediate WebSocket reconnect");
       connectWebSocketRef.current?.();
     } catch (err) {
       console.error("[Interview] Planned refresh connectWebSocket threw error:", err);

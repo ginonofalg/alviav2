@@ -1180,6 +1180,11 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     }
 
     const isRefreshReconnect = state.autoTriggerAfterRefresh;
+    if (isRefreshReconnect) {
+      console.log(
+        `[ConnectionRefresh] Provider ready after planned refresh reconnect for ${sessionId} — will auto-trigger response`,
+      );
+    }
     clientWs.send(
       JSON.stringify({
         type: "connected",
@@ -1696,6 +1701,9 @@ async function handleProviderEvent(
         );
 
         if (state.pendingRefreshAfterTranscript) {
+          console.log(
+            `[ConnectionRefresh] transcription.completed — triggering planned refresh for ${sessionId}`,
+          );
           state.pendingRefreshAfterTranscript = false;
           refreshConnection(sessionId, refreshDeps);
           return;
@@ -1803,6 +1811,9 @@ async function handleProviderEvent(
       }
 
       if (state.needsConnectionRefresh && !state.isFinalizing) {
+        console.log(
+          `[ConnectionRefresh] speech_stopped boundary detected for ${sessionId} — setting pendingRefreshAfterTranscript, sending response.cancel`,
+        );
         state.pendingRefreshAfterTranscript = true;
         state.needsConnectionRefresh = false;
         if (state.providerWs?.readyState === WebSocket.OPEN) {
@@ -2584,6 +2595,9 @@ async function handleClientMessage(
           scheduleDebouncedPersist(sessionId);
 
           if (state.needsConnectionRefresh && !state.isFinalizing) {
+            console.log(
+              `[ConnectionRefresh] text_input boundary — triggering planned refresh for ${sessionId}`,
+            );
             state.needsConnectionRefresh = false;
             refreshConnection(sessionId, refreshDeps);
             return;
