@@ -28,7 +28,8 @@
       "WebFetch(domain:replit.com)",
       "WebFetch(domain:clerk.com)",
       "WebFetch(domain:station.railway.com)",
-      "WebFetch(domain:docs.railway.com)"
+      "WebFetch(domain:docs.railway.com)",
+      "WebFetch(domain:help.openai.com)"
     ]
   }
 }

@@ -1,0 +1,236 @@
+# Switching LLM Endpoints from US to EU
+
+## Current State
+
+All LLM connections use default US-based endpoints with hardcoded URLs.
+
+| Provider | Current Endpoint | File(s) |
+|----------|-----------------|---------|
+| OpenAI Realtime (WebSocket) | `wss://api.openai.com/v1/realtime` | `server/realtime-providers.ts:57` |
+| OpenAI Standard (SDK) | `https://api.openai.com/v1` (SDK default) | 7 files (see below) |
+| Google Gemini | `https://generativelanguage.googleapis.com/` | `server/infographic-service.ts:25` |
+| xAI Grok (WebSocket) | `wss://api.x.ai/v1/realtime` | `server/realtime-providers.ts:199` |
+
+---
+
+## Provider-by-Provider EU Options
+
+### OpenAI Standard API (Barbara, simulation, persona generation)
+
+**EU base URL:** `https://eu.api.openai.com/v1`
+
+**No code changes needed.** The OpenAI Node SDK (v6.16.0, `client.mjs:64`) already reads `OPENAI_BASE_URL` from the environment automatically, even when `apiKey` is passed explicitly. Setting this env var switches all 7 `new OpenAI()` call sites at once with zero code changes:
+
+```bash
+OPENAI_BASE_URL=https://eu.api.openai.com/v1
+```
+
+The 7 files that instantiate `new OpenAI()` (all auto-covered by the env var):
+
+| File | Line |
+|------|------|
+| `server/barbara-orchestrator.ts` | 15 |
+| `server/question-parser.ts` | 6 |
+| `server/simulation/persona-prompt.ts` | 8 |
+| `server/simulation/alvia-adapter.ts` | 9 |
+| `server/persona-generation/research.ts` | 176 |
+| `server/persona-generation/synthesis.ts` | 111 |
+| `scripts/seed-test-data/index.ts` | 233 |
+
+**Eligibility gating check — verify before proceeding:**
+
+1. **Create an EU-configured project** in the OpenAI dashboard. EU residency is set per-project (not per-org).
+2. **Abuse monitoring mode**: You must be approved for one of two qualifying modes:
+   - **Modified Abuse Monitoring** — excludes customer content from logs while maintaining full platform capabilities
+   - **Zero Data Retention (ZDR)** — excludes customer content and restricts certain endpoint behaviors (e.g., `store` parameter always treated as `false`)
+3. **ZDR amendment**: Execute a Zero Data Retention amendment with OpenAI.
+4. **API key**: Must be generated from the EU-configured project specifically.
+5. **Eligibility access**: Currently gated behind OpenAI's sales/approval process. Contact OpenAI sales to request access. There is no self-serve toggle.
+
+> **Note:** OpenAI has expanded data residency access over time (initially Feb 2025, expanded Oct/Nov 2025, further Jan 2026). Check [OpenAI's current data residency docs](https://help.openai.com/en/articles/10503543-data-residency-for-the-openai-api) for the latest eligibility criteria, as these requirements may have changed since this document was written.
+
+**Supported EU models include:** gpt-5-mini, gpt-5, gpt-4o, gpt-4o-mini, o1, o1-mini, o3-mini, gpt-realtime-mini
+
+**Sources:**
+- [OpenAI: Introducing data residency in Europe](https://openai.com/index/introducing-data-residency-in-europe/)
+- [OpenAI: Data residency for the API](https://help.openai.com/en/articles/10503543-data-residency-for-the-openai-api)
+- [OpenAI: Data controls](https://developers.openai.com/docs/guides/your-data)
+- [OpenAI: Expanding data residency access](https://openai.com/index/expanding-data-residency-access-to-business-customers-worldwide/)
+
+---
+
+### OpenAI Realtime API (voice interviews)
+
+**EU WebSocket URL:** `wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini`
+
+Unlike the standard SDK, the Realtime WebSocket URL is hardcoded in `server/realtime-providers.ts:57` and is **not** auto-configured by `OPENAI_BASE_URL`. This requires a code change.
+
+Currently:
+```ts
+getWebSocketUrl(): string {
+  return "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+}
+```
+
+**Recommended approach — use a full URL env var** (avoids brittle path concatenation):
+```ts
+getWebSocketUrl(): string {
+  return process.env.OPENAI_REALTIME_URL
+    || "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+}
+```
+
+Set the env var to the complete URL:
+```bash
+OPENAI_REALTIME_URL=wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini
+```
+
+> Using a full URL env var (`OPENAI_REALTIME_URL`) instead of a base + path concatenation pattern avoids misbuilds when operators include or omit `/v1` in the value.
+
+**Caveat:** OpenAI notes that "Tracing is not currently EU data residency compliant for /v1/realtime." The realtime endpoint itself works in EU, but tracing/logging has a compliance gap.
+
+**Sources:**
+- [OpenAI Realtime API WebSocket docs](https://platform.openai.com/docs/guides/realtime-websocket)
+
+---
+
+### Google Gemini (infographic generation)
+
+**Two options:**
+
+#### Option A: Keep API key auth (simpler)
+The Gemini API has been available in the EU since May 2024. No code changes needed — it already works from EU locations with standard API keys. However, there are **no data residency guarantees**.
+
+#### Option B: Switch to Vertex AI (full EU data residency)
+
+The `@google/genai` SDK (v1.37.0) natively supports Vertex AI in its Node.js entry point. The Node SDK reads these env vars automatically (`dist/node/index.mjs:19514-19521`):
+
+- `GOOGLE_GENAI_USE_VERTEXAI` — the SDK's own env var (not a custom one), toggles Vertex AI mode
+- `GOOGLE_CLOUD_PROJECT` — GCP project ID
+- `GOOGLE_CLOUD_LOCATION` — region (e.g., `europe-west1`)
+
+**Important SDK constraint** (`dist/node/index.mjs:19511`): `project/location` and `apiKey` are **mutually exclusive** in the client initializer. The current code passes `apiKey` explicitly, so switching to Vertex AI requires refactoring the constructor.
+
+Modify `server/infographic-service.ts:18-26`:
+
+```ts
+export class InfographicService {
+  private ai: GoogleGenAI;
+
+  constructor() {
+    const useVertexAI = process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true';
+
+    if (useVertexAI) {
+      const project = process.env.GOOGLE_CLOUD_PROJECT;
+      const location = process.env.GOOGLE_CLOUD_LOCATION || 'europe-west1';
+      if (!project) {
+        throw new Error('GOOGLE_CLOUD_PROJECT is required when GOOGLE_GENAI_USE_VERTEXAI=true');
+      }
+      // Vertex AI uses Application Default Credentials (ADC), not API key
+      this.ai = new GoogleGenAI({ vertexai: true, project, location });
+    } else {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY environment variable is required');
+      }
+      this.ai = new GoogleGenAI({ apiKey });
+    }
+  }
+```
+
+**Vertex AI requirements:**
+- GCP project with Vertex AI API enabled
+- Service account with appropriate permissions
+- Application Default Credentials (ADC) configured on the server (not API key)
+- `apiKey` and `project/location` are mutually exclusive — cannot pass both
+
+**Available EU regions:** `europe-west1` (Belgium), `europe-west4` (Netherlands), and others. The SDK constructs the regional endpoint as `https://{location}-aiplatform.googleapis.com/`.
+
+**Sources:**
+- [Google: Available regions for Gemini API](https://ai.google.dev/gemini-api/docs/available-regions)
+- [How to use Gemini API in Europe](https://leancode.co/blog/how-to-use-gemini-api-in-europe)
+- [Google Gen AI SDK (JS)](https://github.com/googleapis/js-genai)
+- [Vertex AI Generative AI locations](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations)
+
+---
+
+### xAI Grok (voice interviews, alternative provider)
+
+**Not implementing at this time** — Grok is not currently in use.
+
+For reference, xAI's regional endpoint documentation (`docs.x.ai/docs/key-information/regions`) describes a regional URL pattern: `https://<region-name>.api.x.ai`. The default `https://api.x.ai` routes to the lowest-latency region automatically.
+
+**Key distinction — REST vs Realtime:**
+- **REST API** (`/v1/chat/completions`, etc.): xAI lists regional endpoints including EU. The URL pattern is `https://<region>.api.x.ai/v1/...`.
+- **Realtime API** (`/v1/realtime` WebSocket): No confirmed regional availability. The xAI docs do not explicitly confirm that Realtime/Voice Agent API is available in EU regions. This is a separate service from the REST API.
+
+If Grok is adopted in future, the REST and Realtime endpoint strategies must be handled separately — the REST API may support EU while the Realtime API may not.
+
+**Sources:**
+- [xAI: Regional endpoints](https://docs.x.ai/docs/key-information/regions)
+- [xAI: API overview](https://docs.x.ai/overview)
+
+---
+
+## Summary of Environment Variables
+
+### OpenAI (env-only, no code changes)
+
+| Variable | Purpose | EU Value |
+|----------|---------|----------|
+| `OPENAI_BASE_URL` | SDK auto-reads this for all REST API calls | `https://eu.api.openai.com/v1` |
+
+### OpenAI Realtime (code change required)
+
+| Variable | Purpose | EU Value |
+|----------|---------|----------|
+| `OPENAI_REALTIME_URL` | Full WebSocket URL for Realtime API | `wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini` |
+
+### Google Gemini — Vertex AI mode (code change required)
+
+| Variable | Purpose | EU Value |
+|----------|---------|----------|
+| `GOOGLE_GENAI_USE_VERTEXAI` | SDK-native env var to enable Vertex AI | `true` |
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID | `your-project-id` |
+| `GOOGLE_CLOUD_LOCATION` | GCP region | `europe-west1` |
+
+> When using Vertex AI, `GEMINI_API_KEY` must be **unset** (mutual exclusion).
+
+---
+
+## Implementation Effort
+
+| Change | Scope | Code changes |
+|--------|-------|-------------|
+| OpenAI Standard API | Env-only | None — SDK reads `OPENAI_BASE_URL` automatically |
+| OpenAI Realtime WebSocket | `server/realtime-providers.ts` | ~3 lines (read `OPENAI_REALTIME_URL` env var) |
+| Gemini → Vertex AI (Option B) | `server/infographic-service.ts` | ~15 lines (branch constructor for Vertex AI vs API key) |
+| Grok EU | Skipped | N/A — not currently in use |
+
+---
+
+## Operational Considerations
+
+### Startup validation
+Add fail-fast checks at server startup:
+- If `OPENAI_BASE_URL` contains `eu.api.openai.com`, log that EU mode is active
+- If `GOOGLE_GENAI_USE_VERTEXAI=true` but `GOOGLE_CLOUD_PROJECT` is missing, fail immediately (already handled in proposed constructor)
+- If `OPENAI_REALTIME_URL` is set, validate it's a valid `wss://` URL
+
+### Audit logging
+Log the effective endpoint/region at startup for each provider so it's clear which region is in use:
+```
+[OpenAI] Base URL: https://eu.api.openai.com/v1
+[OpenAI Realtime] URL: wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini
+[Gemini] Mode: Vertex AI, region: europe-west1
+```
+
+### Smoke testing
+After switching to EU endpoints:
+1. Verify a Barbara analysis call completes successfully (OpenAI Standard)
+2. Verify a voice interview can connect and exchange audio (OpenAI Realtime)
+3. Verify an infographic can be generated (Gemini, if using Vertex AI)
+4. Run `npm run check` and `npx vitest` to catch type/import issues
+
+### Provider policy
+If strict EU compliance is required, consider blocking non-EU providers at the application level (e.g., refuse to start with `REALTIME_PROVIDER=grok` when EU mode is mandated) until xAI confirms Realtime regional availability.
