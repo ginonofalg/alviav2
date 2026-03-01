@@ -25,7 +25,12 @@ import alviaSprite from "@/assets/WELCOMEINTERVIEW.png";
 import BrandedWelcomeAvatar from "@/components/BrandedWelcomeAvatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Collection, Project, InterviewSession, BrandingColors } from "@shared/schema";
+import type {
+  Collection,
+  Project,
+  InterviewSession,
+  BrandingColors,
+} from "@shared/schema";
 import { BrandingThemeProvider } from "@/components/BrandingThemeProvider";
 
 interface ResumeData {
@@ -210,9 +215,13 @@ export default function InterviewConsentPage() {
 
   const allConsentsGiven = consents.participation && consents.dataProcessing;
   const project = collection?.project;
-  const brandingLogo = project?.brandingLogo || publicInfo?.brandingLogo || null;
-  const brandingColors: BrandingColors | null = (project as any)?.brandingColors || publicInfo?.brandingColors || null;
-  const requiresAudioConsent = project?.consentAudioRecording !== false || publicInfo?.consentAudioRecording !== false;
+  const brandingLogo =
+    project?.brandingLogo || publicInfo?.brandingLogo || null;
+  const brandingColors: BrandingColors | null =
+    (project as any)?.brandingColors || publicInfo?.brandingColors || null;
+  const requiresAudioConsent =
+    project?.consentAudioRecording !== false ||
+    publicInfo?.consentAudioRecording !== false;
 
   const canProceed =
     allConsentsGiven && (!requiresAudioConsent || consents.audioRecording);
@@ -278,8 +287,8 @@ export default function InterviewConsentPage() {
             <CardContent className="space-y-6 pt-4">
               <div className="bg-muted/50 rounded-lg p-4 text-center">
                 <p className="text-sm text-muted-foreground">
-                  It looks like you were in the middle of an interview. Would you
-                  like to continue where you left off?
+                  It looks like you were in the middle of an interview. Would
+                  you like to continue where you left off?
                 </p>
               </div>
 
@@ -312,197 +321,205 @@ export default function InterviewConsentPage() {
 
   return (
     <BrandingThemeProvider brandingColors={brandingColors}>
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center space-y-4 pb-2">
-          {brandingLogo ? (
-            <BrandedWelcomeAvatar brandingLogo={brandingLogo} />
-          ) : (
-            <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
-              <motion.div
-                className="absolute inset-0 rounded-full border-4 border-primary"
-                animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              />
-              <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
-                {respondentName ? (
-                  <User className="w-8 h-8 text-primary" />
-                ) : (
-                  <img src={alviaSprite} alt="Alvia" className="w-full h-full object-contain" />
-                )}
-              </div>
-            </div>
-          )}
-          <div>
-            <CardTitle className="text-2xl font-serif">
-              {respondentName
-                ? `Welcome, ${respondentName}`
-                : "Welcome to Your Interview"}
-            </CardTitle>
-            <CardDescription className="text-base mt-2">
-              {collection?.name || "Interview Session"}
-            </CardDescription>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-6 pt-4">
-          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-            <h3 className="font-medium flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-primary" />
-              How it works
-            </h3>
-            <ul className="text-sm text-muted-foreground space-y-2">
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">1.</span>
-                <span>
-                  You'll have a voice conversation with Alvia, our AI
-                  interviewer.
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">2.</span>
-                <span>
-                  There are a number of set questions which Alvia will explore
-                  with follow-up questions; you decide when to move to the next
-                  one.
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">3.</span>
-                <span>
-                  Make sure you've got a good Internet connection. Find a quiet
-                  location and use a headset or earphones if you have them.
-                  Speak naturally. Alvia may take a moment to respond at first.
-                  Be patient, she'll adapt.
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">4.</span>
-                <span>
-                  You can pause at any time. You can type your answers if you
-                  prefer.
-                </span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">5.</span>
-                <span>The interview typically takes 10-15 minutes.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="font-medium flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary" />
-              Consent
-            </h3>
-
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 p-3 rounded-lg border">
-                <Checkbox
-                  id="participation"
-                  checked={consents.participation}
-                  onCheckedChange={(checked) =>
-                    setConsents((prev) => ({
-                      ...prev,
-                      participation: checked === true,
-                    }))
-                  }
-                  data-testid="checkbox-participation"
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
+          <CardHeader className="text-center space-y-4 pb-2">
+            {brandingLogo ? (
+              <BrandedWelcomeAvatar brandingLogo={brandingLogo} />
+            ) : (
+              <div className="relative w-20 h-20 rounded-full bg-primary flex items-center justify-center mx-auto">
+                <motion.div
+                  className="absolute inset-0 rounded-full border-4 border-primary"
+                  animate={{ scale: [1, 1.3], opacity: [0.8, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
                 />
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="participation"
-                    className="font-medium cursor-pointer"
-                  >
-                    I agree to participate in the interview *
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    I understand that my responses will be recorded and
-                    analysed.
-                  </p>
+                <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                  {respondentName ? (
+                    <User className="w-8 h-8 text-primary" />
+                  ) : (
+                    <img
+                      src={alviaSprite}
+                      alt="Alvia"
+                      className="w-full h-full object-contain"
+                    />
+                  )}
                 </div>
               </div>
+            )}
+            <div>
+              <CardTitle className="text-2xl font-serif">
+                {respondentName
+                  ? `Welcome, ${respondentName}`
+                  : "Welcome to Your Interview"}
+              </CardTitle>
+              <CardDescription className="text-base mt-2">
+                {collection?.name || "Interview Session"}
+              </CardDescription>
+            </div>
+          </CardHeader>
 
-              {requiresAudioConsent && (
+          <CardContent className="space-y-6 pt-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <h3 className="font-medium flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-primary" />
+                How it works
+              </h3>
+              <ul className="text-sm text-muted-foreground space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">1.</span>
+                  <span>
+                    You'll have a voice conversation with Alvia, our AI
+                    interviewer.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">2.</span>
+                  <span>
+                    There are a number of set questions which Alvia will explore
+                    with follow-up questions; you decide when to move to the
+                    next one.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">3.</span>
+                  <span>
+                    Make sure you've got a good Internet connection. Find a
+                    quiet location and use a headset or earphones if you have
+                    them. Speak naturally. Alvia may take a moment to respond at
+                    first. Be patient, she'll adapt.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">4.</span>
+                  <span>
+                    You can pause at any time. You can type your answers if you
+                    prefer.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">5.</span>
+                  <span>The interview typically takes 10-15 minutes.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-medium flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" />
+                Consent
+              </h3>
+
+              <div className="space-y-4">
                 <div className="flex items-start gap-3 p-3 rounded-lg border">
                   <Checkbox
-                    id="audioRecording"
-                    checked={consents.audioRecording}
+                    id="participation"
+                    checked={consents.participation}
                     onCheckedChange={(checked) =>
                       setConsents((prev) => ({
                         ...prev,
-                        audioRecording: checked === true,
+                        participation: checked === true,
                       }))
                     }
-                    data-testid="checkbox-audio"
+                    data-testid="checkbox-participation"
                   />
                   <div className="space-y-1">
                     <Label
-                      htmlFor="audioRecording"
+                      htmlFor="participation"
                       className="font-medium cursor-pointer"
                     >
-                      I consent to audio recording *
+                      I agree to participate in the interview *
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Audio will be recorded for transcription and quality
-                      purposes.
+                      I understand that my responses will be recorded and
+                      analysed.
                     </p>
                   </div>
                 </div>
-              )}
 
-              <div className="flex items-start gap-3 p-3 rounded-lg border">
-                <Checkbox
-                  id="dataProcessing"
-                  checked={consents.dataProcessing}
-                  onCheckedChange={(checked) =>
-                    setConsents((prev) => ({
-                      ...prev,
-                      dataProcessing: checked === true,
-                    }))
-                  }
-                  data-testid="checkbox-data"
-                />
-                <div className="space-y-1">
-                  <Label
-                    htmlFor="dataProcessing"
-                    className="font-medium cursor-pointer"
-                  >
-                    I agree to data processing *
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    My responses may be summarized and analysed. Personal
-                    information will be protected.
-                    {project?.piiRedactionEnabled &&
-                      " PII will be automatically redacted."}
-                  </p>
+                {requiresAudioConsent && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg border">
+                    <Checkbox
+                      id="audioRecording"
+                      checked={consents.audioRecording}
+                      onCheckedChange={(checked) =>
+                        setConsents((prev) => ({
+                          ...prev,
+                          audioRecording: checked === true,
+                        }))
+                      }
+                      data-testid="checkbox-audio"
+                    />
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="audioRecording"
+                        className="font-medium cursor-pointer"
+                      >
+                        I consent to audio recording *
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Audio will be recorded for transcription and quality
+                        purposes.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-start gap-3 p-3 rounded-lg border">
+                  <Checkbox
+                    id="dataProcessing"
+                    checked={consents.dataProcessing}
+                    onCheckedChange={(checked) =>
+                      setConsents((prev) => ({
+                        ...prev,
+                        dataProcessing: checked === true,
+                      }))
+                    }
+                    data-testid="checkbox-data"
+                  />
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="dataProcessing"
+                      className="font-medium cursor-pointer"
+                    >
+                      I agree to data processing *
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      My responses may be summarised and analysed. Personal
+                      information will be protected.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="pt-4 border-t">
-            <Button
-              className="w-full"
-              size="lg"
-              disabled={!canProceed || startSession.isPending}
-              onClick={() => startSession.mutate()}
-              data-testid="button-start-interview"
-            >
-              {startSession.isPending ? "Starting..." : "Begin Interview"}
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-            <p className="text-xs text-muted-foreground text-center mt-3">
-              By proceeding, you agree to our{" "}
-              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground transition-colors" data-testid="link-terms-consent">
-                terms and conditions
-              </a>
-              {" "}and privacy policy.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            <div className="pt-4 border-t">
+              <Button
+                className="w-full"
+                size="lg"
+                disabled={!canProceed || startSession.isPending}
+                onClick={() => startSession.mutate()}
+                data-testid="button-start-interview"
+              >
+                {startSession.isPending ? "Starting..." : "Begin Interview"}
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-3">
+                By proceeding, you agree to our{" "}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-foreground transition-colors"
+                  data-testid="link-terms-consent"
+                >
+                  terms and conditions
+                </a>{" "}
+                and privacy policy.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </BrandingThemeProvider>
   );
 }
