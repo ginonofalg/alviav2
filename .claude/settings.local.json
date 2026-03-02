@@ -38,7 +38,9 @@
       "WebFetch(domain:maze.co)",
       "WebFetch(domain:www.surveymonkey.com)",
       "WebFetch(domain:dovetail.com)",
-      "WebFetch(domain:prolificresearch.com)"
+      "WebFetch(domain:prolificresearch.com)",
+      "WebFetch(domain:www.open-britain.co.uk)",
+      "WebFetch(domain:www.crowdfunder.co.uk)"
     ]
   }
 }
