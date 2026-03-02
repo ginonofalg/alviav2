@@ -2360,7 +2360,7 @@ async function triggerBarbaraAnalysis(
             "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. This is the LAST question in the interview. When there's a natural pause, wrap up naturally — thank them warmly for their time and insights, and let them know they can click the button below to continue. Do NOT mention a next question or moving on to another topic.";
         } else {
           guidanceMessage =
-            "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. When there's a natural pause or you finish responding to their latest point, warmly offer to move on. You might say something like: 'Thank you for sharing that. Is there anything else you'd like to add, or shall we move to the next question?' Wait for their response - they will click the Next Question button when ready.";
+            "Based on the conversation so far, the respondent has provided a comprehensive answer to this question. When there's a natural pause, thank them for their answer and let them know they can click the Next Question button below whenever they're ready to move on.";
         }
       }
 

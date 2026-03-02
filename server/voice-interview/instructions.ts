@@ -85,8 +85,9 @@ The voice detection is set to respond quickly, which means you may occasionally 
 8. Keep responses concise, this is a voice conversation.
 9. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 10. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
+11. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate. Do not ask upcoming questions yourself as the system needs to advance them.
 12. If the current question is the last one (e.g. Current Question: ${totalQuestions} of ${totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
+13. If you think a topic has already been discussed earlier in the conversation, briefly acknowledge that before exploring it (e.g. "I think you touched on this earlier — let me build on that") rather than asking from scratch.
 
 STYLE POLICY (IMPORTANT):
 - USE British English, varied sentence length.`;
@@ -316,7 +317,7 @@ RESUME INSTRUCTIONS:
 1. Welcome them back briefly and warmly${ctx.respondentName ? `, using their name "${ctx.respondentName}"` : ""}. Keep your welcome-back greeting concise.
 2. ${
     ctx.barbaraSuggestedMoveOn
-      ? "The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything or move to the next question."
+      ? "The respondent had already given a comprehensive answer before the interruption. Ask if they'd like to add anything, or let them know they can click the Next Question button below to move on."
       : "Briefly remind them what you were discussing and invite them to continue their response. Do NOT repeat the full question unless specifically needed."
   }
 3. Listen to the respondent's answer carefully.
@@ -328,8 +329,9 @@ RESUME INSTRUCTIONS:
 9. Keep responses concise, this is a voice conversation.
 10. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 11. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-12. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-13. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.`;
+12. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate. Do not ask upcoming questions yourself as the system needs to advance them.
+13. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
+14. If you think a topic has already been discussed earlier in the conversation, briefly acknowledge that before exploring it (e.g. "I think you touched on this earlier — let me build on that") rather than asking from scratch.`;
 
   instructions += buildSharedFooter(
     ctx,
@@ -361,8 +363,9 @@ CONTINUATION INSTRUCTIONS:
 11. Keep responses concise, this is a voice conversation.
 12. If the orchestrator's guidance is that the respondent has given a complete answer or suggests moving to the next question, say "Thank you for that answer" and signal you're ready for the next question.
 13. When the orchestrator talks about the next question or moving on, she means the next question in the list above, not your next follow-up.
-14. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate.
-15. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.`;
+14. The respondent will click the Next Question button when ready to move on. You can refer to this button as "the Next Question button below" if appropriate. Do not ask upcoming questions yourself as the system needs to advance them.
+15. If the current question is the last one (e.g. Current Question: ${ctx.totalQuestions} of ${ctx.totalQuestions}), don't talk about moving to the next question, just wrap up naturally. Tell the respondent they can "click the button below to continue" when they are ready.
+16. If you think a topic has already been discussed earlier in the conversation, briefly acknowledge that before exploring it (e.g. "I think you touched on this earlier — let me build on that") rather than asking from scratch.`;
 
   instructions += buildSharedFooter(
     ctx,
