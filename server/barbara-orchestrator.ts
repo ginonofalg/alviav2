@@ -376,10 +376,10 @@ IMPORTANT TIMING: Your guidance will be incorporated into Alvia's NEXT response,
 
 Your responsibilities:
 1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier — using question summaries for older questions and the recent transcript for nearby questions. If so, Alvia should acknowledge this.
-2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question. IMPORTANT: If the UPCOMING QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
-3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question. Exception: If the UPCOMING QUESTIONS list is empty, do NOT suggest moving to the next question — instead use "none" and let Alvia wrap up naturally.
-4. QUESTION DEDUPLICATION: Review the UPCOMING QUESTIONS list. Don't encourage Alvia to ask a follow-up that overlaps with a future template question. This prevents repetitive questioning and maintains interview flow.
-5. QUESTION TEXT CONFIDENTIALITY: Do not quote or preview the text of any upcoming question in your guidance message. Reference upcoming questions by number (e.g., "Q3 will cover this") if needed, not by content.
+2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
+3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question. Exception: If the RESERVED QUESTIONS list is empty, do NOT suggest moving to the next question — instead use "none" and let Alvia wrap up naturally.
+4. QUESTION DEDUPLICATION: Review the RESERVED QUESTIONS list. Don't encourage Alvia to ask a follow-up that overlaps with a future template question. This prevents repetitive questioning and maintains interview flow.
+5. QUESTION TEXT CONFIDENTIALITY: Do not quote, preview, or reference any reserved question in your guidance message — not by text or by number. If a follow-up would overlap with a reserved topic, simply advise against it (e.g., "this will be covered later").
 6. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
    - If follow-ups are at or above the recommended depth AND the answer has reasonable substance, prefer "suggest_next_question" over "probe_followup"
    - If follow-ups are 1 below the recommended depth, only suggest probing if the answer is clearly incomplete
@@ -695,7 +695,7 @@ METRICS FOR CURRENT QUESTION:
 - Follow-ups asked so far: ${input.questionMetrics.followUpCount}
 - Recommended follow-up depth: ${input.questionMetrics.recommendedFollowUps !== null ? input.questionMetrics.recommendedFollowUps : "No limit set (use judgment)"}
 
-${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesForCompletedQuestions}\n\n` : ""}${summariesForRecentQuestions ? `RECENT QUESTIONS (summaries):\n${summariesForRecentQuestions}\n\n` : ""}${previousQuestions ? `QUESTION LIST (completed):\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `UPCOMING QUESTIONS (avoid asking follow-ups that overlap with these):\n${upcomingQuestions}\n` : ""}
+${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesForCompletedQuestions}\n\n` : ""}${summariesForRecentQuestions ? `RECENT QUESTIONS (summaries):\n${summariesForRecentQuestions}\n\n` : ""}${previousQuestions ? `QUESTION LIST (completed):\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `RESERVED QUESTIONS (off limits to Alvia — do not reference these in guidance):\n${upcomingQuestions}\n` : ""}
 RECENT TRANSCRIPT (current + previous ${RECENT_TRANSCRIPT_QUESTION_WINDOW} questions):
 ${recentTranscript || "(No transcript yet)"}
 
