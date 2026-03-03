@@ -31,7 +31,7 @@ export function buildInterviewInstructions(
   const upcomingQuestions = allQuestions
     ? allQuestions
         .slice(questionIndex + 1)
-        .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
+        .map((q) => `- ${q.questionText}`)
         .join("\n")
     : "";
 
@@ -187,7 +187,7 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       followUpCount: 0,
       upcomingQuestions: state.additionalQuestions
         .slice(aqIndex + 1)
-        .map((q, i) => `AQ${aqIndex + 2 + i}: ${q.questionText}`)
+        .map((q) => `- ${q.questionText}`)
         .join("\n"),
       lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
     };
@@ -221,7 +221,7 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0,
     upcomingQuestions: state.questions
       .slice(questionIndex + 1)
-      .map((q, i) => `Q${questionIndex + 2 + i}: ${q.questionText}`)
+      .map((q) => `- ${q.questionText}`)
       .join("\n"),
     lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
   };

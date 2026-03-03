@@ -634,7 +634,7 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
 
   const upcomingQuestions = input.allQuestions
     .slice(input.currentQuestionIndex + 1)
-    .map((q, i) => `Q${input.currentQuestionIndex + 2 + i}: ${q.text}`)
+    .map((q) => `- ${q.text}`)
     .join("\n");
 
   const currentQuestionResponses = input.transcriptLog
