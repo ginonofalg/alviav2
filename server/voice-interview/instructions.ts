@@ -1,6 +1,7 @@
 import type { InterviewState } from "./types";
 import type { TopicOverlapResult } from "../barbara-orchestrator";
 import type { VadEagernessMode } from "@shared/types/performance-metrics";
+import { buildContinuityContext } from "./context-builders";
 
 function buildContinuityBlock(continuityContext: string | null): string {
   let block = `CONVERSATION CONTINUITY:
@@ -333,7 +334,7 @@ NOTE: Before the interruption, the respondent had given a comprehensive answer a
   }
 
   instructions += `
-${buildContinuityBlock(null)}
+${buildContinuityBlock(buildContinuityContext(state))}
 
 RESUME INSTRUCTIONS:
 1. Welcome them back briefly and warmly${ctx.respondentName ? `, using their name "${ctx.respondentName}"` : ""}. Keep your welcome-back greeting concise.
@@ -363,7 +364,7 @@ export function buildRefreshInstructions(state: InterviewState): string {
   instructions += buildSharedContextBlock(ctx);
 
   instructions += `
-${buildContinuityBlock(null)}
+${buildContinuityBlock(buildContinuityContext(state))}
 
 CONTINUATION INSTRUCTIONS:
 1. Continue as if the conversation never stopped.
