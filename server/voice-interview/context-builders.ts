@@ -2,6 +2,7 @@ import type { QualityFlag } from "@shared/schema";
 import type { QuestionSummary } from "../barbara-orchestrator";
 import { storage } from "../storage";
 import type { InterviewState } from "./types";
+import { getKeywords, INTERVIEW_META_STOPWORDS } from "./text-utils";
 import type {
   CompactCrossInterviewTheme,
   CompactFlagCount,
@@ -411,9 +412,7 @@ export function buildContinuityContext(state: InterviewState): string | null {
 
   const candidates: Array<{ cue: string; relevanceScore: number }> = [];
 
-  const currentTokens = new Set(
-    currentQuestionText.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
-  );
+  const currentTokens = getKeywords(currentQuestionText, INTERVIEW_META_STOPWORDS);
 
   const completedSummaries = state.questionSummaries || [];
   const questionBound = state.isInAdditionalQuestionsPhase
@@ -425,10 +424,12 @@ export function buildContinuityContext(state: InterviewState): string | null {
     if (!summary.relevantToFutureQuestions?.length) continue;
 
     for (const cue of summary.relevantToFutureQuestions) {
-      const cueTokens = cue.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      const cueTokens = [...getKeywords(cue, INTERVIEW_META_STOPWORDS)];
+      if (cueTokens.length === 0) continue;
       const overlap = cueTokens.filter((t) => currentTokens.has(t)).length;
+      const questionLower = currentQuestionText.toLowerCase();
       const substringHits = cueTokens.filter((t) =>
-        currentQuestionText.toLowerCase().includes(t)
+        questionLower.includes(t)
       ).length;
       const score = overlap + substringHits * 0.5;
 

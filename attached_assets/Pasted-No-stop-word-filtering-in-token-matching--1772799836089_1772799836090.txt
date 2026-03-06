@@ -1,0 +1,21 @@
+No stop-word filtering in token matching                                          
+                                                                                                                                                                                              
+  The relevance filter at context-builders.ts:L415 filters tokens by w.length > 3, which removes very short words but still includes common words like "what", "your", "about", "this",       
+  "have", "that", "they", "from", "when", "with", "does", "more", "much", "many", "some", "were", "been", etc. These are 4+ character function words that will match between almost any       
+  question and any cue, producing false-positive relevance scores.                                                                                                                            
+                  
+  For example, a cue like "frustration with checkout speed" and a question like "What makes you choose one brand over another?" would both contain "what" (from the question) — no, wait,
+  "what" is exactly 4 chars so it passes the > 3 filter. Actually "with" (4 chars) passes too.
+
+  More concretely: a cue "price matters less than convenience" would match a question "How do you feel about the changes?" on "than"/"about" (both >3 chars, and includes() would catch
+  these). This could surface irrelevant cues.
+
+  Recommendation: Add a small stop-word set to the filter, or raise the length threshold to > 4. Something like:
+
+  const STOP_WORDS = new Set(["that", "this", "with", "from", "have", "been", "were", "what", "when", "your", "they", "them", "their", "about", "which", "would", "could", "should", "there",
+  "these", "those", "some", "more", "than", "also", "into", "over"]);
+
+  const isContentWord = (w: string) => w.length > 3 && !STOP_WORDS.has(w);
+
+  This is the main functional gap in the implementation. The current filter will over-match on common English function words, which somewhat undermines the "real ranking" that the feedback
+  specifically called out as a high-priority fix.
