@@ -1,0 +1,101 @@
+ # Resume/Refresh Continuity Fix
+
+ ## Problem
+
+ When a voice interview resumes after a connection drop (or refreshes mid-question), the new Realtime API
+ session loses all prior conversation context. The resume and refresh prompt builders both call
+ `buildContinuityBlock(null)` (`server/voice-interview/instructions.ts:336,366`), which emits the CONVERSATION
+ CONTINUITY rules but never populates the RELEVANT EARLIER DISCUSSION section.
+
+ The only context carried forward is `state.transcriptLog.slice(-15)` (line 179) — the last 15 raw transcript
+ entries. If the respondent is on question 3, those 15 lines likely cover only question 3's conversation.
+ Everything discussed in questions 1 and 2 is lost from Alvia's perspective.
+
+ By contrast, live instruction rebuilds (guidance injection, VAD switches, env checks) already pass
+ `buildContinuityContext(state)` into `buildContinuityBlock()` at five call sites in `voice-interview.ts`
+ (lines 1077, 2023, 2113, 2389, 2854). Resume and refresh are the only two paths that don't.
+
+ ## Root Cause
+
+ `buildResumeInstructions()` and `buildRefreshInstructions()` in `server/voice-interview/instructions.ts` both
+ hardcode `buildContinuityBlock(null)` instead of computing continuity context from `state.questionSummaries`.
+
+ ## Fix
+
+ Reuse the existing `buildContinuityContext(state)` function from `server/voice-interview/context-builders.ts`.
+  Do NOT create a new summary formatter — `buildContinuityContext` already handles:
+
+ - **Relevance filtering**: keyword/substring matching against the current question text (lines 415-439)
+ - **AQ-safe bounds**: `questionBound` computed differently for core vs AQ phase (lines 418-420), skipping
+ summaries at or past the bound (line 423)
+ - **Prompt-size cap**: hard limit of `MAX_CONTINUITY_CUES = 2` (line 398), returns `null` when no relevant
+ cues exist (line 442)
+ - **Natural language output**: no question numbers or internal labels that could leak into speech (line 447)
+
+ ### Changes
+
+ **File: `server/voice-interview/instructions.ts`**
+
+ 1. Add import:
+ ```typescript
+ import { buildContinuityContext } from "./context-builders";
+ ```
+
+ 2. In `buildResumeInstructions()` (~line 336), change:
+ ```typescript
+ // Before
+ ${buildContinuityBlock(null)}
+
+ // After
+ ${buildContinuityBlock(buildContinuityContext(state))}
+ ```
+
+ 3. In `buildRefreshInstructions()` (~line 366), change:
+ ```typescript
+ // Before
+ ${buildContinuityBlock(null)}
+
+ // After
+ ${buildContinuityBlock(buildContinuityContext(state))}
+ ```
+
+ That's it — three lines changed (one import, two call sites). No new functions, no new logic.
+
+ ### Why this works
+
+ `buildContinuityContext(state)` returns either:
+ - A string with up to 2 relevance-filtered cues from completed question summaries, e.g.:
+   ```
+   - Earlier they mentioned: frustration with pulse surveys losing nuance after redundancies
+   - Only acknowledge a connection if it genuinely prevents duplication or improves flow...
+   ```
+ - `null` if there are no relevant cues (question 1, or no keyword overlap)
+
+ `buildContinuityBlock(context)` then either appends a `RELEVANT EARLIER DISCUSSION` section (when non-null) or
+  omits it (when null). The CONVERSATION CONTINUITY rules are always shown regardless.
+
+ ## Tests
+
+ Add tests in `server/__tests__/resume-refresh-continuity.test.ts`:
+
+ 1. **Resume includes continuity cues when question summaries exist**: Build a state at question 2 with a
+ completed summary for question 1 that has `relevantToFutureQuestions` entries matching question 2's text.
+ Verify `buildResumeInstructions(state)` output contains "RELEVANT EARLIER DISCUSSION" and the cue text.
+
+ 2. **Resume omits continuity when no relevant cues**: Build a state at question 1 with empty
+ `questionSummaries`. Verify output contains "CONVERSATION CONTINUITY" but NOT "RELEVANT EARLIER DISCUSSION".
+
+ 3. **Refresh includes continuity cues**: Same as test 1 but call `buildRefreshInstructions(state)`.
+
+ 4. **AQ phase respects question bound**: Build a state in AQ phase with summaries for all core questions.
+ Verify cues are drawn only from core question summaries (index < `questions.length`), not from any AQ
+ summaries.
+
+ 5. **Cap respected**: Build a state with 5+ completed summaries all having relevant cues. Verify at most 2
+ cues appear in the output.
+
+ ## Risk
+
+ Low. The continuity logic is already battle-tested on the live path. Resume/refresh prompts already include a
+ transcript summary, so adding up to 2 short cues adds minimal token overhead (~50 tokens worst case). The
+ `null` return path means question 1 resumes and empty-summary edge cases are handled with zero prompt change.
