@@ -1,6 +1,7 @@
 import type { QualityFlag } from "@shared/schema";
 import type { QuestionSummary } from "../barbara-orchestrator";
 import { storage } from "../storage";
+import type { InterviewState } from "./types";
 import type {
   CompactCrossInterviewTheme,
   CompactFlagCount,
@@ -391,4 +392,61 @@ export function buildCrossInterviewRuntimeContext(
     emergentThemes,
     qualityInsightsByQuestion,
   };
+}
+
+const MAX_CONTINUITY_CUES = 2;
+
+export function buildContinuityContext(state: InterviewState): string | null {
+  let currentQuestionText: string;
+  if (state.isInAdditionalQuestionsPhase && state.additionalQuestions.length > 0) {
+    const aqIndex = state.currentAdditionalQuestionIndex;
+    const aq = state.additionalQuestions[aqIndex];
+    currentQuestionText = aq?.questionText || "";
+  } else {
+    const question = state.questions[state.currentQuestionIndex];
+    currentQuestionText = question?.questionText || "";
+  }
+
+  if (!currentQuestionText) return null;
+
+  const candidates: Array<{ cue: string; relevanceScore: number }> = [];
+
+  const currentTokens = new Set(
+    currentQuestionText.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+  );
+
+  const completedSummaries = state.questionSummaries || [];
+  const questionBound = state.isInAdditionalQuestionsPhase
+    ? state.questions.length
+    : state.currentQuestionIndex;
+
+  for (const summary of completedSummaries) {
+    if (summary.questionIndex >= questionBound) continue;
+    if (!summary.relevantToFutureQuestions?.length) continue;
+
+    for (const cue of summary.relevantToFutureQuestions) {
+      const cueTokens = cue.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      const overlap = cueTokens.filter((t) => currentTokens.has(t)).length;
+      const substringHits = cueTokens.filter((t) =>
+        currentQuestionText.toLowerCase().includes(t)
+      ).length;
+      const score = overlap + substringHits * 0.5;
+
+      if (score > 0) {
+        candidates.push({ cue, relevanceScore: score });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const selected = candidates.slice(0, MAX_CONTINUITY_CUES);
+
+  const lines = selected.map((c) => `- Earlier they mentioned: ${c.cue}`);
+  lines.push(
+    "- Only acknowledge a connection if it genuinely prevents duplication or improves flow. If the current question intentionally revisits a theme from a new angle, let the respondent answer fresh."
+  );
+
+  return lines.join("\n");
 }

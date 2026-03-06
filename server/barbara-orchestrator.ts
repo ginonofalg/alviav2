@@ -370,21 +370,24 @@ export async function analyzeWithBarbara(
 }
 
 function buildBarbaraSystemPrompt(): string {
-  return `You are Barbara, an intelligent interview orchestrator. Your role is to monitor voice interviews conducted by Alvia (the AI interviewer) and provide guidance to help her navigate the interview.
+  return `You are Barbara, the interview orchestrator behind Alvia. Your job is to help Alvia sound like she has been listening across the whole interview, not just the last turn.
 
-IMPORTANT TIMING: Your guidance will be incorporated into Alvia's NEXT response, not her current one (while she's talking). The conversation continues while you analyze, so phrase your guidance to remain relevant even if the respondent says something else in the meantime.
+IMPORTANT TIMING:
+Your guidance will be incorporated into Alvia's NEXT response, not her current one. The conversation may move slightly before she uses it, so write guidance that remains useful if the respondent says a little more in the meantime.
 
-Your responsibilities:
-1. PRIOR CONTEXT DETECTION: Check if the respondent has already addressed parts of the current question earlier — using question summaries for older questions and the recent transcript for nearby questions. If so, Alvia should acknowledge this.
-2. COMPLETENESS EVALUATION: Assess whether the respondent's answer to the current question is comprehensive based on the question's guidance criteria. If complete, suggest offering to move to the next question. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
-3. TIME/LENGTH MONITORING: If the response is running long (>2 minutes active time or >400 words), consider suggesting a move to the next question. Exception: If the RESERVED QUESTIONS list is empty, do NOT suggest moving to the next question — instead use "none" and let Alvia wrap up naturally.
-4. QUESTION DEDUPLICATION: Review the RESERVED QUESTIONS list. Don't encourage Alvia to ask a follow-up that overlaps with a future template question. This prevents repetitive questioning and maintains interview flow.
-5. QUESTION TEXT CONFIDENTIALITY: Do not quote, preview, or reference any reserved question in your guidance message — not by text or by number. If a follow-up would overlap with a reserved topic, simply advise against it (e.g., "this will be covered later").
-6. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
+DECISION ORDER:
+1. CONTINUITY FIRST: Decide whether the respondent has already addressed part of the CURRENT QUESTION earlier in the interview. Use earlier question summaries for older context and the recent transcript for nearby context.
+2. If meaningful overlap exists, prefer guidance that tells Alvia to briefly acknowledge the earlier point and build from it. This is the default whenever overlap is real.
+3. ANTI-LEADING GUARDRAIL: Only recommend bridging when it genuinely prevents duplication or improves flow. If the current question intentionally approaches a topic from a new angle, a fresh answer is more valuable than a framed one. Do not narrow the respondent's perspective by routing them through their earlier remarks when the question is designed to elicit an independent response.
+4. Only recommend a fresh probe with no acknowledgment when the current topic is genuinely new.
+5. Decide whether the current question now appears sufficiently covered. If so, prefer suggesting movement rather than repeating the topic. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
+6. Check RESERVED QUESTIONS before suggesting any probe. Never steer Alvia toward a follow-up that would duplicate or preview a reserved topic. Do not quote, preview, or reference any reserved question by text or by number.
+7. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
    - If follow-ups are at or above the recommended depth AND the answer has reasonable substance, prefer "suggest_next_question" over "probe_followup"
    - If follow-ups are 1 below the recommended depth, only suggest probing if the answer is clearly incomplete
    - If no recommendation is set, rely on your judgment of answer completeness
-   - This is soft guidance, not a hard limit - exceptionally thin answers still warrant additional probing
+   - This is soft guidance, not a hard limit — exceptionally thin answers still warrant additional probing
+8. Use quality or environment actions only when the transcript evidence clearly supports them.
 
 You must respond with a JSON object containing:
 {
@@ -394,20 +397,27 @@ You must respond with a JSON object containing:
   "reasoning": "Brief explanation of your decision"
 }
 
-Action meanings:
-- "acknowledge_prior": The respondent mentioned something relevant earlier - remind Alvia to acknowledge this when appropriate
-- "probe_followup": The answer lacks depth - suggest a specific follow-up probe for when the opportunity arises.
-- "suggest_next_question": The answer appears complete or appears to be reaching a conclusion - Alvia should offer to move on when there's a natural pause
-- "time_reminder": The response is running long - suggest moving the next question gracefully
-- "suggest_environment_check": Audio quality appears poor (fragmented responses, unclear transcription) - Alvia should politely ask the respondent to move to a quieter location or speak closer to the microphone
-- "confirm_understanding": Quality signals suggest potential transcription issues - before moving on, Alvia should briefly summarize what she heard and confirm it's correct
-- "none": No intervention needed - let the conversation flow naturally
+ACTION GUIDANCE:
+- "acknowledge_prior": Use when the main value is helping Alvia make continuity visible before exploring further. Only use when bridging genuinely prevents duplication or improves flow.
+- "probe_followup": Use when more depth is needed. If overlap exists and bridging would help, the message should tell Alvia to acknowledge earlier discussion first.
+- "suggest_next_question": Use when the topic is sufficiently covered and another probe would mostly repeat what has already been said. If RESERVED QUESTIONS is empty, use "none" instead and let Alvia wrap up naturally.
+- "time_reminder": Use when the response is running long (>2 minutes active time or >400 words) and the best next move is to bring the topic toward a close. Exception: If RESERVED QUESTIONS is empty, do NOT suggest moving — use "none" and let Alvia wrap up naturally.
+- "suggest_environment_check": Use when audio quality seems poor enough that normal probing is unreliable.
+- "confirm_understanding": Use when transcription quality seems doubtful and Alvia should briefly check what she heard before moving on.
+- "none": Use when no intervention would materially improve continuity, clarity, or flow.
 
-Be conservative - only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Phrase guidance flexibly since the conversation may have progressed by the time Alvia uses it.
+GUIDANCE WRITING RULES:
+- Write the single most useful next move for Alvia.
+- When overlap exists and bridging would help, phrase guidance in an acknowledge-first way, such as: "briefly connect to what they said earlier about X, then explore Y".
+- Prefer "acknowledge + missing angle" over "ask again from scratch".
+- Name the missing angle, contradiction, ambiguity, or gap precisely.
+- Be flexible. The respondent may say something new before Alvia uses the guidance.
+- If a follow-up would overlap with a reserved topic, simply advise against it (e.g., "this will be covered later").
+- Do not reveal analytics, prior interviews, or internal reasoning to the respondent.
 
-IMPORTANT: Remember, Alvia is having a voice conversation with the respondent. It's normal not to cover every single aspect of the Guidance for This Question. Use judgement to determine when to intervene and suggest moving to the next question.
+Be conservative — only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Remember, Alvia is having a voice conversation — it's normal not to cover every single aspect of the guidance for a question.
 
-6. QUESTION QUALITY AWARENESS: If historical quality insights are present, use them to anticipate where probing, rephrasing, or warmer phrasing may help. Treat them as statistical priors, not assumptions about this respondent.
+QUESTION QUALITY AWARENESS: If historical quality insights are present, use them to anticipate where probing, rephrasing, or warmer phrasing may help. Treat them as statistical priors, not assumptions about this respondent. Historical quality issues may not apply to this respondent; use live transcript evidence to override historical priors. Do not force interventions solely because a quality alert exists.
 
 CROSS-INTERVIEW AWARENESS:
 You may receive a snapshot of themes from prior interviews in the same collection. When present:
@@ -416,8 +426,6 @@ You may receive a snapshot of themes from prior interviews in the same collectio
 - Prefer neutral phrasing such as "it may be useful to explore..." rather than asserting consensus.
 - Avoid introducing bias or leading the respondent toward expected answers.
 - If not clearly relevant to the current moment, ignore the cross-interview context entirely and continue with current-question guidance.
-- Historical quality issues may not apply to this respondent. Use live transcript evidence to override historical priors.
-- Do not force interventions solely because a quality alert exists.
 
 ANALYTICS-DRIVEN HYPOTHESIS TESTING:
 You may receive hypotheses derived from project-level analytics. When present:
@@ -682,12 +690,23 @@ function buildBarbaraUserPrompt(input: BarbaraAnalysisInput): string {
 Objective: ${input.templateObjective}
 Tone: ${input.templateTone}
 
+CURRENT DECISION:
+1. Has the respondent already touched part of the CURRENT QUESTION earlier in the interview?
+2. If yes, would bridging to that earlier thread genuinely prevent duplication or improve flow — or would a fresh answer be more valuable?
+3. What is still missing, unclear, or worth deepening now?
+4. Would probing risk overlap with a RESERVED QUESTION?
+5. Is moving on, confirming understanding, or checking audio quality the better next move?
+
 CURRENT QUESTION (Q${input.currentQuestionIndex + 1}):
 "${input.currentQuestion.text}"
 
 GUIDANCE FOR THIS QUESTION:
 ${input.currentQuestion.guidance || "No specific guidance provided."}
 
+${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesForCompletedQuestions}\n\n` : ""}${summariesForRecentQuestions ? `RECENT QUESTIONS (summaries):\n${summariesForRecentQuestions}\n\n` : ""}RECENT TRANSCRIPT (current + previous ${RECENT_TRANSCRIPT_QUESTION_WINDOW} questions):
+${recentTranscript || "(No transcript yet)"}
+
+${previousQuestions ? `QUESTION LIST (completed):\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `RESERVED QUESTIONS (off limits to Alvia — do not reference these in guidance):\n${upcomingQuestions}\n` : ""}
 METRICS FOR CURRENT QUESTION:
 - Word count: ${wordCount}
 - Active speaking time: ${activeTimeSeconds} seconds
@@ -695,12 +714,8 @@ METRICS FOR CURRENT QUESTION:
 - Follow-ups asked so far: ${input.questionMetrics.followUpCount}
 - Recommended follow-up depth: ${input.questionMetrics.recommendedFollowUps !== null ? input.questionMetrics.recommendedFollowUps : "No limit set (use judgment)"}
 
-${summariesForCompletedQuestions ? `EARLIER QUESTIONS (summaries):\n${summariesForCompletedQuestions}\n\n` : ""}${summariesForRecentQuestions ? `RECENT QUESTIONS (summaries):\n${summariesForRecentQuestions}\n\n` : ""}${previousQuestions ? `QUESTION LIST (completed):\n${previousQuestions}\n\n` : ""}${upcomingQuestions ? `RESERVED QUESTIONS (off limits to Alvia — do not reference these in guidance):\n${upcomingQuestions}\n` : ""}
-RECENT TRANSCRIPT (current + previous ${RECENT_TRANSCRIPT_QUESTION_WINDOW} questions):
-${recentTranscript || "(No transcript yet)"}
-
 ${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}${buildAnalyticsHypothesesBlock(input)}
-Based on this context, should Alvia receive any guidance? Respond with your analysis in JSON format.`;
+Based on this context, decide whether Alvia needs guidance. Optimise for continuity first (when bridging genuinely helps), then for completeness, then for efficiency. Respond in JSON.`;
 }
 
 export function createEmptyMetrics(
@@ -752,22 +767,30 @@ export async function detectTopicOverlap(
 
   try {
     const systemPrompt = `You analyze interview transcripts to detect topic overlap.
-Given an upcoming question and prior context (summaries and/or recent statements), determine if the respondent has already addressed the topic.
+
+Given an upcoming question and prior context, decide whether the respondent has already addressed the same underlying topic earlier in the interview.
+
+Your job is not only to detect duplicate wording. Your job is to detect whether Alvia should treat the next question as:
+1. genuinely new,
+2. a continuation of something already discussed, or
+3. largely already covered.
 
 Return JSON:
 {
   "hasOverlap": boolean,
-  "overlappingTopics": string[], // 1-3 specific topics that overlap
+  "overlappingTopics": string[],
   "coverageLevel": "mentioned" | "partially_covered" | "fully_covered",
-  "sourceQuestionIndex": number | null // 0-based index, or null if from recent transcript
+  "sourceQuestionIndex": number | null
 }
 
-Coverage levels:
-- "mentioned": Topic came up briefly but wasn't explored
-- "partially_covered": Some aspects discussed but room for more depth
-- "fully_covered": Topic was thoroughly addressed
-
-If no meaningful overlap, return { "hasOverlap": false, "overlappingTopics": [], "coverageLevel": "mentioned", "sourceQuestionIndex": null }`;
+RULES:
+- Match meaning, not just keywords.
+- Prefer concrete, speakable overlap topics that Alvia could naturally acknowledge aloud.
+- Use "mentioned" when the topic came up briefly.
+- Use "partially_covered" when Alvia should acknowledge the earlier discussion and ask only for the missing angle.
+- Use "fully_covered" only when asking the upcoming question from scratch would likely feel repetitive.
+- If there is no meaningful overlap, return hasOverlap=false.
+- Note: Some questions intentionally revisit a theme from a different angle. If the upcoming question seems designed to elicit an independent perspective on a previously discussed topic, prefer "mentioned" over higher coverage levels to avoid over-bridging.`;
 
     const summaryContext = completedSummaries
       .filter(
@@ -910,7 +933,7 @@ You must respond with a JSON object containing:
   "respondentSummary": "A 2-3 sentence summary of what the respondent said",
   "keyInsights": ["3-5 bullet points of main themes, insights, or memorable quotes"],
   "completenessAssessment": "Brief note on answer quality/depth (e.g., 'Comprehensive with specific examples' or 'Brief but covered key points')",
-  "relevantToFutureQuestions": ["Topics mentioned that might connect to later questions"],
+  "relevantToFutureQuestions": ["0-3 concise callback cues for later questions. Each cue should be a concrete topic the respondent actually raised that a future question could naturally build on. Keep each cue under 15 words."],
   "qualityFlags": ["Array of applicable flags from: incomplete, ambiguous, contradiction, distress_cue, off_topic, low_engagement"],
   "qualityScore": 0-100,
   "qualityNotes": "Brief explanation of quality assessment",
@@ -930,6 +953,13 @@ VERBATIM SELECTION CRITERIA:
 - Clean up filler words (um, uh, like) but preserve the respondent's exact phrasing and voice
 - Each quote should be 1-3 sentences max
 - Include diverse sentiments when present (don't only pick positive or negative)
+
+CALLBACK CUE GUIDANCE:
+- Write concrete callback cues, not broad themes.
+- Good: "loyalty driven by staff recognition", "frustration with checkout speed", "price matters less than convenience"
+- Weak: "loyalty", "frustration", "customer experience"
+- Include only topics the respondent actually raised.
+- Prefer cues that later questions could naturally acknowledge aloud.
 
 PII ANONYMIZATION (CRITICAL - apply to all verbatim quotes):
 - Replace names with [Name]
@@ -3313,28 +3343,31 @@ You also have access to project-level analytics hypotheses. Use these to:
 - Frame hypothesis-testing questions conversationally — never reveal they came from analytics`
     : "";
 
-  return `You are Barbara, an expert research interview analyst. Your task is to review a completed interview and determine if there are any valuable additional questions to ask before the interview concludes.
+  return `You are Barbara, an expert research interview analyst. Your task is to review a completed interview and determine whether there are any genuinely valuable additional questions to ask before the interview concludes.
 
 CRITICAL RULES:
-1. DO NOT repeat or rephrase any question that was already asked in the original template
-2. DO NOT ask questions that were adequately covered in the respondent's answers
-3. Only suggest questions that will provide genuinely NEW insights
-4. Questions must be open-ended and conversational in tone
-5. Maximum ${input.maxQuestions} additional question(s) - you may return fewer or zero if coverage is adequate
+1. Do not repeat or rephrase any original template question.
+2. Do not ask about topics that were already adequately covered.
+3. Prefer questions that extend an unfinished thread the respondent already opened.
+4. If a candidate question would feel like a disconnected new branch, reject it unless there is a major unanswered objective gap.
+5. Additional questions must provide genuinely new value.
+6. Questions must be open-ended, conversational, and easy for Alvia to ask naturally as part of the same conversation.
+7. Maximum ${input.maxQuestions} additional question(s). Return fewer or zero if coverage is already strong.
 
 WHEN TO SUGGEST QUESTIONS:
-- Important topics mentioned briefly but not explored in depth
-- Interesting tangents the respondent hinted at but weren't followed up
-- Gaps between the research objective and what was actually discussed
-- Contradictions or ambiguities that could benefit from clarification
-- Gaps between the strategic context and what was discussed; questions that would yield actionable insights for the stated objective
+- A topic was mentioned earlier but only lightly explored
+- The respondent hinted at an important tension, contradiction, or ambiguity that was never clarified
+- A clear research objective gap remains
+- A strategically important thread was opened but not developed
+- A useful follow-on could sound like a continuation of something the respondent already said
 ${crossInterviewSection}${analyticsHypothesesSection}
 ${input.avoidRules?.length ? `\nTOPICS TO AVOID:\nThe following topics must not be addressed in additional questions:\n${input.avoidRules.map((r) => `- ${r}`).join("\n")}\n` : ""}
 WHEN TO RETURN ZERO QUESTIONS:
-- The interview comprehensively covered the research objective
-- All important topics were explored to sufficient depth
+- The interview already covers the objective well
+- The remaining options would mainly repeat earlier material
+- Any new question would feel disconnected from the conversation so far
 - The respondent showed fatigue or limited engagement
-- Adding more questions would not meaningfully enhance the research
+- Additional questioning would add little value
 
 Respond with a JSON object containing:
 {
@@ -3451,7 +3484,7 @@ ${summariesText}
 ${transcriptText}
 ${crossInterviewText}${analyticsHypothesesText}
 
-Based on this interview, identify up to ${input.maxQuestions} additional question(s) that would add genuine value, or indicate if no additional questions are needed.`;
+Based on this interview, first identify the most important unfinished threads or remaining objective gaps. Then decide whether any additional question would add genuine value by extending those threads. Prefer questions that continue something the respondent already opened rather than introducing a disconnected new topic. Return up to ${input.maxQuestions} question(s), or zero if coverage is already strong.`;
 }
 
 // --- End-of-Interview Session Summary ---
