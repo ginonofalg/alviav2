@@ -40,7 +40,18 @@
       "WebFetch(domain:dovetail.com)",
       "WebFetch(domain:prolificresearch.com)",
       "WebFetch(domain:www.open-britain.co.uk)",
-      "WebFetch(domain:www.crowdfunder.co.uk)"
+      "WebFetch(domain:www.crowdfunder.co.uk)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:www.fairvote.uk)",
+      "WebFetch(domain:www.fairelections.uk)",
+      "WebFetch(domain:committees.parliament.uk)",
+      "WebFetch(domain:publications.parliament.uk)",
+      "WebFetch(domain:www.parallelparliament.co.uk)",
+      "WebFetch(domain:actionnetwork.org)",
+      "WebFetch(domain:uk.indeed.com)",
+      "WebFetch(domain:jobs.workable.com)",
+      "WebFetch(domain:focusgroup.co.uk)",
+      "WebFetch(domain:hgcapital.com)"
     ]
   }
 }
