@@ -1062,20 +1062,20 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         currentQuestion?.recommendedFollowUps ??
         state.template?.defaultRecommendedFollowUps ??
         null;
-      instructions = buildInterviewInstructions(
-        state.template,
+      instructions = buildInterviewInstructions({
+        template: state.template,
         currentQuestion,
-        state.currentQuestionIndex,
-        state.questions.length,
-        undefined,
-        state.respondentInformalName,
-        state.questions,
-        { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
-        state.strategicContext,
-        state.alviaHasSpokenOnCurrentQuestion,
-        state.vadEagernessMode,
-        buildContinuityContext(state),
-      );
+        questionIndex: state.currentQuestionIndex,
+        totalQuestions: state.questions.length,
+        respondentName: state.respondentInformalName,
+        allQuestions: state.questions,
+        followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+        strategicContext: state.strategicContext,
+        alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+        eagernessMode: state.vadEagernessMode,
+        continuityContext: buildContinuityContext(state),
+        questionSummaries: state.questionSummaries,
+      });
     }
 
     const sessionConfig = provider.buildSessionConfig(instructions, state.vadEagernessMode);
@@ -2008,20 +2008,21 @@ Then continue the interview naturally once they acknowledge.`;
       currentQuestion?.recommendedFollowUps ??
       state.template?.defaultRecommendedFollowUps ??
       null;
-    const updatedInstructions = buildInterviewInstructions(
-      state.template,
+    const updatedInstructions = buildInterviewInstructions({
+      template: state.template,
       currentQuestion,
-      state.currentQuestionIndex,
-      state.questions.length,
-      guidanceMessage,
-      state.respondentInformalName,
-      state.questions,
-      { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
-      state.strategicContext,
-      state.alviaHasSpokenOnCurrentQuestion,
-      state.vadEagernessMode,
-      buildContinuityContext(state),
-    );
+      questionIndex: state.currentQuestionIndex,
+      totalQuestions: state.questions.length,
+      barbaraGuidance: guidanceMessage,
+      respondentName: state.respondentInformalName,
+      allQuestions: state.questions,
+      followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+      strategicContext: state.strategicContext,
+      alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+      eagernessMode: state.vadEagernessMode,
+      continuityContext: buildContinuityContext(state),
+      questionSummaries: state.questionSummaries,
+    });
 
     state.providerWs.send(
       JSON.stringify({
@@ -2098,20 +2099,20 @@ function sendCombinedEagernessSwitch(
     currentQuestion?.recommendedFollowUps ??
     state.template?.defaultRecommendedFollowUps ??
     null;
-  const updatedInstructions = buildInterviewInstructions(
-    state.template,
+  const updatedInstructions = buildInterviewInstructions({
+    template: state.template,
     currentQuestion,
-    state.currentQuestionIndex,
-    state.questions.length,
-    undefined,
-    state.respondentInformalName,
-    state.questions,
-    { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
-    state.strategicContext,
-    state.alviaHasSpokenOnCurrentQuestion,
-    newMode,
-    buildContinuityContext(state),
-  );
+    questionIndex: state.currentQuestionIndex,
+    totalQuestions: state.questions.length,
+    respondentName: state.respondentInformalName,
+    allQuestions: state.questions,
+    followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+    strategicContext: state.strategicContext,
+    alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+    eagernessMode: newMode,
+    continuityContext: buildContinuityContext(state),
+    questionSummaries: state.questionSummaries,
+  });
 
   const instructionsUpdate = state.providerInstance.buildInstructionsUpdate(updatedInstructions);
   const combined = {
@@ -2374,20 +2375,21 @@ async function triggerBarbaraAnalysis(
           currentQuestion?.recommendedFollowUps ??
           state.template?.defaultRecommendedFollowUps ??
           null;
-        const updatedInstructions = buildInterviewInstructions(
-          state.template,
+        const updatedInstructions = buildInterviewInstructions({
+          template: state.template,
           currentQuestion,
-          state.currentQuestionIndex,
-          state.questions.length,
-          guidanceMessage,
-          state.respondentInformalName,
-          state.questions,
-          { followUpCount: metrics.followUpCount, recommendedFollowUps },
-          state.strategicContext,
-          state.alviaHasSpokenOnCurrentQuestion,
-          state.vadEagernessMode,
-          buildContinuityContext(state),
-        );
+          questionIndex: state.currentQuestionIndex,
+          totalQuestions: state.questions.length,
+          barbaraGuidance: guidanceMessage,
+          respondentName: state.respondentInformalName,
+          allQuestions: state.questions,
+          followUpContext: { followUpCount: metrics.followUpCount, recommendedFollowUps },
+          strategicContext: state.strategicContext,
+          alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+          eagernessMode: state.vadEagernessMode,
+          continuityContext: buildContinuityContext(state),
+          questionSummaries: state.questionSummaries,
+        });
 
         // Log the complete Alvia prompt when Barbara issues guidance
         console.log(
@@ -2836,23 +2838,23 @@ INSTRUCTIONS:
           nextQuestion?.recommendedFollowUps ??
           state.template?.defaultRecommendedFollowUps ??
           null;
-        const instructions = buildInterviewInstructions(
-          state.template,
-          nextQuestion,
-          state.currentQuestionIndex,
-          state.questions.length,
-          undefined,
-          state.respondentInformalName,
-          state.questions,
-          {
+        const instructions = buildInterviewInstructions({
+          template: state.template,
+          currentQuestion: nextQuestion,
+          questionIndex: state.currentQuestionIndex,
+          totalQuestions: state.questions.length,
+          respondentName: state.respondentInformalName,
+          allQuestions: state.questions,
+          followUpContext: {
             followUpCount: newMetrics?.followUpCount ?? 0,
             recommendedFollowUps,
           },
-          state.strategicContext,
-          state.alviaHasSpokenOnCurrentQuestion,
-          state.vadEagernessMode,
-          buildContinuityContext(state),
-        );
+          strategicContext: state.strategicContext,
+          alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+          eagernessMode: state.vadEagernessMode,
+          continuityContext: buildContinuityContext(state),
+          questionSummaries: state.questionSummaries,
+        });
 
         if (state.providerWs.readyState === WebSocket.OPEN) {
           // Update session with new question context

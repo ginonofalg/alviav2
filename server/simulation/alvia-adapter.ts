@@ -31,18 +31,18 @@ export async function generateAlviaResponse(
   model: string,
   usageContext: LLMUsageAttribution,
 ): Promise<string> {
-  const instructions = buildInterviewInstructions(
+  const instructions = buildInterviewInstructions({
     template,
     currentQuestion,
     questionIndex,
     totalQuestions,
     barbaraGuidance,
     respondentName,
-    allQuestions.map((q) => ({ questionText: q.questionText })),
+    allQuestions: allQuestions.map((q) => ({ questionText: q.questionText })),
     followUpContext,
-    null,
+    strategicContext: null,
     alviaHasSpokenOnCurrentQuestion,
-  );
+  });
 
   const fullInstructions = instructions + TEXT_MODE_OVERRIDE;
   const messages = buildConversationMessages(transcript, fullInstructions, "alvia");

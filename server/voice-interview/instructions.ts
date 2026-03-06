@@ -1,7 +1,29 @@
 import type { InterviewState } from "./types";
-import type { TopicOverlapResult } from "../barbara-orchestrator";
+import type { TopicOverlapResult, QuestionSummary } from "../barbara-orchestrator";
 import type { VadEagernessMode } from "@shared/types/performance-metrics";
 import { buildContinuityContext } from "./context-builders";
+
+const MAX_RECAP_QUESTION_TEXT_LENGTH = 80;
+const MAX_RECAP_INSIGHTS_PER_QUESTION = 2;
+
+export interface InterviewInstructionsOptions {
+  template: any;
+  currentQuestion: any;
+  questionIndex: number;
+  totalQuestions: number;
+  barbaraGuidance?: string;
+  respondentName?: string | null;
+  allQuestions?: Array<{ questionText: string }>;
+  followUpContext?: {
+    followUpCount: number;
+    recommendedFollowUps: number | null;
+  };
+  strategicContext?: string | null;
+  alviaHasSpokenOnCurrentQuestion?: boolean;
+  eagernessMode?: VadEagernessMode;
+  continuityContext?: string | null;
+  questionSummaries?: QuestionSummary[];
+}
 
 function buildContinuityBlock(continuityContext: string | null): string {
   let block = `CONVERSATION CONTINUITY:
@@ -23,23 +45,58 @@ ${continuityContext}`;
   return block;
 }
 
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 1) + "\u2026";
+}
+
+export function buildCompletedQuestionsRecap(
+  questionSummaries: QuestionSummary[],
+  currentQuestionIndex: number,
+): string | null {
+  const completed = questionSummaries.filter(
+    (s) =>
+      s != null &&
+      s.questionIndex < currentQuestionIndex &&
+      !s.isAdditionalQuestion,
+  );
+
+  if (completed.length === 0) return null;
+
+  completed.sort((a, b) => a.questionIndex - b.questionIndex);
+
+  const lines = completed.map((s) => {
+    const qText = truncateText(s.questionText, MAX_RECAP_QUESTION_TEXT_LENGTH);
+    const insights = Array.isArray(s.keyInsights) && s.keyInsights.length > 0
+      ? ` Key points: ${s.keyInsights.slice(0, MAX_RECAP_INSIGHTS_PER_QUESTION).join("; ")}.`
+      : "";
+    const summary = s.respondentSummary || "No summary available.";
+    return `Q${s.questionIndex + 1} ("${qText}"): ${summary}${insights}`;
+  });
+
+  return `COMPLETED QUESTIONS RECAP (what the respondent has already told you):
+${lines.join("\n")}`;
+}
+
 export function buildInterviewInstructions(
-  template: any,
-  currentQuestion: any,
-  questionIndex: number,
-  totalQuestions: number,
-  barbaraGuidance?: string,
-  respondentName?: string | null,
-  allQuestions?: Array<{ questionText: string }>,
-  followUpContext?: {
-    followUpCount: number;
-    recommendedFollowUps: number | null;
-  },
-  strategicContext?: string | null,
-  alviaHasSpokenOnCurrentQuestion?: boolean,
-  eagernessMode?: VadEagernessMode,
-  continuityContext?: string | null,
+  opts: InterviewInstructionsOptions,
 ): string {
+  const {
+    template,
+    currentQuestion,
+    questionIndex,
+    totalQuestions,
+    barbaraGuidance,
+    respondentName,
+    allQuestions,
+    followUpContext,
+    strategicContext,
+    alviaHasSpokenOnCurrentQuestion,
+    eagernessMode,
+    continuityContext,
+    questionSummaries,
+  } = opts;
+
   const objective = template?.objective || "Conduct a thorough interview";
   const tone = template?.tone || "professional";
   const guidance = currentQuestion?.guidance || "";
@@ -55,6 +112,11 @@ export function buildInterviewInstructions(
         .join("\n")
     : "";
 
+  const recapBlock =
+    questionSummaries && questionSummaries.length > 0
+      ? buildCompletedQuestionsRecap(questionSummaries, questionIndex)
+      : null;
+
   let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
 
 INTERVIEW CONTEXT:
@@ -64,7 +126,7 @@ INTERVIEW CONTEXT:
 
 RESPONDENT:
 ${nameContext}
-
+${recapBlock ? `\n${recapBlock}\n` : ""}
 CURRENT QUESTION:
 "${currentQuestion?.questionText || "Please share your thoughts."}"
 
@@ -142,9 +204,6 @@ export function buildOverlapInstruction(
 ): string {
   const topics = result.overlappingTopics.slice(0, 2).join(" and ");
 
-  // Note: This function is called AFTER the user clicks "Next Question", so we should
-  // NOT ask if they want to add anything or move on - they've already decided to move on.
-  // Simply acknowledge the overlap and proceed to the new question.
   switch (result.coverageLevel) {
     case "fully_covered":
       return `The respondent already covered ${topics} thoroughly earlier. Briefly acknowledge this (e.g., "You've actually touched on this earlier - thank you for that") and then ask this question: "${questionText}"`;
@@ -171,6 +230,7 @@ interface ResumeContext {
   followUpCount: number;
   upcomingQuestions: string;
   lastBarbaraGuidance: string | undefined;
+  questionSummaries: QuestionSummary[];
 }
 
 function buildResumeContext(state: InterviewState): ResumeContext {
@@ -181,6 +241,10 @@ function buildResumeContext(state: InterviewState): ResumeContext {
   const transcriptSummary = recentTranscript
     .map((entry) => `[${entry.speaker.toUpperCase()}]: ${entry.text}`)
     .join("\n");
+
+  const validSummaries = state.questionSummaries.filter(
+    (s) => s != null,
+  ) as QuestionSummary[];
 
   if (isAQ && state.additionalQuestions.length > 0) {
     const aqIndex = state.currentAdditionalQuestionIndex;
@@ -211,6 +275,7 @@ function buildResumeContext(state: InterviewState): ResumeContext {
         .map((q) => `- ${q.questionText}`)
         .join("\n"),
       lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
+      questionSummaries: validSummaries,
     };
   }
 
@@ -245,6 +310,7 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       .map((q) => `- ${q.questionText}`)
       .join("\n"),
     lastBarbaraGuidance: state.lastBarbaraGuidance?.message,
+    questionSummaries: validSummaries,
   };
 }
 
@@ -263,7 +329,19 @@ RESPONDENT:
 ${nameContext}
 
 TRANSCRIPT SUMMARY (recent conversation):
-${ctx.transcriptSummary || "(No previous conversation recorded)"}
+${ctx.transcriptSummary || "(No previous conversation recorded)"}`;
+
+  const recap = buildCompletedQuestionsRecap(
+    ctx.questionSummaries,
+    ctx.questionIndex,
+  );
+  if (recap) {
+    block += `
+
+${recap}`;
+  }
+
+  block += `
 
 CURRENT QUESTION: "${ctx.currentQuestionText}"
 QUESTION STATUS: ${ctx.status}

@@ -8,39 +8,36 @@ describe("VAD Eagerness", () => {
     const question = { questionText: "What do you think?", guidance: "Probe deeply" };
 
     it("includes RESPONSE TIMING block when eagernessMode is 'high'", () => {
-      const instructions = buildInterviewInstructions(
-        template, question, 0, 3,
-        undefined, null, [question], undefined, null, false,
-        "high",
-      );
+      const instructions = buildInterviewInstructions({
+        template, currentQuestion: question, questionIndex: 0, totalQuestions: 3,
+        allQuestions: [question], eagernessMode: "high",
+      });
       expect(instructions).toContain("RESPONSE TIMING (IMPORTANT):");
       expect(instructions).toContain("voice detection is set to respond quickly");
       expect(instructions).toContain("Please continue...");
     });
 
     it("excludes RESPONSE TIMING block when eagernessMode is 'auto'", () => {
-      const instructions = buildInterviewInstructions(
-        template, question, 0, 3,
-        undefined, null, [question], undefined, null, false,
-        "auto",
-      );
+      const instructions = buildInterviewInstructions({
+        template, currentQuestion: question, questionIndex: 0, totalQuestions: 3,
+        allQuestions: [question], eagernessMode: "auto",
+      });
       expect(instructions).not.toContain("RESPONSE TIMING (IMPORTANT):");
     });
 
     it("excludes RESPONSE TIMING block when eagernessMode is undefined", () => {
-      const instructions = buildInterviewInstructions(
-        template, question, 0, 3,
-        undefined, null, [question], undefined, null, false,
-      );
+      const instructions = buildInterviewInstructions({
+        template, currentQuestion: question, questionIndex: 0, totalQuestions: 3,
+        allQuestions: [question],
+      });
       expect(instructions).not.toContain("RESPONSE TIMING (IMPORTANT):");
     });
 
     it("excludes RESPONSE TIMING block when eagernessMode is 'low'", () => {
-      const instructions = buildInterviewInstructions(
-        template, question, 0, 3,
-        undefined, null, [question], undefined, null, false,
-        "low",
-      );
+      const instructions = buildInterviewInstructions({
+        template, currentQuestion: question, questionIndex: 0, totalQuestions: 3,
+        allQuestions: [question], eagernessMode: "low",
+      });
       expect(instructions).not.toContain("RESPONSE TIMING (IMPORTANT):");
     });
   });
