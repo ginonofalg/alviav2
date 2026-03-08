@@ -26,7 +26,7 @@ export async function generateAlviaResponse(
   barbaraGuidance: string | undefined,
   respondentName: string | null,
   allQuestions: Question[],
-  followUpContext: { followUpCount: number; recommendedFollowUps: number | null },
+  followUpContext: { followUpTurnCount: number; recommendedFollowUps: number | null },
   alviaHasSpokenOnCurrentQuestion: boolean,
   model: string,
   usageContext: LLMUsageAttribution,

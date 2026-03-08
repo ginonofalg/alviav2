@@ -225,14 +225,14 @@ async function runSingleSimulation(
         questionIndex,
         wordCount: 0,
         turnCount: 0,
-        followUpCount: 0,
+        followUpTurnCount: 0,
         startedAt: Date.now(),
       };
 
       const alviaOpening = await generateAlviaResponse(
         ctx.template, question, questionIndex, ctx.questions.length,
         transcript, undefined, ctx.persona.name, ctx.questions,
-        { followUpCount: 0, recommendedFollowUps: question.recommendedFollowUps ?? null },
+        { followUpTurnCount: 0, recommendedFollowUps: question.recommendedFollowUps ?? null },
         false, ctx.alviaModel, usageCtx,
       );
 
@@ -268,7 +268,7 @@ async function runSingleSimulation(
         const words = personaResponse.split(/\s+/).filter((w) => w.length > 0).length;
         metrics.wordCount += words;
         metrics.turnCount++;
-        metrics.followUpCount++;
+        metrics.followUpTurnCount++;
         previousAnswers.set(questionIndex, personaResponse);
 
         const speakingDelayMs = calculateSpeakingDelayMs(personaResponse, ctx.interTurnDelayMs);
@@ -281,7 +281,7 @@ async function runSingleSimulation(
             activeTimeMs: Date.now() - metrics.startedAt,
             turnCount: metrics.turnCount,
             startedAt: metrics.startedAt,
-            followUpCount: metrics.followUpCount,
+            followUpTurnCount: metrics.followUpTurnCount,
             recommendedFollowUps: question.recommendedFollowUps ?? null,
           };
 
@@ -315,7 +315,7 @@ async function runSingleSimulation(
         const action = evaluateQuestionFlow({
           currentQuestionIndex: questionIndex,
           totalQuestions: ctx.questions.length,
-          followUpCount: metrics.followUpCount,
+          followUpTurnCount: metrics.followUpTurnCount,
           maxTurnsPerQuestion: hardCap,
           barbaraSuggestedNext,
           inAdditionalQuestionPhase: false,
@@ -328,7 +328,7 @@ async function runSingleSimulation(
         const alviaFollowUp = await generateAlviaResponse(
           ctx.template, question, questionIndex, ctx.questions.length,
           transcript, barbaraGuidance, ctx.persona.name, ctx.questions,
-          { followUpCount: metrics.followUpCount, recommendedFollowUps: question.recommendedFollowUps ?? null },
+          { followUpTurnCount: metrics.followUpTurnCount, recommendedFollowUps: question.recommendedFollowUps ?? null },
           true, ctx.alviaModel, usageCtx,
         );
 
@@ -349,7 +349,7 @@ async function runSingleSimulation(
           activeTimeMs: Date.now() - metrics.startedAt,
           turnCount: metrics.turnCount,
           startedAt: metrics.startedAt,
-          followUpCount: metrics.followUpCount,
+          followUpTurnCount: metrics.followUpTurnCount,
           recommendedFollowUps: question.recommendedFollowUps ?? null,
         };
 
@@ -497,7 +497,7 @@ async function runAdditionalQuestions(
         questionIndex: aqQuestionIndex,
         wordCount: 0,
         turnCount: 0,
-        followUpCount: 0,
+        followUpTurnCount: 0,
         startedAt: Date.now(),
       };
 
@@ -514,7 +514,7 @@ async function runAdditionalQuestions(
         const words = personaResponse.split(/\s+/).filter((w) => w.length > 0).length;
         aqMetrics.wordCount += words;
         aqMetrics.turnCount++;
-        aqMetrics.followUpCount++;
+        aqMetrics.followUpTurnCount++;
 
         const speakingDelayMs = calculateSpeakingDelayMs(personaResponse, ctx.interTurnDelayMs);
 
@@ -526,7 +526,7 @@ async function runAdditionalQuestions(
             activeTimeMs: Date.now() - aqMetrics.startedAt,
             turnCount: aqMetrics.turnCount,
             startedAt: aqMetrics.startedAt,
-            followUpCount: aqMetrics.followUpCount,
+            followUpTurnCount: aqMetrics.followUpTurnCount,
             recommendedFollowUps: null,
           };
 
@@ -560,7 +560,7 @@ async function runAdditionalQuestions(
         const action = evaluateQuestionFlow({
           currentQuestionIndex: aqQuestionIndex,
           totalQuestions: ctx.questions.length,
-          followUpCount: aqMetrics.followUpCount,
+          followUpTurnCount: aqMetrics.followUpTurnCount,
           maxTurnsPerQuestion: aqHardCap,
           barbaraSuggestedNext,
           inAdditionalQuestionPhase: true,
@@ -580,7 +580,7 @@ async function runAdditionalQuestions(
           aqAsQuestion,
           aqQuestionIndex, ctx.questions.length,
           transcript, barbaraGuidance, ctx.persona.name, ctx.questions,
-          { followUpCount: aqMetrics.followUpCount, recommendedFollowUps: null },
+          { followUpTurnCount: aqMetrics.followUpTurnCount, recommendedFollowUps: null },
           true, ctx.alviaModel, usageCtx,
         );
 

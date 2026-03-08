@@ -106,6 +106,8 @@ import {
   createEmptyMetricsTracker,
   recordSilenceSegment,
   calculateSilenceStats,
+  recordAlviaFollowUpTurn,
+  revertAlviaFollowUpTurn,
 } from "./voice-interview/metrics";
 import {
   buildInterviewInstructions,
@@ -275,7 +277,7 @@ function updateQuestionState(
       wordCount: metrics.wordCount,
       activeTimeMs: metrics.activeTimeMs,
       turnCount: metrics.turnCount,
-      followUpCount: metrics.followUpCount ?? 0,
+      followUpTurnCount: metrics.followUpTurnCount ?? 0,
     };
     state.questionStates.push(questionState);
   }
@@ -287,6 +289,7 @@ function updateQuestionState(
     questionState.wordCount = metrics.wordCount;
     questionState.activeTimeMs = metrics.activeTimeMs;
     questionState.turnCount = metrics.turnCount;
+    questionState.followUpTurnCount = metrics.followUpTurnCount;
   }
 }
 
@@ -695,7 +698,7 @@ export function handleVoiceInterview(
     alviaSummaryReject: null,
     alviaSummaryAccumulatedText: "",
     pendingSummaryPromises: new Map(),
-    // Response state tracking - prevents concurrent response.create calls
+    _pendingFollowUpTurnRevert: false,
     responseInProgress: false,
     responseStartedAt: null,
     lastResponseDoneAt: null,
@@ -940,7 +943,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             activeTimeMs: qs.activeTimeMs,
             turnCount: qs.turnCount,
             startedAt: null,
-            followUpCount: qs.followUpCount ?? 0,
+            followUpTurnCount: (qs as any).followUpTurnCount ?? (qs as any).followUpCount ?? 0,
             recommendedFollowUps: null,
           });
         }
@@ -1069,7 +1072,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         totalQuestions: state.questions.length,
         respondentName: state.respondentInformalName,
         allQuestions: state.questions,
-        followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+        followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
         strategicContext: state.strategicContext,
         alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
         eagernessMode: state.vadEagernessMode,
@@ -1490,9 +1493,16 @@ async function handleProviderEvent(
         : event.transcript;
       // Store the last AI prompt for resume functionality
       if (cleanedTranscript) {
+        if (state.alviaHasSpokenOnCurrentQuestion) {
+          const incremented = recordAlviaFollowUpTurn(
+            state.questionMetrics, state.currentQuestionIndex,
+          );
+          if (incremented) {
+            state._pendingFollowUpTurnRevert = true;
+          }
+        }
         state.lastAIPrompt = cleanedTranscript;
         state.alviaHasSpokenOnCurrentQuestion = true;
-        // Add to transcript log (both in-memory and persistence buffer)
         addTranscriptEntry(state, {
           speaker: "alvia",
           text: cleanedTranscript,
@@ -1545,9 +1555,8 @@ async function handleProviderEvent(
           ),
         );
       }
-      // Lag-by-one-turn: Barbara analysis is non-blocking; guidance applies to NEXT turn
+      state._pendingFollowUpTurnRevert = false;
       (async () => {
-        // Track transcription latency (time from speech_stopped to transcription completed)
         if (state.metricsTracker.latency.lastSpeechStoppedAt) {
           const transcriptionLatency =
             Date.now() - state.metricsTracker.latency.lastSpeechStoppedAt;
@@ -1773,6 +1782,12 @@ async function handleProviderEvent(
           ];
         if (lastEntry.speaker === "alvia") {
           lastEntry.interrupted = true;
+          if (state._pendingFollowUpTurnRevert) {
+            revertAlviaFollowUpTurn(
+              state.questionMetrics, state.currentQuestionIndex,
+            );
+            state._pendingFollowUpTurnRevert = false;
+          }
         }
       }
 
@@ -2016,7 +2031,7 @@ Then continue the interview naturally once they acknowledge.`;
       barbaraGuidance: guidanceMessage,
       respondentName: state.respondentInformalName,
       allQuestions: state.questions,
-      followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+      followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
       strategicContext: state.strategicContext,
       alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
       eagernessMode: state.vadEagernessMode,
@@ -2106,7 +2121,7 @@ function sendCombinedEagernessSwitch(
     totalQuestions: state.questions.length,
     respondentName: state.respondentInformalName,
     allQuestions: state.questions,
-    followUpContext: { followUpCount: metrics?.followUpCount ?? 0, recommendedFollowUps },
+    followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
     strategicContext: state.strategicContext,
     alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
     eagernessMode: newMode,
@@ -2383,7 +2398,7 @@ async function triggerBarbaraAnalysis(
           barbaraGuidance: guidanceMessage,
           respondentName: state.respondentInformalName,
           allQuestions: state.questions,
-          followUpContext: { followUpCount: metrics.followUpCount, recommendedFollowUps },
+          followUpContext: { followUpTurnCount: metrics.followUpTurnCount, recommendedFollowUps },
           strategicContext: state.strategicContext,
           alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
           eagernessMode: state.vadEagernessMode,
@@ -2410,15 +2425,9 @@ async function triggerBarbaraAnalysis(
         );
       }
 
-      // Increment follow-up count when probe_followup action is taken
       if (guidance.action === "probe_followup") {
-        metrics.followUpCount++;
-        // Update persisted question state with new follow-up count
-        updateQuestionState(state, state.currentQuestionIndex, {
-          followUpCount: metrics.followUpCount,
-        });
         console.log(
-          `[Barbara] Follow-up count for Q${state.currentQuestionIndex + 1}: ${metrics.followUpCount}` +
+          `[Barbara] probe_followup for Q${state.currentQuestionIndex + 1}, followUpTurnCount: ${metrics.followUpTurnCount}` +
             (metrics.recommendedFollowUps !== null
               ? ` (recommended: ${metrics.recommendedFollowUps})`
               : ""),
@@ -2812,6 +2821,7 @@ INSTRUCTIONS:
         // Immediately move to next question (don't wait for summary)
         state.currentQuestionIndex++;
         state.alviaHasSpokenOnCurrentQuestion = false;
+        state._pendingFollowUpTurnRevert = false;
         const nextQuestion = state.questions[state.currentQuestionIndex];
 
         // Initialize metrics for new question
@@ -2846,7 +2856,7 @@ INSTRUCTIONS:
           respondentName: state.respondentInformalName,
           allQuestions: state.questions,
           followUpContext: {
-            followUpCount: newMetrics?.followUpCount ?? 0,
+            followUpTurnCount: newMetrics?.followUpTurnCount ?? 0,
             recommendedFollowUps,
           },
           strategicContext: state.strategicContext,
@@ -3762,7 +3772,7 @@ async function generateAndPersistAQSummary(
           turnCount: respondentEntries.length,
           wordCount,
           activeTimeMs: 0,
-          followUpCount: 0,
+          followUpTurnCount: 0,
           startedAt: Date.now(),
           recommendedFollowUps: 0,
         };

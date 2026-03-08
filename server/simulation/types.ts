@@ -27,7 +27,7 @@ export interface SimulationQuestionMetrics {
   questionIndex: number;
   wordCount: number;
   turnCount: number;
-  followUpCount: number;
+  followUpTurnCount: number;
   startedAt: number;
 }
 

@@ -15,7 +15,7 @@ export interface TranscriptEntry {
 export interface GeneratedConversation {
   transcript: TranscriptEntry[];
   respondentText: string;
-  followUpCount: number;
+  followUpTurnCount: number;
   wordCount: number;
   extractedValue?: number | string | string[] | null;
 }
@@ -153,7 +153,7 @@ export async function generateConversation(
   return {
     transcript,
     respondentText,
-    followUpCount,
+    followUpTurnCount: followUpCount,
     wordCount,
     extractedValue: parsed.extractedValue
   };

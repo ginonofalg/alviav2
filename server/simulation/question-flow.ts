@@ -4,7 +4,7 @@ import type { SimulationTurnAction } from "@shared/types/simulation";
 export interface QuestionFlowState {
   currentQuestionIndex: number;
   totalQuestions: number;
-  followUpCount: number;
+  followUpTurnCount: number;
   maxTurnsPerQuestion: number;
   barbaraSuggestedNext: boolean;
   inAdditionalQuestionPhase: boolean;
@@ -14,7 +14,7 @@ export interface QuestionFlowState {
 
 export function evaluateQuestionFlow(state: QuestionFlowState): SimulationTurnAction {
   if (state.inAdditionalQuestionPhase) {
-    if (state.barbaraSuggestedNext || state.followUpCount >= state.maxTurnsPerQuestion) {
+    if (state.barbaraSuggestedNext || state.followUpTurnCount >= state.maxTurnsPerQuestion) {
       if (state.currentAdditionalQuestionIndex + 1 >= state.totalAdditionalQuestions) {
         return "complete";
       }
@@ -23,7 +23,7 @@ export function evaluateQuestionFlow(state: QuestionFlowState): SimulationTurnAc
     return "continue";
   }
 
-  if (state.barbaraSuggestedNext || state.followUpCount >= state.maxTurnsPerQuestion) {
+  if (state.barbaraSuggestedNext || state.followUpTurnCount >= state.maxTurnsPerQuestion) {
     if (state.currentQuestionIndex + 1 >= state.totalQuestions) {
       return "start_aq";
     }

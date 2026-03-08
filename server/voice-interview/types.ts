@@ -177,7 +177,7 @@ export interface InterviewState {
   alviaSummaryAccumulatedText: string;
   // Track pending summary generation promises to await before completion
   pendingSummaryPromises: Map<number | string, Promise<void>>;
-  // Response state tracking - prevents concurrent response.create calls
+  _pendingFollowUpTurnRevert: boolean;
   responseInProgress: boolean;
   responseStartedAt: number | null; // When current response.create was sent
   lastResponseDoneAt: number | null;

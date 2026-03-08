@@ -1,6 +1,26 @@
 import type { SilenceSegment, SilenceContext, SilenceStats } from "@shared/schema";
 import { emptyTokenBucket } from "../llm-usage";
 import type { MetricsTracker, InterviewState } from "./types";
+import type { QuestionMetrics } from "../barbara-orchestrator";
+
+export function recordAlviaFollowUpTurn(
+  questionMetrics: Map<number, QuestionMetrics>,
+  questionIndex: number,
+): boolean {
+  const metrics = questionMetrics.get(questionIndex);
+  if (!metrics) return false;
+  metrics.followUpTurnCount++;
+  return true;
+}
+
+export function revertAlviaFollowUpTurn(
+  questionMetrics: Map<number, QuestionMetrics>,
+  questionIndex: number,
+): void {
+  const metrics = questionMetrics.get(questionIndex);
+  if (!metrics || metrics.followUpTurnCount <= 0) return;
+  metrics.followUpTurnCount--;
+}
 
 export function createEmptyMetricsTracker(): MetricsTracker {
   return {

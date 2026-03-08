@@ -15,7 +15,7 @@ interface QuestionState {
   wordCount: number;
   turnCount: number;
   activeTimeMs: number;
-  followUpCount?: number;
+  followUpTurnCount?: number;
   recommendedFollowUps?: number;
 }
 
@@ -131,7 +131,7 @@ async function seedScenario(
         wordCount: conversation.wordCount,
         turnCount: conversation.transcript.length,
         activeTimeMs: 0,
-        followUpCount: conversation.followUpCount,
+        followUpTurnCount: conversation.followUpTurnCount,
         recommendedFollowUps: question.recommendedFollowUps
       };
       questionStates.push(questionState);

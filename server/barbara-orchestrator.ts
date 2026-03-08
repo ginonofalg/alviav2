@@ -212,7 +212,7 @@ export interface QuestionMetrics {
   activeTimeMs: number;
   turnCount: number;
   startedAt: number | null;
-  followUpCount: number;
+  followUpTurnCount: number;
   recommendedFollowUps: number | null;
 }
 
@@ -383,8 +383,9 @@ DECISION ORDER:
 5. Decide whether the current question now appears sufficiently covered. If so, prefer suggesting movement rather than repeating the topic. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
 6. Check RESERVED QUESTIONS before suggesting any probe. Never steer Alvia toward a follow-up that would duplicate or preview a reserved topic. Do not quote, preview, or reference any reserved question by text or by number.
 7. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
-   - If follow-ups are at or above the recommended depth AND the answer has reasonable substance, prefer "suggest_next_question" over "probe_followup"
-   - If follow-ups are 1 below the recommended depth, only suggest probing if the answer is clearly incomplete
+   - Compare against "Alvia follow-up turns so far" (the actual count of Alvia's non-initial turns on this question)
+   - If follow-up turns are at or above the recommended depth AND the answer has reasonable substance, prefer "suggest_next_question" over "probe_followup"
+   - If follow-up turns are 1 below the recommended depth, only suggest probing if the answer is clearly incomplete
    - If no recommendation is set, rely on your judgment of answer completeness
    - This is soft guidance, not a hard limit — exceptionally thin answers still warrant additional probing
 8. Use quality or environment actions only when the transcript evidence clearly supports them.
@@ -711,7 +712,7 @@ METRICS FOR CURRENT QUESTION:
 - Word count: ${wordCount}
 - Active speaking time: ${activeTimeSeconds} seconds
 - Number of turns: ${input.questionMetrics.turnCount}
-- Follow-ups asked so far: ${input.questionMetrics.followUpCount}
+- Alvia follow-up turns so far: ${input.questionMetrics.followUpTurnCount}
 - Recommended follow-up depth: ${input.questionMetrics.recommendedFollowUps !== null ? input.questionMetrics.recommendedFollowUps : "No limit set (use judgment)"}
 
 ${buildCrossInterviewSnapshotBlock(input)}${buildQuestionQualityInsightsBlock(input)}${buildAnalyticsHypothesesBlock(input)}
@@ -728,7 +729,7 @@ export function createEmptyMetrics(
     activeTimeMs: 0,
     turnCount: 0,
     startedAt: null,
-    followUpCount: 0,
+    followUpTurnCount: 0,
     recommendedFollowUps: recommendedFollowUps ?? null,
   };
 }

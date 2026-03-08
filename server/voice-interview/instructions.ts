@@ -15,7 +15,7 @@ export interface InterviewInstructionsOptions {
   respondentName?: string | null;
   allQuestions?: Array<{ questionText: string }>;
   followUpContext?: {
-    followUpCount: number;
+    followUpTurnCount: number;
     recommendedFollowUps: number | null;
   };
   strategicContext?: string | null;
@@ -138,7 +138,10 @@ ${
     ? `
 FOLLOW-UP DEPTH:
 The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? "" : "s"} for this question.
-You've asked ${followUpContext.followUpCount} so far. This is guidance, not a strict limit.
+You have made ${followUpContext.followUpTurnCount} follow-up turn${followUpContext.followUpTurnCount === 1 ? "" : "s"} so far on this question.
+${followUpContext.followUpTurnCount > 0 && followUpContext.followUpTurnCount >= followUpContext.recommendedFollowUps
+  ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
+  : "This is guidance, not a strict limit."}
 `
     : ""
 }${
@@ -227,7 +230,7 @@ interface ResumeContext {
   barbaraSuggestedMoveOn: boolean;
   guidance: string;
   recommendedFollowUps: number | null;
-  followUpCount: number;
+  followUpTurnCount: number;
   upcomingQuestions: string;
   lastBarbaraGuidance: string | undefined;
   questionSummaries: QuestionSummary[];
@@ -269,7 +272,7 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       barbaraSuggestedMoveOn: questionState?.barbaraSuggestedMoveOn || false,
       guidance: "",
       recommendedFollowUps: null,
-      followUpCount: 0,
+      followUpTurnCount: 0,
       upcomingQuestions: state.additionalQuestions
         .slice(aqIndex + 1)
         .map((q) => `- ${q.questionText}`)
@@ -303,8 +306,8 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       currentQuestion?.recommendedFollowUps ??
       state.template?.defaultRecommendedFollowUps ??
       null,
-    followUpCount:
-      state.questionMetrics.get(state.currentQuestionIndex)?.followUpCount ?? 0,
+    followUpTurnCount:
+      state.questionMetrics.get(state.currentQuestionIndex)?.followUpTurnCount ?? 0,
     upcomingQuestions: state.questions
       .slice(questionIndex + 1)
       .map((q) => `- ${q.questionText}`)
@@ -356,7 +359,10 @@ ${ctx.guidance || "Listen carefully and probe for more details when appropriate.
     block += `
 FOLLOW-UP DEPTH:
 The researcher recommends approximately ${ctx.recommendedFollowUps} follow-up probe${ctx.recommendedFollowUps === 1 ? "" : "s"} for this question.
-You've asked ${ctx.followUpCount} so far. This is guidance, not a strict limit.
+You have made ${ctx.followUpTurnCount} follow-up turn${ctx.followUpTurnCount === 1 ? "" : "s"} so far on this question.
+${ctx.followUpTurnCount > 0 && ctx.followUpTurnCount >= ctx.recommendedFollowUps
+  ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
+  : "This is guidance, not a strict limit."}
 `;
   }
 

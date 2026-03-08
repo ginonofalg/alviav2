@@ -64,7 +64,7 @@ export type PersistedQuestionState = {
   wordCount: number;
   activeTimeMs: number;
   turnCount: number;
-  followUpCount: number;
+  followUpTurnCount: number;
 };
 
 export type QualityFlag = "incomplete" | "ambiguous" | "contradiction" | "distress_cue" | "off_topic" | "low_engagement";
