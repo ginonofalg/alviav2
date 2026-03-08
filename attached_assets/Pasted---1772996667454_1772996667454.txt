@@ -1,0 +1,141 @@
+---                                                                                                                       
+  Concrete Prompt Change Proposal                                                                                           
+                                                                                                                            
+  Here's my review of the seven options mapped to specific lines in the codebase, with a recommended adoption plan.         
+                  
+  Summary verdict
+
+  I'd recommend adopting A + B + C + D + F as a coherent bundle, and deferring E and G (they're partially redundant with the
+   others).
+
+  ---
+  1. Option A — Lower the "good enough" bar (Barbara system prompt)
+
+  File: server/barbara-orchestrator.ts
+  Line 383, currently:
+  5. Decide whether the current question now appears sufficiently covered.
+     If so, prefer suggesting movement rather than repeating the topic.
+
+  Change to:
+  5. Decide whether the current question is sufficiently covered.
+     "Sufficiently covered" means: (a) the core intent of the question has been answered,
+     (b) at least one concrete supporting detail or example was given, and
+     (c) no major contradiction remains unresolved.
+     Once these three conditions are met, prefer "suggest_next_question" over further probing.
+
+  Rationale: This is the highest-impact single change. It gives Barbara a concrete, testable definition instead of leaving
+  "sufficiently covered" to interpretation — which currently biases toward thoroughness.
+
+  ---
+  2. Option B — Reweight priority order (Barbara system prompt)
+
+  File: server/barbara-orchestrator.ts
+  Line 719, currently:
+  Optimise for continuity first (when bridging genuinely helps), then for completeness, then for efficiency.
+
+  Change to:
+  Optimise for continuity first (when bridging genuinely helps), then for efficiency (avoid repetition and maintain
+  momentum), then for completeness. In spoken interviews, prefer momentum once the key objective of the question is met.
+
+  Also update line 379 (DECISION ORDER header area) to match — currently the implicit ordering in the numbered steps already
+   puts continuity first, but adding a sentence after step 4:
+
+  4a. In spoken interviews, momentum matters. Once the core objective is answered with supporting detail, default toward
+  progression rather than exhaustive coverage.
+
+  Rationale: Completeness being second in priority is the root cause of dwelling. Demoting it below efficiency directly
+  addresses the issue without removing it entirely.
+
+  ---
+  3. Option C — Relax conservative-intervention sentence (Barbara system prompt)
+
+  File: server/barbara-orchestrator.ts
+  Line 419, currently:
+  Be conservative — only intervene when there's a clear benefit. Most of the time, "none" is appropriate.
+
+  Change to:
+  Be conservative — only intervene when there's a clear benefit. Use "none" when no intervention would help, but actively
+  recommend "suggest_next_question" when further probing would likely repeat what has already been covered. Momentum is
+  itself a benefit.
+
+  Rationale: The current "most of the time none" phrasing suppresses suggest_next_question just as much as it suppresses
+  unnecessary probes. The revised version keeps the conservative posture for probing while explicitly carving out move-on as
+   a valid active recommendation.
+
+  ---
+  4. Option D — Tighten move-on trigger for Alvia
+
+  File: server/voice-interview/instructions.ts
+  Line 174 (instruction #8), currently:
+  8. If the answer is complete, or Barbara suggests moving on, say "Thank you for that answer"
+     and signal that they can use the Next Question button below when ready.
+
+  Change to:
+  8. If the respondent has answered the core question and provided at least one concrete detail
+     or example, do not add another probe by default. Thank them for their answer and let them
+     know they can use the Next Question button below when ready. Barbara may also explicitly
+     suggest moving on.
+
+  Rationale: This gives Alvia its own "good enough" heuristic matching Option A's definition, so Alvia doesn't depend
+  entirely on Barbara signalling to move on. This addresses the lag issue where Barbara's guidance arrives a turn late.
+
+  ---
+  5. Option F — Soften burden from question guidance (Alvia prompt)
+
+  File: server/voice-interview/instructions.ts
+  Line 170 (instruction #4), currently:
+  4. Use the STEER FOR THIS QUESTION to judge the depth needed.
+     This is a voice conversation, so use judgment rather than expecting a perfect or exhaustive answer.
+
+  Change to:
+  4. Use the STEER FOR THIS QUESTION as directional guidance, not a checklist.
+     Do not attempt exhaustive coverage of every guidance point in one question unless the
+     respondent naturally expands. This is a voice conversation — good-enough depth with
+     natural flow is better than comprehensive coverage that stalls momentum.
+
+  Also apply the same language to the resume/refresh paths in buildSharedContextBlock around line 352 where the STEER block
+  is emitted — though the STEER label itself is just the content, the instructions that reference it in the
+  resume/continuation blocks (lines 429, 457) already say "Ask follow-ups only when the answer is brief, unclear,
+  contradictory, or still missing something important" which is already well-aligned.
+
+  Rationale: The current "use judgment" is too vague and Alvia interprets it as "try to satisfy the guidance." Making it
+  explicit that guidance is directional, not a checklist, directly prevents the completionist behaviour.
+
+  ---
+  6. Options E and G — Defer
+
+  Option E (anti-dwelling clause) is partially redundant with D+F combined. If D and F don't fully resolve dwelling after
+  testing, E can be added as a reinforcement. Adding it now risks over-constraining Alvia and producing interviews that feel
+   rushed.
+
+  Option G (follow-up depth is a ceiling) is already partially covered by lines 386-390 in Barbara's prompt. The existing
+  language says "prefer suggest_next_question over probe_followup" when at/above depth and "only suggest probing if clearly
+  incomplete" when 1 below. Strengthening this further risks making the recommendedFollowUps field a hard cutoff, which
+  researchers may not want.
+
+  ---
+  Implementation notes for Replit
+
+  All changes are prompt-only — no logic, types, or API changes:
+
+  ┌────────────────────────────────────────┬──────────────────────┬────────┐
+  │                  File                  │    Lines affected    │ Option │
+  ├────────────────────────────────────────┼──────────────────────┼────────┤
+  │ server/barbara-orchestrator.ts         │ ~383                 │ A      │
+  ├────────────────────────────────────────┼──────────────────────┼────────┤
+  │ server/barbara-orchestrator.ts         │ ~379, ~719           │ B      │
+  ├────────────────────────────────────────┼──────────────────────┼────────┤
+  │ server/barbara-orchestrator.ts         │ ~419                 │ C      │
+  ├────────────────────────────────────────┼──────────────────────┼────────┤
+  │ server/voice-interview/instructions.ts │ ~170 (instruction 4) │ F      │
+  ├────────────────────────────────────────┼──────────────────────┼────────┤
+  │ server/voice-interview/instructions.ts │ ~174 (instruction 8) │ D      │
+  └────────────────────────────────────────┴──────────────────────┴────────┘
+
+  The same patterns should be checked in the resume/refresh instruction builders in instructions.ts (lines 407-469) — the
+  resume and refresh paths use buildSharedContextBlock and have their own instruction lists at lines 424-433 and 454-461
+  respectively. Those already lean toward "move on if complete" so they're less affected, but should be reviewed for
+  consistency.
+
+  Testing approach: Run a few simulated interviews with the persona simulation engine against a template with 3+ questions
+  and recommendedFollowUps: 2. Compare average follow-up turns per question and total interview duration before/after.

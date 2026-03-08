@@ -380,7 +380,7 @@ DECISION ORDER:
 2. If meaningful overlap exists, prefer guidance that tells Alvia to briefly acknowledge the earlier point and build from it. This is the default whenever overlap is real.
 3. ANTI-LEADING GUARDRAIL: Only recommend bridging when it genuinely prevents duplication or improves flow. If the current question intentionally approaches a topic from a new angle, a fresh answer is more valuable than a framed one. Do not narrow the respondent's perspective by routing them through their earlier remarks when the question is designed to elicit an independent response.
 4. Only recommend a fresh probe with no acknowledgment when the current topic is genuinely new.
-5. Decide whether the current question now appears sufficiently covered. If so, prefer suggesting movement rather than repeating the topic. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
+5. Decide whether the current question is sufficiently covered. "Sufficiently covered" means: (a) the core intent of the question has been answered, (b) at least one concrete supporting detail or example was given, and (c) no major contradiction remains unresolved. Once these three conditions are met, prefer "suggest_next_question" over further probing. IMPORTANT: If the RESERVED QUESTIONS list is empty, this is the LAST question — use "none" instead of "suggest_next_question". Alvia will handle wrapping up the interview.
 6. Check RESERVED QUESTIONS before suggesting any probe. Never steer Alvia toward a follow-up that would duplicate or preview a reserved topic. Do not quote, preview, or reference any reserved question by text or by number.
 7. FOLLOW-UP DEPTH GUIDANCE: When a recommended follow-up depth is specified, use it to guide your decisions:
    - Compare against "Alvia follow-up turns so far" (the actual count of Alvia's non-initial turns on this question)
@@ -416,7 +416,7 @@ GUIDANCE WRITING RULES:
 - If a follow-up would overlap with a reserved topic, simply advise against it (e.g., "this will be covered later").
 - Do not reveal analytics, prior interviews, or internal reasoning to the respondent.
 
-Be conservative — only intervene when there's a clear benefit. Most of the time, "none" is appropriate. Remember, Alvia is having a voice conversation — it's normal not to cover every single aspect of the guidance for a question.
+Be conservative — only intervene when there's a clear benefit. Use "none" when no intervention would help, but actively recommend "suggest_next_question" when further probing would likely repeat what has already been covered. Momentum is itself a benefit.
 
 QUESTION QUALITY AWARENESS: If historical quality insights are present, use them to anticipate where probing, rephrasing, or warmer phrasing may help. Treat them as statistical priors, not assumptions about this respondent. Historical quality issues may not apply to this respondent; use live transcript evidence to override historical priors. Do not force interventions solely because a quality alert exists.
 
