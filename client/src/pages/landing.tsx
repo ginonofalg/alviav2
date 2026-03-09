@@ -108,7 +108,7 @@ export default function LandingPage() {
     if (isPaused || prefersReducedMotion) return;
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % conversationExamples.length);
-    }, 6000);
+    }, 9000);
     return () => clearInterval(interval);
   }, [isPaused, prefersReducedMotion]);
 
@@ -258,19 +258,21 @@ export default function LandingPage() {
                       </div>
                     </div>
 
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={currentIndex}
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
-                        transition={{ duration: 0.4 }}
-                      >
-                        <p className="text-lg font-medium" data-testid="text-alvia-question">
-                          "{current.question}"
-                        </p>
-                      </motion.div>
-                    </AnimatePresence>
+                    <div className="min-h-[4.5rem]">
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={currentIndex}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
+                          transition={{ duration: 0.4 }}
+                        >
+                          <p className="text-lg font-medium" data-testid="text-alvia-question">
+                            "{current.question}"
+                          </p>
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
 
                     <div className="h-12 flex items-center gap-1">
                       {waveformHeights.map((bar, i) => (
@@ -295,20 +297,21 @@ export default function LandingPage() {
                       ))}
                     </div>
 
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={currentIndex}
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
-                        transition={{ duration: 0.4, delay: 0.1 }}
-                        className="pt-4 border-t border-border"
-                      >
-                        <p className="text-sm text-muted-foreground italic" data-testid="text-respondent-answer">
-                          "{current.response}"
-                        </p>
-                      </motion.div>
-                    </AnimatePresence>
+                    <div className="pt-4 border-t border-border min-h-[3.5rem]">
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={currentIndex}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
+                          transition={{ duration: 0.4, delay: 0.1 }}
+                        >
+                          <p className="text-sm text-muted-foreground italic" data-testid="text-respondent-answer">
+                            "{current.response}"
+                          </p>
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
                   </div>
 
                   <div className="flex justify-center gap-1.5 pt-4 pb-2" data-testid="carousel-dots">
