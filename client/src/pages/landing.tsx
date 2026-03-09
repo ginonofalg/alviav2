@@ -142,7 +142,7 @@ const features = [
     icon: Shield,
     title: "Privacy by Design",
     description:
-      "Built-in PII redaction, consent controls, and GDPR-ready data handling.",
+      "Built-in PII redaction, consent controls, and secure data handling.",
   },
   {
     icon: Users,
