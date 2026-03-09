@@ -299,15 +299,15 @@ export default function LandingPage() {
                 <div className="flex flex-wrap gap-6 pt-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle2 className="w-4 h-4 text-primary" />
-                    <span>Free trial</span>
+                    <span>Conversations, not surveys</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle2 className="w-4 h-4 text-primary" />
-                    <span>Start interviewing in minutes</span>
+                    <span>Live in minutes</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CheckCircle2 className="w-4 h-4 text-primary" />
-                    <span>GDPR compliant</span>
+                    <span>Results in hours</span>
                   </div>
                 </div>
               </motion.div>
