@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
@@ -63,6 +63,7 @@ client/src/
     interview-resume.tsx    # Resume interview via token (public)
     interview-review.tsx    # Post-interview review (authenticated)
     review-token.tsx        # Shareable review via 64-char token (public)
+    terms.tsx               # Terms and conditions (public, no auth)
     not-found.tsx           # 404 page
   components/
     ui/                     # Radix UI wrappers (shadcn conventions, 48 primitives)
@@ -80,9 +81,30 @@ client/src/
       TemplateAnalyticsView.tsx           # Template-level analytics
       AnalyticsCascadeRefreshDialog.tsx   # Multi-level analytics refresh
     review/                 # DotRating, QuestionReviewCard, RatingSection, ReviewLaterModal
+    onboarding/             # New user onboarding experience
+      OnboardingDashboardCard.tsx   # Dashboard card with onboarding progress (~170 lines)
+      OnboardingFieldGuide.tsx      # Contextual help panel explaining Alvia concepts (~120 lines)
+      WelcomeDialog.tsx             # Multi-slide onboarding carousel dialog (~335 lines)
+    simulation/             # Persona simulation UI components (~3080 lines total)
+      GeneratePersonasDialog.tsx    # 3-phase persona generation (input → generating → review) (~965 lines)
+      PersonaManager.tsx            # Persona list management with AI generation (~185 lines)
+      PersonaCard.tsx               # Individual persona display card (~90 lines)
+      PersonaFormDialog.tsx         # Create/edit persona form (~275 lines)
+      SimulationLauncher.tsx        # Launch simulation with persona selection (~140 lines)
+      SimulationProgress.tsx        # Real-time simulation execution progress (~230 lines)
+      SessionScopeToggle.tsx        # Filter sessions by real/simulated/combined (~35 lines)
+      SimulationBadge.tsx           # Simulated session indicator badge (~15 lines)
+      BriefSelectionView.tsx        # Population brief selection UI (~160 lines)
+      PopulationBriefCard.tsx       # Population brief metadata display (~355 lines)
     GenerateTemplateDialog.tsx    # AI-powered template generation from project context
     InfographicGenerator.tsx      # AI-generated visual summaries
     InvitationManager.tsx         # Bulk respondent invitations with QR codes
+    PasteQuestionsPanel.tsx       # Parse questions from raw text via AI (~490 lines)
+    BrandedWelcomeAvatar.tsx      # Animated welcome avatar with custom branding (~50 lines)
+    BrandingColorPicker.tsx       # Color picker with contrast validation (~340 lines)
+    BrandingThemeProvider.tsx     # Custom branding CSS variable injection (~25 lines)
+    ImageCropDialog.tsx           # Image cropping and compression UI (~115 lines)
+    guidance-effectiveness.tsx    # Barbara guidance effectiveness dashboard card (~340 lines)
     app-sidebar.tsx               # Main navigation sidebar
     theme-provider.tsx            # Dark/light theme support
     theme-toggle.tsx              # Theme switcher button
@@ -93,13 +115,20 @@ client/src/
     use-audio-playback.ts         # Audio playback queue, AI speaking state, barge-in suppression
     use-reconnection.ts           # WebSocket reconnection with exponential backoff
     use-silence-detection.ts      # Client-side silence detection with ambient noise calibration
+    use-onboarding.ts             # Onboarding state management and step tracking (~105 lines)
+    use-alvia-avatar.ts           # Avatar animation state with sprite cycling (~75 lines)
+    use-ui-sounds.ts              # Web Audio chime synthesis for UI cues (~55 lines)
   lib/                      # queryClient, auth-utils, utilities
+    alvia-avatar-registry.ts      # Avatar sprite asset registry and preloader (~60 lines)
+    color-utils.ts                # Color manipulation, WCAG contrast, dominant color extraction (~215 lines)
+    image-utils.ts                # Image validation, crop, compress to WebP (~70 lines)
 server/
   index.ts                  # Server entry point (~100 lines)
   routes.ts                 # Route registration entry point (~50 lines)
-  routes/                   # Modular route handlers (~3330 lines total)
+  routes/                   # Modular route handlers
     index.ts                    # Exports all route registration functions
-    analytics.routes.ts         # Dashboard stats, analytics, aggregated analytics (~940 lines)
+    analytics.routes.ts         # Dashboard stats, analytics, aggregated analytics (~700 lines)
+    analytics-helpers.ts        # Extracted analytics refresh helpers (staleness, cascade refresh) (~205 lines)
     projects.routes.ts          # Project CRUD (~140 lines)
     templates.routes.ts         # Template CRUD, generation (~220 lines)
     collections.routes.ts       # Collection CRUD, analytics refresh (~165 lines)
@@ -111,23 +140,50 @@ server/
     infographic.routes.ts       # Collection & project infographic generation (~340 lines)
     barbara.routes.ts           # Barbara config endpoints (~190 lines)
     usage.routes.ts             # LLM usage tracking queries (~110 lines)
+    persona-generation.routes.ts # AI persona research & synthesis endpoints with rate limiting (~100 lines)
+    admin-setup.routes.ts       # Quick-setup endpoint: create project+template+collection in one request (~150 lines)
+    guidance.routes.ts          # Guidance aggregation at collection/template/project scope (~130 lines)
+    parse-questions.routes.ts   # AI-powered question parsing from raw text (~60 lines)
+    persona.routes.ts           # Persona CRUD operations (~135 lines)
+    simulation.routes.ts        # Simulation launch, status, cancellation (~150 lines)
   storage.ts                # DatabaseStorage class (~1630 lines)
   storage/
     types.ts                    # IStorage interface definitions (~200 lines)
+    simulation.ts               # Persona & simulation run CRUD, advisory locks, cleanup (~115 lines)
+  simulation/                 # Persona simulation engine (~750 lines total)
+    engine.ts                   # Simulation execution engine with parallel batching (~460 lines)
+    persona-prompt.ts           # Persona response generation with verbosity scaling (~130 lines)
+    alvia-adapter.ts            # Alvia text-mode response generation (~90 lines)
+    question-flow.ts            # Conditional question flow evaluation (~90 lines)
+    conversation-utils.ts       # Shared conversation message building utility (~30 lines)
+    types.ts                    # Simulation context types and limits (~45 lines)
+  persona-generation/          # AI persona generation from population research (~500 lines total)
+    types.ts                    # PopulationBrief, GeneratedPersona, JSON schemas for structured output (~100 lines)
+    research.ts                 # Phase 1: OpenAI Responses API + web_search to build population brief (~160 lines)
+    synthesis.ts                # Phase 2: Generate diverse personas from population brief (~160 lines)
+    validation.ts               # Post-generation diversity validation with automatic retry (~80 lines)
   voice-interview.ts        # WebSocket handler for voice interviews (~4200 lines)
-  voice-interview/           # Extracted voice interview modules (~1270 lines total)
+  guidance-adherence.ts     # Scores how well Alvia followed Barbara's guidance (~340 lines)
+  guidance-aggregation.ts   # Aggregates guidance metrics across sessions (~255 lines)
+  question-parser.ts        # AI-powered question extraction from unstructured text (~220 lines)
+  voice-interview/           # Extracted voice interview modules
     index.ts                    # Re-exports
     types.ts                    # InterviewState, MetricsTracker, constants (~315 lines)
-    context-builders.ts         # Cross-interview context, analytics hypotheses (~330 lines)
-    instructions.ts             # Prompt building logic (~260 lines)
-    metrics.ts                  # Silence tracking, metrics calculation (~185 lines)
+    context-builders.ts         # Cross-interview context, analytics hypotheses, continuity cues (~330 lines)
+    instructions.ts             # Prompt building logic with completed questions recap (~450 lines)
+    metrics.ts                  # Silence tracking, metrics calculation, follow-up turn tracking (~205 lines)
     transcript.ts               # Transcript management utilities (~180 lines)
+    connection-refresh.ts       # Proactive WebSocket connection refresh logic (~100 lines)
+    guidance-tracking.ts        # Barbara guidance log entries and adherence scoring (~50 lines)
+    text-utils.ts               # Keyword extraction, overlap coefficient, stopwords (~60 lines)
+    usage-recording.ts          # Realtime API token usage event recording (~70 lines)
   barbara-orchestrator.ts   # AI analysis and guidance system (~3490 lines)
   realtime-providers.ts     # Voice provider abstraction - OpenAI + Grok (~370 lines)
   llm-usage.ts              # LLM usage tracking utilities (~190 lines)
   usage-maintenance.ts      # Automated cleanup and rollup reconciliation (~100 lines)
   transcription-quality.ts  # Transcription quality monitoring (~550 lines)
-  infographic-service.ts    # Google Gemini API integration (~210 lines)
+  infographic-service.ts    # Google Gemini API integration, supports Vertex AI for EU (~175 lines)
+  llm-config.ts             # LLM endpoint validation and startup audit logging (~30 lines)
   infographic-prompts.ts    # Prompt templates for infographics (~270 lines)
   demo-seed.ts              # Demo project data seeding for new users (~130 lines)
   resume-token.ts           # Interview resume token utilities
@@ -160,6 +216,9 @@ shared/
     aggregated-analytics.ts     # Command center analytics types
     review.ts                   # Review rating types
     llm-usage.ts                # LLM usage tracking types (16 use cases)
+    simulation.ts               # Simulation types (SessionScope, PersonaAttitude, SimulationRun, SimulationConfig)
+    persona-generation.ts       # PopulationBrief, GeneratedPersona, shared persona generation types
+    guidance-aggregation.ts     # Guidance aggregation types (scope, coverage, metrics, adherence)
 docs/
   pause-duration-tracking-spec.md     # Silence vs pause tracking spec
   project-template-generation-prompt.md
@@ -170,6 +229,9 @@ proposals/                  # Feature design proposals
   voice-interview-reconnection-bugs.md
 scripts/
   seed-test-data/           # Database seeding utility for development
+  clone-project-for-user.ts # Clone project structure to a new user by email (~300 lines)
+  export-for-prod.ts        # Export population briefs, personas, simulation runs as SQL (~140 lines)
+  migrate-to-production.ts  # Promote test data to production DB (~115 lines)
 script/
   build.ts                  # Production build script (esbuild + Vite)
 vitest.config.ts            # Vitest test configuration
@@ -181,12 +243,14 @@ vitest.config.ts            # Vitest test configuration
 - `workspaces`, `workspaceMembers` - Multi-tenant workspace system
 - `projects` - Contains objective, audience context, tone, consent settings, PII redaction flags, avoidRules, strategicContext, contextType
 - `interviewTemplates`, `questions` - Template structure with conditional logic, question types (open, yes_no, scale, numeric, multi_select)
-- `collections` - Launched templates with analytics data (JSONB), voiceProvider field, `maxAdditionalQuestions` (0-3), `endOfInterviewSummaryEnabled`
+- `collections` - Launched templates with analytics data (JSONB), voiceProvider field, `maxAdditionalQuestions` (0-3), `endOfInterviewSummaryEnabled`, `vadEagernessMode` ("auto"|"high")
 - `respondents`, `interviewSessions` - Respondent data and session state
 - `segments` - Response storage with transcripts, summaries, key quotes, quality flags. Nullable `questionId` for additional questions, with `additionalQuestionIndex` and `additionalQuestionText`
 - `redactionMaps` - PII pseudonymization
 - `llmUsageEvents` - Immutable billing ledger for all LLM calls (tokens, latency, attribution by hierarchy level)
 - `llmUsageRollups` - Pre-aggregated hourly usage summaries with unique constraint on dimensions
+- `populationBriefs` - AI-generated population research data for persona synthesis
+- `synthesisJobs` - Persona synthesis job tracking (status, results)
 - `inviteList` - Allowed platform users (email-based access control)
 - `waitlistEntries` - Waitlist for unauthenticated users with consent tracking
 
@@ -211,6 +275,8 @@ vitest.config.ts            # Vitest test configuration
 
 **Review flags enum**: `needs_review`, `flagged_quality`, `verified`, `excluded`
 
+**Guidance tracking fields**: `barbaraGuidanceLog` (JSONB), `guidanceAdherenceSummary` (JSONB) - per-session guidance log and adherence scoring
+
 **Performance metrics fields**: `performanceMetrics` (JSONB: `RealtimePerformanceMetrics`) - token usage, latency, speaking time, silence tracking, Barbara token breakdown by use case
 
 ### Key Patterns
@@ -232,6 +298,15 @@ vitest.config.ts            # Vitest test configuration
 10. On completion: session summaries generated by both Alvia and Barbara (if enabled)
 11. State persisted every 2 seconds for crash recovery via resume tokens (supports AQ phase resume)
 12. WebSocket reconnection with exponential backoff; connection watchdog with heartbeat/ping intervals
+13. Proactive connection refresh at ~13.5 minutes to avoid Railway's 15-minute WebSocket limit (see connection refresh section below)
+14. From Q2 onwards, Alvia's instructions include a COMPLETED QUESTIONS RECAP with structured summaries of all prior questions (respondent summary + top 2 key insights per question). This appears in all instruction paths: normal flow, resume, and planned refresh. Complements the existing continuity cues system which provides keyword-matched bridging guidance.
+15. Follow-up turn tracking per question with barge-in revert support; depth guidance based on recommended follow-ups vs actual turns taken
+16. RESERVED QUESTIONS section in prompts prevents Alvia from asking upcoming questions prematurely
+
+**Alvia prompt construction** (`server/voice-interview/instructions.ts`):
+- `buildInterviewInstructions(opts)` takes an `InterviewInstructionsOptions` object (not positional params) with template, currentQuestion, questionIndex, totalQuestions, barbaraGuidance, respondentName, allQuestions, followUpContext, strategicContext, alviaHasSpokenOnCurrentQuestion, eagernessMode, continuityContext, questionSummaries
+- `buildCompletedQuestionsRecap(summaries, currentQuestionIndex)` builds the recap block from completed question summaries (exported for testing)
+- `buildResumeInstructions(state)` and `buildRefreshInstructions(state)` handle reconnection/refresh paths with transcript summary + recap + continuity
 
 **Voice provider abstraction** (`server/realtime-providers.ts`):
 - `RealtimeProvider` interface abstracts OpenAI and Grok implementations
@@ -262,8 +337,10 @@ vitest.config.ts            # Vitest test configuration
 - **Template-level**: `TemplateAnalytics` - aggregated themes, consistency metrics across collections
 - **Project-level**: `ProjectAnalytics` - cross-template synthesis, contextual recommendations
 - **Command center**: `AggregatedAnalytics` - cross-project insights
-- Staleness tracking via `StalenessStatus` type, `lastAnalyzedAt`, `analyzedSessionCount`
+- Staleness tracking via `StalenessStatus` type, `lastAnalyzedAt`, `analyzedSessionCount`, `analyzedSessionScope`
+- Scope filtering: analytics refresh filters by `sessionScope` (real, simulated, combined) at every hierarchy level
 - Cascade refresh: refreshing project analytics triggers template and collection refreshes
+- Cascade refresh helpers extracted into `server/routes/analytics-helpers.ts`
 
 **PDF Export system**:
 - `AnalyticsPdfExport` component generates formatted PDF reports
@@ -292,6 +369,31 @@ vitest.config.ts            # Vitest test configuration
 - Automated maintenance: raw events expire after 14 days, rollup reconciliation every 24 hours
 - Usage query endpoints at session, collection, template, and project levels
 
+**Persona simulation system** (`server/simulation/`):
+- Text-based persona simulation engine for generating synthetic interview responses
+- Configurable personas with attitude, verbosity, domain knowledge, traits, communication style
+- DB tables: `personas`, `simulationRuns` with FK constraints from `interviewSessions.personaId` and `.simulationRunId`
+- Concurrency control via PostgreSQL advisory locks (`pg_try_advisory_lock`)
+- Parallel execution: batches of 3 personas via `Promise.allSettled`
+- Cancellation: DB-backed status checks between batches
+- Orphan cleanup on server restart (running runs immediately, pending runs after 5-minute threshold)
+- Conditional question flow evaluation with `dependsOn`, `showWhen`, and `condition` operators
+- Shared `buildConversationMessages` utility with perspective parameter (alvia vs respondent)
+- Session scope tracking: `isSimulated` flag on sessions, `analyzedSessionScope` on analytics
+
+**AI persona generation** (`server/persona-generation/`):
+- Two-phase pipeline: research (web search) → synthesis (persona creation)
+- Phase 1 (research.ts): Uses OpenAI Responses API with `web_search` tool to gather demographic and behavioral data about target populations; produces a `PopulationBrief` stored in `population_briefs` table
+- Phase 2 (synthesis.ts): Generates diverse personas from the brief using structured output JSON schemas; supports configurable persona count (3-10), diversity modes (balanced/maximize), and edge case inclusion
+- Post-generation diversity validation (validation.ts): Checks enum coverage, name uniqueness, trait overlap, and demographic spread (age range, gender, geographic diversity); triggers automatic retry with correction prompt; second retry validated with warnings surfaced to user
+- Web search fallback: retry once on rate limit (5s delay); fallback to prompt-only generation when web search is unavailable; `ungrounded` flag set when web search yields no useful results (low confidence + zero citations)
+- Document upload: supports CSV/TXT/PDF file upload (2MB max); files sent as base64 and passed directly to OpenAI Responses API as `input_file` content parts — the LLM handles parsing natively
+- Shared types: `PopulationBrief`, `GeneratedPersona`, and related interfaces defined in `shared/types/persona-generation.ts`; server types.ts re-exports from shared
+- Rate limiting: In-memory per-project counter, max 5 research requests per hour
+- LLM use cases: `barbara_persona_research` and `barbara_persona_generation` tracked via `llmUsageEvents`
+- Frontend: `GeneratePersonasDialog` with three-state flow (input → generating with phase indicators → review with persona cards); shows ungrounded/validation warnings; file upload input; integrated into `PersonaManager` with "Generate with AI" button
+- API routes: `POST /api/projects/:projectId/personas/research` and `POST /api/projects/:projectId/personas/synthesize`
+
 **Additional questions (AQ) system**:
 - Barbara generates 0-3 dynamic follow-up questions at end of interview based on gaps/themes
 - Configured per collection via `maxAdditionalQuestions` (0-3, default 1)
@@ -305,6 +407,18 @@ vitest.config.ts            # Vitest test configuration
 - `AlviaSessionSummary`: themes, overall summary, objective satisfaction (covered areas + gaps)
 - `BarbaraSessionSummary`: themes with supporting evidence + sentiment, objective satisfaction with rating, respondent engagement level
 - Manually regenerable via `POST /api/sessions/:id/generate-summary`
+
+**Configurable VAD eagerness** (per collection):
+- Collections have `vadEagernessMode` field: `"auto"` (default) or `"high"` (faster response, experimental)
+- "high" mode reduces perceived latency by making OpenAI's semantic VAD trigger responses more quickly
+- Conditional RESPONSE TIMING prompt instruction tells Alvia to recover gracefully when utterances seem cut off
+- Dynamic mid-session fallback: if 3+ rapid barge-ins detected in last 6 respondent turns, auto-downgrades to "auto"
+- Rapid barge-in = respondent interrupts within 1500ms of Alvia starting audio (signals premature response)
+- One-directional: once downgraded, stays at "auto" for rest of session (no oscillation)
+- Eagerness hierarchy: high > auto > low — each system can only move downward
+- Composes with existing transcription quality system: quality issues can still reduce from "auto" to "low"
+- Eagerness metrics persisted in `performanceMetrics.eagerness` (initial/final mode, switch info, barge-in counts)
+- Only applies to OpenAI provider (Grok uses server_vad without eagerness control); UI hidden for Grok collections
 
 **Transcription quality monitoring** (`server/transcription-quality.ts`):
 - Real-time detection of: garbled audio, environment noise, repeated clarification, foreign language hallucination, repeated word glitches
@@ -329,6 +443,48 @@ vitest.config.ts            # Vitest test configuration
 - Dedicated resume page at `/resume/:token` validates token and redirects to consent
 - Shareable review links with access tokens (64-char tokens)
 - 6-dimension rating system: questionClarity, alviaUnderstanding, conversationFlow, comfortLevel, technicalQuality, overallExperience
+
+**Proactive connection refresh** (`server/voice-interview/connection-refresh.ts`):
+- Gracefully refreshes WebSocket connections before Railway's 15-minute limit
+- Timing cascade: 13.5 min (planned refresh) → 14.5 min (fallback) → 14m55s (last resort)
+- Flushes persisted state before closing; sends `connection_refresh` message to client with close code 4000
+- Client reconnects automatically; `buildRefreshInstructions()` resumes conversation seamlessly without acknowledging the interruption
+- 30-second reset timeout if client doesn't reconnect
+
+**Guidance adherence tracking** (`server/guidance-adherence.ts`, `server/guidance-aggregation.ts`):
+- Scores how well Alvia followed Barbara's guidance per response: followed, partiallyFollowed, notFollowed, notApplicable, unscored
+- Barbara guidance log entries tracked per session in `barbaraGuidanceLog` JSONB field
+- Aggregation at collection/template/project scope via `/api/guidance/*` endpoints
+- Computes coverage statistics, action distribution, weighted adherence rates
+- Frontend visualization via `guidance-effectiveness.tsx` dashboard card
+
+**Question parsing from text** (`server/question-parser.ts`):
+- AI-powered extraction of interview questions from unstructured text
+- Uses OpenAI with structured output to classify question types and generate guidance
+- Endpoint: `POST /api/projects/:projectId/parse-questions`
+- Frontend: `PasteQuestionsPanel.tsx` with preview and editing before save
+
+**Branding customization**:
+- Projects support `brandingLogo` (data URL) and `brandingColors` (JSON) fields
+- `ImageCropDialog` for logo upload with crop and compression (256x256 WebP)
+- `BrandingColorPicker` with hex input, dominant color extraction from logo, WCAG contrast validation
+- `BrandingThemeProvider` injects custom colors as CSS variables for interview UI
+- `BrandedWelcomeAvatar` shows custom logo or default Alvia avatar on welcome/consent screens
+
+**Onboarding experience** (`client/src/components/onboarding/`):
+- Multi-slide `WelcomeDialog` carousel for first-time users
+- `OnboardingDashboardCard` with progress tracking and next-step CTA
+- `OnboardingFieldGuide` contextual help panel
+- State managed by `use-onboarding` hook with server-persisted progress
+
+**Alvia avatar system**:
+- Sprite-based animated avatar with state transitions (listening, talking, paused, connecting, text_mode, silence, reconnecting, noisy, thinking, ready, offline)
+- `use-alvia-avatar` hook cycles through variants every 10 seconds, preloads images
+- `alvia-avatar-registry.ts` manages sprite asset imports and preloading
+
+**Admin quick setup** (`server/routes/admin-setup.routes.ts`):
+- `POST /api/admin/quick-setup` creates project + template + questions + collection in one atomic transaction
+- Returns all created entities plus generated interview URL
 
 **Invite-only access system**:
 - Platform access controlled via `inviteList` table
@@ -394,6 +550,29 @@ vitest.config.ts            # Vitest test configuration
 - `GET /api/usage/session/:sessionId/events` - Raw usage events for a session
 - `POST /api/admin/usage/backfill-rollups` - Manual rollup backfill
 
+**Admin & Setup**:
+- `POST /api/admin/quick-setup` - Create project + template + questions + collection in one request
+
+**Persona Management**:
+- `GET /api/projects/:projectId/personas` - List personas for project
+- `POST /api/projects/:projectId/personas` - Create persona
+- `PATCH /api/personas/:id` - Update persona
+- `DELETE /api/personas/:id` - Archive persona (soft delete)
+
+**Simulation**:
+- `POST /api/collections/:collectionId/simulate` - Launch persona simulation run
+- `GET /api/collections/:collectionId/simulation-runs` - List simulation runs
+- `GET /api/simulation-runs/:id` - Get simulation run details
+- `POST /api/simulation-runs/:id/cancel` - Cancel running/pending simulation
+
+**Guidance Aggregation**:
+- `GET /api/guidance/collection/:collectionId` - Collection-level guidance metrics
+- `GET /api/guidance/template/:templateId` - Template-level guidance metrics
+- `GET /api/guidance/project/:projectId` - Project-level guidance metrics
+
+**Question Parsing**:
+- `POST /api/projects/:projectId/parse-questions` - Parse raw text into structured questions
+
 **Configuration**:
 - `GET /api/barbara/config` - Get current Barbara configuration
 - `PATCH /api/barbara/config/{global,analysis,topicOverlap,summarisation,sessionSummary}` - Update Barbara config
@@ -440,11 +619,19 @@ vitest.config.ts            # Vitest test configuration
 - `client/src/App.tsx` - Frontend routing
 - `client/src/pages/interview.tsx` - Voice interview UI
 - `client/src/pages/analytics.tsx` - Command center analytics
-- `client/src/hooks/` - Custom hooks (audio playback, reconnection, silence detection)
+- `server/guidance-adherence.ts` - Guidance adherence scoring
+- `server/guidance-aggregation.ts` - Guidance metrics aggregation
+- `server/question-parser.ts` - AI question extraction from text
+- `client/src/hooks/` - Custom hooks (audio playback, reconnection, silence detection, onboarding, avatar, sounds)
 - `client/src/components/analytics/` - Analytics visualization components
+- `client/src/components/simulation/` - Persona simulation UI (generation, launch, progress)
+- `client/src/components/onboarding/` - New user onboarding experience
 - `client/src/components/InfographicGenerator.tsx` - Infographic UI
 - `client/src/components/InvitationManager.tsx` - Respondent invitations
 - `client/src/components/GenerateTemplateDialog.tsx` - AI template generation
+- `client/src/components/PasteQuestionsPanel.tsx` - Question parsing from text
+- `client/src/components/BrandingColorPicker.tsx` - Branding color customization
+- `client/src/lib/color-utils.ts` - Color manipulation and contrast utilities
 
 ## Environment Variables
 
@@ -453,13 +640,20 @@ Required:
 - `OPENAI_API_KEY` - For voice interviews (OpenAI provider) and Barbara orchestrator
 
 Optional:
-- `GEMINI_API_KEY` - For infographic generation (Google Gemini API)
+- `GEMINI_API_KEY` - For infographic generation (Google Gemini API, required unless using Vertex AI)
 - `REALTIME_PROVIDER` - Voice provider: "openai" (default) or "xai"
 - `XAI_API_KEY` - xAI API key (required if using Grok provider)
 - `INVITE_ONLY_MODE` - Enable invite-only access (default: true, set "false" to disable)
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - "production" or "development"
 - `BASE_URL` - Base URL for generated links (defaults to request protocol/host)
+
+EU Data Residency (all optional — set to switch LLM traffic to EU endpoints):
+- `OPENAI_BASE_URL` - OpenAI SDK base URL (e.g., `https://eu.api.openai.com/v1`). Auto-read by the SDK for all standard API calls.
+- `OPENAI_REALTIME_URL` - Full WebSocket URL for OpenAI Realtime API (e.g., `wss://eu.api.openai.com/v1/realtime?model=gpt-realtime-mini`)
+- `GOOGLE_GENAI_USE_VERTEXAI` - Set to `true` to use Vertex AI instead of Gemini API key auth (mutually exclusive with `GEMINI_API_KEY`)
+- `GOOGLE_CLOUD_PROJECT` - GCP project ID (required when `GOOGLE_GENAI_USE_VERTEXAI=true`)
+- `GOOGLE_CLOUD_LOCATION` - GCP region (default: `europe-west1`, used with Vertex AI)
 
 ## Code Size Guidelines
 
