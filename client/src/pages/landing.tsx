@@ -258,19 +258,24 @@ export default function LandingPage() {
                       </div>
                     </div>
 
-                    <div className="min-h-[4.5rem]">
+                    <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
+                      {conversationExamples.map((ex, i) => (
+                        <p key={i} className="text-lg font-medium invisible" aria-hidden="true">
+                          "{ex.question}"
+                        </p>
+                      ))}
                       <AnimatePresence mode="wait">
-                        <motion.div
+                        <motion.p
                           key={currentIndex}
-                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
-                          transition={{ duration: 0.4 }}
+                          initial={prefersReducedMotion ? false : { opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="text-lg font-medium"
+                          data-testid="text-alvia-question"
                         >
-                          <p className="text-lg font-medium" data-testid="text-alvia-question">
-                            "{current.question}"
-                          </p>
-                        </motion.div>
+                          "{current.question}"
+                        </motion.p>
                       </AnimatePresence>
                     </div>
 
@@ -297,19 +302,24 @@ export default function LandingPage() {
                       ))}
                     </div>
 
-                    <div className="pt-4 border-t border-border min-h-[3.5rem]">
+                    <div className="pt-4 border-t border-border grid [&>*]:col-start-1 [&>*]:row-start-1">
+                      {conversationExamples.map((ex, i) => (
+                        <p key={i} className="text-sm text-muted-foreground italic invisible" aria-hidden="true">
+                          "{ex.response}"
+                        </p>
+                      ))}
                       <AnimatePresence mode="wait">
-                        <motion.div
+                        <motion.p
                           key={currentIndex}
-                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -8 }}
-                          transition={{ duration: 0.4, delay: 0.1 }}
+                          initial={prefersReducedMotion ? false : { opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+                          transition={{ duration: 0.3, delay: 0.05 }}
+                          className="text-sm text-muted-foreground italic"
+                          data-testid="text-respondent-answer"
                         >
-                          <p className="text-sm text-muted-foreground italic" data-testid="text-respondent-answer">
-                            "{current.response}"
-                          </p>
-                        </motion.div>
+                          "{current.response}"
+                        </motion.p>
                       </AnimatePresence>
                     </div>
                   </div>
