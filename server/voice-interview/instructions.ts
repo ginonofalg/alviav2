@@ -121,7 +121,7 @@ export function buildInterviewInstructions(
       ? buildCompletedQuestionsRecap(questionSummaries, questionIndex)
       : null;
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. Your role is to conduct a voice interview. You are polite, encouraging, but also firm and challenge when necessary.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a British accent. You are polite, encouraging, but also firm and challenge when necessary.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
@@ -419,7 +419,7 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
 export function buildResumeInstructions(state: InterviewState): string {
   const ctx = buildResumeContext(state);
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview. You are polite, encouraging, but also firm and challenge when necessary.`;
+  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a British accent.  This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview. You are polite, encouraging, but also firm and challenge when necessary.`;
 
   instructions += buildSharedContextBlock(ctx);
 
@@ -457,7 +457,7 @@ RESUME INSTRUCTIONS:
 export function buildRefreshInstructions(state: InterviewState): string {
   const ctx = buildResumeContext(state);
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. You are polite, encouraging, but also firm and challenge when necessary.`;
+  let instructions = `You are Alvia, a friendly and professional AI interviewer conducting a voice interview in a British accent. You are polite, encouraging, but also firm and challenge when necessary.`;
 
   instructions += buildSharedContextBlock(ctx);
 

@@ -1,18 +1,10 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import {
-  computeOverlap,
-  computeCurrentEnvelopeValue,
-  isGenerationComplete,
-  OVERLAP_CAP,
-} from "@/lib/audio-scheduling";
+import { isGenerationComplete } from "@/lib/audio-scheduling";
 
 type ActiveSource = {
   source: AudioBufferSourceNode;
   gain: GainNode;
   generation: number;
-  scheduledStart: number;
-  scheduledEnd: number;
-  fadeTime: number;
 };
 
 export function useAudioPlayback() {
@@ -30,6 +22,7 @@ export function useAudioPlayback() {
   const nextStartTimeRef = useRef<number>(0);
   const playbackGenerationRef = useRef<number>(0);
   const drainGenerationRef = useRef<number>(0);
+  const isDrainingRef = useRef(false);
 
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
@@ -59,29 +52,12 @@ export function useAudioPlayback() {
       source.buffer = audioBuffer;
 
       const chunkGain = audioContext.createGain();
+      chunkGain.gain.value = 1;
       source.connect(chunkGain);
       chunkGain.connect(masterGainRef.current ?? audioContext.destination);
 
       const when = Math.max(audioContext.currentTime, nextStartTimeRef.current);
-
-      let overlap: number;
-      let fadeTime: number;
-
-      if (audioBuffer.duration < 0.001) {
-        overlap = 0;
-        fadeTime = 0;
-        chunkGain.gain.value = 1;
-        nextStartTimeRef.current = when + audioBuffer.duration;
-      } else {
-        overlap = computeOverlap(audioBuffer.duration, OVERLAP_CAP);
-        fadeTime = overlap;
-        nextStartTimeRef.current = when + audioBuffer.duration - overlap;
-
-        chunkGain.gain.setValueAtTime(0, when);
-        chunkGain.gain.linearRampToValueAtTime(1, when + fadeTime);
-        chunkGain.gain.setValueAtTime(1, when + audioBuffer.duration - fadeTime);
-        chunkGain.gain.linearRampToValueAtTime(0, when + audioBuffer.duration);
-      }
+      nextStartTimeRef.current = when + audioBuffer.duration;
 
       source.start(when);
 
@@ -97,9 +73,6 @@ export function useAudioPlayback() {
         source,
         gain: chunkGain,
         generation,
-        scheduledStart: when,
-        scheduledEnd: when + audioBuffer.duration,
-        fadeTime,
       };
       activeSourcesRef.current.add(entry);
 
@@ -133,16 +106,18 @@ export function useAudioPlayback() {
   );
 
   const drainQueue = useCallback(async () => {
-    const myDrain = ++drainGenerationRef.current;
+    if (isDrainingRef.current) return;
+    isDrainingRef.current = true;
+    const myGen = drainGenerationRef.current;
     try {
       const audioContext = await initAudioContext();
 
-      if (myDrain !== drainGenerationRef.current) return;
+      if (myGen !== drainGenerationRef.current) return;
       if (audioContext.state !== "running") return;
 
       let scheduledThisPass = 0;
       while (audioQueueRef.current.length > 0) {
-        if (myDrain !== drainGenerationRef.current) return;
+        if (myGen !== drainGenerationRef.current) return;
 
         const now = audioContext.currentTime;
         const scheduleAhead = nextStartTimeRef.current - now;
@@ -153,7 +128,10 @@ export function useAudioPlayback() {
         scheduleChunk(audioContext, chunk);
         scheduledThisPass++;
       }
-    } catch (_e) {}
+    } catch (_e) {
+    } finally {
+      isDrainingRef.current = false;
+    }
   }, [initAudioContext, scheduleChunk]);
 
   const playAudio = useCallback(
@@ -208,26 +186,13 @@ export function useAudioPlayback() {
     if (audioContext) {
       const now = audioContext.currentTime;
       for (const entry of activeSourcesRef.current) {
-        const { source, gain, scheduledStart, scheduledEnd, fadeTime } = entry;
+        const { source, gain } = entry;
         try {
-          if (fadeTime === 0) {
-            source.stop(now + 0.001);
-            continue;
-          }
           if (typeof gain.gain.cancelAndHoldAtTime === "function") {
             gain.gain.cancelAndHoldAtTime(now);
           } else {
-            const currentValue = computeCurrentEnvelopeValue(
-              now,
-              scheduledStart,
-              scheduledEnd,
-              fadeTime,
-            );
             gain.gain.cancelScheduledValues(now);
-            gain.gain.setValueAtTime(
-              Math.max(0, Math.min(1, currentValue)),
-              now,
-            );
+            gain.gain.setValueAtTime(gain.gain.value, now);
           }
           gain.gain.linearRampToValueAtTime(0, now + 0.01);
           source.stop(now + 0.015);
