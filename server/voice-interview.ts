@@ -838,7 +838,9 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.maxAdditionalQuestions = collection.maxAdditionalQuestions ?? 1; // Default to 1 if not set
     state.endOfInterviewSummaryEnabled =
       collection.endOfInterviewSummaryEnabled ?? false;
-    const collectionEagerness = (collection.vadEagernessMode === "high" ? "high" : "auto") as "auto" | "high";
+    const collectionEagerness = (
+      collection.vadEagernessMode === "high" ? "high" : "auto"
+    ) as "auto" | "high";
     state.vadEagernessMode = collectionEagerness;
     state.metricsTracker.eagernessTracking.initialMode = collectionEagerness;
     state.metricsTracker.eagernessTracking.currentMode = collectionEagerness;
@@ -943,7 +945,8 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             activeTimeMs: qs.activeTimeMs,
             turnCount: qs.turnCount,
             startedAt: null,
-            followUpTurnCount: (qs as any).followUpTurnCount ?? (qs as any).followUpCount ?? 0,
+            followUpTurnCount:
+              (qs as any).followUpTurnCount ?? (qs as any).followUpCount ?? 0,
             recommendedFollowUps: null,
           });
         }
@@ -1072,7 +1075,10 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
         totalQuestions: state.questions.length,
         respondentName: state.respondentInformalName,
         allQuestions: state.questions,
-        followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
+        followUpContext: {
+          followUpTurnCount: metrics?.followUpTurnCount ?? 0,
+          recommendedFollowUps,
+        },
         strategicContext: state.strategicContext,
         alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
         eagernessMode: state.vadEagernessMode,
@@ -1081,7 +1087,10 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       });
     }
 
-    const sessionConfig = provider.buildSessionConfig(instructions, state.vadEagernessMode);
+    const sessionConfig = provider.buildSessionConfig(
+      instructions,
+      state.vadEagernessMode,
+    );
 
     providerWs.send(
       JSON.stringify({
@@ -1119,7 +1128,9 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       console.log(
         `[VoiceInterview] Re-applying VAD eagerness "${state.vadEagernessMode}" after provider reconnect for session: ${sessionId}`,
       );
-      const eagernessUpdate = provider.buildTurnDetectionUpdate(state.vadEagernessMode);
+      const eagernessUpdate = provider.buildTurnDetectionUpdate(
+        state.vadEagernessMode,
+      );
       if (eagernessUpdate) {
         providerWs.send(
           JSON.stringify({
@@ -1495,7 +1506,8 @@ async function handleProviderEvent(
       if (cleanedTranscript) {
         if (state.alviaHasSpokenOnCurrentQuestion) {
           const incremented = recordAlviaFollowUpTurn(
-            state.questionMetrics, state.currentQuestionIndex,
+            state.questionMetrics,
+            state.currentQuestionIndex,
           );
           if (incremented) {
             state._pendingFollowUpTurnRevert = true;
@@ -1756,7 +1768,8 @@ async function handleProviderEvent(
         const RAPID_BARGEIN_THRESHOLD_MS = 1500;
         if (elapsed <= RAPID_BARGEIN_THRESHOLD_MS) {
           state.metricsTracker.eagernessTracking.rapidBargeInCount++;
-          const recentArr = state.metricsTracker.eagernessTracking.recentTurnBargeIns;
+          const recentArr =
+            state.metricsTracker.eagernessTracking.recentTurnBargeIns;
           if (recentArr.length > 0) {
             recentArr[recentArr.length - 1] = true;
           } else {
@@ -1784,7 +1797,8 @@ async function handleProviderEvent(
           lastEntry.interrupted = true;
           if (state._pendingFollowUpTurnRevert) {
             revertAlviaFollowUpTurn(
-              state.questionMetrics, state.currentQuestionIndex,
+              state.questionMetrics,
+              state.currentQuestionIndex,
             );
             state._pendingFollowUpTurnRevert = false;
           }
@@ -1823,7 +1837,9 @@ async function handleProviderEvent(
       // Record whether THIS turn had a rapid barge-in (false — barge-in is detected on speech_started, not speech_stopped)
       state.metricsTracker.eagernessTracking.respondentTurnCount++;
       state.metricsTracker.eagernessTracking.recentTurnBargeIns.push(false);
-      if (state.metricsTracker.eagernessTracking.recentTurnBargeIns.length > 6) {
+      if (
+        state.metricsTracker.eagernessTracking.recentTurnBargeIns.length > 6
+      ) {
         state.metricsTracker.eagernessTracking.recentTurnBargeIns.shift();
       }
 
@@ -2031,7 +2047,10 @@ Then continue the interview naturally once they acknowledge.`;
       barbaraGuidance: guidanceMessage,
       respondentName: state.respondentInformalName,
       allQuestions: state.questions,
-      followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
+      followUpContext: {
+        followUpTurnCount: metrics?.followUpTurnCount ?? 0,
+        recommendedFollowUps,
+      },
       strategicContext: state.strategicContext,
       alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
       eagernessMode: state.vadEagernessMode,
@@ -2121,7 +2140,10 @@ function sendCombinedEagernessSwitch(
     totalQuestions: state.questions.length,
     respondentName: state.respondentInformalName,
     allQuestions: state.questions,
-    followUpContext: { followUpTurnCount: metrics?.followUpTurnCount ?? 0, recommendedFollowUps },
+    followUpContext: {
+      followUpTurnCount: metrics?.followUpTurnCount ?? 0,
+      recommendedFollowUps,
+    },
     strategicContext: state.strategicContext,
     alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
     eagernessMode: newMode,
@@ -2129,7 +2151,8 @@ function sendCombinedEagernessSwitch(
     questionSummaries: state.questionSummaries,
   });
 
-  const instructionsUpdate = state.providerInstance.buildInstructionsUpdate(updatedInstructions);
+  const instructionsUpdate =
+    state.providerInstance.buildInstructionsUpdate(updatedInstructions);
   const combined = {
     ...vadUpdate,
     ...instructionsUpdate,
@@ -2398,9 +2421,13 @@ async function triggerBarbaraAnalysis(
           barbaraGuidance: guidanceMessage,
           respondentName: state.respondentInformalName,
           allQuestions: state.questions,
-          followUpContext: { followUpTurnCount: metrics.followUpTurnCount, recommendedFollowUps },
+          followUpContext: {
+            followUpTurnCount: metrics.followUpTurnCount,
+            recommendedFollowUps,
+          },
           strategicContext: state.strategicContext,
-          alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+          alviaHasSpokenOnCurrentQuestion:
+            state.alviaHasSpokenOnCurrentQuestion,
           eagernessMode: state.vadEagernessMode,
           continuityContext: buildContinuityContext(state),
           questionSummaries: state.questionSummaries,
@@ -2860,7 +2887,8 @@ INSTRUCTIONS:
             recommendedFollowUps,
           },
           strategicContext: state.strategicContext,
-          alviaHasSpokenOnCurrentQuestion: state.alviaHasSpokenOnCurrentQuestion,
+          alviaHasSpokenOnCurrentQuestion:
+            state.alviaHasSpokenOnCurrentQuestion,
           eagernessMode: state.vadEagernessMode,
           continuityContext: buildContinuityContext(state),
           questionSummaries: state.questionSummaries,
@@ -3583,7 +3611,7 @@ function buildAQInstructions(
 ): string {
   const respondentAddress = respondentName || "the respondent";
 
-  return `You are Alvia, a warm and professional AI interviewer. You are continuing the same interview conversation with a few additional questions, in a Northern British accent. You are polite, encouraging, but also firm and willing to challenge gently when useful.
+  return `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. You are continuing the same interview conversation with a few additional questions. You are polite, encouraging, but also firm and willing to challenge gently when useful.
 
 CONTEXT:
 - This is additional question ${aqIndex + 1} of ${totalAQs}

@@ -1,5 +1,8 @@
 import type { InterviewState } from "./types";
-import type { TopicOverlapResult, QuestionSummary } from "../barbara-orchestrator";
+import type {
+  TopicOverlapResult,
+  QuestionSummary,
+} from "../barbara-orchestrator";
 import type { VadEagernessMode } from "@shared/types/performance-metrics";
 import { buildContinuityContext } from "./context-builders";
 
@@ -67,9 +70,10 @@ export function buildCompletedQuestionsRecap(
 
   const lines = completed.map((s) => {
     const qText = truncateText(s.questionText, MAX_RECAP_QUESTION_TEXT_LENGTH);
-    const insights = Array.isArray(s.keyInsights) && s.keyInsights.length > 0
-      ? ` Key points: ${s.keyInsights.slice(0, MAX_RECAP_INSIGHTS_PER_QUESTION).join("; ")}.`
-      : "";
+    const insights =
+      Array.isArray(s.keyInsights) && s.keyInsights.length > 0
+        ? ` Key points: ${s.keyInsights.slice(0, MAX_RECAP_INSIGHTS_PER_QUESTION).join("; ")}.`
+        : "";
     const summary = s.respondentSummary || "No summary available.";
     return `Q${s.questionIndex + 1} ("${qText}"): ${summary}${insights}`;
   });
@@ -117,7 +121,7 @@ export function buildInterviewInstructions(
       ? buildCompletedQuestionsRecap(questionSummaries, questionIndex)
       : null;
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.
+  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. Your role is to conduct a voice interview. You are polite, encouraging, but also firm and challenge when necessary.
 
 INTERVIEW CONTEXT:
 - Objective: ${objective}
@@ -139,9 +143,12 @@ ${
 FOLLOW-UP DEPTH:
 The researcher recommends approximately ${followUpContext.recommendedFollowUps} follow-up probe${followUpContext.recommendedFollowUps === 1 ? "" : "s"} for this question.
 You have made ${followUpContext.followUpTurnCount} follow-up turn${followUpContext.followUpTurnCount === 1 ? "" : "s"} so far on this question.
-${followUpContext.followUpTurnCount > 0 && followUpContext.followUpTurnCount >= followUpContext.recommendedFollowUps
-  ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
-  : "This is guidance, not a strict limit."}
+${
+  followUpContext.followUpTurnCount > 0 &&
+  followUpContext.followUpTurnCount >= followUpContext.recommendedFollowUps
+    ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
+    : "This is guidance, not a strict limit."
+}
 `
     : ""
 }${
@@ -162,9 +169,11 @@ The voice detection is set to respond quickly, which means you may occasionally 
 `
     : ""
 }INSTRUCTIONS:
-1. ${questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion
-    ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the current question.`
-    : `Continue directly from the respondent's latest point. Do not re-introduce yourself. Do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`}
+1. ${
+    questionIndex === 0 && !alviaHasSpokenOnCurrentQuestion
+      ? `Start with a warm greeting${respondentName ? `, using their name "${respondentName}"` : ""}. Introduce yourself as Alvia and briefly summarise the interview purpose in your own words: "${objective}". Then ask the current question.`
+      : `Continue directly from the respondent's latest point. Do not re-introduce yourself. Do not repeat the full question unless they ask for clarification.${questionIndex > 0 && !alviaHasSpokenOnCurrentQuestion ? " Ask the current question naturally." : ""}`
+  }
 2. Ask only for what is still missing, unclear, contradictory, or worth deepening for the CURRENT QUESTION.
 3. IMPORTANT: do not ask follow-ups that overlap with the RESERVED QUESTIONS list.
 4. Use the STEER FOR THIS QUESTION to judge the depth needed. This is a voice conversation, so use judgment rather than expecting a perfect or exhaustive answer.
@@ -307,7 +316,8 @@ function buildResumeContext(state: InterviewState): ResumeContext {
       state.template?.defaultRecommendedFollowUps ??
       null,
     followUpTurnCount:
-      state.questionMetrics.get(state.currentQuestionIndex)?.followUpTurnCount ?? 0,
+      state.questionMetrics.get(state.currentQuestionIndex)
+        ?.followUpTurnCount ?? 0,
     upcomingQuestions: state.questions
       .slice(questionIndex + 1)
       .map((q) => `- ${q.questionText}`)
@@ -360,9 +370,11 @@ ${ctx.guidance || "Listen carefully and probe for more details when appropriate.
 FOLLOW-UP DEPTH:
 The researcher recommends approximately ${ctx.recommendedFollowUps} follow-up probe${ctx.recommendedFollowUps === 1 ? "" : "s"} for this question.
 You have made ${ctx.followUpTurnCount} follow-up turn${ctx.followUpTurnCount === 1 ? "" : "s"} so far on this question.
-${ctx.followUpTurnCount > 0 && ctx.followUpTurnCount >= ctx.recommendedFollowUps
-  ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
-  : "This is guidance, not a strict limit."}
+${
+  ctx.followUpTurnCount > 0 && ctx.followUpTurnCount >= ctx.recommendedFollowUps
+    ? "You have reached or exceeded the recommended depth. Unless the answer is clearly incomplete or contradictory, wrap up this question and guide the respondent toward the Next Question button."
+    : "This is guidance, not a strict limit."
+}
 `;
   }
 
@@ -407,7 +419,7 @@ Remember: You are speaking out loud, so be natural and conversational. Do not us
 export function buildResumeInstructions(state: InterviewState): string {
   const ctx = buildResumeContext(state);
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview, in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.`;
+  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. This interview is RESUMING after a connection interruption. Your role is to conduct a voice interview. You are polite, encouraging, but also firm and challenge when necessary.`;
 
   instructions += buildSharedContextBlock(ctx);
 
@@ -423,9 +435,11 @@ ${buildContinuityBlock(buildContinuityContext(state))}
 RESUME INSTRUCTIONS:
 1. Welcome them back briefly and warmly${ctx.respondentName ? `, using their name "${ctx.respondentName}"` : ""}. Keep your welcome-back greeting concise.
 2. Re-anchor them in the thread already in progress. Do not restart from a blank slate.
-3. If ${ctx.barbaraSuggestedMoveOn
-    ? "the respondent had already given a comprehensive answer before the interruption"
-    : "the answer is already reasonably complete"}, avoid reopening the topic unnecessarily. Instead, guide them naturally toward either adding anything else or using the Next Question button below.
+3. If ${
+    ctx.barbaraSuggestedMoveOn
+      ? "the respondent had already given a comprehensive answer before the interruption"
+      : "the answer is already reasonably complete"
+  }, avoid reopening the topic unnecessarily. Instead, guide them naturally toward either adding anything else or using the Next Question button below.
 4. Ask follow-ups only when the answer is brief, unclear, contradictory, or still missing something important for the CURRENT QUESTION.
 5. Do not ask follow-ups that overlap with RESERVED QUESTIONS.
 6. Use BARBARA'S GUIDANCE if it is still relevant after the interruption, but prioritise the respondent's latest live meaning.
@@ -443,7 +457,7 @@ RESUME INSTRUCTIONS:
 export function buildRefreshInstructions(state: InterviewState): string {
   const ctx = buildResumeContext(state);
 
-  let instructions = `You are Alvia, a friendly and professional AI interviewer conducting a voice interview in a Northern British accent. You are polite, encouraging, but also firm and challenge when necessary.`;
+  let instructions = `You are Alvia, a friendly and professional AI interviewer speaking with a natural English accent. You are polite, encouraging, but also firm and challenge when necessary.`;
 
   instructions += buildSharedContextBlock(ctx);
 
