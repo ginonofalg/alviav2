@@ -1,4 +1,19 @@
 import { useRef, useState, useCallback, useEffect } from "react";
+import {
+  computeOverlap,
+  computeCurrentEnvelopeValue,
+  isGenerationComplete,
+  OVERLAP_CAP,
+} from "@/lib/audio-scheduling";
+
+type ActiveSource = {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  generation: number;
+  scheduledStart: number;
+  scheduledEnd: number;
+  fadeTime: number;
+};
 
 export function useAudioPlayback() {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -6,10 +21,15 @@ export function useAudioPlayback() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
-  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const suppressPlaybackRef = useRef(false);
   const suppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakingHoldoffRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const masterGainRef = useRef<GainNode | null>(null);
+  const activeSourcesRef = useRef<Set<ActiveSource>>(new Set());
+  const nextStartTimeRef = useRef<number>(0);
+  const playbackGenerationRef = useRef<number>(0);
+  const drainGenerationRef = useRef<number>(0);
 
   const initAudioContext = useCallback(async () => {
     if (!audioContextRef.current) {
@@ -21,38 +41,120 @@ export function useAudioPlayback() {
     if (audioContextRef.current.state === "suspended") {
       await audioContextRef.current.resume();
     }
+    if (!masterGainRef.current && audioContextRef.current) {
+      masterGainRef.current = audioContextRef.current.createGain();
+      masterGainRef.current.connect(audioContextRef.current.destination);
+    }
     return audioContextRef.current;
   }, []);
 
-  const playNextChunk = useCallback((audioContext: AudioContext) => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      audioSourceRef.current = null;
-      speakingHoldoffRef.current = setTimeout(() => {
-        setIsAiSpeaking(false);
+  const scheduleChunk = useCallback(
+    (audioContext: AudioContext, chunk: Float32Array) => {
+      if (chunk.length === 0) return;
+
+      const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
+      audioBuffer.copyToChannel(chunk, 0);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      const chunkGain = audioContext.createGain();
+      source.connect(chunkGain);
+      chunkGain.connect(masterGainRef.current ?? audioContext.destination);
+
+      const when = Math.max(audioContext.currentTime, nextStartTimeRef.current);
+
+      let overlap: number;
+      let fadeTime: number;
+
+      if (audioBuffer.duration < 0.001) {
+        overlap = 0;
+        fadeTime = 0;
+        chunkGain.gain.value = 1;
+        nextStartTimeRef.current = when + audioBuffer.duration;
+      } else {
+        overlap = computeOverlap(audioBuffer.duration, OVERLAP_CAP);
+        fadeTime = overlap;
+        nextStartTimeRef.current = when + audioBuffer.duration - overlap;
+
+        chunkGain.gain.setValueAtTime(0, when);
+        chunkGain.gain.linearRampToValueAtTime(1, when + fadeTime);
+        chunkGain.gain.setValueAtTime(1, when + audioBuffer.duration - fadeTime);
+        chunkGain.gain.linearRampToValueAtTime(0, when + audioBuffer.duration);
+      }
+
+      source.start(when);
+
+      if (speakingHoldoffRef.current) {
+        clearTimeout(speakingHoldoffRef.current);
         speakingHoldoffRef.current = null;
-      }, 150);
-      return;
-    }
+      }
+      isPlayingRef.current = true;
+      setIsAiSpeaking(true);
 
-    if (speakingHoldoffRef.current) {
-      clearTimeout(speakingHoldoffRef.current);
-      speakingHoldoffRef.current = null;
-    }
-    isPlayingRef.current = true;
-    setIsAiSpeaking(true);
+      const generation = playbackGenerationRef.current;
+      const entry: ActiveSource = {
+        source,
+        gain: chunkGain,
+        generation,
+        scheduledStart: when,
+        scheduledEnd: when + audioBuffer.duration,
+        fadeTime,
+      };
+      activeSourcesRef.current.add(entry);
 
-    const chunk = audioQueueRef.current.shift()!;
-    const audioBuffer = audioContext.createBuffer(1, chunk.length, 24000);
-    audioBuffer.copyToChannel(chunk, 0);
+      source.onended = () => {
+        activeSourcesRef.current.delete(entry);
+        try {
+          source.disconnect();
+          chunkGain.disconnect();
+        } catch (_e) {}
 
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.onended = () => playNextChunk(audioContext);
-    audioSourceRef.current = source;
-    source.start();
-  }, []);
+        if (entry.generation !== playbackGenerationRef.current) return;
+
+        drainQueue();
+
+        if (
+          isGenerationComplete(
+            activeSourcesRef.current,
+            playbackGenerationRef.current,
+            audioQueueRef.current.length,
+          )
+        ) {
+          isPlayingRef.current = false;
+          speakingHoldoffRef.current = setTimeout(() => {
+            setIsAiSpeaking(false);
+            speakingHoldoffRef.current = null;
+          }, 150);
+        }
+      };
+    },
+    [],
+  );
+
+  const drainQueue = useCallback(async () => {
+    const myDrain = ++drainGenerationRef.current;
+    try {
+      const audioContext = await initAudioContext();
+
+      if (myDrain !== drainGenerationRef.current) return;
+      if (audioContext.state !== "running") return;
+
+      let scheduledThisPass = 0;
+      while (audioQueueRef.current.length > 0) {
+        if (myDrain !== drainGenerationRef.current) return;
+
+        const now = audioContext.currentTime;
+        const scheduleAhead = nextStartTimeRef.current - now;
+
+        if (scheduledThisPass > 0 && scheduleAhead > 0.2) break;
+
+        const chunk = audioQueueRef.current.shift()!;
+        scheduleChunk(audioContext, chunk);
+        scheduledThisPass++;
+      }
+    } catch (_e) {}
+  }, [initAudioContext, scheduleChunk]);
 
   const playAudio = useCallback(
     async (base64Audio: string) => {
@@ -72,27 +174,28 @@ export function useAudioPlayback() {
         }
 
         audioQueueRef.current.push(float32Array);
-
-        if (!isPlayingRef.current) {
-          const audioContext = await initAudioContext();
-          if (audioContext.state === "running") {
-            playNextChunk(audioContext);
-          }
-        }
+        drainQueue();
       } catch (error) {
         console.error("Error playing audio:", error);
       }
     },
-    [initAudioContext, playNextChunk],
+    [drainQueue],
   );
 
   const stopAiPlayback = useCallback(() => {
+    playbackGenerationRef.current++;
+    drainGenerationRef.current++;
+
     audioQueueRef.current = [];
     suppressPlaybackRef.current = true;
+
     if (speakingHoldoffRef.current) {
       clearTimeout(speakingHoldoffRef.current);
       speakingHoldoffRef.current = null;
     }
+    setIsAiSpeaking(false);
+    isPlayingRef.current = false;
+
     if (suppressTimeoutRef.current) {
       clearTimeout(suppressTimeoutRef.current);
     }
@@ -100,16 +203,40 @@ export function useAudioPlayback() {
       suppressPlaybackRef.current = false;
       suppressTimeoutRef.current = null;
     }, 10000);
-    if (audioSourceRef.current) {
-      try {
-        audioSourceRef.current.onended = null;
-        audioSourceRef.current.stop();
-        audioSourceRef.current.disconnect();
-      } catch (_e) {}
-      audioSourceRef.current = null;
+
+    const audioContext = audioContextRef.current;
+    if (audioContext) {
+      const now = audioContext.currentTime;
+      for (const entry of activeSourcesRef.current) {
+        const { source, gain, scheduledStart, scheduledEnd, fadeTime } = entry;
+        try {
+          if (fadeTime === 0) {
+            source.stop(now + 0.001);
+            continue;
+          }
+          if (typeof gain.gain.cancelAndHoldAtTime === "function") {
+            gain.gain.cancelAndHoldAtTime(now);
+          } else {
+            const currentValue = computeCurrentEnvelopeValue(
+              now,
+              scheduledStart,
+              scheduledEnd,
+              fadeTime,
+            );
+            gain.gain.cancelScheduledValues(now);
+            gain.gain.setValueAtTime(
+              Math.max(0, Math.min(1, currentValue)),
+              now,
+            );
+          }
+          gain.gain.linearRampToValueAtTime(0, now + 0.01);
+          source.stop(now + 0.015);
+        } catch (_e) {}
+      }
+      activeSourcesRef.current.clear();
     }
-    isPlayingRef.current = false;
-    setIsAiSpeaking(false);
+
+    nextStartTimeRef.current = 0;
   }, []);
 
   const clearSuppression = useCallback(() => {
@@ -124,7 +251,34 @@ export function useAudioPlayback() {
     return () => {
       if (speakingHoldoffRef.current) {
         clearTimeout(speakingHoldoffRef.current);
+        speakingHoldoffRef.current = null;
       }
+      if (suppressTimeoutRef.current) {
+        clearTimeout(suppressTimeoutRef.current);
+        suppressTimeoutRef.current = null;
+      }
+
+      for (const { source, gain } of activeSourcesRef.current) {
+        try {
+          source.onended = null;
+          source.stop();
+          source.disconnect();
+          gain.disconnect();
+        } catch (_e) {}
+      }
+      activeSourcesRef.current.clear();
+
+      if (masterGainRef.current) {
+        try {
+          masterGainRef.current.disconnect();
+        } catch (_e) {}
+        masterGainRef.current = null;
+      }
+
+      nextStartTimeRef.current = 0;
+      drainGenerationRef.current++;
+      audioQueueRef.current = [];
+      isPlayingRef.current = false;
     };
   }, []);
 
