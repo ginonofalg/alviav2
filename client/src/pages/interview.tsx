@@ -661,6 +661,7 @@ export default function InterviewPage() {
           setIsConnecting(false);
           if (isRefreshSuppressAudioRef.current) {
             console.log("[Interview] Clearing audio suppression after refresh reconnect");
+            clearSuppression();
           }
           isRefreshSuppressAudioRef.current = false;
           // Only set isListening true if NOT a resumed session (unless it's a planned refresh)
