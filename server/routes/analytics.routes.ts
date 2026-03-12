@@ -14,6 +14,17 @@ import {
   buildTemplatesData,
   refreshProjectAnalytics,
 } from "./analytics-helpers";
+import {
+  createAnalyticsJob,
+  getAnalyticsJob,
+  getActiveJobForEntity,
+  updateJobPhase,
+  advanceJobStep,
+  addJobError,
+  incrementJobCounter,
+  setJobFlag,
+  setJobResult,
+} from "./analytics-job-store";
 
 const sessionScopeSchema = z.enum(["real", "simulated", "combined"]).default("combined");
 
@@ -423,6 +434,23 @@ export function registerAnalyticsRoutes(app: Express) {
     }
   });
 
+  app.get("/api/analytics/jobs/:jobId", isAuthenticated, async (req: any, res) => {
+    try {
+      const job = getAnalyticsJob(req.params.jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+      const userId = getUserId(req);
+      if (job.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json(job);
+    } catch (error) {
+      console.error("Error fetching analytics job:", error);
+      res.status(500).json({ message: "Failed to fetch job status" });
+    }
+  });
+
   app.post("/api/projects/:projectId/analytics/cascade-refresh", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req);
@@ -438,117 +466,55 @@ export function registerAnalyticsRoutes(app: Express) {
 
       const scope = parseSessionScope(req.query);
 
-      const results = {
-        collectionsRefreshed: 0,
-        templatesRefreshed: 0,
-        projectRefreshed: false,
-        errors: [] as Array<{ level: string; id: string; name: string; error: string }>,
-      };
-
+      const existingJob = getActiveJobForEntity(project.id, "project", userId, scope);
+      if (existingJob) {
+        return res.json({ jobId: existingJob.id, alreadyRunning: true });
+      }
       const templates = await storage.getTemplatesByProject(project.id);
-      
+
+      const steps: string[] = [];
+      const staleCollections: Array<{ collection: any; template: any; questions: any[]; sessions: any[] }> = [];
+
       for (const template of templates) {
         const collections = await storage.getCollectionsByTemplate(template.id);
         const questions = await storage.getQuestionsByTemplate(template.id);
-        
+
         for (const collection of collections) {
           const sessions = await storage.getSessionsByCollection(collection.id);
           const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
-          
           if (completedSessions.length === 0) continue;
-          
           const isStale = checkCollectionStaleness(collection, completedSessions.length, scope);
-          
           if (isStale) {
-            try {
-              console.log("[Cascade Refresh] Refreshing collection:", collection.name);
-              await refreshCollectionAnalytics(collection, template, project, questions, completedSessions, scope);
-              results.collectionsRefreshed++;
-            } catch (error: any) {
-              console.error("[Cascade Refresh] Collection error:", collection.name, error);
-              results.errors.push({
-                level: "collection",
-                id: collection.id,
-                name: collection.name,
-                error: error.message || "Unknown error",
-              });
-            }
+            steps.push(`Collection: ${collection.name}`);
+            staleCollections.push({ collection, template, questions, sessions: completedSessions });
           }
         }
       }
 
       for (const template of templates) {
-        const collections = await storage.getCollectionsByTemplate(template.id);
-        const questions = await storage.getQuestionsByTemplate(template.id);
-        
-        const collectionsData = await Promise.all(
-          collections.map(async (collection) => {
-            const freshCollection = await storage.getCollection(collection.id);
-            const sessions = await storage.getSessionsByCollection(collection.id);
-            const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
-            return {
-              collection: freshCollection!,
-              analytics: freshCollection?.analyticsData as CollectionAnalytics | null,
-              sessionCount: completedSessions.length,
-            };
-          })
-        );
-
-        const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null && c.collection.analyzedSessionScope === scope);
-        
-        if (collectionsWithAnalytics.length === 0) continue;
-
-        try {
-          console.log("[Cascade Refresh] Refreshing template:", template.name);
-          await refreshTemplateAnalytics(template, collectionsData, questions, scope);
-          results.templatesRefreshed++;
-        } catch (error: any) {
-          console.error("[Cascade Refresh] Template error:", template.name, error);
-          results.errors.push({
-            level: "template",
-            id: template.id,
-            name: template.name,
-            error: error.message || "Unknown error",
-          });
-        }
+        steps.push(`Template: ${template.name}`);
       }
+      steps.push(`Project: ${project.name}`);
 
-      const freshTemplates = await storage.getTemplatesByProject(project.id);
-      const templatesData = await buildTemplatesData(freshTemplates, scope);
-      const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null && t.template.analyzedSessionScope === scope);
-
-      if (templatesWithAnalytics.length > 0) {
-        try {
-          console.log("[Cascade Refresh] Refreshing project:", project.name);
-          await refreshProjectAnalytics(project, templatesData, scope);
-          results.projectRefreshed = true;
-        } catch (error: any) {
-          console.error("[Cascade Refresh] Project error:", project.name, error);
-          results.errors.push({
-            level: "project",
-            id: project.id,
-            name: project.name,
-            error: error.message || "Unknown error",
-          });
-        }
-      }
-
-      const updatedProject = await storage.getProject(project.id);
-      
-      res.json({
-        success: results.errors.length === 0,
-        results,
-        analytics: updatedProject?.analyticsData as ProjectAnalytics | null,
-        lastAnalyzedAt: updatedProject?.lastAnalyzedAt,
-        analyzedTemplateCount: updatedProject?.analyzedTemplateCount || 0,
-        currentTemplateCount: templatesWithAnalytics.length,
-        totalTemplateCount: templates.length,
-        isStale: false,
-        missingAnalytics: templates.length - templatesWithAnalytics.length,
+      const job = createAnalyticsJob({
+        level: "project",
+        entityId: project.id,
+        entityName: project.name,
+        sessionScope: scope,
+        userId,
+        steps,
       });
+
+      res.json({ jobId: job.id });
+
+      runProjectCascadeRefresh(job.id, project, templates, staleCollections, scope).catch((err) => {
+        console.error("[Cascade Refresh] Unhandled error in background job:", err);
+        updateJobPhase(job.id, "failed");
+      });
+
     } catch (error) {
-      console.error("Error in cascade refresh:", error);
-      res.status(500).json({ message: "Failed to cascade refresh analytics" });
+      console.error("Error starting cascade refresh:", error);
+      res.status(500).json({ message: "Failed to start cascade refresh" });
     }
   });
 
@@ -629,76 +595,220 @@ export function registerAnalyticsRoutes(app: Express) {
 
       const project = await storage.getProject(template.projectId);
       const scope = parseSessionScope(req.query);
-      const results = {
-        collectionsRefreshed: 0,
-        templateRefreshed: false,
-        errors: [] as Array<{ level: string; id: string; name: string; error: string }>,
-      };
+
+      const existingJob = getActiveJobForEntity(template.id, "template", userId, scope);
+      if (existingJob) {
+        return res.json({ jobId: existingJob.id, alreadyRunning: true });
+      }
 
       const collections = await storage.getCollectionsByTemplate(template.id);
       const questions = await storage.getQuestionsByTemplate(template.id);
 
+      const steps: string[] = [];
+      const staleCollections: Array<{ collection: any; template: any; questions: any[]; sessions: any[] }> = [];
+
       for (const collection of collections) {
         const sessions = await storage.getSessionsByCollection(collection.id);
         const completedSessions = filterSessionsByScope(sessions, scope).filter(s => s.status === "completed");
-        
         if (completedSessions.length === 0) continue;
-        
         const isStale = checkCollectionStaleness(collection, completedSessions.length, scope);
-        
         if (isStale) {
-          try {
-            console.log("[Cascade Refresh] Refreshing collection:", collection.name);
-            await refreshCollectionAnalytics(collection, template, project, questions, completedSessions, scope);
-            results.collectionsRefreshed++;
-          } catch (error: any) {
-            console.error("[Cascade Refresh] Collection error:", collection.name, error);
-            results.errors.push({
-              level: "collection",
-              id: collection.id,
-              name: collection.name,
-              error: error.message || "Unknown error",
-            });
-          }
+          steps.push(`Collection: ${collection.name}`);
+          staleCollections.push({ collection, template, questions, sessions: completedSessions });
         }
       }
+      steps.push(`Template: ${template.name}`);
 
-      const freshCollections = await storage.getCollectionsByTemplate(template.id);
-      const collectionsData = await buildCollectionsData(freshCollections, scope);
-      const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null && c.collection.analyzedSessionScope === scope);
-
-      if (collectionsWithAnalytics.length > 0) {
-        try {
-          console.log("[Cascade Refresh] Refreshing template:", template.name);
-          await refreshTemplateAnalytics(template, collectionsData, questions, scope);
-          results.templateRefreshed = true;
-        } catch (error: any) {
-          console.error("[Cascade Refresh] Template error:", template.name, error);
-          results.errors.push({
-            level: "template",
-            id: template.id,
-            name: template.name,
-            error: error.message || "Unknown error",
-          });
-        }
-      }
-
-      const updatedTemplate = await storage.getTemplate(template.id);
-      
-      res.json({
-        success: results.errors.length === 0,
-        results,
-        analytics: updatedTemplate?.analyticsData as TemplateAnalytics | null,
-        lastAnalyzedAt: updatedTemplate?.lastAnalyzedAt,
-        analyzedCollectionCount: updatedTemplate?.analyzedCollectionCount || 0,
-        currentCollectionCount: collectionsWithAnalytics.length,
-        totalCollectionCount: collections.length,
-        isStale: false,
-        missingAnalytics: collections.length - collectionsWithAnalytics.length,
+      const job = createAnalyticsJob({
+        level: "template",
+        entityId: template.id,
+        entityName: template.name,
+        sessionScope: scope,
+        userId,
+        steps,
       });
+
+      res.json({ jobId: job.id });
+
+      runTemplateCascadeRefresh(job.id, template, project, collections, questions, staleCollections, scope).catch((err) => {
+        console.error("[Cascade Refresh] Unhandled error in template background job:", err);
+        updateJobPhase(job.id, "failed");
+      });
+
     } catch (error) {
-      console.error("Error in template cascade refresh:", error);
-      res.status(500).json({ message: "Failed to cascade refresh analytics" });
+      console.error("Error starting template cascade refresh:", error);
+      res.status(500).json({ message: "Failed to start cascade refresh" });
     }
   });
+}
+
+async function runProjectCascadeRefresh(
+  jobId: string,
+  project: any,
+  templates: any[],
+  staleCollections: Array<{ collection: any; template: any; questions: any[]; sessions: any[] }>,
+  scope: SessionScope,
+) {
+  let stepIndex = 0;
+
+  updateJobPhase(jobId, "refreshing_collections");
+  for (const { collection, template, questions, sessions } of staleCollections) {
+    advanceJobStep(jobId, stepIndex, "running");
+    try {
+      console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+      await refreshCollectionAnalytics(collection, template, project, questions, sessions, scope);
+      incrementJobCounter(jobId, "collectionsRefreshed");
+      advanceJobStep(jobId, stepIndex, "done");
+    } catch (error: any) {
+      console.error("[Cascade Refresh] Collection error:", collection.name, error);
+      advanceJobStep(jobId, stepIndex, "error", error.message || "Unknown error");
+      addJobError(jobId, {
+        level: "collection",
+        id: collection.id,
+        name: collection.name,
+        error: error.message || "Unknown error",
+      });
+    }
+    stepIndex++;
+  }
+
+  updateJobPhase(jobId, "refreshing_templates");
+  for (const template of templates) {
+    advanceJobStep(jobId, stepIndex, "running");
+    try {
+      const collections = await storage.getCollectionsByTemplate(template.id);
+      const questions = await storage.getQuestionsByTemplate(template.id);
+      const collectionsData = await Promise.all(
+        collections.map(async (collection: any) => {
+          const freshCollection = await storage.getCollection(collection.id);
+          const sessions = await storage.getSessionsByCollection(collection.id);
+          const completedSessions = filterSessionsByScope(sessions, scope).filter((s: any) => s.status === "completed");
+          return {
+            collection: freshCollection!,
+            analytics: freshCollection?.analyticsData as CollectionAnalytics | null,
+            sessionCount: completedSessions.length,
+          };
+        })
+      );
+
+      const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null && c.collection.analyzedSessionScope === scope);
+      if (collectionsWithAnalytics.length === 0) {
+        advanceJobStep(jobId, stepIndex, "done");
+        stepIndex++;
+        continue;
+      }
+
+      console.log("[Cascade Refresh] Refreshing template:", template.name);
+      await refreshTemplateAnalytics(template, collectionsData, questions, scope);
+      incrementJobCounter(jobId, "templatesRefreshed");
+      advanceJobStep(jobId, stepIndex, "done");
+    } catch (error: any) {
+      console.error("[Cascade Refresh] Template error:", template.name, error);
+      advanceJobStep(jobId, stepIndex, "error", error.message || "Unknown error");
+      addJobError(jobId, {
+        level: "template",
+        id: template.id,
+        name: template.name,
+        error: error.message || "Unknown error",
+      });
+    }
+    stepIndex++;
+  }
+
+  updateJobPhase(jobId, "refreshing_project");
+  advanceJobStep(jobId, stepIndex, "running");
+  try {
+    const freshTemplates = await storage.getTemplatesByProject(project.id);
+    const templatesData = await buildTemplatesData(freshTemplates, scope);
+    const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null && t.template.analyzedSessionScope === scope);
+
+    if (templatesWithAnalytics.length > 0) {
+      console.log("[Cascade Refresh] Refreshing project:", project.name);
+      await refreshProjectAnalytics(project, templatesData, scope);
+      setJobFlag(jobId, "projectRefreshed", true);
+    }
+    advanceJobStep(jobId, stepIndex, "done");
+  } catch (error: any) {
+    console.error("[Cascade Refresh] Project error:", project.name, error);
+    advanceJobStep(jobId, stepIndex, "error", error.message || "Unknown error");
+    addJobError(jobId, {
+      level: "project",
+      id: project.id,
+      name: project.name,
+      error: error.message || "Unknown error",
+    });
+  }
+
+  const job = getAnalyticsJob(jobId);
+  if (job && job.errors.length > 0) {
+    updateJobPhase(jobId, "failed");
+  } else {
+    updateJobPhase(jobId, "complete");
+  }
+  console.log("[Cascade Refresh] Project cascade job finished:", jobId);
+}
+
+async function runTemplateCascadeRefresh(
+  jobId: string,
+  template: any,
+  project: any,
+  allCollections: any[],
+  questions: any[],
+  staleCollections: Array<{ collection: any; template: any; questions: any[]; sessions: any[] }>,
+  scope: SessionScope,
+) {
+  let stepIndex = 0;
+
+  updateJobPhase(jobId, "refreshing_collections");
+  for (const { collection, questions: colQuestions, sessions } of staleCollections) {
+    advanceJobStep(jobId, stepIndex, "running");
+    try {
+      console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+      await refreshCollectionAnalytics(collection, template, project, colQuestions, sessions, scope);
+      incrementJobCounter(jobId, "collectionsRefreshed");
+      advanceJobStep(jobId, stepIndex, "done");
+    } catch (error: any) {
+      console.error("[Cascade Refresh] Collection error:", collection.name, error);
+      advanceJobStep(jobId, stepIndex, "error", error.message || "Unknown error");
+      addJobError(jobId, {
+        level: "collection",
+        id: collection.id,
+        name: collection.name,
+        error: error.message || "Unknown error",
+      });
+    }
+    stepIndex++;
+  }
+
+  updateJobPhase(jobId, "refreshing_template");
+  advanceJobStep(jobId, stepIndex, "running");
+  try {
+    const freshCollections = await storage.getCollectionsByTemplate(template.id);
+    const collectionsData = await buildCollectionsData(freshCollections, scope);
+    const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null && c.collection.analyzedSessionScope === scope);
+
+    if (collectionsWithAnalytics.length > 0) {
+      console.log("[Cascade Refresh] Refreshing template:", template.name);
+      await refreshTemplateAnalytics(template, collectionsData, questions, scope);
+      setJobFlag(jobId, "templateRefreshed", true);
+    }
+    advanceJobStep(jobId, stepIndex, "done");
+  } catch (error: any) {
+    console.error("[Cascade Refresh] Template error:", template.name, error);
+    advanceJobStep(jobId, stepIndex, "error", error.message || "Unknown error");
+    addJobError(jobId, {
+      level: "template",
+      id: template.id,
+      name: template.name,
+      error: error.message || "Unknown error",
+    });
+  }
+
+  const job = getAnalyticsJob(jobId);
+  if (job && job.errors.length > 0) {
+    updateJobPhase(jobId, "failed");
+  } else {
+    updateJobPhase(jobId, "complete");
+  }
+  console.log("[Cascade Refresh] Template cascade job finished:", jobId);
 }

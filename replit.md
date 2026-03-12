@@ -32,7 +32,7 @@ Preferred communication style: Simple, everyday language.
 -   **Data Hierarchy**: Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment.
 -   **Voice Provider Abstraction**: A `RealtimeProvider` interface allows switching between different AI voice providers.
 -   **Barbara Orchestrator**: Manages configurable use cases for real-time analysis, topic overlap detection, summarization, template generation, and session summaries, with dynamic model and verbosity settings.
--   **Hierarchical Analytics System**: Provides collection-level, template-level, project-level, and aggregated command center analytics with staleness tracking.
+-   **Hierarchical Analytics System**: Provides collection-level, template-level, project-level, and aggregated command center analytics with staleness tracking. Cascade refreshes run as async background jobs with client polling (to avoid HTTP timeouts in production). Job state tracked in-memory via `server/routes/analytics-job-store.ts`. POST cascade-refresh returns a `jobId`; client polls `GET /api/analytics/jobs/:jobId` for progress.
 -   **LLM Usage Tracking**: Billing-grade event logging for all LLM calls with attribution and hourly rollups.
 -   **API Validation**: Zod schemas are used for shared validation between client and server.
 -   **Database Operations**: All database interactions are centralized through a `DatabaseStorage` class implementing an `IStorage` interface.
