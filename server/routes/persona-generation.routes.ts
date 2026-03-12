@@ -395,7 +395,7 @@ async function runResearchInBackground(params: {
 
     try {
       let userMessage = "Research failed unexpectedly. Please try again.";
-      if (error?.message?.includes("aborted") || error?.name === "AbortError") {
+      if (error?.message?.includes("aborted") || error?.message?.includes("timed out") || error?.message?.includes("timeout") || error?.name === "AbortError") {
         userMessage = "Research timed out. Please try again with a more specific prompt.";
       }
       const status = error?.status ?? error?.statusCode;

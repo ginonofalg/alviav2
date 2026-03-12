@@ -9,6 +9,7 @@ import type { Project } from "@shared/schema";
 import type { LLMUsageAttribution } from "@shared/schema";
 
 const RESEARCH_TIMEOUT_MS = 900_000;
+const MAX_RESEARCH_ATTEMPTS = 3;
 
 const RESEARCH_SYSTEM_PROMPT = `You are a research population analyst. Your task is to research a target population
 for a qualitative interview study and produce a structured population brief.
@@ -143,6 +144,17 @@ function isRateLimitError(error: any): boolean {
   );
 }
 
+function isTimeoutError(error: any): boolean {
+  if (!error) return false;
+  if (error?.name === "AbortError") return true;
+  const msg = String(error.message ?? "").toLowerCase();
+  return (
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("aborted")
+  );
+}
+
 function isWebSearchUnavailable(error: any): boolean {
   if (!error) return false;
   const msg = String(error.message ?? "").toLowerCase();
@@ -173,7 +185,7 @@ export async function researchPopulation(params: {
   uploadedFile?: UploadedFile;
   attribution: LLMUsageAttribution;
 }): Promise<ResearchResult> {
-  const openai = new OpenAI();
+  const openai = new OpenAI({ timeout: RESEARCH_TIMEOUT_MS });
   const config = getBarbaraConfig().personaResearch;
   const overallStart = Date.now();
 
@@ -188,9 +200,9 @@ export async function researchPopulation(params: {
   let lastError: any = null;
   let useFallback = false;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < MAX_RESEARCH_ATTEMPTS; attempt++) {
     try {
-      console.log(`[PersonaGeneration] OpenAI research call starting | attempt=${attempt + 1}/2 | webSearch=true | elapsed=${elapsed(overallStart)}`);
+      console.log(`[PersonaGeneration] OpenAI research call starting | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | webSearch=true | elapsed=${elapsed(overallStart)}`);
 
       const tracked = await withTrackedLlmCall({
         attribution: params.attribution,
@@ -241,12 +253,27 @@ export async function researchPopulation(params: {
       lastError = error;
       const errorMsg = error?.message ?? String(error);
 
-      if (isRateLimitError(error) && attempt === 0) {
+      if (isRateLimitError(error) && attempt < MAX_RESEARCH_ATTEMPTS - 1) {
         console.warn(
           `[PersonaGeneration] Rate limited by OpenAI, retrying in 5s... | elapsed=${elapsed(overallStart)}`,
         );
         await delay(5000);
         continue;
+      }
+
+      if (isTimeoutError(error) && attempt < MAX_RESEARCH_ATTEMPTS - 1) {
+        console.warn(
+          `[PersonaGeneration] Research call timed out, retrying... | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | elapsed=${elapsed(overallStart)}`,
+        );
+        continue;
+      }
+
+      if (isTimeoutError(error)) {
+        console.warn(
+          `[PersonaGeneration] Research timed out after ${MAX_RESEARCH_ATTEMPTS} attempts, falling back to prompt-only | elapsed=${elapsed(overallStart)}`,
+        );
+        useFallback = true;
+        break;
       }
 
       if (isWebSearchUnavailable(error)) {
