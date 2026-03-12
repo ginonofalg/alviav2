@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startUsageMaintenanceJobs } from "./usage-maintenance";
-import { cleanupOrphanedSimulationRuns } from "./storage/simulation";
+import { cleanupOrphanedSimulationRuns, cleanupOrphanedResearchAndSynthesis } from "./storage/simulation";
 import { validateAndLogLlmConfig } from "./llm-config";
 
 const app = express();
@@ -106,6 +106,9 @@ app.use((req, res, next) => {
       cleanupOrphanedSimulationRuns().then(count => {
         if (count > 0) log(`Cleaned up ${count} orphaned simulation run(s)`);
       }).catch(err => console.error("Failed to cleanup orphaned simulation runs:", err));
+      cleanupOrphanedResearchAndSynthesis().then(({ briefs, jobs }) => {
+        if (briefs > 0 || jobs > 0) log(`Marked ${briefs} orphaned research brief(s) and ${jobs} synthesis job(s) as interrupted`);
+      }).catch(err => console.error("Failed to cleanup orphaned research/synthesis:", err));
     },
   );
 })();

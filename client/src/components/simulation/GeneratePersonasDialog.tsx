@@ -52,12 +52,13 @@ interface ResearchStartResponse {
 }
 
 interface ResearchStatusResponse {
-  status: "researching" | "completed" | "failed";
+  status: "researching" | "completed" | "failed" | "interrupted";
   briefId: string;
   brief?: PopulationBrief;
   citations?: Array<{ url: string; title: string }>;
   ungrounded?: boolean;
   errorMessage?: string;
+  canRetry?: boolean;
 }
 
 interface SynthesizeStartResponse {
@@ -66,11 +67,12 @@ interface SynthesizeStartResponse {
 }
 
 interface SynthesisStatusResponse {
-  status: "synthesizing" | "completed" | "failed";
+  status: "synthesizing" | "completed" | "failed" | "interrupted";
   jobId: string;
   personas?: GeneratedPersona[];
   validationWarnings?: string[];
   errorMessage?: string;
+  canRetry?: boolean;
 }
 
 interface GeneratePersonasDialogProps {
@@ -80,7 +82,7 @@ interface GeneratePersonasDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type DialogState = "input" | "select-brief" | "researching" | "synthesizing" | "review";
+type DialogState = "input" | "select-brief" | "researching" | "synthesizing" | "review" | "interrupted";
 
 const ATTITUDE_LABELS: Record<string, string> = {
   cooperative: "Cooperative",
@@ -155,6 +157,8 @@ export function GeneratePersonasDialog({
   const [isUngrounded, setIsUngrounded] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [synthesisJobId, setSynthesisJobId] = useState<string | null>(null);
+  const [interruptedMessage, setInterruptedMessage] = useState<string | null>(null);
+  const [interruptedType, setInterruptedType] = useState<"research" | "synthesis" | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const synthesisPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -239,6 +243,11 @@ export function GeneratePersonasDialog({
           setRemovedIndices(new Set());
           setValidationWarnings(status.validationWarnings ?? []);
           setDialogState("review");
+        } else if (status.status === "interrupted") {
+          stopSynthesisPolling();
+          setInterruptedMessage(status.errorMessage ?? "Persona generation was interrupted by a server restart.");
+          setInterruptedType("synthesis");
+          setDialogState("interrupted");
         } else if (status.status === "failed") {
           stopSynthesisPolling();
           setDialogState("input");
@@ -297,6 +306,11 @@ export function GeneratePersonasDialog({
           setIsUngrounded(status.ungrounded ?? false);
           setDialogState("synthesizing");
           synthesizeMutateRef.current?.(pollBriefId);
+        } else if (status.status === "interrupted") {
+          stopResearchPolling();
+          setInterruptedMessage(status.errorMessage ?? "Research was interrupted by a server restart.");
+          setInterruptedType("research");
+          setDialogState("interrupted");
         } else if (status.status === "failed") {
           stopResearchPolling();
           setDialogState("input");
@@ -519,6 +533,42 @@ export function GeneratePersonasDialog({
     setDialogState("input");
   };
 
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  const handleRetryInterrupted = async () => {
+    if (!briefId && !synthesisJobId) return;
+    setIsRetrying(true);
+    try {
+      if (interruptedType === "research" && briefId) {
+        await apiRequest(
+          "POST",
+          `/api/projects/${projectId}/personas/research/${briefId}/restart`,
+        );
+        setInterruptedMessage(null);
+        setInterruptedType(null);
+        setDialogState("researching");
+        startResearchPolling(briefId);
+      } else if (interruptedType === "synthesis" && synthesisJobId) {
+        await apiRequest(
+          "POST",
+          `/api/projects/${projectId}/personas/synthesize/${synthesisJobId}/restart`,
+        );
+        setInterruptedMessage(null);
+        setInterruptedType(null);
+        setDialogState("synthesizing");
+        startSynthesisPolling(synthesisJobId);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Retry failed",
+        description: error?.message || "Could not restart. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
   const handleClose = () => {
     stopAllPolling();
     setDialogState("input");
@@ -537,6 +587,9 @@ export function GeneratePersonasDialog({
     setIsUngrounded(false);
     setValidationWarnings([]);
     setSynthesisJobId(null);
+    setInterruptedMessage(null);
+    setInterruptedType(null);
+    setIsRetrying(false);
     researchErrorCountRef.current = 0;
     synthesisErrorCountRef.current = 0;
     onOpenChange(false);
@@ -804,6 +857,35 @@ export function GeneratePersonasDialog({
               <Button variant="outline" onClick={handleCancel} data-testid="button-cancel-process">
                 <X className="w-4 h-4 mr-2" />
                 Cancel
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {dialogState === "interrupted" && (
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 p-6">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/10">
+              <AlertTriangle className="w-6 h-6 text-amber-500" />
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-semibold" data-testid="text-interrupted-title">
+                {interruptedType === "research" ? "Research Interrupted" : "Generation Interrupted"}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-md" data-testid="text-interrupted-message">
+                {interruptedMessage}
+              </p>
+            </div>
+            <DialogFooter className="flex gap-2 sm:gap-2">
+              <Button variant="outline" onClick={handleClose} data-testid="button-cancel-interrupted">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleRetryInterrupted}
+                disabled={isRetrying}
+                data-testid="button-retry-interrupted"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRetrying ? "animate-spin" : ""}`} />
+                {isRetrying ? "Retrying…" : "Retry"}
               </Button>
             </DialogFooter>
           </div>

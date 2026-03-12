@@ -151,6 +151,16 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
+      if (briefRecord.status === "interrupted") {
+        console.log(`[PersonaGeneration] Research status: interrupted | brief=${briefId}`);
+        return res.json({
+          status: "interrupted",
+          briefId: briefRecord.id,
+          errorMessage: briefRecord.errorMessage ?? "Research was interrupted by a server restart.",
+          canRetry: true,
+        });
+      }
+
       const ageMs = Date.now() - new Date(briefRecord.createdAt!).getTime();
       const MAX_RESEARCH_AGE_MS = 60 * 60 * 1000;
       if (ageMs > MAX_RESEARCH_AGE_MS) {
@@ -329,6 +339,16 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
+      if (job.status === "interrupted") {
+        console.log(`[PersonaGeneration] Synthesis status: interrupted | job=${jobId}`);
+        return res.json({
+          status: "interrupted",
+          jobId: job.id,
+          errorMessage: job.errorMessage ?? "Persona generation was interrupted by a server restart.",
+          canRetry: true,
+        });
+      }
+
       const ageMs = Date.now() - new Date(job.createdAt!).getTime();
       const MAX_SYNTHESIS_AGE_MS = 10 * 60 * 1000;
       if (ageMs > MAX_SYNTHESIS_AGE_MS) {
@@ -353,6 +373,121 @@ export function registerPersonaGenerationRoutes(app: Express) {
     } catch (error) {
       console.error("[PersonaGeneration] GET /synthesize/:jobId/status failed:", error);
       res.status(500).json({ message: "Failed to check synthesis status" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/personas/research/:briefId/restart", isAuthenticated, async (req: any, res) => {
+    const requestStart = Date.now();
+    const { projectId, briefId } = req.params;
+    console.log(`[PersonaGeneration] POST /research/:briefId/restart | brief=${briefId} | project=${projectId}`);
+
+    try {
+      const userId = getUserId(req);
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const briefRecord = await storage.getPopulationBrief(briefId);
+      if (!briefRecord || briefRecord.projectId !== projectId) {
+        return res.status(404).json({ message: "Research job not found" });
+      }
+
+      if (briefRecord.status !== "interrupted") {
+        return res.status(400).json({ message: `Cannot restart research with status "${briefRecord.status}".` });
+      }
+
+      if (!checkResearchRateLimit(projectId)) {
+        return res.status(429).json({ message: "Too many research requests. Please wait before trying again." });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      await storage.updatePopulationBrief(briefId, {
+        status: "researching",
+        errorMessage: null,
+      });
+
+      const workspace = await storage.getWorkspace(project.workspaceId);
+      const workspaceId = workspace?.id ?? project.workspaceId;
+
+      console.log(`[PersonaGeneration] Restarting interrupted research | brief=${briefId} | project=${projectId}`);
+
+      res.json({ briefId, status: "researching" });
+
+      runResearchInBackground({
+        briefId,
+        projectId,
+        project,
+        workspaceId,
+        researchPrompt: briefRecord.researchPrompt,
+        additionalContext: briefRecord.additionalContext ?? undefined,
+        requestStart,
+      });
+    } catch (error: any) {
+      console.error(`[PersonaGeneration] POST /research/:briefId/restart failed | brief=${briefId} | error=${error?.message}`, error);
+      res.status(500).json({ message: "Failed to restart research" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/personas/synthesize/:jobId/restart", isAuthenticated, async (req: any, res) => {
+    const requestStart = Date.now();
+    const { projectId, jobId } = req.params;
+    console.log(`[PersonaGeneration] POST /synthesize/:jobId/restart | job=${jobId} | project=${projectId}`);
+
+    try {
+      const userId = getUserId(req);
+      const hasAccess = await storage.verifyUserAccessToProject(userId, projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const job = await storage.getSynthesisJob(jobId);
+      if (!job || job.projectId !== projectId) {
+        return res.status(404).json({ message: "Synthesis job not found" });
+      }
+
+      if (job.status !== "interrupted") {
+        return res.status(400).json({ message: `Cannot restart synthesis with status "${job.status}".` });
+      }
+
+      const briefRecord = await storage.getPopulationBrief(job.briefId);
+      if (!briefRecord || !briefRecord.brief) {
+        return res.status(400).json({ message: "The research brief for this job is no longer available." });
+      }
+
+      const brief = briefRecord.brief as unknown as PopulationBrief;
+      const project = await storage.getProject(projectId);
+      const workspace = await storage.getWorkspace(project?.workspaceId ?? "");
+      const workspaceId = workspace?.id ?? "";
+
+      await storage.updateSynthesisJob(jobId, {
+        status: "synthesizing",
+        errorMessage: null,
+      });
+
+      console.log(`[PersonaGeneration] Restarting interrupted synthesis | job=${jobId} | project=${projectId}`);
+
+      res.json({ jobId, status: "synthesizing" });
+
+      runSynthesisInBackground({
+        jobId,
+        projectId,
+        brief,
+        config: {
+          personaCount: job.personaCount,
+          diversityMode: job.diversityMode as DiversityMode,
+          edgeCases: job.edgeCases,
+        },
+        attribution: { workspaceId, projectId },
+        requestStart,
+      });
+    } catch (error: any) {
+      console.error(`[PersonaGeneration] POST /synthesize/:jobId/restart failed | job=${jobId} | error=${error?.message}`, error);
+      res.status(500).json({ message: "Failed to restart synthesis" });
     }
   });
 }
