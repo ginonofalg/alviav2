@@ -126,6 +126,7 @@ export function buildInterviewInstructions(
 INTERVIEW CONTEXT:
 - Objective: ${objective}
 - Tone: ${tone}
+- Accent: British
 - Current Question: ${questionIndex + 1} of ${totalQuestions}
 
 RESPONDENT:
@@ -336,6 +337,7 @@ function buildSharedContextBlock(ctx: ResumeContext): string {
 INTERVIEW CONTEXT:
 - Objective: ${ctx.objective}
 - Tone: ${ctx.tone}
+- Accent: British
 - Current Question: ${ctx.questionIndex + 1} of ${ctx.totalQuestions}
 
 RESPONDENT:
