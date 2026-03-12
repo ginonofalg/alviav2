@@ -1,0 +1,442 @@
+/
+Dashboard
+API Docs
+Responses
+Properties
+Created
+Mar 12, 2026, 12:02 PM
+ID
+resp_07401d0bcba6b3540069b2ab4363c08190b1fd037f8f4192ef
+Model
+gpt-5-2025-08-07
+Tokens
+123,633 total
+Tools
+Web Search
+Configuration
+Response
+json_schema
+Reasoning effort
+high
+Verbosity
+medium
+Metadata
+No metadata entries
+Input
+108,981t
+user
+RESEARCH CONTEXT:
+The target population is employers and hiring managers in the UK Tech sector who are actively recruiting or planning to hire within the next 6 to 12 months. This includes founders and CTOs of SMEs (5–50 employees), hiring managers at mid-sized software and IT services firms, and talent acquisition leads at larger technology employers. They span a range of sub-sectors — web and app development, data and analytics, cybersecurity, IT support and infrastructure, and digital marketing technology — and operate in both urban centres and smaller cities or towns where the local talent pool is thinner. Some have prior experience working with employment programmes, local councils, or skills providers; others have not.
+
+These employers vary in how structured their hiring processes are, from informal "hire who you know" approaches in smaller firms to competency-based frameworks in larger organisations. Their pain points typically sit around the gap between formal qualifications and job-readiness: candidates who hold degrees or certificates but lack applied project experience, commercial awareness, or the communication skills needed in cross-functional teams. Attitudes toward non-traditional entry routes (apprenticeships, bootcamps, career changers, return-to-work candidates) range from genuinely open and already doing it, through cautiously willing but unsure how, to sceptical and risk-averse. The mix should reflect this spectrum, including at least one or two employers who have had negative past experiences with training programme recruits and are harder to convince.
+
+PROJECT CONTEXT:
+Project: Employer Demand & Capability Gaps
+Research Objectives: Understand employer demand and the capability gaps preventing successful recruitment across key sectors. This research surfaces four things: the roles employers genuinely need filled, why those roles aren't being filled, what capability or attitudinal gaps exist in the candidate pool, and what changes would make employers more likely to recruit locally, including openness to non-traditional entry routes.
+Target Audience: Employers and hiring managers across targeted sectors, starting with Tech, who are actively recruiting or anticipate recruitment needs in the next 6 to 12 months. Includes SMEs, larger employers, and organisations who have previously engaged with People Hub or similar employment programmes.
+Context Type: other
+Strategic Context: This project generates actionable labour market intelligence for People Hub. The initial deployment targets the Tech sector, where recruitment often breaks down in the gap between formal qualifications and real workplace or project experience. Common capability gaps include applied technical skills, problem-solving, teamwork, and the ability to communicate with non-technical colleagues. Insights will inform programme design by aligning pre-employment training, bootcamps and work trials to actual employer needs; candidate pipeline development by identifying which entry routes employers will accept such as apprenticeships, career changers and return-to-work candidates; and sector partnerships by providing data-backed evidence to strengthen relationships with employers. The template is designed to be sector-adaptable; the same structure can be redeployed for other programmes such as Proud to Care for health and social care recruitment by adjusting the sector-specific context, with no changes to the core question set.
+
+Research this population thoroughly using web search. Produce a structured population brief with citations.
+
+system
+You are a research population analyst. Your task is to research a target population
+for a qualitative interview study and produce a structured population brief.
+
+TASK:
+Given the research context below, use web search to find real demographic data,
+behavioral research, and domain-specific studies about this population. Search for
+at least 3-5 different aspects of the population.
+
+SEARCH STRATEGY:
+
+Search for demographic breakdowns (census data, industry reports, market sizing)
+Search for behavioral patterns (adoption studies, satisfaction surveys, usage data)
+Search for communication and cultural norms relevant to this population
+Search for domain knowledge distributions (professional qualifications, experience levels)
+Search for known biases, pain points, or sensitive topics in this population
+CONFIDENCE ASSESSMENT:
+After your research, assess your confidence level:
+
+"high": Found multiple credible sources with specific data for this population
+"medium": Found some relevant data but had to generalize from adjacent populations
+"low": Found little to no specific data; brief is primarily based on general knowledge
+SUGGESTED PERSONA PROFILES:
+Based on your research, suggest 3-8 distinct persona archetypes that would
+represent the key segments of this population. For each, explain:
+
+What archetype they represent (e.g., "Early adopter professional", "Reluctant traditionalist")
+Why this archetype matters for the research (what perspective they bring)
+Roughly what percentage of the target population they represent
+OUTPUT FORMAT:
+Return a JSON object matching the PopulationBrief schema. Every claim should
+include a source URL where possible. Do not fabricate sources -- if you cannot
+find data for a dimension, set the source field to an empty string and note
+this in your confidence assessment.
+
+Output
+14,652t
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+Web Search
+Searched the web
+Reasoning
+Empty reasoning item
+assistant
+{
+  "targetPopulation": "Employers and hiring managers in the UK Tech sector (web/app development, data & analytics, cybersecurity, IT support/infrastructure, martech) who are actively recruiting or planning to hire in the next 6–12 months (March–September 2026).",
+  "confidence": "high",
+  "demographics": {
+    "summary": "The UK digital/tech employer base is dominated by micro and small firms, with activity concentrated in London/South East but present across all regions. Within the Digital sector there were 200,600 registered businesses in March 2023 (7.4% of UK businesses), and 91.9% had 0–9 employees; business sites are heavily concentrated in London (31.2%) and the South East (19.2%). Across the wider UK economy, SMEs account for 99.8% of businesses and employ about 60% of the private‑sector workforce. Vacancy pressure in Information & Communication remains elevated versus many sectors and skills-shortage intensity is high, shaping employer behaviours and preferences. ([gov.uk](https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023/digital-sector-economic-estimates-business-demographics-2023-main-report))",
+    "distributions": [
+      {
+        "dimension": "Firm size (Digital sector)",
+        "breakdown": "91.9% micro (0–9 employees); 99.7% under 250 employees (2019–2023 stable).",
+        "source": "https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023/digital-sector-economic-estimates-business-demographics-2023-main-report"
+      },
+      {
+        "dimension": "Sector footprint",
+        "breakdown": "200,600 digital‑sector businesses in March 2023 (7.4% of UK registered businesses).",
+        "source": "https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023/digital-sector-economic-estimates-business-demographics-2023-main-report"
+      },
+      {
+        "dimension": "Regional concentration (business sites)",
+        "breakdown": "Digital business sites by region: London 31.2% (65,445), South East 19.2% (40,185); Northern Ireland 1.2%.",
+        "source": "https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023/digital-sector-economic-estimates-business-demographics-2023-main-report"
+      },
+      {
+        "dimension": "SMEs in UK economy",
+        "breakdown": "SMEs = 99.8% of all UK businesses; circa 60% of private‑sector employment (start of 2024).",
+        "source": "https://www.gov.uk/government/statistics/business-population-estimates-2024/business-population-estimates-for-the-uk-and-regions-2024-statistical-release"
+      },
+      {
+        "dimension": "Vacancy intensity (by sector)",
+        "breakdown": "Skill‑shortage vacancy (SSV) density in Information & Communication = 43% (2022). Overall SSVs = 36% of all UK vacancies (531,200).",
+        "source": "https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf"
+      },
+      {
+        "dimension": "Current vacancy volumes (context)",
+        "breakdown": "Around 33,000 vacancies in Information & Communication (Aug–Oct 2025, ONS cited in written parliamentary answer).",
+        "source": "https://www.parallelparliament.co.uk/question/96018/vacancies"
+      },
+      {
+        "dimension": "Local digital capital (regional tech strength)",
+        "breakdown": "Regions differ in digital GVA and employer base; multiple regions below UK median digital GVA (opportunity to boost local hiring if gaps closed).",
+        "source": "https://www.techuk.org/shaping-policy/nations-and-regions-hub/local-digital-capital-index-2023.html"
+      },
+      {
+        "dimension": "Tech workforce share (context)",
+        "breakdown": "Net tech employment ≈ 6.4% of UK workforce in 2023; projected growth in 2024. (Helps size likely demand on employers.)",
+        "source": "https://www.comptia.org/en/resources/research/state-of-the-tech-workforce-uk-2024/"
+      }
+    ]
+  },
+  "behavioralPatterns": [
+    {
+      "pattern": "Recruitment channels skew pragmatic and network‑led: 70% of employers with vacancies used word‑of‑mouth/personal recommendations; 56% used social media adverts (internal), and 51% used their own website (2022).",
+      "prevalence": "Common across sizes; especially salient for SMEs relying on known networks.",
+      "source": "https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf"
+    },
+    {
+      "pattern": "Selection remains interview‑centric; competency‑based interviews are widely used but work‑sample/testing is less universal. Video/telephone remain common technologies.",
+      "prevalence": "‘Most organisations’ report interview‑led selection; tech usage uneven by size; SMEs trail.",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Limited adoption of recruitment tech: only 26% use an ATS; 45% of SMEs reported using none of the listed recruitment technologies.",
+      "prevalence": "Structural constraint for smaller tech firms; reduces process standardisation.",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Flexible/hybrid working is a key attraction lever: 74% advertise at least some jobs as open to flexible working; among those offering hybrid/remote, 71% say it helps attract/retain talent.",
+      "prevalence": "Broadly adopted; cited as a top response to recruitment difficulties.",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Hiring outlook in technology remains expansionary in many firms: 39% of UK businesses plan to expand IT/technology teams (2026 guide).",
+      "prevalence": "Signal of sustained demand over next 6–12 months.",
+      "source": "https://www.roberthalf.com/gb/en/insights/salary-guide/technology"
+    },
+    {
+      "pattern": "Skills bottlenecks shape behaviour: 87% of SSVs cite technical/practical skill gaps; 70% cite people/personal skills (time management 48%).",
+      "prevalence": "Directly impacts screening and preference for applied experience.",
+      "source": "https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf"
+    },
+    {
+      "pattern": "Shift toward skills‑first signals in attraction (less emphasis on degrees): LinkedIn reports paid posts not requiring a degree rose from 22% (2020) to 26% (2023).",
+      "prevalence": "Growing but not universal; varies by firm/process maturity.",
+      "source": "https://business.linkedin.com/talent-solutions/resources/future-of-recruiting-uk"
+    }
+  ],
+  "communicationNorms": [
+    {
+      "norm": "Use multi‑channel attraction with clear signals on flexibility, salary/benefits, and role outcomes; corporate site, job boards, and professional networks (e.g., LinkedIn) are among the most effective routes.",
+      "context": "CIPD finds targeted and organic campaigns on professional networking sites effective for many employers; 74% advertise at least some vacancies as open to flexible working to widen pools. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    },
+    {
+      "norm": "Expect informal outreach to carry weight, especially with SMEs; personal referrals/word‑of‑mouth feature in a majority of recent recruitment activity.",
+      "context": "70% of employers with vacancies used word‑of‑mouth; tailor outreach to decision‑makers (founders/CTOs) with concise, commercially‑framed messaging. ([assets.publishing.service.gov.uk](https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf))"
+    },
+    {
+      "norm": "Digital screening/selection tech is uneven; many smaller firms lack ATS, relying on email/LinkedIn and interview‑led assessment; propose lightweight, low‑admin trials or work samples.",
+      "context": "Only 26% use ATS; ~45% of SMEs use none of the listed recruitment tech; video/telephone interviews common. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    },
+    {
+      "norm": "Hybrid/remote interviewing and onboarding are normal; emphasise remote‑friendly processes and early team‑communication fit.",
+      "context": "Over two‑fifths report productivity/engagement/retention increases from hybrid working; 55% revised onboarding for remote/hybrid. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    }
+  ],
+  "domainKnowledgeLevels": [
+    {
+      "segment": "Large technology employers’ TA leaders",
+      "level": "expert",
+      "description": "High process maturity (competency frameworks, structured interviews, ROI tracking). Use targeted professional networking (e.g., LinkedIn) and are experimenting with AI‑enabled tooling, though adoption is still measured. More likely to measure recruitment ROI; better resourced to integrate apprenticeships/bootcamps at scale. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    },
+    {
+      "segment": "Mid‑sized software/IT services hiring managers",
+      "level": "intermediate",
+      "description": "Blend of structured and ad‑hoc practices; competency‑based interviews used but limited work‑sample use; partial awareness of apprenticeships/bootcamps and how to operationalise them. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    },
+    {
+      "segment": "SME founders/CTOs (5–50 staff)",
+      "level": "basic",
+      "description": "Rely on networks, direct applicants, and general interviews; low ATS/tech adoption (45% use none of listed tools) and variable knowledge of apprenticeships/bootcamp funding and options. Need practical guidance on low‑overhead trials and co‑designed curricula. ([cipd.org](https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf))"
+    },
+    {
+      "segment": "Employers already engaged with bootcamps/apprenticeships",
+      "level": "intermediate",
+      "description": "Motivated to address skills gaps and grow local pipelines; report benefits (commitment/retention) but encounter friction around guaranteed interviews, geography, and role alignment—need clearer brokerage and work‑trial models. ([assets.publishing.service.gov.uk](https://assets.publishing.service.gov.uk/media/66e9a3f824c4f1826d81bcbd/Skills_Bootcamps_Wave_3_Implementation_Report.pdf))"
+    }
+  ],
+  "biasesAndSensitivities": [
+    {
+      "topic": "Degree vs. skills credentials",
+      "nature": "Many are open to skills‑first signals but legacy degree filters persist in parts of the market; appetite to see applied project work and commercial awareness over formal qualifications alone.",
+      "source": "https://business.linkedin.com/talent-solutions/resources/future-of-recruiting-uk"
+    },
+    {
+      "topic": "Concerns about job‑readiness (soft skills)",
+      "nature": "Employers frequently cite communication, time management, and teamwork gaps alongside technical skills; they want evidence of collaboration with non‑technical teams.",
+      "source": "https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf"
+    },
+    {
+      "topic": "Programme‑to‑job mismatch (Bootcamps)",
+      "nature": "Some negative experiences: ‘guaranteed interviews’ not tied to genuine vacancies, poor geographic fit, and limited part‑time options—creating scepticism toward providers without strong employer alignment.",
+      "source": "https://assets.publishing.service.gov.uk/media/66e9a3f824c4f1826d81bcbd/Skills_Bootcamps_Wave_3_Implementation_Report.pdf"
+    },
+    {
+      "topic": "AI use in recruitment",
+      "nature": "Growing interest but sensitivity about fairness, bias and compliance; calls for careful, transparent use and human oversight.",
+      "source": "https://www.cipd.org/uk/knowledge/tools/recruitment-process/"
+    },
+    {
+      "topic": "Diversity gaps in tech teams",
+      "nature": "Women hold roughly one‑fifth to just over one‑fifth of UK IT specialist roles; diversity deficits influence employer brand expectations and outreach tone.",
+      "source": "https://www.bcs.org/policy-and-influence/equity-diversity-and-inclusion/bcs-diversity-report-2024-addressing-the-under-representation-of-women-in-technology/"
+    }
+  ],
+  "suggestedPersonaProfiles": [
+    {
+      "archetype": "Network‑reliant SME founder/CTO",
+      "rationale": "Hires through known networks; time‑poor; prioritises job‑ready doers; receptive to low‑risk work trials and short, provider‑curated pipelines aligned to client projects.",
+      "representsPct": "22%"
+    },
+    {
+      "archetype": "Skills‑first enterprise TA lead",
+      "rationale": "Seeks scalable, skills‑based pipelines; open to bootcamps/apprenticeships when mapped to competency frameworks; values evidence from work samples and team‑fit signals.",
+      "representsPct": "18%"
+    },
+    {
+      "archetype": "Process‑mature scale‑up hiring manager",
+      "rationale": "Runs semi‑structured hiring; open to non‑traditional entrants if assessment load is shared (e.g., provider-led screening, realistic job previews).",
+      "representsPct": "17%"
+    },
+    {
+      "archetype": "Apprenticeship/bootcamp champion employer",
+      "rationale": "Already partners with providers; wants clearer progression (Level 3→4/5→6+), co‑design of briefs, and streamlined funding/admin; strong on local hiring.",
+      "representsPct": "13%"
+    },
+    {
+      "archetype": "Cautiously open mid‑sized manager",
+      "rationale": "Positive about alternative routes in principle but unsure how to de‑risk; needs short work trials, mentor support, and guarantees on soft‑skills coaching.",
+      "representsPct": "12%"
+    },
+    {
+      "archetype": "Sceptical veteran (prior negative experience)",
+      "rationale": "Has experienced poor programme‑to‑role alignment; requires bespoke matching, on‑the‑job project evidence, and conditional hire models before re‑engaging.",
+      "representsPct": "8%"
+    },
+    {
+      "archetype": "Regional talent‑seeker outside London/South East",
+      "rationale": "Faces thinner local pools; values remote/hybrid options, regional cohorts, relocation support, and shared‑services assessment to broaden reach.",
+      "representsPct": "10%"
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023/digital-sector-economic-estimates-business-demographics-2023-main-report",
+      "title": "Digital sector economic estimates: Business demographics, 2023 – main report (DSIT/DCMS)",
+      "relevance": "Counts, size bands, and regional distribution of digital‑sector businesses/sites."
+    },
+    {
+      "url": "https://www.gov.uk/government/statistics/business-population-estimates-2024/business-population-estimates-for-the-uk-and-regions-2024-statistical-release",
+      "title": "Business Population Estimates 2024 (DBT)",
+      "relevance": "SME share of business population and employment."
+    },
+    {
+      "url": "https://assets.publishing.service.gov.uk/media/672a2743094e4e60c466d160/Employer_Skills_Survey_2022_research_report__Nov_2024_.pdf",
+      "title": "Employer Skills Survey 2022 (updated Nov 2024)",
+      "relevance": "Vacancy intensity, skills‑shortage density by sector, detailed skill gaps (technical and soft skills), recruitment channels."
+    },
+    {
+      "url": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf",
+      "title": "CIPD Resourcing and Talent Planning 2024",
+      "relevance": "Selection methods, tech adoption (ATS), attraction strategies, and flexible/hybrid practices."
+    },
+    {
+      "url": "https://www.roberthalf.com/gb/en/insights/salary-guide/technology",
+      "title": "Robert Half UK Technology Salary Guide 2026",
+      "relevance": "Hiring outlook in technology; role families in sustained demand."
+    },
+    {
+      "url": "https://assets.publishing.service.gov.uk/media/66e9a3f824c4f1826d81bcbd/Skills_Bootcamps_Wave_3_Implementation_Report.pdf",
+      "title": "Evaluation of Skills Bootcamps 2022–23 (Wave 3) – Implementation report (DfE)",
+      "relevance": "Employer motivations, benefits, and friction points (guaranteed interviews, geography, scheduling)."
+    },
+    {
+      "url": "https://www.gov.uk/government/publications/apprenticeship-evaluation-2023-learner-non-completer-and-employer-surveys",
+      "title": "Apprenticeship Evaluation 2023 – Employer survey (DfE)",
+      "relevance": "Employer awareness/knowledge of higher & degree apprenticeships; funding/process understanding; reasons for (not) offering."
+    },
+    {
+      "url": "https://business.linkedin.com/talent-solutions/resources/future-of-recruiting-uk",
+      "title": "LinkedIn Future of Recruiting 2025 (UK)",
+      "relevance": "Rise of skills‑first hiring and reduced degree requirements in postings; recruiter priorities."
+    },
+    {
+      "url": "https://www.parallelparliament.co.uk/question/96018/vacancies",
+      "title": "Parliamentary written answer citing ONS vacancies by industry (Aug–Oct 2025)",
+      "relevance": "Context on vacancy volumes in Information & Communication."
+    },
+    {
+      "url": "https://www.bcs.org/policy-and-influence/equity-diversity-and-inclusion/bcs-diversity-report-2024-addressing-the-under-representation-of-women-in-technology/",
+      "title": "BCS Diversity report 2024 – Women in technology",
+      "relevance": "Gender representation baseline in UK IT specialist roles."
+    },
+    {
+      "url": "https://www.techuk.org/shaping-policy/nations-and-regions-hub/local-digital-capital-index-2023.html",
+      "title": "techUK Local Digital Index 2023",
+      "relevance": "Regional digital economy and capacity differences influencing local hiring."
+    },
+    {
+      "url": "https://www.cipd.org/uk/knowledge/tools/recruitment-process/",
+      "title": "CIPD Recruitment tools (guidance)",
+      "relevance": "Cautions on AI use in recruitment and fair‑process considerations."
+    },
+    {
+      "url": "https://www.gov.uk/government/statistics/dcms-and-digital-economic-estimates-business-demographics-2023",
+      "title": "DCMS & Digital Economic Estimates: Business demographics (collection)",
+      "relevance": "Landing for revised data tables and QA notes supporting the main report."
+    }
+  ]
+}
