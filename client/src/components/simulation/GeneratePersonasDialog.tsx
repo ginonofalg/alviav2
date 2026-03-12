@@ -115,7 +115,7 @@ const MIME_TYPES: Record<string, string> = {
 const RESEARCH_POLL_INTERVAL_MS = 3000;
 const SYNTHESIS_POLL_INTERVAL_MS = 3000;
 const MAX_CONSECUTIVE_POLL_ERRORS = 5;
-const MAX_RESEARCH_POLL_DURATION_S = 720;
+const MAX_RESEARCH_POLL_DURATION_S = 3600;
 const MAX_SYNTHESIS_POLL_DURATION_S = 480;
 
 function readFileAsBase64(file: File): Promise<string> {
@@ -745,8 +745,10 @@ export function GeneratePersonasDialog({
                           : elapsedSeconds < 120
                             ? "Analyzing sources and building population brief..."
                             : elapsedSeconds < 300
-                              ? "Deep research in progress -- the AI is conducting multiple web searches..."
-                              : "Still working -- complex populations can require extensive research..."}
+                              ? "Deep research in progress — the AI is conducting multiple web searches..."
+                              : elapsedSeconds < 600
+                                ? "Still working — complex populations can require extensive research..."
+                                : "This is taking longer than usual — the system is retrying to get good results..."}
                     </p>
                   )}
                   {brief && dialogState === "synthesizing" && (
