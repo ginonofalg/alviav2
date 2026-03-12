@@ -152,7 +152,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       const ageMs = Date.now() - new Date(briefRecord.createdAt!).getTime();
-      const MAX_RESEARCH_AGE_MS = 15 * 60 * 1000;
+      const MAX_RESEARCH_AGE_MS = 60 * 60 * 1000;
       if (ageMs > MAX_RESEARCH_AGE_MS) {
         console.warn(`[PersonaGeneration] Research stuck for ${Math.round(ageMs / 1000)}s, auto-failing | brief=${briefId}`);
         try {
