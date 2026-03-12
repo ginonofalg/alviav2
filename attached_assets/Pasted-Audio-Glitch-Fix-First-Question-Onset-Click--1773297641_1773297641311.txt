@@ -1,0 +1,54 @@
+Audio Glitch Fix: First-Question Onset Click                                                                                                                           
+                                                                                                                                                                         
+  Problem                                                                                                                                                                
+                                                                                                                                                                         
+  There's a slight audio glitch/click when Alvia begins speaking on the very first question, as if there's briefly overlapping or clipped audio.                         
+   
+  Root Cause                                                                                                                                                             
+                  
+  The issue is an async scheduling race in use-audio-playback.ts, not hardware initialization. Here's the sequence:                                                      
+   
+  1. playAudio() pushes the first chunk and calls drainQueue()                                                                                                           
+  2. drainQueue() hits await initAudioContext() at line 108 — even when the context is already running, await yields to the microtask queue
+  3. During that yield, several more chunks arrive via playAudio(), each calling drainQueue() but bouncing off the isDrainingRef mutex                                   
+  4. When the drain resumes, it schedules the entire queued batch starting at exactly audioContext.currentTime (line 59)                                                 
+  5. By the time the Web Audio scheduler actually renders that first buffer, currentTime has advanced slightly past the scheduled start. The first buffer onset gets     
+  clipped, producing a click/pop                                                                                                                                         
+                                                                                                                                                                         
+  This is first-question-only because subsequent turns already have nextStartTimeRef.current set to a future value from the previous playback, so the Math.max on line 59
+   naturally provides lookahead. Only the very first utterance (or any utterance after stopAiPlayback resets nextStartTimeRef to 0) hits the zero-lookahead path.
+                                                                                                                                                                         
+  Note: The "hardware audio pipeline spin-up" theory from the original diagnosis doesn't hold here — the client explicitly pre-warms the AudioContext before sending     
+  audio_ready to the server (see interview.tsx around line 678), and the server waits for that signal before triggering Alvia's first response. The context is already
+  warm by the time chunks arrive.                                                                                                                                        
+                  
+  Proposed Fix                                                                                                                                                           
+   
+  In scheduleChunk (line 59 of use-audio-playback.ts), replace:                                                                                                          
+                  
+  const when = Math.max(audioContext.currentTime, nextStartTimeRef.current);                                                                                             
+                                                                                                                                                                         
+  with:
+                                                                                                                                                                         
+  const now = audioContext.currentTime;                                                                                                                                  
+  const when = nextStartTimeRef.current > now                                                                                                                            
+    ? nextStartTimeRef.current                                                                                                                                           
+    : now + 0.015; // 15ms lookahead on fresh burst to avoid clipped onset                                                                                               
+                                                                                                                                                                         
+  This adds a 15ms scheduling buffer only when starting a fresh burst (i.e., when nextStartTimeRef is in the past or zero). Subsequent chunks in the same utterance      
+  continue to be scheduled back-to-back with no gap, since nextStartTimeRef will already be in the future. 15ms is imperceptible as latency but gives the Web Audio      
+  scheduler enough runway to cleanly start the first buffer.                                                                                                             
+                  
+  What NOT to do                                                                                                                                                         
+   
+  - Don't add a fade-in as the primary fix. A gain ramp masks the symptom (discontinuous PCM onset) without addressing the cause (zero-lookahead scheduling). If a       
+  residual click persists after the lookahead fix, a 3-5ms fade-in on the first chunk of a fresh burst would be a reasonable secondary measure — but try the scheduling
+  fix alone first.                                                                                                                                                       
+                  
+  Scope                                                                                                                                                                  
+   
+  This is a one-line change in client/src/hooks/use-audio-playback.ts. No server changes needed. The fix also covers the post-barge-in path, since stopAiPlayback resets 
+  nextStartTimeRef to 0 (line 204), meaning the next utterance after an interruption also benefits from the lookahead.
+                                                                                                                                                                         
+  ---                                                                                                                                                                    
+  Want me to just make this change directly instead?
