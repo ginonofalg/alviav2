@@ -185,6 +185,29 @@ function isWebSearchUnavailable(error: any): boolean {
   );
 }
 
+function extractOutputText(result: OAIResponse): string {
+  if (result.output_text) return result.output_text;
+
+  const outputItems = result.output ?? [];
+  const textParts: string[] = [];
+  for (const item of outputItems) {
+    if (item.type === "message" && item.content) {
+      for (const content of item.content) {
+        if (content.type === "output_text" && content.text) {
+          textParts.push(content.text);
+        }
+      }
+    }
+  }
+
+  if (textParts.length > 0) return textParts.join("");
+
+  const itemTypes = outputItems.map((i: any) => i.type).join(", ");
+  throw new Error(
+    `OpenAI response contained no text output. output_text=${result.output_text}, items=[${itemTypes}], itemCount=${outputItems.length}`,
+  );
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -279,7 +302,8 @@ export async function researchPopulation(params: {
       });
 
       const result = tracked.result;
-      const briefText = result.output_text;
+      const briefText = extractOutputText(result);
+      console.log(`[PersonaGeneration] Response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length} | elapsed=${elapsed(overallStart)}`);
       const brief: PopulationBrief = JSON.parse(briefText);
 
       const citations = extractCitations(result);
@@ -389,7 +413,9 @@ async function researchWithoutWebSearch(
   });
 
   const result = tracked.result;
-  const brief: PopulationBrief = JSON.parse(result.output_text);
+  const briefText = extractOutputText(result);
+  console.log(`[PersonaGeneration] Fallback response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length}`);
+  const brief: PopulationBrief = JSON.parse(briefText);
 
   console.log(`[PersonaGeneration] Fallback research completed | confidence=${brief.confidence} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
 
