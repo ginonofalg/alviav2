@@ -1,0 +1,252 @@
+{
+  "targetPopulation": "UK-based employers and hiring managers in the Tech sector who are actively recruiting or planning to hire in the next 6–12 months (founders/CTOs at SMEs, hiring managers at mid-sized software/IT services firms, and talent acquisition leads at larger technology employers across web/app development, data/analytics, cybersecurity, IT support/infrastructure, and martech).",
+  "confidence": "high",
+  "demographics": {
+    "summary": "The UK Digital Sector employed about 1.77 million people in 2024 (5.2% of filled jobs), down 6.3% year-on-year; ‘Computer programming, consultancy and related activities’ accounts for 58.4% of digital sector jobs. Women held 28.5% of digital sector jobs in 2024, and only 5.7% of digital sector jobs were held by people aged 16–24 (vs 10.6% across the economy). London concentrates a disproportionate share of the digital economy: ~35% of digital economy employees and 37% of sector GVA, creating thinner local talent pools in smaller cities/towns. Hybrid/remote work is prevalent in IT: ONS reports hybrid working among 28% of working adults overall in autumn 2024, with Information & Communication among the most hybrid-enabled industries. ([gov.uk](https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024))",
+    "distributions": [
+      {
+        "dimension": "Sector employment size (Digital Sector)",
+        "breakdown": "1.77m filled jobs in 2024; 5.2% of UK filled jobs; −6.3% vs 2023",
+        "source": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024"
+      },
+      {
+        "dimension": "Subsector mix",
+        "breakdown": "Computer programming/consultancy/related activities = 58.4% of Digital Sector jobs (2024)",
+        "source": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024"
+      },
+      {
+        "dimension": "Gender",
+        "breakdown": "Women = 28.5% of Digital Sector filled jobs in 2024 (vs 48.1% economy-wide)",
+        "source": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024"
+      },
+      {
+        "dimension": "Age",
+        "breakdown": "Ages 16–24 hold 5.7% of Digital Sector jobs (2024), down ~40% year-on-year; lower than 10.6% overall",
+        "source": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024"
+      },
+      {
+        "dimension": "Geography",
+        "breakdown": "London ≈35% of digital economy employees and 37% of sector GVA (2024), indicating strong regional concentration",
+        "source": "https://www.gov.uk/government/publications/defining-and-measuring-the-uk-digital-economy/defining-and-measuring-the-uk-digital-economy-phase-2-report"
+      },
+      {
+        "dimension": "Working pattern",
+        "breakdown": "Hybrid working among 28% of working adults (autumn 2024); Information & Communication has among the highest hybrid rates",
+        "source": "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/articles/whoarethehybridworkers/2024-11-11"
+      }
+    ]
+  },
+  "behavioralPatterns": [
+    {
+      "pattern": "Skill-shortage vacancies remain systemic but eased since 2022: skill-shortage vacancies (SSVs) affected 27% of all vacancies in 2024 (down from 36% in 2022). Among SSVs, 87% cite lacking technical/practical skills and 69% cite people/personal skills; the largest increases since 2022 were solving complex problems (45% of SSVs, +9 pp) and advanced/specialist IT skills (25%, +8 pp).",
+      "prevalence": "High across UK employers; affects Professional and IT roles disproportionately (2024).",
+      "source": "https://dera.ioe.ac.uk/id/eprint/41651/1/Employer_skills_survey_2024_full_UK_research_report.pdf"
+    },
+    {
+      "pattern": "Specific ‘digital SSVs’ commonly reference specialist software/hardware/internal systems (28%) and app programming/development (15%); basic Office skills gaps persist in parts of the UK.",
+      "prevalence": "Medium to high; varies by nation and sector (2024).",
+      "source": "https://dera.ioe.ac.uk/id/eprint/41651/1/Employer_skills_survey_2024_full_UK_research_report.pdf"
+    },
+    {
+      "pattern": "Cybersecurity employers report constrained entry paths and higher experience thresholds: demand for 3–5 years’ experience remains high; demand for <1 year entry-level candidates has fallen since 2022; 26% of cyber vacancies were remote/UK-wide in 2024; estimated net workforce shortfall ~3,800 in 2025.",
+      "prevalence": "High within cyber subsector; persistent annual workforce gap.",
+      "source": "https://assets.publishing.service.gov.uk/media/68be9b4c11b4ded2da19ff1b/Cyber_security_skills_in_the_UK_labour_market_2025-_findings_report.pdf"
+    },
+    {
+      "pattern": "Recruitment channels are multi‑channel with a strong online bias: most effective channels reported include own corporate website (38%), generic job boards like Indeed (38), internal posting (30), recruitment/search consultants (30), and LinkedIn/professional networking campaigns (~27–29).",
+      "prevalence": "Widespread among mid-sized and large firms; SMEs also rely on job boards and referrals.",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Recruitment technology adoption remains uneven: only 26% use an ATS; nearly half of SMEs (45%) report using none of the listed recruitment technologies; video/telephone interviews remain common.",
+      "prevalence": "Low-to-moderate tech adoption overall; lowest among SMEs (2024).",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Use of AI in resourcing is growing from a low base; among those using it, two-thirds report efficiency gains (faster hiring, better candidate experience).",
+      "prevalence": "Growing but not yet mainstream in 2024.",
+      "source": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf"
+    },
+    {
+      "pattern": "Awareness and usage of Skills Bootcamps are expanding, but employer experiences are mixed: Wave 3 achieved ~42,340 starts, 65% completion, and 15,570 positive outcomes; some participants/employers report guaranteed interviews not always tied to real vacancies or local availability.",
+      "prevalence": "Variable by local area/provider; mixed satisfaction (2022–23 delivery, reported 2024–25).",
+      "source": "https://assets.publishing.service.gov.uk/media/683729a7dc6ebc5eca0cbb29/Evaluation_of_skills_bootcamps_-_2022_to_2023_-_completions_and_outcomes_report.pdf"
+    },
+    {
+      "pattern": "SMEs more likely than large employers to rate apprentices as ‘not job‑ready’; engagement with work trials/SWAPs/Bootcamps remains relatively low/patchy in 2024 survey data.",
+      "prevalence": "Moderate; stronger in SMEs.",
+      "source": "https://www.gov.uk/government/publications/dwp-employer-survey-2024/dwp-employer-survey-2024"
+    },
+    {
+      "pattern": "Skills‑first signals are gaining ground in job ads: Indeed Hiring Lab finds only 14% of UK postings mention education requirements and ~5% explicitly require a degree; many employers still review degrees at screening.",
+      "prevalence": "Growing openness to non‑degree routes in job ads (with caveats).",
+      "source": "https://www.hiringlab.org/uk/blog/2024/08/29/job-postings-formal-education-requirements/"
+    }
+  ],
+  "communicationNorms": [
+    {
+      "norm": "Hybrid/remote interviewing and onboarding are common in IT; scheduling and collaboration tools are standard.",
+      "context": "Hybrid work prevalent; Information & Communication among the most hybrid-enabled industries in late 2024, normalising virtual interview stages and remote probation/onboarding."
+    },
+    {
+      "norm": "Attraction is predominantly digital-first via corporate websites, generic job boards, and LinkedIn campaigns; referrals are used to accelerate trusted hires.",
+      "context": "Reported as most effective channels in 2024 CIPD survey; larger firms also use search consultants; SMEs often lean on referrals/networks."
+    },
+    {
+      "norm": "Selection emphasises demonstrable skills and work samples alongside interviews; growing use of online tests/assessments; limited but rising AI use.",
+      "context": "CIPD 2024 notes online assessments and incremental AI adoption; SMEs have lower tech adoption, more informal screening."
+    },
+    {
+      "norm": "Employer branding and candidate experience optimisation (e.g., social media content strategy, clearer JD, flexible work signals) are used to compete for scarce skills.",
+      "context": "81% of organisations took action to improve employer brand in 2024; flexible/hybrid offers are frequently highlighted."
+    }
+  ],
+  "domainKnowledgeLevels": [
+    {
+      "segment": "Founders/CTOs at SMEs (5–50 employees)",
+      "level": "intermediate",
+      "description": "Deep product/technical knowledge; often light HR infrastructure; rely on networks/referrals; lower adoption of ATS/AI tools (45% of SMEs report using none of listed recruitment tech). More time‑poor; value pragmatic trials and portfolios over credentials. Source: CIPD 2024; SME research on informal hiring."
+    },
+    {
+      "segment": "Hiring managers at mid-sized software/IT services firms",
+      "level": "intermediate",
+      "description": "Use multi‑channel attraction (job boards, LinkedIn) and structured interviews with some assessments; partial ATS use; increasing interest in skills‑based screening."
+    },
+    {
+      "segment": "TA leads at larger technology employers",
+      "level": "expert",
+      "description": "Operate competency frameworks, multiple assessment stages, ROI tracking; higher use of tech (ATS, automation), DEI data, and early‑career pipelines (apprentices/placements) balanced against rising experience thresholds in some roles."
+    },
+    {
+      "segment": "Functional domain leads (e.g., Cyber, Data/Analytics)",
+      "level": "expert",
+      "description": "Strong domain standards drive higher experience expectations (3–5+ years), especially in cyber; portfolios, certs, and regulatory knowledge valued. Source: DSIT Cyber Skills 2025."
+    }
+  ],
+  "biasesAndSensitivities": [
+    {
+      "topic": "Perceived job‑readiness of apprentices and programme graduates",
+      "nature": "SMEs more likely to judge apprentices ‘not job‑ready’; some report variable bootcamp interview quality (not tied to real vacancies) and poor local fit.",
+      "source": "https://www.gov.uk/government/publications/dwp-employer-survey-2024/dwp-employer-survey-2024 ; https://assets.publishing.service.gov.uk/media/66e9a3f824c4f1826d81bcbd/Skills_Bootcamps_Wave_3_Implementation_Report.pdf"
+    },
+    {
+      "topic": "Preference for experience over potential in critical roles",
+      "nature": "Employers frequently request 3–5 years’ experience in cyber; entry-level demand has fallen vs 2022, limiting openness to career changers without strong portfolios.",
+      "source": "https://assets.publishing.service.gov.uk/media/68be9b4c11b4ded2da19ff1b/Cyber_security_skills_in_the_UK_labour_market_2025-_findings_report.pdf"
+    },
+    {
+      "topic": "Degree vs skills signals",
+      "nature": "Job ads increasingly omit degree requirements, but many employers still screen for degrees; risk of misalignment between policy rhetoric (skills-first) and line‑manager practice.",
+      "source": "https://www.hiringlab.org/uk/blog/2024/08/29/job-postings-formal-education-requirements/"
+    },
+    {
+      "topic": "Regional concentration and local pipeline limits",
+      "nature": "High concentration of digital employment and GVA in London constrains local hiring in smaller cities/towns; some roles rely on hybrid/remote to access talent.",
+      "source": "https://www.gov.uk/government/publications/defining-and-measuring-the-uk-digital-economy/defining-and-measuring-the-uk-digital-economy-phase-2-report"
+    },
+    {
+      "topic": "Diversity and inclusion pressures",
+      "nature": "Persistent under‑representation of women (≈28.5% of digital sector jobs in 2024); senior/technical representation gaps create reputational and compliance sensitivity.",
+      "source": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024 ; https://www.bcs.org/policy-and-influence/equity-diversity-and-inclusion/bcs-diversity-report-2024-addressing-the-under-representation-of-women-in-technology/"
+    }
+  ],
+  "suggestedPersonaProfiles": [
+    {
+      "archetype": "Pragmatic SME CTO/founder (growth‑minded, time‑poor)",
+      "rationale": "Needs rapid, project‑ready hires; open to non‑traditional routes if risk is managed via work trials/portfolios; low tooling maturity (no ATS) creates friction in screening at volume.",
+      "representsPct": "20%"
+    },
+    {
+      "archetype": "Sceptical SME owner (burnt by programme hires)",
+      "rationale": "Had negative experience with bootcamps/apprentices; now defaults to ‘known quantities’ and 2–3 references; persuadable with tightly-scoped trials and provider QA evidence.",
+      "representsPct": "15%"
+    },
+    {
+      "archetype": "Mid‑sized engineering manager (skills‑first advocate)",
+      "rationale": "Shifting from CV/degree filters to task-based assessments; needs guidance to calibrate job‑relevant tasks and to de‑risk junior intakes with supervised rotations.",
+      "representsPct": "25%"
+    },
+    {
+      "archetype": "Enterprise TA lead (process‑driven, data‑led)",
+      "rationale": "Runs competency frameworks and measures ROI; balancing headcount controls with diverse early‑career pipelines (apprentices/returners) and selective senior hiring.",
+      "representsPct": "15%"
+    },
+    {
+      "archetype": "Cybersecurity hiring lead (experience‑biased)",
+      "rationale": "Faces persistent shortages at 3–5+ years; entry‑level appetite reduced; values certs, hands‑on labs, incident exposure, and security standards literacy.",
+      "representsPct": "15%"
+    },
+    {
+      "archetype": "Data/analytics lead (commercial‑context seeker)",
+      "rationale": "Reports gaps in applied data engineering/analytics and stakeholder communication; open to career‑changers with strong case studies tied to business outcomes.",
+      "representsPct": "10%"
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.gov.uk/government/statistics/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024/economic-estimates-employment-in-the-digital-sector-january-2024-to-december-2024",
+      "title": "Economic Estimates: Employment in the Digital Sector, Jan–Dec 2024 (DSIT)",
+      "relevance": "Sector size, subsector mix, gender/age composition; 2024 downturn and context."
+    },
+    {
+      "url": "https://www.gov.uk/government/publications/defining-and-measuring-the-uk-digital-economy/defining-and-measuring-the-uk-digital-economy-phase-2-report",
+      "title": "Defining and measuring the UK digital economy – Phase 2 (DSIT, 2025)",
+      "relevance": "Regional concentration of digital economy employment/GVA (London bias)."
+    },
+    {
+      "url": "https://dera.ioe.ac.uk/id/eprint/41651/1/Employer_skills_survey_2024_full_UK_research_report.pdf",
+      "title": "Employer Skills Survey 2024 – Full UK Research Report (DfE)",
+      "relevance": "SSV incidence; specific skills lacking (technical, digital, people); digital SSVs detail."
+    },
+    {
+      "url": "https://www.cipd.org/globalassets/media/knowledge/knowledge-hub/reports/2024-pdfs/8662-resource-and-talent-planning-2024-report-web.pdf",
+      "title": "CIPD Resourcing and Talent Planning 2024",
+      "relevance": "Attraction channels, selection methods, ATS/AI adoption, SME tech usage gaps."
+    },
+    {
+      "url": "https://assets.publishing.service.gov.uk/media/68be9b4c11b4ded2da19ff1b/Cyber_security_skills_in_the_UK_labour_market_2025-_findings_report.pdf",
+      "title": "Cyber security skills in the UK labour market 2025 (DSIT/Ipsos)",
+      "relevance": "Experience thresholds, remote share, salary premium, and workforce gap in cyber."
+    },
+    {
+      "url": "https://www.gov.uk/government/publications/dwp-employer-survey-2024/dwp-employer-survey-2024",
+      "title": "DWP Employer Survey 2024",
+      "relevance": "Employer use/perceptions of apprenticeships/bootcamps; SME vs large employer views on job‑readiness."
+    },
+    {
+      "url": "https://assets.publishing.service.gov.uk/media/683729a7dc6ebc5eca0cbb29/Evaluation_of_skills_bootcamps_-_2022_to_2023_-_completions_and_outcomes_report.pdf",
+      "title": "Evaluation of Skills Bootcamps 2022–23: Completions & Outcomes (CFE/DfE, 2025)",
+      "relevance": "Starts, completions, and outcomes; evidence of mixed employer/participant experiences."
+    },
+    {
+      "url": "https://www.gov.uk/government/publications/evaluation-of-skills-bootcamps-wave-3-implementation-report",
+      "title": "Evaluation of Skills Bootcamps – Wave 3 Implementation (CFE/DfE, 2024)",
+      "relevance": "Qualitative employer/participant feedback; issues with guaranteed interviews and locality."
+    },
+    {
+      "url": "https://www.ons.gov.uk/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/articles/whoarethehybridworkers/2024-11-11",
+      "title": "Who are the hybrid workers? (ONS, Nov 2024)",
+      "relevance": "Prevalence of hybrid work overall; I&C sector among highest hybrid-enabled."
+    },
+    {
+      "url": "https://www.bcs.org/policy-and-influence/equity-diversity-and-inclusion/bcs-diversity-report-2024-addressing-the-under-representation-of-women-in-technology/",
+      "title": "BCS Diversity Report 2024 – Women in Technology",
+      "relevance": "Context on persistent gender under‑representation in IT roles."
+    },
+    {
+      "url": "https://www.hiringlab.org/uk/blog/2024/08/29/job-postings-formal-education-requirements/",
+      "title": "Indeed Hiring Lab (Aug 2024): Education requirements in UK postings",
+      "relevance": "Evidence of skills‑first signalling in job ads; degree requirement rarity."
+    },
+    {
+      "url": "https://www.cipd.org/uk/about/press-releases/private-sector-hiring-record-low-summer-2025-labour-market-outlook/",
+      "title": "CIPD Labour Market Outlook – Summer/Autumn 2025",
+      "relevance": "Macro hiring intentions context during 2025, relevant to near‑term planning."
+    },
+    {
+      "url": "https://www.experis.co.uk/blog/2025/12/experis-tech-talent-outlook-q1-2026",
+      "title": "Experis Tech Talent Outlook Q1 2026 (UK cut)",
+      "relevance": "Forward-looking tech hiring sentiment entering 2026."
+    }
+  ]
+}
