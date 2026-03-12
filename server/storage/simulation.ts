@@ -91,6 +91,20 @@ export async function cleanupOrphanedSimulationRuns(): Promise<number> {
   return orphanedRunning.length + orphanedPending.length;
 }
 
+export async function cleanupOrphanedResearchAndSynthesis(): Promise<{ briefs: number; jobs: number }> {
+  const interruptedBriefs = await db.update(populationBriefs)
+    .set({ status: "interrupted", errorMessage: "Research was interrupted by a server restart." })
+    .where(eq(populationBriefs.status, "researching"))
+    .returning();
+
+  const interruptedJobs = await db.update(synthesisJobs)
+    .set({ status: "interrupted", errorMessage: "Persona generation was interrupted by a server restart." })
+    .where(eq(synthesisJobs.status, "synthesizing"))
+    .returning();
+
+  return { briefs: interruptedBriefs.length, jobs: interruptedJobs.length };
+}
+
 export async function acquireSimulationLock(maxConcurrent: number): Promise<boolean> {
   const result = await db.execute(sql`
     SELECT pg_try_advisory_lock(hashtext('simulation_concurrency')) as acquired
