@@ -1,0 +1,49 @@
+Critique                                                                                                                                                               
+                                                                                                                                                                         
+  The diagnosis is likely correct, the fix is reasonable, but the spec has gaps                                                                                          
+                                                                                                                                                                         
+  1. The root cause claim needs verification, not assumption                                                                                                             
+                                                                                                                                                                         
+  The spec asserts Node 20's undici has a "hardcoded 300-second headersTimeout" as the root cause. This is plausible but unverified in-codebase. Before switching to     
+  streaming, it's worth confirming this is actually the failure mode — a simple console.log of the error object's code property (e.g., UND_ERR_HEADERS_TIMEOUT) would    
+  prove it definitively. If the actual issue is something else (e.g., Railway's reverse proxy timing out, or the OpenAI SDK's own httpAgent settings), streaming may not
+  fix it, or may fix it by accident while leaving the real problem lurking.                                                                                              
+                                                                           
+  2. Streaming is a valid fix, but the spec underestimates the integration complexity
+                                                                                                                                                                         
+  The proposal says to call openai.responses.stream() inside callFn and "return the final response object," keeping withTrackedLlmCall unchanged. This glosses over the
+  key question: what does .stream() actually return and how do you get the final Response object?                                                                        
+                                                                                                 
+  The OpenAI SDK's responses.stream() returns a ResponseStream that emits events. You need to call .finalResponse() (or equivalent) after the stream completes to get the
+   full Response object with output_text and usage. The spec should explicitly name the SDK method being used to collect the final response, because the extractCitations
+   function walks result.output — if the stream's final response has a different shape than responses.create(), citations will silently break.                           
+                                                                                                                                                                         
+  3. The signal / abort integration isn't addressed
+                                                                                                                                                                         
+  Currently, withTrackedLlmCall passes an AbortSignal into callFn, and responses.create() accepts it via request options. With streaming, you need to confirm that
+  .stream() also accepts the signal and that aborting mid-stream cleans up properly (closes the connection, doesn't leave orphaned event listeners). The spec doesn't    
+  mention this.                                                                                                                                                      
+                                                                                                                                                                         
+  4. The "heartbeat logging" is fine but insufficient as an observability strategy
+                                                                                                                                                                         
+  Logging every N seconds that the stream is alive is useful for local debugging. But the real operational concern is: what happens when the stream stalls? Streaming
+  eliminates the headers timeout, but introduces a new failure mode — a stream that receives headers but then hangs indefinitely with no data. The spec should define a  
+  stream inactivity timeout (e.g., kill the stream if no event arrives for 120 seconds). Without this, you've traded one timeout problem for a potential hang.         
+                                                                                                                                                                         
+  5. The fallback path doesn't need streaming
+                                                                                                                                                                         
+  The spec says to apply streaming to researchWithoutWebSearch "for consistency." But the fallback explicitly exists because the main call failed — it has no web search
+  tool, uses prompt-only generation, and should complete in under a minute. Adding streaming here adds code without solving a real problem. Consistency is not a good    
+  enough reason when it increases the surface area for bugs. If it ain't broke, don't stream it.                                                                     
+                                                                                                                                                                         
+  6. Error handling gaps
+                                                                                                                                                                         
+  The current retry loop handles rate limits, timeouts, and web-search-unavailable errors with distinct strategies. The spec doesn't address how stream-specific errors
+  (stream interrupted, partial data, malformed JSON from a truncated stream) map onto the existing retry logic. A stream that dies mid-response is a different error     
+  class than a request that times out before headers — the retry loop needs to know the difference.                                                                 
+                                                                                                                                                                         
+  Summary         
+                                                                                                                                                                         
+  The streaming approach will likely work, but the spec reads like "swap .create() for .stream() and collect the result." The real work is in the details it skips:
+  confirming the SDK's streaming API shape, handling abort signals, guarding against stream stalls, and mapping new error types into the existing retry logic. I'd also  
+  push back on streaming the fallback path — it's unnecessary complexity for a call that doesn't have the timeout problem.

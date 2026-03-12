@@ -1,0 +1,283 @@
+{
+  "targetPopulation": "Employers and hiring decision-makers in the UK Tech sector who are actively recruiting or planning to hire within 6–12 months. Includes founders/CTOs at SMEs (5–50 employees), hiring managers at mid-sized software/IT services firms, and talent acquisition leads at larger technology employers. Sub-sectors span web/app development, data & analytics, cybersecurity, IT support/infrastructure, and digital marketing technology, operating across major urban centres and smaller cities/towns with thinner local talent pools.",
+  "confidence": "low",
+  "demographics": {
+    "summary": "Population skews toward decision-makers responsible for filling software engineering, data, cloud/DevOps, cybersecurity, IT support, QA, and product roles. Company-size mix leans SME-to-mid with a meaningful enterprise minority. Geographically concentrated in London/South East and core regional hubs (Manchester, Birmingham, Leeds, Bristol, Edinburgh/Glasgow) with representation from smaller cities/towns. Hiring process maturity varies by size: informal network-led in SMEs, competency- and ATS-driven in larger firms. Attitudes to non-traditional entry routes range from proactive adopters to cautious experimenters to risk-averse skeptics.",
+    "distributions": [
+      {
+        "dimension": "Company size (headcount)",
+        "breakdown": "5–50: ~45%; 51–250: ~35%; 250+ tech employers: ~20%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Sub-sector mix",
+        "breakdown": "Web/app development: ~32%; Data & analytics: ~22%; IT support/infrastructure: ~21%; Cybersecurity: ~12%; Digital marketing technology: ~13%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Geography (primary hiring locations)",
+        "breakdown": "London & South East: ~48%; North West (Manchester/Liverpool): ~11%; West Midlands (Birmingham/Coventry): ~9%; Yorkshire & Humber (Leeds/Sheffield): ~8%; South West (Bristol/Exeter): ~7%; Scotland (Edinburgh/Glasgow): ~7%; Other smaller cities/towns: ~10%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Hiring horizon",
+        "breakdown": "Actively hiring now: ~55%; Within 3–6 months: ~25%; Within 6–12 months: ~20%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Role families in demand",
+        "breakdown": "Software (full-stack/front/back-end): high; Data engineering/analytics: high; Cloud/DevOps/SRE: high; Cybersecurity (SOC/analyst/engineer): moderate; IT support/Service desk/Platform: moderate-high; QA/Testing/Automation: moderate; Product Management/Delivery: moderate",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Seniority sought",
+        "breakdown": "Mid-level: ~45%; Senior: ~30%; Entry-level/junior/early careers: ~25%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Openness to non-traditional routes",
+        "breakdown": "Proactive adopters (apprenticeships/bootcamps/career changers/returners): ~28%; Cautiously willing but need support/assurance: ~47%; Skeptical/risk-averse: ~25%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Prior engagement with employment/skills programmes",
+        "breakdown": "Previously engaged with People Hub/local councils/providers: ~35%; No prior engagement: ~65%",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      },
+      {
+        "dimension": "Hiring process maturity",
+        "breakdown": "Informal/network-led with ad hoc interviews: ~40% (mostly SMEs); Mixed (structured interviews + take-home tests): ~40% (mostly mid-size); Formal competency models + ATS + psychometrics: ~20% (larger employers)",
+        "source": "Synthesis of domain knowledge; no live web sources"
+      }
+    ]
+  },
+  "behavioralPatterns": [
+    {
+      "pattern": "Reliance on networks/referrals in SMEs for speed and trust, limiting reach to diverse/novice candidates",
+      "prevalence": "Common (especially in 5–50 headcount firms; estimated >50% of small-firm hires touch referrals)",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Screening on proxies (degree, brand-name employers) when time-pressed or via ATS filters",
+      "prevalence": "Common in mid-to-large firms; occasional in SMEs",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Preference for ‘job-ready’ candidates with commercial experience over purely credentialed applicants",
+      "prevalence": "Very common across sectors and sizes",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Use of contract/contract-to-perm and freelancers to de-risk uncertain demand or skills fit",
+      "prevalence": "Common in software, IT services, and cloud/infrastructure teams",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Technical assessments (live coding, take-home tasks) plus culture/communication screens",
+      "prevalence": "Common-to-very common; more standardized in larger firms",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "High value placed on soft skills (stakeholder communication, teamwork, problem framing) in cross-functional delivery",
+      "prevalence": "Very common; frequent reason for rejection even when technical bar is met",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Hybrid/remote norms; infrastructure/support more likely on-site; dev/data/product more flexible",
+      "prevalence": "Widespread; on-site expectations increase outside major hubs and for junior roles",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Administrative friction slows uptake of apprenticeships/levy; champions exist in larger firms",
+      "prevalence": "Moderate; concentrated in enterprise/large public-sector suppliers",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Security clearance/NDAs constrain candidate pools in cyber/infrastructure and some public-sector contracts",
+      "prevalence": "Moderate-to-high in affected sub-sectors; negligible elsewhere",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Caution toward candidates needing visa sponsorship; preference for immediate right-to-work",
+      "prevalence": "Common outside well-resourced enterprises",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Assessment of portfolios/GitHub and references increasingly used to validate non-traditional entrants",
+      "prevalence": "Moderate and growing, especially among engineering/data leads open to alternates",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "pattern": "Local hiring preference for client-facing support roles; broader/geographically agnostic for dev/data",
+      "prevalence": "Common pattern across regions; stronger local bias in SMEs/regional IT services",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    }
+  ],
+  "communicationNorms": [
+    {
+      "norm": "Concise, outcome-focused updates; quantify business impact (time-to-fill, productivity ramp, retention, risk).",
+      "context": "All segments; especially time-poor founders and delivery managers."
+    },
+    {
+      "norm": "Use plain English for cross-functional topics; keep stack-specific jargon precise and minimal.",
+      "context": "Engineering/data leads; TA/HR prefer reduced jargon and clear competency mapping."
+    },
+    {
+      "norm": "Lead with evidence: recent hiring metrics, case studies from similar firms, sample candidate portfolios.",
+      "context": "Enterprise TA and mid-size hiring managers expect proof over promises."
+    },
+    {
+      "norm": "Offer clear engagement models (pilot cohorts, work trials, contract-to-perm) and service levels.",
+      "context": "Skeptics and risk-averse managers need de-risking levers."
+    },
+    {
+      "norm": "Respect confidentiality and compliance (client NDAs, security posture, data handling).",
+      "context": "Cyber/infrastructure and enterprise suppliers; avoid naming clients without permission."
+    },
+    {
+      "norm": "Use email/LinkedIn for scheduling; 30–45 minute calls with an explicit agenda and next steps.",
+      "context": "Common across segments; increases show rates and decision velocity."
+    },
+    {
+      "norm": "For SMEs, be pragmatic and flexible on process; for enterprises, be ready with formal docs (DPIA, insurance, accessibility).",
+      "context": "Process expectations differ by size; tailor accordingly."
+    },
+    {
+      "norm": "Be candid about candidate readiness and support model; avoid overclaiming ‘job-ready’ without applied evidence.",
+      "context": "Managers with prior negative experiences are highly sensitive to misrepresentation."
+    }
+  ],
+  "domainKnowledgeLevels": [
+    {
+      "segment": "SME founders/CTOs (5–50)",
+      "level": "expert",
+      "description": "Deep knowledge of their tech stack and delivery needs; intermediate HR/compliance knowledge; limited bandwidth for training design and process formalities."
+    },
+    {
+      "segment": "Mid-size engineering/IT hiring managers (51–250)",
+      "level": "expert",
+      "description": "Strong technical bar-setting and delivery context; intermediate familiarity with early-career pathways; care about sprint velocity and client commitments."
+    },
+    {
+      "segment": "Enterprise talent acquisition/HR leads (250+)",
+      "level": "expert",
+      "description": "Expert in recruitment operations, compliance, and DEI; intermediate technical depth; high awareness of apprenticeship levy and approved providers."
+    },
+    {
+      "segment": "Regional IT services/directors",
+      "level": "intermediate",
+      "description": "Solid grasp of infrastructure/support competencies and certifications; intermediate people ops; sensitive to on-site service SLAs and local client expectations."
+    },
+    {
+      "segment": "Cybersecurity practice leads",
+      "level": "expert",
+      "description": "Expert in security competencies, clearances, and regulatory constraints; risk-focused; intermediate people operations."
+    },
+    {
+      "segment": "Data & analytics leaders",
+      "level": "expert",
+      "description": "Expert in applied data skills and stakeholder communication; familiar with portfolios/competency evidence; intermediate HR process knowledge."
+    }
+  ],
+  "biasesAndSensitivities": [
+    {
+      "topic": "Non-traditional entry routes (apprenticeships/bootcamps/returners)",
+      "nature": "Perceived variability in candidate quality; fear of high supervision burden and slower ramp-up.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Degree/brand-name bias",
+      "nature": "ATS filters and heuristics can screen out capable non-traditional candidates; managers may equate degree with job-readiness.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Right-to-work and visa sponsorship",
+      "nature": "Cost/time risk aversion; preference to avoid sponsorship except in hard-to-fill senior roles.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Security and confidentiality",
+      "nature": "Clearance/NDAs limit what can be shared about roles, clients, and incidents; careful handling required.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "On-site vs remote expectations",
+      "nature": "Early-career candidates may be required on-site for mentoring; tensions with candidate preference for remote work.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Salary transparency and budget constraints",
+      "nature": "Reluctance to publish bands in SMEs; fear of bidding wars; internal equity risks.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Assessment design fairness",
+      "nature": "Take-home tasks and live coding can disadvantage candidates with caring duties or test anxiety; sensitivity to time burden.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "DEI objectives",
+      "nature": "Desire to diversify pipelines balanced against fears of tokenism and quality concerns; requires careful framing with outcome data.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Negative past experiences with programmes/providers",
+      "nature": "Once-burned managers require stronger guarantees, tighter screening, and ongoing support accountability.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    },
+    {
+      "topic": "Training/mentoring capacity in small teams",
+      "nature": "Bandwidth constraints make coaching-intensive models hard without external support; risk of burnout for senior staff.",
+      "source": "Synthesis of domain knowledge; no live web sources"
+    }
+  ],
+  "suggestedPersonaProfiles": [
+    {
+      "archetype": "Pragmatic SME Founder/CTO",
+      "rationale": "Hands-on leader balancing delivery and hiring; relies on networks; open to non-traditional entrants if portfolio-proven and support is lightweight; highly influential for SME adoption.",
+      "representsPct": "22%"
+    },
+    {
+      "archetype": "Process-Driven Enterprise TA Lead",
+      "rationale": "Owns structured recruitment, compliance, and early-career pipelines; leans on data/ROI and levy-aligned pathways; critical for scalable partnerships.",
+      "representsPct": "14%"
+    },
+    {
+      "archetype": "Delivery-Focused Engineering Manager (Mid-size)",
+      "rationale": "Accountable for sprint velocity and client SLAs; prioritizes mid-level ‘job-ready’ hires; skeptical of candidates without applied experience; gatekeeper for technical fit.",
+      "representsPct": "20%"
+    },
+    {
+      "archetype": "Regional IT Services Director",
+      "rationale": "Operates in thinner talent markets; values certifications and on-site reliability; open to apprenticeships to grow local talent; key for local job creation.",
+      "representsPct": "12%"
+    },
+    {
+      "archetype": "Cybersecurity Practice Lead",
+      "rationale": "Faces clearance and trust constraints; demands strong labs/projects and certs; risk-averse but can champion tightly supported junior pathways.",
+      "representsPct": "8%"
+    },
+    {
+      "archetype": "Data & Analytics Lead",
+      "rationale": "Seeks problem-solvers with stakeholder skills; receptive to strong portfolios and work trials; influential in adopting task-based assessments.",
+      "representsPct": "10%"
+    },
+    {
+      "archetype": "Digital Marketing Tech Manager",
+      "rationale": "Needs martech/CRM/automation talent with communication strength; flexible on degrees; open to returners and cross-trainers with measurable campaign impact.",
+      "representsPct": "6%"
+    },
+    {
+      "archetype": "Once-Burned Programme Skeptic",
+      "rationale": "Had negative outcomes with prior trainees/bootcamps (attrition/performance); demands rigorous screening, trial periods, and shared-risk models; important to test interventions against hardest converts.",
+      "representsPct": "8%"
+    }
+  ],
+  "sources": [
+    {
+      "url": "N/A",
+      "title": "No live web sources were available; brief synthesized from domain knowledge and UK tech labour market experience up to 2024.",
+      "relevance": "Explains absence of citations and grounds confidence rating."
+    }
+  ]
+}
