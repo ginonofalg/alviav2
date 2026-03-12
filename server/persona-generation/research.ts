@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-import type { Response as OAIResponse } from "openai/resources/responses/responses";
+import type { Response as OAIResponse, ResponseStreamEvent } from "openai/resources/responses/responses";
+import type { ParsedResponse } from "openai/resources/responses/responses";
 import type { ReasoningEffort } from "openai/resources/shared";
 import { getBarbaraConfig } from "../barbara-orchestrator";
 import { withTrackedLlmCall, makeResponsesUsageExtractor } from "../llm-usage";
@@ -10,6 +11,8 @@ import type { LLMUsageAttribution } from "@shared/schema";
 
 const RESEARCH_TIMEOUT_MS = 900_000;
 const MAX_RESEARCH_ATTEMPTS = 3;
+const STREAM_INACTIVITY_TIMEOUT_MS = 300_000;
+const STREAM_HEARTBEAT_INTERVAL_MS = 30_000;
 
 const RESEARCH_SYSTEM_PROMPT = `You are a research population analyst. Your task is to research a target population
 for a qualitative interview study and produce a structured population brief.
@@ -132,6 +135,24 @@ function buildInputMessages(
   return messages;
 }
 
+function isStreamInterruptedError(error: any): boolean {
+  if (!error) return false;
+  const code = error?.code ?? "";
+  if (
+    code === "UND_ERR_SOCKET" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    code === "UND_ERR_BODY_TIMEOUT" ||
+    code === "ECONNRESET" ||
+    code === "EPIPE"
+  ) return true;
+  const msg = String(error.message ?? "").toLowerCase();
+  return (
+    msg.includes("premature close") ||
+    msg.includes("other side closed") ||
+    msg.includes("socket hang up")
+  );
+}
+
 function isRateLimitError(error: any): boolean {
   if (!error) return false;
   const status = error.status ?? error.statusCode;
@@ -202,7 +223,7 @@ export async function researchPopulation(params: {
 
   for (let attempt = 0; attempt < MAX_RESEARCH_ATTEMPTS; attempt++) {
     try {
-      console.log(`[PersonaGeneration] OpenAI research call starting | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | webSearch=true | elapsed=${elapsed(overallStart)}`);
+      console.log(`[PersonaGeneration] OpenAI research call starting (streaming) | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | webSearch=true | elapsed=${elapsed(overallStart)}`);
 
       const tracked = await withTrackedLlmCall({
         attribution: params.attribution,
@@ -211,7 +232,7 @@ export async function researchPopulation(params: {
         useCase: "barbara_persona_research",
         timeoutMs: RESEARCH_TIMEOUT_MS,
         callFn: async (signal) => {
-          return await openai.responses.create({
+          const stream = openai.responses.stream({
             model: config.model,
             input: buildInputMessages(
               RESEARCH_SYSTEM_PROMPT,
@@ -229,6 +250,30 @@ export async function researchPopulation(params: {
             },
             reasoning: { effort: config.reasoningEffort as ReasoningEffort },
           }, { signal, maxRetries: 0, timeout: RESEARCH_TIMEOUT_MS });
+
+          let eventCount = 0;
+          let lastEventTime = Date.now();
+          const heartbeatInterval = setInterval(() => {
+            const inactivityMs = Date.now() - lastEventTime;
+            console.log(`[PersonaGeneration] Stream heartbeat | events=${eventCount} | inactivity=${(inactivityMs / 1000).toFixed(0)}s | elapsed=${elapsed(overallStart)}`);
+            if (inactivityMs > STREAM_INACTIVITY_TIMEOUT_MS) {
+              console.error(`[PersonaGeneration] Stream inactivity timeout (${STREAM_INACTIVITY_TIMEOUT_MS / 1000}s with no events), aborting`);
+              stream.abort();
+            }
+          }, STREAM_HEARTBEAT_INTERVAL_MS);
+
+          try {
+            for await (const event of stream) {
+              eventCount++;
+              lastEventTime = Date.now();
+            }
+          } finally {
+            clearInterval(heartbeatInterval);
+          }
+
+          const response: ParsedResponse<null> = await stream.finalResponse();
+          console.log(`[PersonaGeneration] Stream completed | totalEvents=${eventCount} | elapsed=${elapsed(overallStart)}`);
+          return response;
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
       });
@@ -253,6 +298,8 @@ export async function researchPopulation(params: {
       lastError = error;
       const errorMsg = error?.message ?? String(error);
 
+      console.error(`[PersonaGeneration] Research error detail | attempt=${attempt + 1} | message=${errorMsg} | code=${error?.code ?? "none"} | type=${error?.type ?? "none"} | status=${error?.status ?? "unknown"} | cause=${error?.cause?.message ?? error?.cause ?? "none"} | name=${error?.name ?? "unknown"} | elapsed=${elapsed(overallStart)}`);
+
       if (isRateLimitError(error) && attempt < MAX_RESEARCH_ATTEMPTS - 1) {
         console.warn(
           `[PersonaGeneration] Rate limited by OpenAI, retrying in 5s... | elapsed=${elapsed(overallStart)}`,
@@ -261,16 +308,18 @@ export async function researchPopulation(params: {
         continue;
       }
 
-      if (isTimeoutError(error) && attempt < MAX_RESEARCH_ATTEMPTS - 1) {
+      const retryable = isTimeoutError(error) || isStreamInterruptedError(error);
+
+      if (retryable && attempt < MAX_RESEARCH_ATTEMPTS - 1) {
         console.warn(
-          `[PersonaGeneration] Research call timed out, retrying... | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | elapsed=${elapsed(overallStart)}`,
+          `[PersonaGeneration] Research call failed (retryable), retrying... | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | elapsed=${elapsed(overallStart)}`,
         );
         continue;
       }
 
-      if (isTimeoutError(error)) {
+      if (retryable) {
         console.warn(
-          `[PersonaGeneration] Research timed out after ${MAX_RESEARCH_ATTEMPTS} attempts, falling back to prompt-only | elapsed=${elapsed(overallStart)}`,
+          `[PersonaGeneration] Research failed after ${MAX_RESEARCH_ATTEMPTS} attempts, falling back to prompt-only | elapsed=${elapsed(overallStart)}`,
         );
         useFallback = true;
         break;
@@ -284,7 +333,7 @@ export async function researchPopulation(params: {
         break;
       }
 
-      console.error(`[PersonaGeneration] Research OpenAI call failed | attempt=${attempt + 1} | error=${errorMsg} | status=${error?.status ?? "unknown"} | elapsed=${elapsed(overallStart)}`);
+      console.error(`[PersonaGeneration] Research OpenAI call failed (non-retryable) | attempt=${attempt + 1} | error=${errorMsg} | elapsed=${elapsed(overallStart)}`);
       throw error;
     }
   }
