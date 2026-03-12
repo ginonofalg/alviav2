@@ -56,7 +56,10 @@ export function useAudioPlayback() {
       source.connect(chunkGain);
       chunkGain.connect(masterGainRef.current ?? audioContext.destination);
 
-      const when = Math.max(audioContext.currentTime, nextStartTimeRef.current);
+      const now = audioContext.currentTime;
+      const when = nextStartTimeRef.current > now
+        ? nextStartTimeRef.current
+        : now + 0.015;
       nextStartTimeRef.current = when + audioBuffer.duration;
 
       source.start(when);
