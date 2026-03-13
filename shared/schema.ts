@@ -182,6 +182,7 @@ export const collections = pgTable("collections", {
   isActive: boolean("is_active").default(true),
   targetResponses: integer("target_responses"),
   voiceProvider: text("voice_provider").default("openai"),
+  realtimeModel: text("realtime_model"),
   // Additional Questions configuration (0-3, default 1)
   maxAdditionalQuestions: integer("max_additional_questions").default(1),
   endOfInterviewSummaryEnabled: boolean("end_of_interview_summary_enabled").default(false),
@@ -265,6 +266,7 @@ export const interviewSessions = pgTable("interview_sessions", {
   barbaraSessionSummary: jsonb("barbara_session_summary"),
   barbaraGuidanceLog: jsonb("barbara_guidance_log"),
   guidanceAdherenceSummary: jsonb("guidance_adherence_summary"),
+  realtimeModelUsed: text("realtime_model_used"),
   isSimulated: boolean("is_simulated").default(false),
   personaId: varchar("persona_id").references(() => personas.id, { onDelete: "set null" }),
   simulationRunId: varchar("simulation_run_id").references(() => simulationRuns.id, { onDelete: "set null" }),

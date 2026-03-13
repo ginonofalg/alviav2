@@ -64,8 +64,11 @@ import {
 } from "./transcription-quality";
 import {
   getRealtimeProvider,
+  resolveRealtimeModel,
+  isLegacyRealtimeUrlSet,
+  extractModelFromLegacyUrl,
   type RealtimeProvider,
-  type RealtimeProviderType,
+  type RealtimeModel,
 } from "./realtime-providers";
 
 import {
@@ -389,24 +392,9 @@ export function handleVoiceInterview(
   clientWs: WebSocket,
   req: IncomingMessage,
 ) {
-  // Extract session ID and provider from query string: /ws/interview?sessionId=xxx&provider=openai
+  // Extract session ID from query string: /ws/interview?sessionId=xxx
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const sessionId = url.searchParams.get("sessionId");
-  const providerParamRaw = url.searchParams.get("provider");
-
-  // Validate provider parameter
-  const validProviders: RealtimeProviderType[] = ["openai", "grok"];
-  const providerParam: RealtimeProviderType | null =
-    providerParamRaw &&
-    validProviders.includes(providerParamRaw as RealtimeProviderType)
-      ? (providerParamRaw as RealtimeProviderType)
-      : null;
-
-  if (providerParamRaw && !providerParam) {
-    console.warn(
-      `[VoiceInterview] Invalid provider "${providerParamRaw}", using default`,
-    );
-  }
 
   if (!sessionId) {
     clientWs.close(1008, "Session ID required");
@@ -571,7 +559,7 @@ export function handleVoiceInterview(
             ?.questionText || "",
         isResumed: true,
         persistedTranscript: existingState.fullTranscriptForPersistence,
-        provider: existingState.providerType,
+        provider: "openai",
         vadEagerness: existingState.transcriptionQualitySignals
           .vadEagernessReduced
           ? "low"
@@ -615,12 +603,9 @@ export function handleVoiceInterview(
   }
 
   // Initialize interview state
+  // Model resolution happens later in setupInterviewSession once we have the collection
   const now = Date.now();
   const connectionId = randomUUID(); // Unique ID for this state instance
-  const selectedProviderType =
-    providerParam ||
-    (process.env.REALTIME_PROVIDER as RealtimeProviderType) ||
-    "openai";
   const state: InterviewState = {
     sessionId,
     connectionId,
@@ -632,8 +617,8 @@ export function handleVoiceInterview(
     avoidRules: null,
     providerWs: null,
     collectionId: null,
-    providerType: selectedProviderType,
-    providerInstance: getProvider(selectedProviderType), // Cache provider instance once
+    realtimeModelUsed: "gpt-realtime-mini", // Placeholder; resolved in setupInterviewSession
+    providerInstance: getProvider(), // Cache provider instance once
     clientWs: clientWs,
     isConnected: false,
     lastAIPrompt: "",
@@ -846,6 +831,33 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
     state.metricsTracker.eagernessTracking.initialMode = collectionEagerness;
     state.metricsTracker.eagernessTracking.currentMode = collectionEagerness;
 
+    // Resolve realtime model: collection override → env var → hardcoded default
+    let resolvedModel = resolveRealtimeModel(collection.realtimeModel);
+    if (isLegacyRealtimeUrlSet()) {
+      if (collection.realtimeModel) {
+        log.warn(
+          `[VoiceInterview] Collection ${collection.id} has realtimeModel="${collection.realtimeModel}" ` +
+          `but legacy OPENAI_REALTIME_URL is set — collection override is ignored`,
+        );
+      }
+      const legacyModel = extractModelFromLegacyUrl();
+      if (legacyModel) {
+        resolvedModel = legacyModel;
+      }
+    }
+    state.realtimeModelUsed = resolvedModel;
+    log.info(
+      `[VoiceInterview] Session ${sessionId}: resolved model=${resolvedModel}` +
+      `${isLegacyRealtimeUrlSet() ? " (legacy URL override)" : collection.realtimeModel ? ` (collection override: ${collection.realtimeModel})` : " (global default)"}`,
+    );
+
+    // Persist resolved model to session row
+    storage.persistInterviewState(sessionId, {
+      realtimeModelUsed: resolvedModel,
+    }).catch((err) =>
+      console.error(`[VoiceInterview] Failed to persist realtimeModelUsed for ${sessionId}:`, err),
+    );
+
     state.crossInterviewRuntimeContext = buildCrossInterviewRuntimeContext(
       project,
       collection,
@@ -1034,12 +1046,11 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     `[VoiceInterview] Connecting to ${provider.displayName} for session: ${sessionId}`,
   );
 
-  const providerWs = new WebSocket(provider.getWebSocketUrl(), {
+  const providerWs = new WebSocket(provider.getWebSocketUrl(state.realtimeModelUsed), {
     headers: provider.getWebSocketHeaders(),
   });
 
   state.providerWs = providerWs;
-  state.providerType = provider.name;
 
   state.metricsTracker.openaiConnectionCount++;
 
@@ -1539,13 +1550,9 @@ async function handleProviderEvent(
       // Record transcription token usage if reported by the API
       if (event.usage) {
         const txAttribution = buildUsageAttribution(state);
-        const txProvider =
-          state.providerInstance.name === "grok"
-            ? ("xai" as const)
-            : ("openai" as const);
         recordLlmUsageEvent(
           txAttribution,
-          txProvider,
+          "openai" as const,
           state.providerInstance.getTranscriptionModelName(),
           "alvia_transcription",
           {
@@ -4293,11 +4300,8 @@ async function finalizeInterview(
           try {
             const parsed = JSON.parse(alviaSummaryText) as AlviaSessionSummary;
             parsed.generatedAt = Date.now();
-            parsed.model =
-              state.providerType === "openai"
-                ? "gpt-4o-mini-realtime"
-                : "grok-3-fast";
-            parsed.provider = state.providerType;
+            parsed.model = state.realtimeModelUsed;
+            parsed.provider = "openai";
             await storage.persistInterviewState(sessionId, {
               alviaSummary: parsed,
             });
@@ -4312,11 +4316,8 @@ async function finalizeInterview(
                 gaps: [],
               },
               generatedAt: Date.now(),
-              model:
-                state.providerType === "openai"
-                  ? "gpt-4o-mini-realtime"
-                  : "grok-3-fast",
-              provider: state.providerType,
+              model: state.realtimeModelUsed,
+              provider: "openai",
             };
             await storage.persistInterviewState(sessionId, {
               alviaSummary: fallback,

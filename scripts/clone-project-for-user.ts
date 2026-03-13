@@ -262,6 +262,7 @@ async function main() {
           isActive: srcCol.isActive,
           targetResponses: srcCol.targetResponses,
           voiceProvider: srcCol.voiceProvider,
+          realtimeModel: srcCol.realtimeModel,
           maxAdditionalQuestions: srcCol.maxAdditionalQuestions,
           endOfInterviewSummaryEnabled: srcCol.endOfInterviewSummaryEnabled,
           vadEagernessMode: srcCol.vadEagernessMode,

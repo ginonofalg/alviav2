@@ -3,7 +3,7 @@ import WebSocket from "ws";
 import {
   getRealtimeProvider,
   type RealtimeProvider,
-  type RealtimeProviderType,
+  type RealtimeModel,
 } from "../realtime-providers";
 import type {
   TranscriptEntry,
@@ -91,10 +91,8 @@ export const MAX_ANALYTICS_HYPOTHESES = 8;
 export const MAX_HYPOTHESIS_LENGTH = 150;
 export const MAX_RELATED_THEMES_PER_HYPOTHESIS = 3;
 
-export function getProvider(
-  providerOverride?: RealtimeProviderType | null,
-): RealtimeProvider {
-  return getRealtimeProvider(providerOverride);
+export function getProvider(): RealtimeProvider {
+  return getRealtimeProvider();
 }
 
 export interface InterviewState {
@@ -108,7 +106,7 @@ export interface InterviewState {
   avoidRules: string[] | null;
   providerWs: WebSocket | null;
   collectionId: string | null;
-  providerType: RealtimeProviderType;
+  realtimeModelUsed: RealtimeModel;
   providerInstance: RealtimeProvider; // Cached provider instance to avoid repeated allocation
   clientWs: WebSocket | null;
   isConnected: boolean;

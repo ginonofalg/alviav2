@@ -57,6 +57,7 @@ export interface InterviewStatePatch {
   barbaraSessionSummary?: BarbaraSessionSummary;
   barbaraGuidanceLog?: BarbaraGuidanceLogEntry[];
   guidanceAdherenceSummary?: GuidanceAdherenceSummary;
+  realtimeModelUsed?: string;
 }
 
 export interface EnrichedSession extends InterviewSession {

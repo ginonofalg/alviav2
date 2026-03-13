@@ -36,7 +36,7 @@ function createMockState(overrides: Partial<InterviewState> = {}): InterviewStat
     avoidRules: null,
     providerWs: createMockWs(),
     collectionId: null,
-    providerType: "openai",
+    realtimeModelUsed: "gpt-realtime-mini",
     providerInstance: {} as any,
     clientWs: createMockWs(),
     isConnected: true,

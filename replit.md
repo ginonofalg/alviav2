@@ -30,7 +30,7 @@ Preferred communication style: Simple, everyday language.
 
 **System Design Choices**:
 -   **Data Hierarchy**: Workspace → Project → InterviewTemplate → Collection → InterviewSession → Segment.
--   **Voice Provider Abstraction**: A `RealtimeProvider` interface allows switching between different AI voice providers.
+-   **Voice Model Selection**: A `RealtimeProvider` interface wraps the OpenAI Realtime API. Model is selected per-collection (or falls back to env/hardcoded default) and resolved server-side at session start. The resolved model is stored on each session for usage tracking accuracy.
 -   **Barbara Orchestrator**: Manages configurable use cases for real-time analysis, topic overlap detection, summarization, template generation, and session summaries, with dynamic model and verbosity settings.
 -   **Hierarchical Analytics System**: Provides collection-level, template-level, project-level, and aggregated command center analytics with staleness tracking. Cascade refreshes run as async background jobs with client polling (to avoid HTTP timeouts in production). Job state tracked in-memory via `server/routes/analytics-job-store.ts`. POST cascade-refresh returns a `jobId`; client polls `GET /api/analytics/jobs/:jobId` for progress.
 -   **LLM Usage Tracking**: Billing-grade event logging for all LLM calls with attribution and hourly rollups.
@@ -47,8 +47,7 @@ Preferred communication style: Simple, everyday language.
 
 ## External Dependencies
 
--   **OpenAI API**: Used for Alvia's voice conversations (e.g., `gpt-realtime-mini`) and Barbara's orchestration logic (various GPT models like `gpt-5-mini`, `gpt-4o`). Supports EU data residency via `OPENAI_BASE_URL` and `OPENAI_REALTIME_URL` env vars.
--   **xAI Grok API**: An alternative voice provider (e.g., `grok-3-fast`) for Alvia.
+-   **OpenAI API**: Used for Alvia's voice conversations (e.g., `gpt-realtime-mini`, `gpt-realtime-1.5`) and Barbara's orchestration logic (various GPT models like `gpt-5-mini`, `gpt-4o`). Supports EU data residency via `OPENAI_BASE_URL` and `OPENAI_REALTIME_BASE_URL` env vars. Legacy `OPENAI_REALTIME_URL` is deprecated but still supported as an override.
 -   **Google Gemini API**: Used for generating AI-powered visual summaries (infographics) (e.g., `gemini-3-pro-image-preview`). Supports Vertex AI mode for EU data residency via `GOOGLE_GENAI_USE_VERTEXAI` env var.
 -   **PostgreSQL**: The primary database for all application data (dev: local, production: Neon).
 -   **Clerk**: For user authentication (stateless JWTs, EU data residency).

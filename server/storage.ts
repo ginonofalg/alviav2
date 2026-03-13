@@ -498,6 +498,9 @@ export class DatabaseStorage implements IStorage {
     if (patch.guidanceAdherenceSummary !== undefined) {
       updateData.guidanceAdherenceSummary = patch.guidanceAdherenceSummary;
     }
+    if (patch.realtimeModelUsed !== undefined) {
+      updateData.realtimeModelUsed = patch.realtimeModelUsed;
+    }
 
     if (Object.keys(updateData).length === 0) {
       return this.getSession(id);

@@ -51,7 +51,7 @@ const quickSetupSchema = z.object({
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
     targetResponses: z.number().min(1).optional(),
-    voiceProvider: z.string().default("openai"),
+    realtimeModel: z.enum(["gpt-realtime-1.5", "gpt-realtime-mini"]).nullable().optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).default(1),
     endOfInterviewSummaryEnabled: z.boolean().default(false),
     vadEagernessMode: z.enum(["auto", "high"]).default("auto"),

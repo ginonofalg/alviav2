@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { OpenAIRealtimeProvider, GrokRealtimeProvider } from "../realtime-providers";
+import { OpenAIRealtimeProvider } from "../realtime-providers";
 import type { NormalizedTokenUsage } from "@shared/schema";
 
 describe("realtime usage parsing", () => {
@@ -84,50 +84,6 @@ describe("realtime usage parsing", () => {
     });
   });
 
-  describe("Grok parseTokenUsage", () => {
-    const provider = new GrokRealtimeProvider("fake-key");
-
-    it("extracts cached tokens when present", () => {
-      const event = {
-        response: {
-          usage: {
-            input_tokens: 300,
-            output_tokens: 200,
-            input_token_details: {
-              audio_tokens: 100,
-              text_tokens: 200,
-              cached_tokens: 30,
-            },
-            output_token_details: {
-              audio_tokens: 80,
-              text_tokens: 120,
-            },
-          },
-        },
-      };
-
-      const result = provider.parseTokenUsage(event);
-      expect(result).not.toBeNull();
-      expect(result!.inputCachedTokens).toBe(30);
-    });
-
-    it("defaults cached tokens to 0 when absent", () => {
-      const event = {
-        response: {
-          usage: {
-            input_tokens: 100,
-            output_tokens: 50,
-            input_token_details: { audio_tokens: 40, text_tokens: 60 },
-            output_token_details: { audio_tokens: 20, text_tokens: 30 },
-          },
-        },
-      };
-
-      const result = provider.parseTokenUsage(event);
-      expect(result).not.toBeNull();
-      expect(result!.inputCachedTokens).toBe(0);
-    });
-  });
 });
 
 describe("NormalizedTokenUsage mapping for realtime events", () => {

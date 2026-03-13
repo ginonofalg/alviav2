@@ -1,7 +1,10 @@
 import { log } from './logger';
 import WebSocket from "ws";
 
-export type RealtimeProviderType = "openai" | "grok";
+export const VALID_REALTIME_MODELS = ["gpt-realtime-1.5", "gpt-realtime-mini"] as const;
+export type RealtimeModel = typeof VALID_REALTIME_MODELS[number];
+
+export const DEFAULT_REALTIME_MODEL: RealtimeModel = "gpt-realtime-mini";
 
 export interface TokenUsageDetails {
   inputTokens: number;
@@ -14,10 +17,10 @@ export interface TokenUsageDetails {
 }
 
 export interface RealtimeProvider {
-  readonly name: RealtimeProviderType;
+  readonly name: "openai";
   readonly displayName: string;
 
-  getWebSocketUrl(): string;
+  getWebSocketUrl(resolvedModel: RealtimeModel): string;
   getWebSocketHeaders(): Record<string, string>;
 
   buildSessionConfig(instructions: string, initialEagerness?: "auto" | "low" | "high"): Record<string, any>;
@@ -35,7 +38,6 @@ export interface RealtimeProvider {
 
   parseTokenUsage(event: any): TokenUsageDetails | null;
 
-  getModelName(): string;
   getTranscriptionModelName(): string;
 
   getSampleRate(): number;
@@ -45,7 +47,7 @@ export interface RealtimeProvider {
 }
 
 export class OpenAIRealtimeProvider implements RealtimeProvider {
-  readonly name: RealtimeProviderType = "openai";
+  readonly name = "openai" as const;
   readonly displayName = "OpenAI";
 
   private apiKey: string;
@@ -54,9 +56,15 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     this.apiKey = apiKey;
   }
 
-  getWebSocketUrl(): string {
-    return process.env.OPENAI_REALTIME_URL
-      || "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini";
+  getWebSocketUrl(resolvedModel: RealtimeModel): string {
+    const legacyUrl = process.env.OPENAI_REALTIME_URL;
+    if (legacyUrl) {
+      return legacyUrl;
+    }
+
+    const baseUrl = process.env.OPENAI_REALTIME_BASE_URL
+      || "wss://api.openai.com/v1/realtime";
+    return `${baseUrl}?model=${resolvedModel}`;
   }
 
   getWebSocketHeaders(): Record<string, string> {
@@ -166,10 +174,6 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
     };
   }
 
-  getModelName(): string {
-    return "gpt-realtime-mini";
-  }
-
   getTranscriptionModelName(): string {
     return "gpt-4o-mini-transcribe";
   }
@@ -187,188 +191,63 @@ export class OpenAIRealtimeProvider implements RealtimeProvider {
   }
 }
 
-export class GrokRealtimeProvider implements RealtimeProvider {
-  readonly name: RealtimeProviderType = "grok";
-  readonly displayName = "Grok (xAI)";
-
-  private apiKey: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
+export function resolveRealtimeModel(
+  collectionRealtimeModel: string | null | undefined,
+): RealtimeModel {
+  if (
+    collectionRealtimeModel &&
+    VALID_REALTIME_MODELS.includes(collectionRealtimeModel as RealtimeModel)
+  ) {
+    return collectionRealtimeModel as RealtimeModel;
   }
 
-  getWebSocketUrl(): string {
-    return "wss://api.x.ai/v1/realtime?model=grok-3-fast";
+  const envModel = process.env.OPENAI_REALTIME_DEFAULT_MODEL;
+  if (envModel && VALID_REALTIME_MODELS.includes(envModel as RealtimeModel)) {
+    return envModel as RealtimeModel;
   }
 
-  getWebSocketHeaders(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
-    };
-  }
-
-  buildSessionConfig(instructions: string, _initialEagerness?: "auto" | "low" | "high"): Record<string, any> {
-    return {
-      modalities: ["text", "audio"],
-      instructions: instructions,
-      voice: "Ara",
-      input_audio_format: "pcm16",
-      output_audio_format: "pcm16",
-      input_audio_transcription: {
-        model: "whisper-large-v3",
-        language: "en",
-      },
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.3,
-        silence_duration_ms: 800,
-        prefix_padding_ms: 150,
-        create_response: true,
-        interrupt_response: true,
-      },
-    };
-  }
-
-  buildInstructionsUpdate(instructions: string): Record<string, any> {
-    return {
-      instructions: instructions,
-    };
-  }
-
-  buildTurnDetectionUpdate(
-    eagerness: "auto" | "low" | "high",
-  ): Record<string, any> | null {
-    return null;
-  }
-
-  buildTextOnlySessionConfig(instructions: string): Record<string, any> {
-    return {
-      modalities: ["text"],
-      instructions: instructions,
-      turn_detection: null,
-    };
-  }
-
-  buildResponseCreate(): Record<string, any> {
-    return {
-      type: "response.create",
-      response: {
-        modalities: ["text", "audio"],
-      },
-    };
-  }
-
-  buildTextOnlyResponseCreate(): Record<string, any> {
-    return {
-      type: "response.create",
-      response: {
-        modalities: ["text"],
-      },
-    };
-  }
-
-  parseTokenUsage(event: any): TokenUsageDetails | null {
-    const usage = event.response?.usage;
-    if (!usage) return null;
-
-    if (usage.input_tokens === undefined && usage.output_tokens === undefined) {
-      console.warn(
-        "[GrokProvider] Token usage format may differ from expected OpenAI-compatible schema:",
-        JSON.stringify(usage).substring(0, 200),
-      );
-    }
-
-    return {
-      inputTokens: usage.input_tokens || 0,
-      outputTokens: usage.output_tokens || 0,
-      inputAudioTokens: usage.input_token_details?.audio_tokens || 0,
-      outputAudioTokens: usage.output_token_details?.audio_tokens || 0,
-      inputTextTokens: usage.input_token_details?.text_tokens || 0,
-      outputTextTokens: usage.output_token_details?.text_tokens || 0,
-      inputCachedTokens: usage.input_token_details?.cached_tokens || 0,
-    };
-  }
-
-  getModelName(): string {
-    return "grok-3-fast";
-  }
-
-  getTranscriptionModelName(): string {
-    return "whisper-large-v3";
-  }
-
-  getSampleRate(): number {
-    return 24000;
-  }
-
-  supportsSemanticVAD(): boolean {
-    return false;
-  }
-
-  supportsNoiseReduction(): boolean {
-    return false;
-  }
+  return DEFAULT_REALTIME_MODEL;
 }
 
-export function getRealtimeProvider(
-  override?: RealtimeProviderType | null,
-): RealtimeProvider {
-  const providerType = (
-    override ||
-    process.env.REALTIME_PROVIDER ||
-    "openai"
-  ).toLowerCase() as RealtimeProviderType;
-
-  switch (providerType) {
-    case "grok": {
-      const apiKey = process.env.XAI_API_KEY;
-      if (!apiKey) {
-        throw new Error(
-          "XAI_API_KEY environment variable is required for Grok provider",
-        );
-      }
-      log.info("[RealtimeProvider] Using Grok (xAI) provider");
-      return new GrokRealtimeProvider(apiKey);
-    }
-
-    case "openai":
-    default: {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        throw new Error(
-          "OPENAI_API_KEY environment variable is required for OpenAI provider",
-        );
-      }
-      log.info("[RealtimeProvider] Using OpenAI provider");
-      return new OpenAIRealtimeProvider(apiKey);
-    }
-  }
+export function isLegacyRealtimeUrlSet(): boolean {
+  return !!process.env.OPENAI_REALTIME_URL;
 }
 
-export function validateProviderApiKey(providerType: RealtimeProviderType): {
+export function extractModelFromLegacyUrl(): RealtimeModel | null {
+  const legacyUrl = process.env.OPENAI_REALTIME_URL;
+  if (!legacyUrl) return null;
+  try {
+    const url = new URL(legacyUrl);
+    const model = url.searchParams.get("model");
+    if (model && VALID_REALTIME_MODELS.includes(model as RealtimeModel)) {
+      return model as RealtimeModel;
+    }
+  } catch {
+  }
+  return null;
+}
+
+export function getRealtimeProvider(): RealtimeProvider {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY environment variable is required for OpenAI provider",
+    );
+  }
+  log.info("[RealtimeProvider] Using OpenAI provider");
+  return new OpenAIRealtimeProvider(apiKey);
+}
+
+export function validateProviderApiKey(): {
   valid: boolean;
   error?: string;
 } {
-  switch (providerType) {
-    case "grok":
-      if (!process.env.XAI_API_KEY) {
-        return {
-          valid: false,
-          error:
-            "XAI_API_KEY environment variable is required for Grok provider",
-        };
-      }
-      return { valid: true };
-
-    case "openai":
-    default:
-      if (!process.env.OPENAI_API_KEY) {
-        return {
-          valid: false,
-          error:
-            "OPENAI_API_KEY environment variable is required for OpenAI provider",
-        };
-      }
-      return { valid: true };
+  if (!process.env.OPENAI_API_KEY) {
+    return {
+      valid: false,
+      error:
+        "OPENAI_API_KEY environment variable is required for OpenAI provider",
+    };
   }
+  return { valid: true };
 }

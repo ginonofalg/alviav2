@@ -35,15 +35,13 @@ export function recordRealtimeResponseUsage(
   state.metricsTracker.tokens.outputTextTokens += tokenUsage.outputTextTokens;
   state.metricsTracker.tokens.rawResponses.push(event.response?.usage);
   log.debug(
-    `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
+    `[Metrics] Token usage for ${sessionId} (OpenAI ${state.realtimeModelUsed}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
   );
 
   recordLlmUsageEvent(
     buildUsageAttribution(state),
-    state.providerInstance.name === "grok"
-      ? ("xai" as const)
-      : ("openai" as const),
-    state.providerInstance.getModelName(),
+    "openai" as const,
+    state.realtimeModelUsed,
     "alvia_realtime",
     {
       promptTokens: tokenUsage.inputTextTokens,

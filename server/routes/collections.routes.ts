@@ -122,7 +122,7 @@ export function registerCollectionRoutes(app: Express) {
     description: z.string().max(500).nullable().optional(),
     targetResponses: z.number().min(1).max(10000).nullable().optional(),
     isActive: z.boolean().optional(),
-    voiceProvider: z.enum(["openai", "grok"]).optional(),
+    realtimeModel: z.enum(["gpt-realtime-1.5", "gpt-realtime-mini"]).nullable().optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).optional(),
     endOfInterviewSummaryEnabled: z.boolean().optional(),
     vadEagernessMode: z.enum(["auto", "high"]).optional(),
@@ -168,6 +168,7 @@ export function registerCollectionRoutes(app: Express) {
   const createCollectionSchema = insertCollectionSchema.omit({ templateId: true }).extend({
     name: z.string().min(1).max(100),
     targetResponses: z.number().min(1).optional(),
+    realtimeModel: z.enum(["gpt-realtime-1.5", "gpt-realtime-mini"]).nullable().optional(),
     maxAdditionalQuestions: z.number().min(0).max(3).default(1),
     endOfInterviewSummaryEnabled: z.boolean().default(false),
     vadEagernessMode: z.enum(["auto", "high"]).default("auto"),

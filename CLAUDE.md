@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Alvia is a voice-based AI interview platform built with TypeScript. It enables researchers to conduct AI-powered interviews with real-time transcription. Alvia (the interviewer) uses OpenAI's Realtime API (or xAI Grok) for voice conversations, while Barbara (the orchestrator) monitors transcripts and provides real-time guidance.
+Alvia is a voice-based AI interview platform built with TypeScript. It enables researchers to conduct AI-powered interviews with real-time transcription. Alvia (the interviewer) uses OpenAI's Realtime API for voice conversations, while Barbara (the orchestrator) monitors transcripts and provides real-time guidance.
 
 ## Commands
 
@@ -26,7 +26,7 @@ The dev server runs on port 5000 with Vite HMR for the frontend.
 - **Backend**: Express.js with WebSocket support (ws library)
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Clerk (Express.js middleware + React SDK, stateless JWTs) — `server/auth/` module
-- **Voice**: OpenAI Realtime API (`gpt-realtime-mini`) or xAI Grok (`grok-3-fast`) over WebSocket, switchable via env var
+- **Voice**: OpenAI Realtime API over WebSocket, model selectable per-collection (`gpt-realtime-mini` or `gpt-realtime-1.5`), resolved server-side via 3-tier hierarchy: collection override → `OPENAI_REALTIME_DEFAULT_MODEL` env → hardcoded fallback (`gpt-realtime-mini`)
 - **Orchestration**: Barbara (8 configurable use cases) monitors interviews and guides Alvia
 - **LLM Usage Tracking**: Billing-grade token tracking with event log + hourly rollups
 - **Transcription Quality**: Real-time noisy environment detection and VAD tuning
@@ -118,7 +118,7 @@ server/
     transcript.ts, connection-refresh.ts, guidance-tracking.ts
     text-utils.ts, usage-recording.ts
   barbara-orchestrator.ts   # AI analysis and guidance system (~3490 lines)
-  realtime-providers.ts     # Voice provider abstraction - OpenAI + Grok
+  realtime-providers.ts     # Voice provider abstraction - OpenAI Realtime API, model resolution
   llm-usage.ts              # LLM usage tracking utilities
   usage-maintenance.ts      # Automated cleanup and rollup reconciliation
   transcription-quality.ts  # Transcription quality monitoring (~550 lines)
@@ -191,10 +191,11 @@ vitest.config.ts
 - `buildCompletedQuestionsRecap(summaries, currentQuestionIndex)` builds recap block
 - `buildResumeInstructions(state)` and `buildRefreshInstructions(state)` handle reconnection
 
-**Voice provider abstraction** (`server/realtime-providers.ts`):
-- OpenAI: `gpt-realtime-mini`, voice "marin", `gpt-4o-mini-transcribe`, semantic VAD
-- Grok (xAI): `grok-3-fast`, voice "Ara", `whisper-large-v3`, server-based VAD
-- Selected via `REALTIME_PROVIDER` env var (default: "openai")
+**Voice model resolution** (`server/realtime-providers.ts`):
+- OpenAI Realtime API: models `gpt-realtime-mini` (default) or `gpt-realtime-1.5`, voice "marin", `gpt-4o-mini-transcribe`, semantic VAD
+- Model resolved server-side per session: collection `realtimeModel` → `OPENAI_REALTIME_DEFAULT_MODEL` env → hardcoded `gpt-realtime-mini`
+- Resolved model stored on `InterviewState.realtimeModelUsed` and persisted to `interview_sessions.realtimeModelUsed`
+- Legacy `OPENAI_REALTIME_URL` env var overrides all model selection (with deprecation warning at startup)
 
 **Barbara orchestrator** (`server/barbara-orchestrator.ts`):
 - Eight use cases: analysis, topicOverlap, summarisation, templateAnalytics, projectAnalytics, templateGeneration, additionalQuestions, sessionSummary
@@ -292,8 +293,8 @@ Required:
 
 Optional:
 - `GEMINI_API_KEY` - For infographic generation (required unless using Vertex AI)
-- `REALTIME_PROVIDER` - "openai" (default) or "xai"
-- `XAI_API_KEY` - Required if using Grok provider
+- `OPENAI_REALTIME_DEFAULT_MODEL` - Default realtime model when no collection override is set (default: "gpt-realtime-mini")
+- `OPENAI_REALTIME_BASE_URL` - Base WebSocket URL for OpenAI Realtime API (model appended automatically)
 - `INVITE_ONLY_MODE` - Enable invite-only access (default: true)
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - "production" or "development"
@@ -302,7 +303,7 @@ Optional:
 
 EU Data Residency (all optional):
 - `OPENAI_BASE_URL` - OpenAI SDK base URL (e.g., `https://eu.api.openai.com/v1`)
-- `OPENAI_REALTIME_URL` - WebSocket URL for Realtime API
+- `OPENAI_REALTIME_URL` - (DEPRECATED) Full WebSocket URL for Realtime API; overrides model selection when set
 - `GOOGLE_GENAI_USE_VERTEXAI` - `true` to use Vertex AI (mutually exclusive with `GEMINI_API_KEY`)
 - `GOOGLE_CLOUD_PROJECT` - GCP project ID (required with Vertex AI)
 - `GOOGLE_CLOUD_LOCATION` - GCP region (default: `europe-west1`)

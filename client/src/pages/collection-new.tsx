@@ -42,7 +42,7 @@ const collectionFormSchema = z.object({
   targetResponses: z.number().min(1).optional(),
   isOpen: z.boolean().default(true),
   expiresAt: z.string().optional(),
-  voiceProvider: z.enum(["openai", "grok"]).default("openai"),
+  realtimeModel: z.enum(["gpt-realtime-1.5", "gpt-realtime-mini", "default"]).default("default"),
   maxAdditionalQuestions: z.number().min(0).max(3).default(1),
   endOfInterviewSummaryEnabled: z.boolean().default(false),
   vadEagernessMode: z.enum(["auto", "high"]).default("auto"),
@@ -71,7 +71,7 @@ export default function CollectionNewPage() {
       targetResponses: 50,
       isOpen: true,
       expiresAt: "",
-      voiceProvider: "openai",
+      realtimeModel: "default",
       maxAdditionalQuestions: 1,
       endOfInterviewSummaryEnabled: false,
       vadEagernessMode: "auto",
@@ -80,8 +80,10 @@ export default function CollectionNewPage() {
 
   const createCollection = useMutation({
     mutationFn: async (data: CollectionFormData) => {
+      const { realtimeModel, ...rest } = data;
       const payload = {
-        ...data,
+        ...rest,
+        realtimeModel: realtimeModel === "default" ? null : realtimeModel,
         expiresAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : undefined,
       };
       const response = await apiRequest("POST", `/api/templates/${templateId}/collections`, payload);
@@ -325,55 +327,86 @@ export default function CollectionNewPage() {
 
               <FormField
                 control={form.control}
-                name="voiceProvider"
+                name="realtimeModel"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Voice Provider</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-voice-provider">
-                          <SelectValue placeholder="Select voice provider" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="openai" data-testid="option-openai">OpenAI</SelectItem>
-                        <SelectItem value="grok" data-testid="option-grok">Grok (xAI)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription className="text-xs">
-                      The AI voice service used for interviews in this collection
-                    </FormDescription>
+                    <FormLabel>Interview Model</FormLabel>
+                    <div className="space-y-2" data-testid="radio-realtime-model">
+                      <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <input
+                          type="radio"
+                          name="realtimeModel"
+                          value="default"
+                          checked={field.value === "default"}
+                          onChange={() => field.onChange("default")}
+                          className="mt-0.5"
+                          data-testid="radio-model-default"
+                        />
+                        <div>
+                          <div className="font-medium text-sm">Use global default</div>
+                          <div className="text-xs text-muted-foreground">Uses the platform's configured default model</div>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <input
+                          type="radio"
+                          name="realtimeModel"
+                          value="gpt-realtime-1.5"
+                          checked={field.value === "gpt-realtime-1.5"}
+                          onChange={() => field.onChange("gpt-realtime-1.5")}
+                          className="mt-0.5"
+                          data-testid="radio-model-full"
+                        />
+                        <div>
+                          <div className="font-medium text-sm">Full model</div>
+                          <div className="text-xs text-muted-foreground">Best quality. Better handling of nuance and longer conversational context.</div>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors">
+                        <input
+                          type="radio"
+                          name="realtimeModel"
+                          value="gpt-realtime-mini"
+                          checked={field.value === "gpt-realtime-mini"}
+                          onChange={() => field.onChange("gpt-realtime-mini")}
+                          className="mt-0.5"
+                          data-testid="radio-model-mini"
+                        />
+                        <div>
+                          <div className="font-medium text-sm">Mini model</div>
+                          <div className="text-xs text-muted-foreground">Lower cost. Good default for high-volume research or shorter interviews.</div>
+                        </div>
+                      </label>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {form.watch("voiceProvider") === "openai" && (
-                <FormField
-                  control={form.control}
-                  name="vadEagernessMode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Response Speed</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "auto"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-vad-eagerness">
-                            <SelectValue placeholder="Select response speed" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="auto" data-testid="option-eagerness-auto">Balanced (default)</SelectItem>
-                          <SelectItem value="high" data-testid="option-eagerness-high">Fast (experimental)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-xs">
-                        Controls how quickly Alvia responds after the respondent stops speaking. "Fast" reduces perceived delay but may occasionally cut off longer pauses mid-thought. If this happens frequently, the system will automatically switch back to balanced.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+              <FormField
+                control={form.control}
+                name="vadEagernessMode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Response Speed</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? "auto"}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-vad-eagerness">
+                          <SelectValue placeholder="Select response speed" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="auto" data-testid="option-eagerness-auto">Balanced (default)</SelectItem>
+                        <SelectItem value="high" data-testid="option-eagerness-high">Fast (experimental)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription className="text-xs">
+                      Controls how quickly Alvia responds after the respondent stops speaking. "Fast" reduces perceived delay but may occasionally cut off longer pauses mid-thought. If this happens frequently, the system will automatically switch back to balanced.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

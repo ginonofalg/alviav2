@@ -477,8 +477,7 @@ export default function InterviewPage() {
 
     setIsConnecting(true);
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const voiceProvider = collection?.voiceProvider || "openai";
-    const wsUrl = `${protocol}//${window.location.host}/ws/interview?sessionId=${sessionId}&provider=${voiceProvider}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/interview?sessionId=${sessionId}`;
 
     console.log("[Interview] Connecting to WebSocket:", wsUrl);
     const ws = new WebSocket(wsUrl);
@@ -640,7 +639,7 @@ export default function InterviewPage() {
         });
       }
     };
-  }, [sessionId, collection?.voiceProvider, toast, stopAudioCapture]);
+  }, [sessionId, toast, stopAudioCapture]);
 
   // Set ref so reconnection helpers can call connectWebSocket
   connectWebSocketRef.current = connectWebSocket;
