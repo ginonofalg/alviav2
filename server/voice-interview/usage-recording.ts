@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import { recordLlmUsageEvent } from "../llm-usage";
 import { buildUsageAttribution, type InterviewState } from "./types";
 import type { TokenUsageDetails } from "../realtime-providers";
@@ -33,7 +34,7 @@ export function recordRealtimeResponseUsage(
   state.metricsTracker.tokens.inputTextTokens += tokenUsage.inputTextTokens;
   state.metricsTracker.tokens.outputTextTokens += tokenUsage.outputTextTokens;
   state.metricsTracker.tokens.rawResponses.push(event.response?.usage);
-  console.log(
+  log.debug(
     `[Metrics] Token usage for ${sessionId} (${state.providerInstance.displayName}): input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}`,
   );
 

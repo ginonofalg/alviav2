@@ -10,6 +10,7 @@ import {
   buildCorrectionPrompt,
 } from "../persona-generation";
 import type { PopulationBrief, DiversityMode } from "../persona-generation";
+import { log } from "../logger";
 const researchRateLimits = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -55,7 +56,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.post("/api/projects/:projectId/personas/research", isAuthenticated, async (req: any, res) => {
     const requestStart = Date.now();
     const { projectId } = req.params;
-    console.log(`[PersonaGeneration] POST /research received | project=${projectId}`);
+    log.info(`[PersonaGeneration] POST /research received | project=${projectId}`);
 
     try {
       const userId = getUserId(req);
@@ -95,7 +96,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         status: "researching",
       });
 
-      console.log(`[PersonaGeneration] Created pending brief ${briefRecord.id} | project=${projectId} | elapsed=${elapsed(requestStart)}`);
+      log.info(`[PersonaGeneration] Created pending brief ${briefRecord.id} | project=${projectId} | elapsed=${elapsed(requestStart)}`);
 
       res.json({ briefId: briefRecord.id, status: "researching" });
 
@@ -132,7 +133,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
 
       if (briefRecord.status === "completed") {
         const brief = briefRecord.brief as unknown as PopulationBrief;
-        console.log(`[PersonaGeneration] Research status: completed | brief=${briefId}`);
+        log.debug(`[PersonaGeneration] Research status: completed | brief=${briefId}`);
         return res.json({
           status: "completed",
           briefId: briefRecord.id,
@@ -143,7 +144,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (briefRecord.status === "failed") {
-        console.log(`[PersonaGeneration] Research status: failed | brief=${briefId} | error=${briefRecord.errorMessage}`);
+        log.debug(`[PersonaGeneration] Research status: failed | brief=${briefId} | error=${briefRecord.errorMessage}`);
         return res.json({
           status: "failed",
           briefId: briefRecord.id,
@@ -152,7 +153,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (briefRecord.status === "interrupted") {
-        console.log(`[PersonaGeneration] Research status: interrupted | brief=${briefId}`);
+        log.debug(`[PersonaGeneration] Research status: interrupted | brief=${briefId}`);
         return res.json({
           status: "interrupted",
           briefId: briefRecord.id,
@@ -180,7 +181,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
-      console.log(`[PersonaGeneration] Research status: researching | brief=${briefId} | age=${Math.round(ageMs / 1000)}s`);
+      log.debug(`[PersonaGeneration] Research status: researching | brief=${briefId} | age=${Math.round(ageMs / 1000)}s`);
       res.json({ status: "researching", briefId: briefRecord.id });
     } catch (error) {
       console.error("[PersonaGeneration] GET /research/:briefId/status failed:", error);
@@ -245,7 +246,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.post("/api/projects/:projectId/personas/synthesize", isAuthenticated, async (req: any, res) => {
     const requestStart = Date.now();
     const { projectId } = req.params;
-    console.log(`[PersonaGeneration] POST /synthesize received | project=${projectId}`);
+    log.info(`[PersonaGeneration] POST /synthesize received | project=${projectId}`);
 
     try {
       const userId = getUserId(req);
@@ -287,7 +288,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         status: "synthesizing",
       });
 
-      console.log(`[PersonaGeneration] Synthesis job created | jobId=${job.id} | project=${projectId} | briefId=${briefId} | personaCount=${personaCount}`);
+      log.info(`[PersonaGeneration] Synthesis job created | jobId=${job.id} | project=${projectId} | briefId=${briefId} | personaCount=${personaCount}`);
 
       res.json({ jobId: job.id, status: "synthesizing" });
 
@@ -321,7 +322,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (job.status === "completed") {
-        console.log(`[PersonaGeneration] Synthesis status: completed | job=${jobId}`);
+        log.debug(`[PersonaGeneration] Synthesis status: completed | job=${jobId}`);
         return res.json({
           status: "completed",
           jobId: job.id,
@@ -331,7 +332,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (job.status === "failed") {
-        console.log(`[PersonaGeneration] Synthesis status: failed | job=${jobId} | error=${job.errorMessage}`);
+        log.debug(`[PersonaGeneration] Synthesis status: failed | job=${jobId} | error=${job.errorMessage}`);
         return res.json({
           status: "failed",
           jobId: job.id,
@@ -340,7 +341,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       }
 
       if (job.status === "interrupted") {
-        console.log(`[PersonaGeneration] Synthesis status: interrupted | job=${jobId}`);
+        log.debug(`[PersonaGeneration] Synthesis status: interrupted | job=${jobId}`);
         return res.json({
           status: "interrupted",
           jobId: job.id,
@@ -368,7 +369,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         });
       }
 
-      console.log(`[PersonaGeneration] Synthesis status: synthesizing | job=${jobId} | age=${Math.round(ageMs / 1000)}s`);
+      log.debug(`[PersonaGeneration] Synthesis status: synthesizing | job=${jobId} | age=${Math.round(ageMs / 1000)}s`);
       res.json({ status: "synthesizing", jobId: job.id });
     } catch (error) {
       console.error("[PersonaGeneration] GET /synthesize/:jobId/status failed:", error);
@@ -379,7 +380,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.post("/api/projects/:projectId/personas/research/:briefId/restart", isAuthenticated, async (req: any, res) => {
     const requestStart = Date.now();
     const { projectId, briefId } = req.params;
-    console.log(`[PersonaGeneration] POST /research/:briefId/restart | brief=${briefId} | project=${projectId}`);
+    log.debug(`[PersonaGeneration] POST /research/:briefId/restart | brief=${briefId} | project=${projectId}`);
 
     try {
       const userId = getUserId(req);
@@ -414,7 +415,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
       const workspace = await storage.getWorkspace(project.workspaceId);
       const workspaceId = workspace?.id ?? project.workspaceId;
 
-      console.log(`[PersonaGeneration] Restarting interrupted research | brief=${briefId} | project=${projectId}`);
+      log.debug(`[PersonaGeneration] Restarting interrupted research | brief=${briefId} | project=${projectId}`);
 
       res.json({ briefId, status: "researching" });
 
@@ -436,7 +437,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
   app.post("/api/projects/:projectId/personas/synthesize/:jobId/restart", isAuthenticated, async (req: any, res) => {
     const requestStart = Date.now();
     const { projectId, jobId } = req.params;
-    console.log(`[PersonaGeneration] POST /synthesize/:jobId/restart | job=${jobId} | project=${projectId}`);
+    log.debug(`[PersonaGeneration] POST /synthesize/:jobId/restart | job=${jobId} | project=${projectId}`);
 
     try {
       const userId = getUserId(req);
@@ -469,7 +470,7 @@ export function registerPersonaGenerationRoutes(app: Express) {
         errorMessage: null,
       });
 
-      console.log(`[PersonaGeneration] Restarting interrupted synthesis | job=${jobId} | project=${projectId}`);
+      log.debug(`[PersonaGeneration] Restarting interrupted synthesis | job=${jobId} | project=${projectId}`);
 
       res.json({ jobId, status: "synthesizing" });
 
@@ -505,7 +506,7 @@ async function runResearchInBackground(params: {
   const { briefId, projectId, project, workspaceId, researchPrompt, additionalContext, uploadedFile, requestStart } = params;
 
   try {
-    console.log(`[PersonaGeneration] Background research starting | brief=${briefId} | project=${projectId}`);
+    log.debug(`[PersonaGeneration] Background research starting | brief=${briefId} | project=${projectId}`);
 
     const { brief, citations, ungrounded } = await researchPopulation({
       researchPrompt,
@@ -523,7 +524,7 @@ async function runResearchInBackground(params: {
       status: "completed",
     });
 
-    console.log(`[PersonaGeneration] Background research completed | brief=${briefId} | project=${projectId} | confidence=${brief.confidence} | citations=${citations.length} | elapsed=${elapsed(requestStart)}`);
+    log.info(`[PersonaGeneration] Background research completed | brief=${briefId} | project=${projectId} | confidence=${brief.confidence} | citations=${citations.length} | elapsed=${elapsed(requestStart)}`);
   } catch (error: any) {
     const errorMsg = error?.message ?? String(error);
     console.error(`[PersonaGeneration] Background research failed | brief=${briefId} | project=${projectId} | error=${errorMsg} | elapsed=${elapsed(requestStart)}`);
@@ -562,14 +563,14 @@ async function runSynthesisInBackground(params: {
   const { jobId, projectId, brief, config, attribution, requestStart } = params;
 
   try {
-    console.log(`[PersonaGeneration] Background synthesis starting | job=${jobId} | project=${projectId}`);
+    log.debug(`[PersonaGeneration] Background synthesis starting | job=${jobId} | project=${projectId}`);
 
     let personas = await synthesizePersonas({ brief, config, attribution });
     let validationWarnings: string[] = [];
 
     const validation = validatePersonaDiversity(personas, config.diversityMode);
     if (!validation.valid) {
-      console.log(`[PersonaGeneration] Diversity validation failed, retrying with correction | job=${jobId} | errors=${validation.errors.length} | elapsed=${elapsed(requestStart)}`);
+      log.debug(`[PersonaGeneration] Diversity validation failed, retrying with correction | job=${jobId} | errors=${validation.errors.length} | elapsed=${elapsed(requestStart)}`);
       const correctionPrompt = buildCorrectionPrompt(validation.errors);
       personas = await synthesizePersonas({ brief, config, attribution, correctionPrompt });
 
@@ -586,7 +587,7 @@ async function runSynthesisInBackground(params: {
       validationWarnings: validationWarnings.length > 0 ? validationWarnings as any : null,
     });
 
-    console.log(`[PersonaGeneration] Background synthesis completed | job=${jobId} | project=${projectId} | personasGenerated=${personas.length} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
+    log.info(`[PersonaGeneration] Background synthesis completed | job=${jobId} | project=${projectId} | personasGenerated=${personas.length} | warnings=${validationWarnings.length} | elapsed=${elapsed(requestStart)}`);
   } catch (error: any) {
     const errorMsg = error?.message ?? String(error);
     console.error(`[PersonaGeneration] Background synthesis failed | job=${jobId} | project=${projectId} | error=${errorMsg} | elapsed=${elapsed(requestStart)}`);

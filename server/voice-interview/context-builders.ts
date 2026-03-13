@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import type { QualityFlag } from "@shared/schema";
 import type { QuestionSummary } from "../barbara-orchestrator";
 import { storage } from "../storage";
@@ -78,7 +79,7 @@ export async function buildAQCrossInterviewContext(
     summaries: s.questionSummaries as QuestionSummary[],
   }));
 
-  console.log(
+  log.debug(
     `[AQ-CrossInterview] Enabled: ${priorSessionSummaries.length} prior sessions for collection ${collectionId}`,
   );
 

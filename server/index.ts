@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { startUsageMaintenanceJobs } from "./usage-maintenance";
 import { cleanupOrphanedSimulationRuns, cleanupOrphanedResearchAndSynthesis } from "./storage/simulation";
 import { validateAndLogLlmConfig } from "./llm-config";
+import { log as logger } from "./logger";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -30,17 +31,6 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -60,7 +50,7 @@ app.use((req, res, next) => {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
-      log(logLine);
+      logger.debug(logLine);
     }
   });
 
@@ -100,14 +90,14 @@ app.use((req, res, next) => {
       reusePort: true,
     },
     () => {
-      log(`serving on port ${port}`);
+      logger.info(`serving on port ${port}`);
       validateAndLogLlmConfig();
       startUsageMaintenanceJobs();
       cleanupOrphanedSimulationRuns().then(count => {
-        if (count > 0) log(`Cleaned up ${count} orphaned simulation run(s)`);
+        if (count > 0) logger.info(`Cleaned up ${count} orphaned simulation run(s)`);
       }).catch(err => console.error("Failed to cleanup orphaned simulation runs:", err));
       cleanupOrphanedResearchAndSynthesis().then(({ briefs, jobs }) => {
-        if (briefs > 0 || jobs > 0) log(`Marked ${briefs} orphaned research brief(s) and ${jobs} synthesis job(s) as interrupted`);
+        if (briefs > 0 || jobs > 0) logger.info(`Marked ${briefs} orphaned research brief(s) and ${jobs} synthesis job(s) as interrupted`);
       }).catch(err => console.error("Failed to cleanup orphaned research/synthesis:", err));
     },
   );

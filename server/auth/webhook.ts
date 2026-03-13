@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import type { Express, Request, Response } from "express";
 import { Webhook } from "svix";
 import { syncClerkUser } from "./sync";
@@ -52,10 +53,10 @@ export function registerWebhookRoutes(app: Express): void {
         const primaryEmail = email_addresses?.[0]?.email_address;
         if (primaryEmail) {
           await syncClerkUser(id, primaryEmail, first_name ?? null, last_name ?? null, image_url ?? null);
-          console.log(`[clerk-webhook] Synced user ${primaryEmail} (${event.type})`);
+          log.info(`[clerk-webhook] Synced user ${primaryEmail} (${event.type})`);
         }
       } else if (event.type === "user.deleted") {
-        console.log(`[clerk-webhook] User deleted event received for ${event.data.id} — no action taken`);
+        log.info(`[clerk-webhook] User deleted event received for ${event.data.id} — no action taken`);
       }
 
       res.json({ received: true });

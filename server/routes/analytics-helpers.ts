@@ -3,6 +3,7 @@ import { generateCrossInterviewAnalysis, generateTemplateAnalytics, generateProj
 import type { LLMUsageAttribution, QuestionSummary, CollectionAnalytics, TemplateAnalytics, ProjectAnalytics } from "@shared/schema";
 import type { InterviewSession, Collection, InterviewTemplate, Project, Question } from "@shared/schema";
 import type { SessionScope } from "@shared/types/simulation";
+import { log } from "../logger";
 
 export function filterSessionsByScope(sessions: InterviewSession[], scope: SessionScope): InterviewSession[] {
   if (scope === "combined") return sessions;
@@ -47,9 +48,9 @@ export async function refreshCollectionAnalytics(
 ): Promise<{ analytics: CollectionAnalytics; analyzedSessionCount: number }> {
   const sessionsWithSummaries = buildSessionsWithSummaries(completedSessions);
 
-  console.log("[Analytics] Starting analysis for collection:", collection.id);
-  console.log("[Analytics] Sessions to analyze:", completedSessions.length);
-  console.log("[Analytics] Total summaries:", sessionsWithSummaries.reduce((sum, s) => sum + s.questionSummaries.length, 0));
+  log.debug("[Analytics] Starting analysis for collection:", collection.id);
+  log.debug("[Analytics] Sessions to analyze:", completedSessions.length);
+  log.debug("[Analytics] Total summaries:", sessionsWithSummaries.reduce((sum, s) => sum + s.questionSummaries.length, 0));
 
   const usageContext: LLMUsageAttribution = {
     projectId: template.projectId,
@@ -110,8 +111,8 @@ export async function refreshTemplateAnalytics(
     c => c.analytics !== null && c.collection.analyzedSessionScope === scope
   );
 
-  console.log("[Template Analytics] Generating for template:", template.name);
-  console.log("[Template Analytics] Collections with analytics (scope=%s):", scope, collectionsWithAnalytics.length);
+  log.debug("[Template Analytics] Generating for template:", template.name);
+  log.debug("[Template Analytics] Collections with analytics (scope=%s):", scope, collectionsWithAnalytics.length);
 
   const usageContext: LLMUsageAttribution = {
     projectId: template.projectId,
@@ -179,8 +180,8 @@ export async function refreshProjectAnalytics(
     t => t.analytics !== null && t.template.analyzedSessionScope === scope
   );
 
-  console.log("[Project Analytics] Generating for project:", project.name);
-  console.log("[Project Analytics] Templates with analytics (scope=%s):", scope, templatesWithAnalytics.length);
+  log.debug("[Project Analytics] Generating for project:", project.name);
+  log.debug("[Project Analytics] Templates with analytics (scope=%s):", scope, templatesWithAnalytics.length);
 
   const usageContext: LLMUsageAttribution = {
     projectId: project.id,

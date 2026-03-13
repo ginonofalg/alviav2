@@ -1,3 +1,4 @@
+import { log } from './logger';
 import OpenAI from "openai";
 import { withTrackedLlmCall, makeResponsesUsageExtractor } from "./llm-usage";
 import type { LLMUsageAttribution } from "@shared/schema";
@@ -147,7 +148,7 @@ export async function parseQuestions(
   input: ParseQuestionsInput,
   usageContext?: LLMUsageAttribution,
 ): Promise<ParseQuestionsResult> {
-  console.log("[QuestionParser] Parsing questions for project:", input.projectId);
+  log.debug("[QuestionParser] Parsing questions for project:", input.projectId);
 
   const project = await storage.getProject(input.projectId);
   if (!project) {

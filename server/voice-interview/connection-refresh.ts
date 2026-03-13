@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import WebSocket from "ws";
 import {
   type InterviewState,
@@ -23,7 +24,7 @@ export async function refreshConnection(
     return;
   }
 
-  console.log(
+  log.debug(
     `[ConnectionRefresh] Initiating planned refresh for session: ${sessionId}`,
   );
 

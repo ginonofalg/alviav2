@@ -297,6 +297,7 @@ Optional:
 - `INVITE_ONLY_MODE` - Enable invite-only access (default: true)
 - `PORT` - Server port (default: 5000)
 - `NODE_ENV` - "production" or "development"
+- `LOG_LEVEL` - Logging verbosity: "debug", "info", "warn", "error" (default: "info" in production, "debug" in development)
 - `BASE_URL` - Base URL for generated links (defaults to request protocol/host)
 
 EU Data Residency (all optional):

@@ -1,3 +1,4 @@
+import { log } from './logger';
 import WebSocket from "ws";
 
 export type RealtimeProviderType = "openai" | "grok";
@@ -326,7 +327,7 @@ export function getRealtimeProvider(
           "XAI_API_KEY environment variable is required for Grok provider",
         );
       }
-      console.log("[RealtimeProvider] Using Grok (xAI) provider");
+      log.info("[RealtimeProvider] Using Grok (xAI) provider");
       return new GrokRealtimeProvider(apiKey);
     }
 
@@ -338,7 +339,7 @@ export function getRealtimeProvider(
           "OPENAI_API_KEY environment variable is required for OpenAI provider",
         );
       }
-      console.log("[RealtimeProvider] Using OpenAI provider");
+      log.info("[RealtimeProvider] Using OpenAI provider");
       return new OpenAIRealtimeProvider(apiKey);
     }
   }

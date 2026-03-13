@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import OpenAI from "openai";
 import type { ReasoningEffort } from "openai/resources/shared";
 import { getBarbaraConfig } from "../barbara-orchestrator";
@@ -112,7 +113,7 @@ export async function synthesizePersonas(params: {
   const barbaraConfig = getBarbaraConfig().personaGeneration;
   const startTime = Date.now();
 
-  console.log(`[PersonaGeneration] Synthesis started | model=${barbaraConfig.model} | personaCount=${params.config.personaCount} | diversityMode=${params.config.diversityMode} | edgeCases=${params.config.edgeCases} | hasCorrection=${!!params.correctionPrompt}`);
+  log.debug(`[PersonaGeneration] Synthesis started | model=${barbaraConfig.model} | personaCount=${params.config.personaCount} | diversityMode=${params.config.diversityMode} | edgeCases=${params.config.edgeCases} | hasCorrection=${!!params.correctionPrompt}`);
 
   const systemPrompt = buildSynthesisSystemPrompt(params.config);
   let userPrompt = buildSynthesisUserPrompt(params.brief, params.config);
@@ -153,7 +154,7 @@ export async function synthesizePersonas(params: {
     const parsed = JSON.parse(result.output_text);
     const personas = parsed.personas as GeneratedPersona[];
 
-    console.log(`[PersonaGeneration] Synthesis completed | personasGenerated=${personas.length} | elapsed=${elapsed(startTime)}`);
+    log.info(`[PersonaGeneration] Synthesis completed | personasGenerated=${personas.length} | elapsed=${elapsed(startTime)}`);
 
     return personas;
   } catch (error: any) {

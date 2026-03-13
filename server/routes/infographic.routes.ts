@@ -5,6 +5,7 @@ import { getInfographicService } from "../infographic-service";
 import { InfographicPromptBuilder } from "../infographic-prompts";
 import { recordLlmUsageEvent } from "../llm-usage";
 import type { LLMUsageAttribution, CollectionAnalytics, ProjectAnalytics } from "@shared/schema";
+import { log } from "../logger";
 
 export function registerInfographicRoutes(app: Express) {
 
@@ -27,7 +28,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics
       );
 
-      console.log("[Infographic] Generating summary for collection:", collectionId);
+      log.debug("[Infographic] Generating summary for collection:", collectionId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
@@ -77,7 +78,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics.themes
       );
 
-      console.log("[Infographic] Generating theme network for collection:", collectionId);
+      log.debug("[Infographic] Generating theme network for collection:", collectionId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
@@ -127,7 +128,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics
       );
 
-      console.log("[Infographic] Generating key findings for collection:", collectionId);
+      log.debug("[Infographic] Generating key findings for collection:", collectionId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
@@ -183,7 +184,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics
       );
 
-      console.log("[Infographic] Generating project summary for:", projectId);
+      log.debug("[Infographic] Generating project summary for:", projectId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
@@ -239,7 +240,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics
       );
 
-      console.log("[Infographic] Generating project theme network for:", projectId);
+      log.debug("[Infographic] Generating project theme network for:", projectId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);
@@ -295,7 +296,7 @@ export function registerInfographicRoutes(app: Express) {
         analytics
       );
 
-      console.log("[Infographic] Generating project strategic insights for:", projectId);
+      log.debug("[Infographic] Generating project strategic insights for:", projectId);
 
       const infographicService = getInfographicService();
       const result = await infographicService.generateInfographic(prompt);

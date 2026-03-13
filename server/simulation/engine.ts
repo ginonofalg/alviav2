@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import { storage } from "../storage";
 import {
   getPersona,
@@ -214,7 +215,7 @@ async function runSingleSimulation(
 
     while (questionIndex < ctx.questions.length) {
       if (Date.now() - sessionStartTime > SIMULATION_LIMITS.PER_SESSION_TIMEOUT_MS) {
-        console.log(`[Simulation] Session timeout for ${session.id}`);
+        log.debug(`[Simulation] Session timeout for ${session.id}`);
         break;
       }
 
@@ -446,7 +447,7 @@ async function runAdditionalQuestions(
       sessionId,
     );
 
-    console.log(
+    log.debug(
       `[Simulation] AQ cross-interview context: ${aqCrossCtx.enabled ? "enabled" : "disabled"}${aqCrossCtx.reason ? ` (${aqCrossCtx.reason})` : ""}`,
     );
 

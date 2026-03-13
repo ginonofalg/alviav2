@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import type { IncomingMessage } from "http";
 import { randomUUID } from "crypto";
 import { storage, type InterviewStatePatch } from "./storage";
+import { log } from "./logger";
 import {
   analyzeWithBarbara,
   createEmptyMetrics,
@@ -199,7 +200,7 @@ async function flushPersist(sessionId: string): Promise<void> {
   try {
     await storage.persistInterviewState(sessionId, patch);
     state.lastPersistAt = Date.now();
-    console.log(
+    log.debug(
       `[Persist] State saved for session: ${sessionId}, transcript entries: ${state.fullTranscriptForPersistence.length}`,
     );
   } catch (error) {
@@ -248,7 +249,7 @@ async function persistBarbaraGuidance(
       questionStates: state.questionStates,
       questionSummaries: normalizedSummaries,
     });
-    console.log(`[Persist] Barbara guidance saved for session: ${sessionId}`);
+    log.debug(`[Persist] Barbara guidance saved for session: ${sessionId}`);
   } catch (error) {
     console.error(
       `[Persist] Error saving Barbara guidance for ${sessionId}:`,
@@ -320,7 +321,7 @@ async function generateAndPersistSummary(
 
   // Check if summary already exists for this question (prevent duplicates)
   if (state.questionSummaries[questionIndex]) {
-    console.log(
+    log.debug(
       `[Summary] Summary already exists for Q${questionIndex + 1}, skipping`,
     );
     return;
@@ -335,7 +336,7 @@ async function generateAndPersistSummary(
     const snapshotForQuestion = transcriptSnapshot.filter(
       (e) => e.questionIndex === questionIndex,
     );
-    console.log(
+    log.debug(
       `[Summary] Generating summary for Q${questionIndex + 1} (session: ${sessionId}), ` +
         `transcript snapshot: ${transcriptSnapshot.length} total entries, ` +
         `${snapshotForQuestion.length} for this question`,
@@ -359,7 +360,7 @@ async function generateAndPersistSummary(
     // Now safely assign to the correct index
     state.questionSummaries[questionIndex] = summary;
 
-    console.log(
+    log.debug(
       `[Summary] Summary completed for Q${questionIndex + 1}: "${summary.respondentSummary.substring(0, 100)}..."`,
     );
 
@@ -374,7 +375,7 @@ async function generateAndPersistSummary(
       lastBarbaraGuidance: state.lastBarbaraGuidance,
       questionStates: state.questionStates,
     });
-    console.log(`[Summary] Summary persisted for Q${questionIndex + 1}`);
+    log.debug(`[Summary] Summary persisted for Q${questionIndex + 1}`);
   } catch (error) {
     console.error(
       `[Summary] Failed to generate summary for Q${questionIndex + 1}:`,
@@ -420,7 +421,7 @@ export function handleVoiceInterview(
     const wsState = existingState.clientWs.readyState;
 
     if (wsState === WebSocket.OPEN) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Rejecting concurrent connection for session: ${sessionId} (existing WS is OPEN)`,
       );
       clientWs.send(
@@ -437,7 +438,7 @@ export function handleVoiceInterview(
     if (wsState === WebSocket.CLOSING || wsState === WebSocket.CONNECTING) {
       // Race condition prevention: old connection still transitioning
       // Reject and ask client to retry after brief delay
-      console.log(
+      log.debug(
         `[VoiceInterview] Rejecting connection during state transition for session: ${sessionId} ` +
           `(existing WS state: ${wsState === WebSocket.CLOSING ? "CLOSING" : "CONNECTING"}, ` +
           `clientDisconnectedAt: ${existingState.clientDisconnectedAt})`,
@@ -458,7 +459,7 @@ export function handleVoiceInterview(
 
   // Check if we're reconnecting to a disconnected session (within heartbeat timeout window)
   if (existingState && existingState.clientDisconnectedAt !== null) {
-    console.log(
+    log.debug(
       `[VoiceInterview] Reconnecting to disconnected session: ${sessionId}`,
     );
 
@@ -499,7 +500,7 @@ export function handleVoiceInterview(
         ? Date.now() - state.lastActivityAt
         : null;
 
-      console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
+      log.debug(`[VoiceInterview] Client disconnected: ${sessionId}`, {
         closeCode: code,
         closeReason: reason?.toString() || "(none)",
         timeSinceLastHeartbeat: timeSinceHeartbeat
@@ -516,12 +517,12 @@ export function handleVoiceInterview(
       if (state) {
         state.clientWs = null;
         if (state.isFinalizing) {
-          console.log(
+          log.debug(
             `[VoiceInterview] Session ${sessionId} client disconnected during finalization — skipping disconnect marking`,
           );
         } else {
           state.clientDisconnectedAt = Date.now();
-          console.log(
+          log.debug(
             `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
           );
         }
@@ -540,7 +541,7 @@ export function handleVoiceInterview(
     });
 
     if (isPlannedRefresh) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Planned refresh reconnection for session: ${sessionId}`,
       );
       existingState.isRestoredSession = true;
@@ -581,17 +582,17 @@ export function handleVoiceInterview(
       }),
     );
 
-    console.log(
+    log.debug(
       `[VoiceInterview] Session ${sessionId} reconnected successfully`,
     );
     return;
   }
 
-  console.log(`[VoiceInterview] New connection for session: ${sessionId}`);
+  log.info(`[VoiceInterview] New connection for session: ${sessionId}`);
 
   // Clean up any orphaned state before creating new one
   if (existingState) {
-    console.log(
+    log.debug(
       `[VoiceInterview] Cleaning up orphaned state for session: ${sessionId}`,
     );
     // Close orphaned providerWs - remove listeners first for instant cleanup
@@ -736,7 +737,7 @@ export function handleVoiceInterview(
       ? Date.now() - state.lastActivityAt
       : null;
 
-    console.log(`[VoiceInterview] Client disconnected: ${sessionId}`, {
+    log.debug(`[VoiceInterview] Client disconnected: ${sessionId}`, {
       closeCode: code,
       closeReason: reason?.toString() || "(none)",
       timeSinceLastHeartbeat: timeSinceHeartbeat
@@ -755,12 +756,12 @@ export function handleVoiceInterview(
     if (state) {
       state.clientWs = null;
       if (state.isFinalizing) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Session ${sessionId} client disconnected during finalization — skipping disconnect marking`,
         );
       } else {
         state.clientDisconnectedAt = Date.now();
-        console.log(
+        log.debug(
           `[VoiceInterview] Session ${sessionId} marked as disconnected, watchdog will cleanup after heartbeat timeout`,
         );
       }
@@ -856,11 +857,11 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       const qualityAlertCount = Object.keys(
         ctx.qualityInsightsByQuestion || {},
       ).length;
-      console.log(
+      log.debug(
         `[CrossInterview] Enabled for session ${sessionId}: ${ctx.priorSessionCount} prior sessions, ${questionCount} questions with themes, ${emergentCount} emergent themes, ${qualityAlertCount} questions with quality alerts`,
       );
     } else {
-      console.log(
+      log.debug(
         `[CrossInterview] Disabled for session ${sessionId}: ${state.crossInterviewRuntimeContext.reason}`,
       );
     }
@@ -873,11 +874,11 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       buildAnalyticsHypothesesRuntimeContext(project, templateQuestions);
     if (state.analyticsHypothesesRuntimeContext.enabled) {
       const hCtx = state.analyticsHypothesesRuntimeContext;
-      console.log(
+      log.debug(
         `[AnalyticsHypotheses] Enabled for session ${sessionId}: ${hCtx.hypotheses?.length} hypotheses from ${hCtx.totalProjectSessions} project sessions (analytics generated at ${hCtx.analyticsGeneratedAt ? new Date(hCtx.analyticsGeneratedAt).toISOString() : "unknown"})`,
       );
     } else {
-      console.log(
+      log.debug(
         `[AnalyticsHypotheses] Disabled for session ${sessionId}: ${state.analyticsHypothesesRuntimeContext.reason}`,
       );
     }
@@ -896,7 +897,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
       session.liveTranscript.length > 0;
 
     if (isRestoredSession) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Restoring session: ${sessionId} (status=${session.status}, questionIndex=${session.currentQuestionIndex})`,
       );
       state.isRestoredSession = true;
@@ -970,7 +971,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
         const validCount = state.questionSummaries.filter(
           (s) => s != null,
         ).length;
-        console.log(
+        log.debug(
           `[VoiceInterview] Restored ${validCount} question summaries (from ${rawSummaries.length} entries)`,
         );
       }
@@ -986,7 +987,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
           state.currentAdditionalQuestionIndex =
             session.currentAdditionalQuestionIndex ?? 0;
 
-          console.log(
+          log.debug(
             `[VoiceInterview] Restored AQ state: phase=true, aqIndex=${state.currentAdditionalQuestionIndex}/${aqData.length} questions`,
           );
         }
@@ -1000,7 +1001,7 @@ async function initializeInterview(sessionId: string, clientWs: WebSocket) {
             entry.questionIndex === state.currentQuestionIndex,
         );
 
-      console.log(
+      log.debug(
         `[VoiceInterview] Restored ${state.fullTranscriptForPersistence.length} transcript entries (${state.transcriptLog.length} in memory), question ${state.currentQuestionIndex + 1}/${questions.length}, alviaSpoken=${state.alviaHasSpokenOnCurrentQuestion}`,
       );
     } else {
@@ -1029,7 +1030,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   // Use cached provider instance from state
   const provider = state.providerInstance;
 
-  console.log(
+  log.debug(
     `[VoiceInterview] Connecting to ${provider.displayName} for session: ${sessionId}`,
   );
 
@@ -1043,7 +1044,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   state.metricsTracker.openaiConnectionCount++;
 
   providerWs.on("open", () => {
-    console.log(
+    log.debug(
       `[VoiceInterview] Connected to ${provider.displayName} for session: ${sessionId}`,
     );
     state.isConnected = true;
@@ -1054,12 +1055,12 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     if (state.useRefreshInstructions && state.transcriptLog.length > 0) {
       instructions = buildRefreshInstructions(state);
       state.useRefreshInstructions = false;
-      console.log(
+      log.debug(
         `[VoiceInterview] Using refresh instructions for planned refresh: ${sessionId}`,
       );
     } else if (state.isRestoredSession && state.transcriptLog.length > 0) {
       instructions = buildResumeInstructions(state);
-      console.log(
+      log.debug(
         `[VoiceInterview] Using resume instructions for restored session: ${sessionId}`,
       );
     } else {
@@ -1105,7 +1106,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       state.transcriptionQualitySignals.vadEagernessReduced &&
       provider.supportsSemanticVAD()
     ) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Re-applying VAD eagerness "low" after provider reconnect for session: ${sessionId}`,
       );
       const vadUpdate = provider.buildTurnDetectionUpdate("low");
@@ -1125,7 +1126,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       !state.transcriptionQualitySignals.vadEagernessReduced &&
       provider.supportsSemanticVAD()
     ) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Re-applying VAD eagerness "${state.vadEagernessMode}" after provider reconnect for session: ${sessionId}`,
       );
       const eagernessUpdate = provider.buildTurnDetectionUpdate(
@@ -1166,7 +1167,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
           }),
         );
 
-        console.log(
+        log.debug(
           `[VoiceInterview] Restored AQ phase for session ${sessionId}: AQ ${aqIndex + 1}/${state.additionalQuestions.length}`,
         );
 
@@ -1197,7 +1198,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
 
     const isRefreshReconnect = state.autoTriggerAfterRefresh;
     if (isRefreshReconnect) {
-      console.log(
+      log.debug(
         `[ConnectionRefresh] Provider ready after planned refresh reconnect for ${sessionId} — will auto-trigger response`,
       );
     }
@@ -1253,13 +1254,13 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
   });
 
   providerWs.on("close", () => {
-    console.log(
+    log.debug(
       `[VoiceInterview] ${provider.displayName} connection closed for session: ${sessionId}`,
     );
 
     // Guard against stale closure - only update current state
     if (!isCurrentConnection(sessionId, capturedConnectionId)) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Ignoring close event from orphaned provider connection for ${sessionId}`,
       );
       return;
@@ -1269,7 +1270,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
     const currentState = interviewStates.get(sessionId);
     if (currentState) {
       if (currentState.isConnectionRefresh) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Provider closed during planned refresh for ${sessionId} — suppressing disconnected event`,
         );
         return;
@@ -1277,7 +1278,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
       currentState.isConnected = false;
       // Reset responseInProgress on disconnect to prevent deadlock
       if (currentState.responseInProgress) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Resetting responseInProgress on disconnect for ${sessionId}`,
         );
         currentState.responseInProgress = false;
@@ -1300,7 +1301,7 @@ function connectToRealtimeProvider(sessionId: string, clientWs: WebSocket) {
 
     // Guard against stale closure - only notify current client
     if (!isCurrentConnection(sessionId, capturedConnectionId)) {
-      console.log(
+      log.debug(
         `[VoiceInterview] Ignoring error event from orphaned provider connection for ${sessionId}`,
       );
       return;
@@ -1358,14 +1359,14 @@ async function handleProviderEvent(
   switch (event.type) {
     case "session.created":
     case "conversation.created":
-      console.log(
+      log.debug(
         `[VoiceInterview] Session/conversation created for ${sessionId}`,
       );
       // Don't trigger response here - wait for session.updated after configuration
       break;
 
     case "session.updated":
-      console.log(`[VoiceInterview] Session updated for ${sessionId}`);
+      log.debug(`[VoiceInterview] Session updated for ${sessionId}`);
       // Only trigger response on initial session setup, not Barbara guidance updates
       if (state.isInitialSession) {
         state.sessionConfigured = true;
@@ -1381,7 +1382,7 @@ async function handleProviderEvent(
 
           // Skip auto-trigger for restored sessions — unless this is a planned refresh
           if (state.isRestoredSession && !state.autoTriggerAfterRefresh) {
-            console.log(
+            log.debug(
               `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
             );
             break;
@@ -1389,20 +1390,20 @@ async function handleProviderEvent(
           state.autoTriggerAfterRefresh = false;
 
           if (state.isPaused) {
-            console.log(
+            log.debug(
               `[VoiceInterview] Session is paused — skipping auto-trigger after refresh for ${sessionId}`,
             );
             break;
           }
 
           if (!canCreateResponse(state)) {
-            console.log(
+            log.debug(
               `[Response] Skipping initial response - response already in progress for ${sessionId}`,
             );
           } else {
             state.responseInProgress = true;
             state.responseStartedAt = Date.now();
-            console.log(
+            log.debug(
               `[VoiceInterview] Client ready, triggering initial response for ${sessionId}`,
             );
             state.providerWs.send(
@@ -1410,7 +1411,7 @@ async function handleProviderEvent(
             );
           }
         } else {
-          console.log(
+          log.debug(
             `[VoiceInterview] Session configured, waiting for client audio_ready for ${sessionId}`,
           );
         }
@@ -1605,7 +1606,7 @@ async function handleProviderEvent(
           state.transcriptionQualitySignals = qualityResult.signals;
 
           if (qualityResult.detectedIssues.length > 0) {
-            console.log(
+            log.debug(
               `[TranscriptionQuality] Session ${sessionId}: ${qualityResult.detectedIssues.join(", ")}`,
             );
           }
@@ -1635,7 +1636,7 @@ async function handleProviderEvent(
             state.transcriptionQualitySignals.utterancesSinceEnvironmentCheck = 0;
             state.transcriptionQualitySignals.environmentCheckCount++;
 
-            console.log(
+            log.debug(
               `[TranscriptionQuality] Triggering environment check for session ${sessionId}`,
             );
 
@@ -1724,7 +1725,7 @@ async function handleProviderEvent(
         );
 
         if (state.pendingRefreshAfterTranscript) {
-          console.log(
+          log.debug(
             `[ConnectionRefresh] transcription.completed — triggering planned refresh for ${sessionId}`,
           );
           state.pendingRefreshAfterTranscript = false;
@@ -1844,7 +1845,7 @@ async function handleProviderEvent(
       }
 
       if (state.needsConnectionRefresh && !state.isFinalizing) {
-        console.log(
+        log.debug(
           `[ConnectionRefresh] speech_stopped boundary detected for ${sessionId} — setting pendingRefreshAfterTranscript, sending response.cancel`,
         );
         state.pendingRefreshAfterTranscript = true;
@@ -1877,7 +1878,7 @@ async function handleProviderEvent(
           responseModalities?.includes("text") || !responseModalities;
 
         if (!isTextResponse) {
-          console.log(
+          log.debug(
             `[AlviaSummary] Ignoring stale non-text response.done for ${sessionId} (modalities: ${JSON.stringify(responseModalities)}, status: ${responseStatus})`,
           );
           break;
@@ -1925,7 +1926,7 @@ async function handleProviderEvent(
         }
 
         if (!extractedText && state.alviaSummaryAccumulatedText) {
-          console.log(
+          log.debug(
             `[AlviaSummary] Using accumulated delta text for ${sessionId} (${state.alviaSummaryAccumulatedText.length} chars) — output items had no inline text`,
           );
           extractedText = state.alviaSummaryAccumulatedText;
@@ -2066,7 +2067,7 @@ Then continue the interview naturally once they acknowledge.`;
       }),
     );
 
-    console.log(
+    log.debug(
       `[TranscriptionQuality] Injected environment check guidance via full instruction rebuild for session ${sessionId}`,
     );
   }
@@ -2096,7 +2097,7 @@ function checkEagernessConfusionSwitch(
 
   const recentRapidCount = recentBargeIns.filter(Boolean).length;
   if (recentRapidCount >= 3) {
-    console.log(
+    log.debug(
       `[VadEagerness] Session ${sessionId}: Confusion detected — ${recentRapidCount} rapid barge-ins in last ${recentBargeIns.length} turns. Switching from "high" to "auto".`,
     );
 
@@ -2174,7 +2175,7 @@ function sendCombinedEagernessSwitch(
     );
   }
 
-  console.log(
+  log.debug(
     `[VadEagerness] Session ${sessionId}: Combined eagerness+instructions switch to "${newMode}"`,
   );
 }
@@ -2216,7 +2217,7 @@ function sendVadEagernessUpdate(
     );
   }
 
-  console.log(
+  log.debug(
     `[VadEagerness] Session ${sessionId}: Changed eagerness to "${eagerness}"`,
   );
 }
@@ -2228,7 +2229,7 @@ async function triggerBarbaraAnalysis(
   if (!state || state.isWaitingForBarbara) return null;
 
   if (state.isInAdditionalQuestionsPhase) {
-    console.log(
+    log.debug(
       `[Barbara] Skipping analysis during AQ phase for session: ${sessionId}`,
     );
     return null;
@@ -2238,7 +2239,7 @@ async function triggerBarbaraAnalysis(
   if (state.transcriptLog.length < 2) return null;
 
   state.isWaitingForBarbara = true;
-  console.log(`[Barbara] Analysing conversation for session: ${sessionId}`);
+  log.debug(`[Barbara] Analysing conversation for session: ${sessionId}`);
 
   try {
     const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -2337,10 +2338,10 @@ async function triggerBarbaraAnalysis(
                 }))
               : undefined,
         };
-        console.log(
+        log.debug(
           `[CrossInterview] Injecting ${questionThemes.length} question themes + ${emergentThemes.length} emergent themes for Q${state.currentQuestionIndex + 1}`,
         );
-        console.log(
+        log.debug(
           `[CrossInterview] Injecting quality insights for Q${state.currentQuestionIndex + 1}: current=${currentQuestionQuality ? 1 : 0}, upcoming=${upcomingQualityAlerts.length}`,
         );
       }
@@ -2360,7 +2361,7 @@ async function triggerBarbaraAnalysis(
             h.relatedQuestionIndices.length === 0,
         })),
       };
-      console.log(
+      log.debug(
         `[AnalyticsHypotheses] Injecting ${hCtx.hypotheses.length} hypotheses for Q${state.currentQuestionIndex + 1}`,
       );
     }
@@ -2375,12 +2376,12 @@ async function triggerBarbaraAnalysis(
     // Clear the timeout to prevent memory leak from lingering timers
     clearTimeout(timeoutId!);
 
-    console.log(`[Barbara] Guidance for ${sessionId}:`);
-    console.log(
+    log.debug(`[Barbara] Guidance for ${sessionId}:`);
+    log.debug(
       `  Action: ${guidance.action} (confidence: ${guidance.confidence})`,
     );
-    console.log(`  Message: ${guidance.message}`);
-    console.log(`  Reasoning: ${guidance.reasoning}`);
+    log.debug(`  Message: ${guidance.message}`);
+    log.debug(`  Reasoning: ${guidance.reasoning}`);
 
     // Only inject guidance if Barbara has something meaningful to say
     if (guidance.action !== "none" && guidance.confidence > 0.6) {
@@ -2434,12 +2435,12 @@ async function triggerBarbaraAnalysis(
         });
 
         // Log the complete Alvia prompt when Barbara issues guidance
-        console.log(
+        log.debug(
           `\n[Alvia] Complete prompt with Barbara's guidance for ${sessionId}:`,
         );
-        console.log("=".repeat(80));
-        console.log(updatedInstructions);
-        console.log("=".repeat(80) + "\n");
+        log.debug("=".repeat(80));
+        log.debug(updatedInstructions);
+        log.debug("=".repeat(80) + "\n");
 
         state.providerWs.send(
           JSON.stringify({
@@ -2453,7 +2454,7 @@ async function triggerBarbaraAnalysis(
       }
 
       if (guidance.action === "probe_followup") {
-        console.log(
+        log.debug(
           `[Barbara] probe_followup for Q${state.currentQuestionIndex + 1}, followUpTurnCount: ${metrics.followUpTurnCount}` +
             (metrics.recommendedFollowUps !== null
               ? ` (recommended: ${metrics.recommendedFollowUps})`
@@ -2511,7 +2512,7 @@ async function handleClientMessage(
 
   // Handle audio_ready - client signals its audio context is ready to receive audio
   if (message.type === "audio_ready") {
-    console.log(`[VoiceInterview] Client audio ready for ${sessionId}`);
+    log.debug(`[VoiceInterview] Client audio ready for ${sessionId}`);
     state.clientAudioReady = true;
     // Check if session is already configured - if so, trigger the initial response
     // BUT: For restored/resumed sessions, do NOT auto-trigger - wait for resume_interview from client
@@ -2523,7 +2524,7 @@ async function handleClientMessage(
     ) {
       // Skip auto-trigger for restored sessions — unless this is a planned refresh
       if (state.isRestoredSession && !state.autoTriggerAfterRefresh) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Restored session - waiting for user to click mic to resume for ${sessionId}`,
         );
         state.isInitialSession = false;
@@ -2532,7 +2533,7 @@ async function handleClientMessage(
       state.autoTriggerAfterRefresh = false;
 
       if (state.isPaused) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Session is paused — skipping auto-trigger after refresh (audio_ready) for ${sessionId}`,
         );
         state.isInitialSession = false;
@@ -2541,13 +2542,13 @@ async function handleClientMessage(
 
       state.isInitialSession = false;
       if (!canCreateResponse(state)) {
-        console.log(
+        log.debug(
           `[Response] Skipping initial response (audio_ready) - response already in progress for ${sessionId}`,
         );
       } else {
         state.responseInProgress = true;
         state.responseStartedAt = Date.now();
-        console.log(
+        log.debug(
           `[VoiceInterview] Session configured, triggering initial response for ${sessionId}`,
         );
         state.providerWs.send(
@@ -2638,7 +2639,7 @@ async function handleClientMessage(
           scheduleDebouncedPersist(sessionId);
 
           if (state.needsConnectionRefresh && !state.isFinalizing) {
-            console.log(
+            log.debug(
               `[ConnectionRefresh] text_input boundary — triggering planned refresh for ${sessionId}`,
             );
             state.needsConnectionRefresh = false;
@@ -2676,7 +2677,7 @@ async function handleClientMessage(
             state.providerWs.readyState === WebSocket.OPEN
           ) {
             if (!canCreateResponse(state)) {
-              console.log(
+              log.debug(
                 `[Response] Skipping text input response - response already in progress for ${sessionId}`,
               );
             } else {
@@ -2723,7 +2724,7 @@ async function handleClientMessage(
         status: "paused",
         pausedAt: new Date(),
       });
-      console.log(
+      log.debug(
         `[VoiceInterview] Interview paused for session: ${sessionId}`,
       );
       break;
@@ -2734,7 +2735,7 @@ async function handleClientMessage(
       if (state.pauseStartedAt) {
         const pauseDuration = Date.now() - state.pauseStartedAt;
         state.totalPauseDurationMs += pauseDuration;
-        console.log(
+        log.debug(
           `[VoiceInterview] Pause duration: ${pauseDuration}ms, total paused: ${state.totalPauseDurationMs}ms`,
         );
         state.pauseStartedAt = null;
@@ -2758,7 +2759,7 @@ async function handleClientMessage(
         status: "in_progress",
         pausedAt: null,
       });
-      console.log(
+      log.debug(
         `[VoiceInterview] Interview resuming for session: ${sessionId}`,
       );
 
@@ -2809,7 +2810,7 @@ INSTRUCTIONS:
 
         // Trigger AI response
         if (!canCreateResponse(state)) {
-          console.log(
+          log.debug(
             `[Response] Skipping resume response - response already in progress for ${sessionId}`,
           );
         } else {
@@ -2930,7 +2931,7 @@ INSTRUCTIONS:
               if (recentRespondentText.length > 20) {
                 const briefSummary = recentRespondentText.slice(0, 150);
                 transitionInstruction = `The respondent has clicked Next Question. IMPORTANT: Before moving on, briefly confirm what you heard since audio quality may have been unclear. Say something like: "Before we continue - I want to make sure I understood you correctly. It sounds like you said [paraphrase key points from: "${briefSummary}..."]. Is that right?" Then, once confirmed, ask the next question: "${nextQuestion?.questionText}"`;
-                console.log(
+                log.debug(
                   `[TranscriptionQuality] Adding confirmation checkpoint for Q${previousIndex + 1} (score: ${qualityScore})`,
                 );
               }
@@ -2952,7 +2953,7 @@ INSTRUCTIONS:
 
             // Only attempt detection if we have some context
             if (completedSummaries.length > 0 || recentTranscript.length > 0) {
-              console.log(
+              log.debug(
                 `[TopicOverlap] Checking Q${state.currentQuestionIndex + 1} against ${completedSummaries.length} summaries and ${recentTranscript.length} transcript entries`,
               );
               try {
@@ -2971,11 +2972,11 @@ INSTRUCTIONS:
                     overlapResult,
                     nextQuestion?.questionText || "",
                   );
-                  console.log(
+                  log.debug(
                     `[TopicOverlap] Detected: ${overlapResult.overlappingTopics.join(", ")} (${overlapResult.coverageLevel})`,
                   );
                 } else {
-                  console.log(
+                  log.debug(
                     `[TopicOverlap] No overlap detected for Q${state.currentQuestionIndex + 1}`,
                   );
                 }
@@ -2986,7 +2987,7 @@ INSTRUCTIONS:
             }
 
             // Trigger Alvia to read the new question aloud
-            console.log(
+            log.debug(
               `[TopicOverlap] Transition instruction: ${transitionInstruction.substring(0, 150)}...`,
             );
             if (
@@ -3011,7 +3012,7 @@ INSTRUCTIONS:
               );
               // Then trigger the response
               if (!canCreateResponse(state)) {
-                console.log(
+                log.debug(
                   `[Response] Skipping topic overlap response - response already in progress for ${sessionId}`,
                 );
               } else {
@@ -3133,7 +3134,7 @@ Do not attempt to answer any questions or continue the interview.`;
             session: waitingSessionConfig,
           }),
         );
-        console.log(
+        log.debug(
           `[AQ] Sent waiting instructions to provider for session: ${sessionId}`,
         );
       }
@@ -3146,7 +3147,7 @@ Do not attempt to answer any questions or continue the interview.`;
             clientWs.send(JSON.stringify(data));
             return true;
           }
-          console.log(
+          log.debug(
             `[AQ] WebSocket not open (state: ${clientWs.readyState}), skipping send for ${sessionId}`,
           );
           return false;
@@ -3167,7 +3168,7 @@ Do not attempt to answer any questions or continue the interview.`;
           // Check if session still exists (could have been cleaned up by watchdog)
           const currentState = interviewStates.get(sessionId);
           if (!currentState) {
-            console.log(
+            log.debug(
               `[AQ] Session ${sessionId} no longer exists, aborting AQ flow`,
             );
             return;
@@ -3357,7 +3358,7 @@ Do not attempt to answer any questions or continue the interview.`;
       // Client detected extended silence (30+ seconds) and paused audio streaming
       // This is informational - the client handles the pause/resume logic
       // The server just notes this for metrics and keeps the session active
-      console.log(
+      log.debug(
         `[VoiceInterview] Client silence detected for session: ${sessionId} (${message.durationSeconds}s)`,
       );
       // Keep session alive but note the silence state
@@ -3373,13 +3374,13 @@ Do not attempt to answer any questions or continue the interview.`;
       // Gate audio forwarding on pause/resume state (same as regular audio path)
       // This prevents buffered audio from bypassing the pause/awaiting-resume gate
       if (state.isPaused || state.awaitingResume) {
-        console.log(
+        log.debug(
           `[VoiceInterview] Discarding client_resuming_audio while paused/awaiting resume for session: ${sessionId}`,
         );
         break;
       }
 
-      console.log(
+      log.debug(
         `[VoiceInterview] Client resuming audio with buffer for session: ${sessionId}`,
       );
       state.lastActivityAt = Date.now();
@@ -3401,7 +3402,7 @@ Do not attempt to answer any questions or continue the interview.`;
 
     case "client_calibration_complete":
       // Client completed ambient noise calibration for silence detection threshold
-      console.log(
+      log.debug(
         `[VoiceInterview] Client calibration complete for session: ${sessionId} — baseline: ${message.baseline?.toFixed(4)}, threshold: ${message.threshold?.toFixed(4)}, samples: ${message.sampleCount}`,
       );
       // Store calibration data in performance metrics for diagnostics
@@ -3431,7 +3432,7 @@ async function generateAdditionalQuestionsForSession(
 
   // Check feature flag first
   if (!ADDITIONAL_QUESTIONS_ENABLED) {
-    console.log(`[AQ] Additional questions feature is disabled`);
+    log.debug(`[AQ] Additional questions feature is disabled`);
     return {
       questions: [],
       barbaraModel: "",
@@ -3442,7 +3443,7 @@ async function generateAdditionalQuestionsForSession(
 
   // Don't generate if maxAdditionalQuestions is 0
   if (state.maxAdditionalQuestions <= 0) {
-    console.log(
+    log.debug(
       `[AQ] Session ${sessionId} has maxAdditionalQuestions=0, skipping`,
     );
     return {
@@ -3453,7 +3454,7 @@ async function generateAdditionalQuestionsForSession(
     };
   }
 
-  console.log(
+  log.debug(
     `[AQ] Generating up to ${state.maxAdditionalQuestions} additional questions for session: ${sessionId}`,
   );
 
@@ -3478,7 +3479,7 @@ async function generateAdditionalQuestionsForSession(
     sessionId,
   );
 
-  console.log(
+  log.debug(
     `[AQ] Cross-interview context: ${aqCrossCtx.enabled ? "enabled" : "disabled"}${aqCrossCtx.reason ? ` (${aqCrossCtx.reason})` : ""}`,
   );
 
@@ -3508,7 +3509,7 @@ async function generateAdditionalQuestionsForSession(
     buildUsageAttribution(state),
   );
 
-  console.log(
+  log.debug(
     `[AQ] Generated ${result.questions.length} additional questions for session: ${sessionId}`,
   );
   return result;
@@ -3538,7 +3539,7 @@ async function startAdditionalQuestion(
   state.currentAdditionalQuestionIndex = aqIndex;
   // Set currentQuestionIndex to questions.length + aqIndex so transcript entries are properly tagged
   state.currentQuestionIndex = state.questions.length + aqIndex;
-  console.log(
+  log.debug(
     `[AQ] Starting additional question ${aqIndex + 1}/${state.additionalQuestions.length} for session: ${sessionId} (questionIndex: ${state.currentQuestionIndex})`,
   );
 
@@ -3588,7 +3589,7 @@ async function startAdditionalQuestion(
     );
 
     if (!canCreateResponse(state)) {
-      console.log(
+      log.debug(
         `[Response] Skipping additional question response - response already in progress for ${sessionId}`,
       );
     } else {
@@ -3662,13 +3663,13 @@ async function awaitPendingSummaries(sessionId: string): Promise<void> {
   const state = interviewStates.get(sessionId);
   if (!state || state.pendingSummaryPromises.size === 0) return;
 
-  console.log(
+  log.debug(
     `[Summary] Awaiting ${state.pendingSummaryPromises.size} pending summaries for session: ${sessionId}`,
   );
 
   try {
     await Promise.all(state.pendingSummaryPromises.values());
-    console.log(
+    log.debug(
       `[Summary] All pending summaries completed for session: ${sessionId}`,
     );
   } catch (error) {
@@ -3698,7 +3699,7 @@ async function persistAQTranscript(
     );
 
     if (aqEntries.length === 0) {
-      console.log(
+      log.debug(
         `[AQ Transcript] No transcript entries found for AQ${aqIndex + 1}`,
       );
       return;
@@ -3712,7 +3713,7 @@ async function persistAQTranscript(
       })
       .join("\n\n");
 
-    console.log(
+    log.debug(
       `[AQ Transcript] Storing transcript for AQ${aqIndex + 1} with ${aqEntries.length} entries`,
     );
 
@@ -3728,7 +3729,7 @@ async function persistAQTranscript(
       additionalQuestions: updatedAQs,
     });
 
-    console.log(
+    log.debug(
       `[AQ Transcript] Successfully stored transcript for AQ${aqIndex + 1}`,
     );
   } catch (error) {
@@ -3750,13 +3751,13 @@ async function generateAndPersistAQSummary(
 
   const aq = state.additionalQuestions[aqIndex];
   if (!aq) {
-    console.log(`[AQ Summary] No AQ found at index ${aqIndex}`);
+    log.debug(`[AQ Summary] No AQ found at index ${aqIndex}`);
     return;
   }
 
   // Check if summary already exists for this AQ
   if ((aq as any).summaryBullets && (aq as any).summaryBullets.length > 0) {
-    console.log(
+    log.debug(
       `[AQ Summary] Summary already exists for AQ${aqIndex + 1}, skipping`,
     );
     return;
@@ -3780,7 +3781,7 @@ async function generateAndPersistAQSummary(
       0,
     );
 
-    console.log(
+    log.debug(
       `[AQ Summary] Generating summary for AQ${aqIndex + 1} (session: ${sessionId}), ` +
         `transcript snapshot: ${transcriptSnapshot.length} total entries, ` +
         `${aqEntries.length} for this AQ, ${respondentEntries.length} respondent entries, ${wordCount} words`,
@@ -3851,7 +3852,7 @@ async function generateAndPersistAQSummary(
     }
     state.questionSummaries[aqQuestionIndex] = aqSummary;
 
-    console.log(
+    log.debug(
       `[AQ Summary] Summary completed for AQ${aqIndex + 1}: "${summary.respondentSummary?.substring(0, 100) || ""}..."`,
     );
 
@@ -3867,7 +3868,7 @@ async function generateAndPersistAQSummary(
       lastBarbaraGuidance: state.lastBarbaraGuidance,
       questionStates: state.questionStates,
     });
-    console.log(`[AQ Summary] Summary persisted for AQ${aqIndex + 1}`);
+    log.debug(`[AQ Summary] Summary persisted for AQ${aqIndex + 1}`);
   } catch (error) {
     console.error(
       `[AQ Summary] Failed to generate summary for AQ${aqIndex + 1}:`,
@@ -3892,7 +3893,7 @@ function finalizeAndPersistMetrics(
     const finalPauseDuration = now - state.pauseStartedAt;
     state.totalPauseDurationMs += finalPauseDuration;
     state.pauseStartedAt = null;
-    console.log(
+    log.debug(
       `[VoiceInterview] Final pause duration: ${finalPauseDuration}ms, total paused: ${state.totalPauseDurationMs}ms`,
     );
   }
@@ -4009,7 +4010,7 @@ function finalizeAndPersistMetrics(
     activeSessionDurationMs > 0
       ? ((activeSilenceMs / activeSessionDurationMs) * 100).toFixed(1)
       : "N/A";
-  console.log(`[Metrics] Final metrics for ${sessionId}:`, {
+  log.debug(`[Metrics] Final metrics for ${sessionId}:`, {
     duration: `${Math.round(sessionDurationMs / 1000)}s`,
     activeDuration: `${Math.round(activeSessionDurationMs / 1000)}s`,
     totalPaused: `${Math.round(totalPauseDurationMs / 1000)}s`,
@@ -4025,7 +4026,7 @@ function finalizeAndPersistMetrics(
     state.transcriptionQualitySignals,
   );
 
-  console.log(`[TranscriptionQuality] Final metrics for ${sessionId}:`, {
+  log.debug(`[TranscriptionQuality] Final metrics for ${sessionId}:`, {
     score: transcriptionQualityMetrics.qualityScore,
     flags: transcriptionQualityMetrics.flagsDetected,
     signals: {
@@ -4064,7 +4065,7 @@ async function waitForResponseIdle(
 ): Promise<boolean> {
   if (!state.responseInProgress) return true;
 
-  console.log(
+  log.debug(
     `[AlviaSummary] Waiting for active response to complete before summary for ${sessionId}`,
   );
 
@@ -4082,7 +4083,7 @@ async function waitForResponseIdle(
     return false;
   }
 
-  console.log(
+  log.debug(
     `[AlviaSummary] Response idle achieved for ${sessionId}, proceeding with summary`,
   );
   return true;
@@ -4192,12 +4193,12 @@ Respond with ONLY the JSON object. No other text.`;
       JSON.stringify(state.providerInstance.buildTextOnlyResponseCreate()),
     );
 
-    console.log(
+    log.debug(
       `[AlviaSummary] Summary request sent for ${sessionId}, waiting for response...`,
     );
 
     const result = await Promise.race([summaryPromise, timeoutPromise]);
-    console.log(
+    log.debug(
       `[AlviaSummary] Generated summary for ${sessionId} (${result.length} chars)`,
     );
     return result;
@@ -4242,7 +4243,7 @@ async function triggerBarbaraSessionSummary(
       barbaraSessionSummary: result,
     });
 
-    console.log(`[BarbaraSummary] Session summary persisted for ${sessionId}`);
+    log.info(`[BarbaraSummary] Session summary persisted for ${sessionId}`);
   } catch (error) {
     console.error(`[BarbaraSummary] Failed for ${sessionId}:`, error);
   }
@@ -4268,7 +4269,7 @@ async function finalizeInterview(
     completedAt: new Date(),
     ...extraPatch,
   });
-  console.log(
+  log.debug(
     `[VoiceInterview] Session ${sessionId} marked completed before summary generation`,
   );
 
@@ -4300,7 +4301,7 @@ async function finalizeInterview(
             await storage.persistInterviewState(sessionId, {
               alviaSummary: parsed,
             });
-            console.log(`[AlviaSummary] Persisted for ${sessionId}`);
+            log.info(`[AlviaSummary] Persisted for ${sessionId}`);
           } catch (parseError) {
             const fallback: AlviaSessionSummary = {
               themes: [],
@@ -4366,7 +4367,7 @@ async function cleanupSession(sessionId: string, terminationReason?: string) {
       state.clientWs.close();
     }
     interviewStates.delete(sessionId);
-    console.log(`[VoiceInterview] Session cleaned up: ${sessionId}`);
+    log.debug(`[VoiceInterview] Session cleaned up: ${sessionId}`);
 
     // Stop watchdog if no more sessions
     if (interviewStates.size === 0) {
@@ -4392,7 +4393,7 @@ function startSessionWatchdog(): void {
     sendProtocolPings();
   }, WS_PING_INTERVAL_MS);
 
-  console.log(
+  log.debug(
     "[SessionWatchdog] Started - checking every",
     WATCHDOG_INTERVAL_MS / 1000,
     "seconds, WS pings every",
@@ -4410,7 +4411,7 @@ function stopSessionWatchdog(): void {
     clearInterval(watchdogState.pingInterval);
     watchdogState.pingInterval = null;
   }
-  console.log("[SessionWatchdog] Stopped - no active sessions");
+  log.debug("[SessionWatchdog] Stopped - no active sessions");
 }
 
 function sendProtocolPings(): void {
@@ -4432,7 +4433,7 @@ function sendProtocolPings(): void {
   }
 
   if (pingsSent > 0 || errors > 0) {
-    console.log(`[WS-Ping] Sent ${pingsSent} protocol pings, ${errors} errors`);
+    log.debug(`[WS-Ping] Sent ${pingsSent} protocol pings, ${errors} errors`);
   }
 }
 
@@ -4464,7 +4465,7 @@ function runWatchdogCycle(): void {
       !state.isConnectionRefresh
     ) {
       state.needsConnectionRefresh = true;
-      console.log(
+      log.debug(
         `[ConnectionRefresh] Flag set for session ${sessionId} (WS age: ${Math.round(clientWsAge / 1000)}s)`,
       );
     }
@@ -4534,7 +4535,7 @@ function runWatchdogCycle(): void {
 
   // Proactive connection refresh (fallback — no conversation boundary within extra minute)
   for (const sessionId of sessionsToRefresh) {
-    console.log(
+    log.debug(
       `[ConnectionRefresh] Watchdog fallback refresh for session ${sessionId}`,
     );
     refreshConnection(sessionId, refreshDeps);
@@ -4567,7 +4568,7 @@ function warnSessionTermination(sessionId: string): void {
 
   if (state.clientWs && state.clientWs.readyState === WebSocket.OPEN) {
     state.clientWs.send(JSON.stringify(message));
-    console.log(`[SessionWatchdog] Warning sent to session: ${sessionId}`);
+    log.debug(`[SessionWatchdog] Warning sent to session: ${sessionId}`);
   }
 }
 
@@ -4578,7 +4579,7 @@ async function terminateSession(
   const state = interviewStates.get(sessionId);
   if (!state) return;
 
-  console.log(
+  log.debug(
     `[SessionWatchdog] Terminating session ${sessionId} - reason: ${reason}`,
   );
 

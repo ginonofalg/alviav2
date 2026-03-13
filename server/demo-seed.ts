@@ -1,3 +1,4 @@
+import { log } from './logger';
 import { storage } from "./storage";
 import type { InsertProject, InsertTemplate, InsertQuestion } from "@shared/schema";
 
@@ -124,7 +125,7 @@ export async function seedDemoProjectIfNeeded(userId: string): Promise<void> {
     
     await storage.createQuestions(questionsToCreate);
     
-    console.log(`[demo-seed] Created demo project for user ${userId}: project=${project.id}, template=${template.id}`);
+    log.info(`[demo-seed] Created demo project for user ${userId}: project=${project.id}, template=${template.id}`);
   } catch (error) {
     console.error("[demo-seed] Failed to seed demo project:", error);
     throw error;

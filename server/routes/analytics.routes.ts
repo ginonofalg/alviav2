@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import type { CollectionAnalytics, TemplateAnalytics, ProjectAnalytics } from "@shared/schema";
 import { z } from "zod";
 import type { SessionScope } from "@shared/types/simulation";
+import { log } from "../logger";
 import {
   filterSessionsByScope,
   buildSessionsWithSummaries,
@@ -655,7 +656,7 @@ async function runProjectCascadeRefresh(
   for (const { collection, template, questions, sessions } of staleCollections) {
     advanceJobStep(jobId, stepIndex, "running");
     try {
-      console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+      log.debug("[Cascade Refresh] Refreshing collection:", collection.name);
       await refreshCollectionAnalytics(collection, template, project, questions, sessions, scope);
       incrementJobCounter(jobId, "collectionsRefreshed");
       advanceJobStep(jobId, stepIndex, "done");
@@ -698,7 +699,7 @@ async function runProjectCascadeRefresh(
         continue;
       }
 
-      console.log("[Cascade Refresh] Refreshing template:", template.name);
+      log.debug("[Cascade Refresh] Refreshing template:", template.name);
       await refreshTemplateAnalytics(template, collectionsData, questions, scope);
       incrementJobCounter(jobId, "templatesRefreshed");
       advanceJobStep(jobId, stepIndex, "done");
@@ -723,7 +724,7 @@ async function runProjectCascadeRefresh(
     const templatesWithAnalytics = templatesData.filter(t => t.analytics !== null && t.template.analyzedSessionScope === scope);
 
     if (templatesWithAnalytics.length > 0) {
-      console.log("[Cascade Refresh] Refreshing project:", project.name);
+      log.debug("[Cascade Refresh] Refreshing project:", project.name);
       await refreshProjectAnalytics(project, templatesData, scope);
       setJobFlag(jobId, "projectRefreshed", true);
     }
@@ -745,7 +746,7 @@ async function runProjectCascadeRefresh(
   } else {
     updateJobPhase(jobId, "complete");
   }
-  console.log("[Cascade Refresh] Project cascade job finished:", jobId);
+  log.info("[Cascade Refresh] Project cascade job finished:", jobId);
 }
 
 async function runTemplateCascadeRefresh(
@@ -763,7 +764,7 @@ async function runTemplateCascadeRefresh(
   for (const { collection, questions: colQuestions, sessions } of staleCollections) {
     advanceJobStep(jobId, stepIndex, "running");
     try {
-      console.log("[Cascade Refresh] Refreshing collection:", collection.name);
+      log.debug("[Cascade Refresh] Refreshing collection:", collection.name);
       await refreshCollectionAnalytics(collection, template, project, colQuestions, sessions, scope);
       incrementJobCounter(jobId, "collectionsRefreshed");
       advanceJobStep(jobId, stepIndex, "done");
@@ -788,7 +789,7 @@ async function runTemplateCascadeRefresh(
     const collectionsWithAnalytics = collectionsData.filter(c => c.analytics !== null && c.collection.analyzedSessionScope === scope);
 
     if (collectionsWithAnalytics.length > 0) {
-      console.log("[Cascade Refresh] Refreshing template:", template.name);
+      log.debug("[Cascade Refresh] Refreshing template:", template.name);
       await refreshTemplateAnalytics(template, collectionsData, questions, scope);
       setJobFlag(jobId, "templateRefreshed", true);
     }
@@ -810,5 +811,5 @@ async function runTemplateCascadeRefresh(
   } else {
     updateJobPhase(jobId, "complete");
   }
-  console.log("[Cascade Refresh] Template cascade job finished:", jobId);
+  log.info("[Cascade Refresh] Template cascade job finished:", jobId);
 }

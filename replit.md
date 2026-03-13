@@ -37,6 +37,7 @@ Preferred communication style: Simple, everyday language.
 -   **API Validation**: Zod schemas are used for shared validation between client and server.
 -   **Database Operations**: All database interactions are centralized through a `DatabaseStorage` class implementing an `IStorage` interface.
 -   **Analytics Session Scope Filtering**: Analytics endpoints support filtering by real, simulated, or combined sessions.
+-   **Structured Logging**: `server/logger.ts` provides a thin log-level wrapper (`log.debug/info/warn/error`). Defaults to `info` in production and `debug` in development. Set `LOG_LEVEL` env var to override.
 
 ## Database Architecture
 

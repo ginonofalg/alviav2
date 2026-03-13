@@ -5,6 +5,7 @@ import { generateResumeToken, hashToken, getTokenExpiryDate } from "../resume-to
 import { scoreGuidanceAdherence, computeAdherenceSummary } from "../guidance-adherence";
 import type { BarbaraGuidanceLogEntry, PersistedTranscriptEntry } from "@shared/schema";
 import { z } from "zod";
+import { log } from "../logger";
 
 export function registerSessionRoutes(app: Express) {
   app.get("/api/sessions", isAuthenticated, async (req: any, res) => {
@@ -254,9 +255,9 @@ export function registerSessionRoutes(app: Express) {
     const diagnostics = req.body || {};
     
     if (isProduction) {
-      console.log(`[DisconnectDiag] Session ${sessionId}: code=${diagnostics.closeCode}, clean=${diagnostics.wasClean}, online=${diagnostics.onLine}, visibility=${diagnostics.visibilityState}, focus=${diagnostics.hasFocus}`);
+      log.info(`[DisconnectDiag] Session ${sessionId}: code=${diagnostics.closeCode}, clean=${diagnostics.wasClean}, online=${diagnostics.onLine}, visibility=${diagnostics.visibilityState}, focus=${diagnostics.hasFocus}`);
     } else {
-      console.log(`[DisconnectDiag] Session ${sessionId}:`, {
+      log.debug(`[DisconnectDiag] Session ${sessionId}:`, {
         closeCode: diagnostics.closeCode,
         closeReason: diagnostics.closeReason,
         wasClean: diagnostics.wasClean,

@@ -5,6 +5,7 @@ import {
   makeResponsesUsageExtractor,
   type TrackedLlmResult,
 } from "./llm-usage";
+import { log } from "./logger";
 import type {
   LLMUsageAttribution,
   NormalizedTokenUsage,
@@ -298,16 +299,16 @@ export async function analyzeWithBarbara(
     const estimatedInputTokens = Math.ceil(
       (systemPrompt.length + userPrompt.length) / 4,
     );
-    console.log(
+    log.debug(
       `[Barbara] Prompt estimate: ~${estimatedInputTokens} input tokens (system: ${systemPrompt.length} chars, user: ${userPrompt.length} chars)`,
     );
 
     if (process.env.DEBUG_BARBARA_PROMPTS === "true") {
-      console.log("[Barbara][DEBUG] ===== SYSTEM PROMPT =====");
-      console.log(systemPrompt);
-      console.log("[Barbara][DEBUG] ===== USER PROMPT =====");
-      console.log(userPrompt);
-      console.log("[Barbara][DEBUG] ===== END PROMPTS =====");
+      log.debug("[Barbara][DEBUG] ===== SYSTEM PROMPT =====");
+      log.debug(systemPrompt);
+      log.debug("[Barbara][DEBUG] ===== USER PROMPT =====");
+      log.debug(userPrompt);
+      log.debug("[Barbara][DEBUG] ===== END PROMPTS =====");
     }
 
     const config = barbaraConfig.analysis;
@@ -336,7 +337,7 @@ export async function analyzeWithBarbara(
     const response = tracked.result;
 
     if (response.usage) {
-      console.log(
+      log.debug(
         `[Barbara] Actual usage: ${response.usage.input_tokens} input, ${response.usage.output_tokens} output tokens`,
       );
     }
@@ -757,12 +758,12 @@ export async function detectTopicOverlap(
   const hasRecentTranscript = recentTranscript.length > 0;
 
   if (!hasCompletedSummaries && !hasRecentTranscript) {
-    console.log("[TopicOverlap] Skipping - no context available");
+    log.debug("[TopicOverlap] Skipping - no context available");
     return null;
   }
 
   const startTime = Date.now();
-  console.log(
+  log.debug(
     `[TopicOverlap] Starting detection with ${completedSummaries.length} summaries, ${recentTranscript.length} transcript entries`,
   );
 
@@ -818,7 +819,7 @@ Does the upcoming question's topic overlap with what the respondent has already 
 
     const config = barbaraConfig.topicOverlap;
     const promptLength = systemPrompt.length + userPrompt.length;
-    console.log(
+    log.debug(
       `[TopicOverlap] Calling OpenAI (model: ${config.model}, prompt: ${promptLength} chars)`,
     );
 
@@ -850,20 +851,20 @@ Does the upcoming question's topic overlap with what the respondent has already 
     const elapsed = Date.now() - startTime;
 
     if (!response || !response.output_text) {
-      console.log(`[TopicOverlap] No valid response after ${elapsed}ms`);
+      log.debug(`[TopicOverlap] No valid response after ${elapsed}ms`);
       return null;
     }
 
     const content = response.output_text;
     if (!content) {
-      console.log(
+      log.debug(
         `[TopicOverlap] Empty content in response after ${elapsed}ms`,
       );
       return null;
     }
 
     const parsed = JSON.parse(content) as TopicOverlapResult;
-    console.log(
+    log.debug(
       `[TopicOverlap] Completed in ${elapsed}ms - hasOverlap: ${parsed.hasOverlap}, topics: [${parsed.overlappingTopics.join(", ")}], coverage: ${parsed.coverageLevel}`,
     );
     return parsed;
@@ -895,13 +896,13 @@ export async function generateQuestionSummary(
     },
     {} as Record<string, number>,
   );
-  console.log(
+  log.debug(
     `[Summary] Q${questionIndex + 1} transcript breakdown: ${JSON.stringify(speakerBreakdown)}, ` +
       `entries: ${questionTranscript.length}`,
   );
 
   if (questionTranscript.length === 0) {
-    console.log(
+    log.debug(
       `[Summary] Q${questionIndex + 1}: No transcript entries found, returning empty summary`,
     );
     return createEmptySummary(questionIndex, questionText, metrics);
@@ -916,7 +917,7 @@ export async function generateQuestionSummary(
     .split(/\s+/)
     .filter((w) => w.length > 0).length;
 
-  console.log(
+  log.debug(
     `[Summary] Q${questionIndex + 1}: ${respondentEntries.length} respondent entries, ${wordCount} words`,
   );
 
@@ -1030,7 +1031,7 @@ Create a structured summary of the respondent's answer.`;
     });
     const response = tracked.result;
     const responseStatus = response.status;
-    console.log(
+    log.debug(
       `[Summary] Q${questionIndex + 1}: OpenAI API call completed, status: ${responseStatus}`,
     );
 
@@ -1043,7 +1044,7 @@ Create a structured summary of the respondent's answer.`;
     const content = response.output_text;
 
     if (!content) {
-      console.log(
+      log.debug(
         `[Summary] Q${questionIndex + 1}: OpenAI returned empty content! Response details:`,
         JSON.stringify(
           {
@@ -1058,11 +1059,11 @@ Create a structured summary of the respondent's answer.`;
       return createEmptySummary(questionIndex, questionText, metrics);
     }
 
-    console.log(
+    log.debug(
       `[Summary] Q${questionIndex + 1}: Parsing OpenAI response (${content.length} chars)`,
     );
     const parsed = JSON.parse(content);
-    console.log(
+    log.debug(
       `[Summary] Q${questionIndex + 1}: Parsed summary - respondentSummary: "${parsed.respondentSummary?.substring(0, 50)}...", keyInsights count: ${parsed.keyInsights?.length || 0}`,
     );
 
@@ -1309,7 +1310,7 @@ export async function generateCrossInterviewAnalysis(
       : 0;
 
   // Run AI-powered analysis in parallel
-  console.log("[Barbara] Starting enhanced cross-interview analysis...");
+  log.info("[Barbara] Starting enhanced cross-interview analysis...");
 
   const [enhancedAnalysis] = await Promise.all([
     extractEnhancedAnalysis(input, baseQuestionPerformance, usageContext),
@@ -1363,7 +1364,7 @@ export async function generateCrossInterviewAnalysis(
       responseRichness: q.responseRichness,
     }));
 
-  console.log("[Barbara] Enhanced analysis complete:", {
+  log.info("[Barbara] Enhanced analysis complete:", {
     themes: enhancedAnalysis.themes.length,
     keyFindings: enhancedAnalysis.keyFindings.length,
     consensusPoints: enhancedAnalysis.consensusPoints.length,
@@ -1611,18 +1612,18 @@ ${sessionSummaries}
 Analyze these interviews and provide comprehensive insights with anonymized verbatims.`;
 
   try {
-    console.log(
+    log.debug(
       "[Barbara] Building enhanced analysis prompt with",
       sessionData.length,
       "sessions",
     );
-    console.log(
+    log.debug(
       "[Barbara] Session summaries preview:",
       sessionSummaries.substring(0, 500),
     );
 
     const config = barbaraConfig.summarisation;
-    console.log("[Barbara] Using model:", config.model);
+    log.debug("[Barbara] Using model:", config.model);
 
     const tracked = await withTrackedLlmCall({
       attribution: usageContext || {},
@@ -1648,7 +1649,7 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
     });
     const response = tracked.result;
 
-    console.log(
+    log.debug(
       "[Barbara] Full API response:",
       JSON.stringify(response, null, 2).substring(0, 1000),
     );
@@ -1663,9 +1664,9 @@ Analyze these interviews and provide comprehensive insights with anonymized verb
       return createEmptyAnalysis();
     }
 
-    console.log("[Barbara] AI response received, length:", content.length);
+    log.debug("[Barbara] AI response received, length:", content.length);
     const parsed = JSON.parse(content);
-    console.log(
+    log.debug(
       "[Barbara] Parsed response - themes:",
       parsed.themes?.length || 0,
       "findings:",
@@ -1868,14 +1869,14 @@ export async function generateTemplateAnalytics(
   input: TemplateAnalyticsInput,
   usageContext?: LLMUsageAttribution,
 ): Promise<Omit<TemplateAnalytics, "generatedAt">> {
-  console.log("[Barbara] Starting template analytics generation...");
+  log.info("[Barbara] Starting template analytics generation...");
 
   const collectionsWithAnalytics = input.collections.filter(
     (c) => c.analytics !== null,
   );
 
   if (collectionsWithAnalytics.length === 0) {
-    console.log(
+    log.debug(
       "[Barbara] No collections with analytics found, returning empty template analytics",
     );
     return createEmptyTemplateAnalytics();
@@ -2222,7 +2223,7 @@ export async function generateTemplateAnalytics(
   // Limit recommendations
   recommendations = recommendations.slice(0, 10);
 
-  console.log("[Barbara] Template analytics complete:", {
+  log.info("[Barbara] Template analytics complete:", {
     collections: collectionPerformance.length,
     themes: aggregatedThemes.length,
     keyFindings: keyFindings.length,
@@ -2316,14 +2317,14 @@ export async function generateProjectAnalytics(
   input: ProjectAnalyticsInput,
   usageContext?: LLMUsageAttribution,
 ): Promise<Omit<ProjectAnalytics, "generatedAt">> {
-  console.log("[Barbara] Starting project analytics generation...");
+  log.info("[Barbara] Starting project analytics generation...");
 
   const templatesWithAnalytics = input.templates.filter(
     (t) => t.analytics !== null,
   );
 
   if (templatesWithAnalytics.length === 0) {
-    console.log(
+    log.debug(
       "[Barbara] No templates with analytics found, returning empty project analytics",
     );
     return createEmptyProjectAnalytics();
@@ -2433,7 +2434,7 @@ export async function generateProjectAnalytics(
     }
   }
 
-  console.log("[Barbara] Project analytics complete:", {
+  log.info("[Barbara] Project analytics complete:", {
     templates: templatePerformance.length,
     crossTemplateThemes: aiAnalysis.crossTemplateThemes.length,
     strategicInsights: aiAnalysis.strategicInsights.length,
@@ -2773,7 +2774,7 @@ Pay special attention to the verbatims provided - use them to support your insig
       divergencePoints: t.divergencePoints.length,
       questionConsistency: t.questionConsistency.length,
     }));
-    console.log(
+    log.debug(
       "[Project Analytics] Enriched template data stats:",
       JSON.stringify(dataStats, null, 2),
     );
@@ -2781,11 +2782,11 @@ Pay special attention to the verbatims provided - use them to support your insig
     // Estimate token count (rough: ~4 chars per token)
     const templateDataStr = JSON.stringify(templateSummaries);
     const estimatedTokens = Math.ceil(templateDataStr.length / 4);
-    console.log(
+    log.debug(
       `[Project Analytics] Estimated input tokens for template data: ~${estimatedTokens}`,
     );
 
-    console.log(
+    log.debug(
       `[Project Analytics] Using model: ${config.model}, reasoning: ${config.reasoningEffort}`,
     );
 
@@ -2816,7 +2817,7 @@ Pay special attention to the verbatims provided - use them to support your insig
 
     const content = response.output_text;
     if (!content) {
-      console.log("[Project Analytics] Empty AI response, returning defaults");
+      log.debug("[Project Analytics] Empty AI response, returning defaults");
       return createDefaultAIResult(input.projectName);
     }
 
@@ -2986,7 +2987,7 @@ export async function generateTemplateFromProject(
   input: TemplateGenerationInput,
   usageContext?: LLMUsageAttribution,
 ): Promise<GeneratedTemplate> {
-  console.log("[Barbara] Generating template from project:", input.projectName);
+  log.info("[Barbara] Generating template from project:", input.projectName);
 
   const config = barbaraConfig.templateGeneration;
 
@@ -3108,7 +3109,7 @@ ${hasContent ? `Focus questions on achieving the research objectives while keepi
           : getDefaultQuestions(),
     };
 
-    console.log("[Barbara] Template generation complete:", {
+    log.info("[Barbara] Template generation complete:", {
       name: result.name,
       questionCount: result.questions.length,
     });
@@ -3252,7 +3253,7 @@ export async function generateAdditionalQuestions(
 
     const content = response.output_text;
     if (!content) {
-      console.log("[Barbara] No content in additional questions response");
+      log.debug("[Barbara] No content in additional questions response");
       return {
         questions: [],
         barbaraModel: config.model,
@@ -3278,7 +3279,7 @@ export async function generateAdditionalQuestions(
       !parsed.questions ||
       parsed.questions.length === 0
     ) {
-      console.log(
+      log.debug(
         `[Barbara] No additional questions needed: ${parsed.reason || "Coverage adequate"}`,
       );
       return {
@@ -3302,7 +3303,7 @@ export async function generateAdditionalQuestions(
       }));
 
     const elapsed = Date.now() - startTime;
-    console.log(
+    log.debug(
       `[Barbara] Generated ${questions.length} additional questions in ${elapsed}ms`,
     );
 
@@ -3606,7 +3607,7 @@ Analyze this interview and provide your structured assessment.`;
     parsed.generatedAt = Date.now();
     parsed.model = config.model;
 
-    console.log(
+    log.debug(
       `[Barbara] Session summary generated: ${parsed.themes.length} themes, objective rating: ${parsed.objectiveSatisfaction.rating}`,
     );
 

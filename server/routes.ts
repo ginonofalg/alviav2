@@ -3,6 +3,7 @@ import type { Server } from "http";
 import { WebSocketServer } from "ws";
 import { clerkAuthMiddleware, registerAuthRoutes, registerWebhookRoutes } from "./auth";
 import { handleVoiceInterview } from "./voice-interview";
+import { log } from "./logger";
 import {
   registerAnalyticsRoutes,
   registerInfographicRoutes,
@@ -39,7 +40,7 @@ export async function registerRoutes(
   const wss = new WebSocketServer({ server: httpServer, path: "/ws/interview" });
   
   wss.on("connection", (ws, req) => {
-    console.log("[WebSocket] New connection on /ws/interview");
+    log.debug("[WebSocket] New connection on /ws/interview");
     handleVoiceInterview(ws, req);
   });
 

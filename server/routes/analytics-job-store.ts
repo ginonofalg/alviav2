@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { log } from "../logger";
 
 export type AnalyticsJobPhase =
   | "pending"
@@ -163,7 +164,7 @@ export function markInterruptedJobs() {
     if (job.phase !== "complete" && job.phase !== "failed" && job.phase !== "interrupted") {
       job.phase = "interrupted";
       job.updatedAt = Date.now();
-      console.log(`[Analytics Jobs] Marked job ${job.id} as interrupted (was ${job.phase})`);
+      log.info(`[Analytics Jobs] Marked job ${job.id} as interrupted (was ${job.phase})`);
     }
   }
 }

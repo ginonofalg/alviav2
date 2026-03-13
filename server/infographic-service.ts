@@ -1,3 +1,4 @@
+import { log } from './logger';
 import { GoogleGenAI } from '@google/genai';
 import type { NormalizedTokenUsage } from "@shared/schema";
 
@@ -42,8 +43,8 @@ export class InfographicService {
     const model = config.model || 'gemini-3-pro-image-preview';
 
     try {
-      console.log('[Infographic] Starting generation with model:', model);
-      console.log('[Infographic] Prompt length:', prompt.length);
+      log.debug('[Infographic] Starting generation with model:', model);
+      log.debug('[Infographic] Prompt length:', prompt.length);
 
       const response = await this.generateWithRetry(prompt, model);
 
@@ -51,7 +52,7 @@ export class InfographicService {
 
       const id = `infographic-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-      console.log('[Infographic] Generated successfully, returning base64 data URL | id:', id, '| size:', imageData.length);
+      log.debug('[Infographic] Generated successfully, returning base64 data URL | id:', id, '| size:', imageData.length);
 
       return {
         id,
@@ -81,7 +82,7 @@ export class InfographicService {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        console.log(`[Infographic] Attempt ${attempt + 1}/${maxRetries}`);
+        log.debug(`[Infographic] Attempt ${attempt + 1}/${maxRetries}`);
 
         const response = await this.ai.models.generateContent({
           model,
@@ -96,7 +97,7 @@ export class InfographicService {
 
         const hasImage = this.checkForImage(response);
         if (!hasImage) {
-          console.log(`[Infographic] Attempt ${attempt + 1} returned text only, retrying...`);
+          log.debug(`[Infographic] Attempt ${attempt + 1} returned text only, retrying...`);
           if (attempt < maxRetries - 1) {
             await new Promise(resolve => setTimeout(resolve, 1000));
             continue;
@@ -110,14 +111,14 @@ export class InfographicService {
 
         if (error.status === 429) {
           const delay = Math.pow(2, attempt) * 2000;
-          console.log(`[Infographic] Rate limited. Retrying in ${delay}ms...`);
+          log.debug(`[Infographic] Rate limited. Retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
 
         if (error.status === 503 || error.status === 500) {
           const delay = Math.pow(2, attempt) * 1000;
-          console.log(`[Infographic] Server error. Retrying in ${delay}ms...`);
+          log.debug(`[Infographic] Server error. Retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
@@ -146,7 +147,7 @@ export class InfographicService {
 
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData?.data) {
-        console.log('[Infographic] Found image data, size:', part.inlineData.data.length);
+        log.debug('[Infographic] Found image data, size:', part.inlineData.data.length);
         return part.inlineData.data;
       }
     }
@@ -156,7 +157,7 @@ export class InfographicService {
       .map((p: any) => p.text);
     
     if (textParts.length > 0) {
-      console.log('[Infographic] Response contained text but no image:', textParts.join('\n').substring(0, 500));
+      log.debug('[Infographic] Response contained text but no image:', textParts.join('\n').substring(0, 500));
     }
 
     throw new Error('The AI model could not generate an image. Please try again with different analytics data.');

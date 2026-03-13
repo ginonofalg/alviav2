@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import OpenAI from "openai";
 import type { Response as OAIResponse, ResponseStreamEvent } from "openai/resources/responses/responses";
 import type { ParsedResponse } from "openai/resources/responses/responses";
@@ -233,7 +234,7 @@ export async function researchPopulation(params: {
   const config = getBarbaraConfig().personaResearch;
   const overallStart = Date.now();
 
-  console.log(`[PersonaGeneration] Research started | model=${config.model} | promptLength=${params.researchPrompt.length} | hasFile=${!!params.uploadedFile} | project=${params.project.name}`);
+  log.debug(`[PersonaGeneration] Research started | model=${config.model} | promptLength=${params.researchPrompt.length} | hasFile=${!!params.uploadedFile} | project=${params.project.name}`);
 
   const userPrompt = buildResearchUserPrompt(
     params.researchPrompt,
@@ -246,7 +247,7 @@ export async function researchPopulation(params: {
 
   for (let attempt = 0; attempt < MAX_RESEARCH_ATTEMPTS; attempt++) {
     try {
-      console.log(`[PersonaGeneration] OpenAI research call starting (streaming) | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | webSearch=true | elapsed=${elapsed(overallStart)}`);
+      log.debug(`[PersonaGeneration] OpenAI research call starting (streaming) | attempt=${attempt + 1}/${MAX_RESEARCH_ATTEMPTS} | webSearch=true | elapsed=${elapsed(overallStart)}`);
 
       const tracked = await withTrackedLlmCall({
         attribution: params.attribution,
@@ -278,7 +279,7 @@ export async function researchPopulation(params: {
           let lastEventTime = Date.now();
           const heartbeatInterval = setInterval(() => {
             const inactivityMs = Date.now() - lastEventTime;
-            console.log(`[PersonaGeneration] Stream heartbeat | events=${eventCount} | inactivity=${(inactivityMs / 1000).toFixed(0)}s | elapsed=${elapsed(overallStart)}`);
+            log.debug(`[PersonaGeneration] Stream heartbeat | events=${eventCount} | inactivity=${(inactivityMs / 1000).toFixed(0)}s | elapsed=${elapsed(overallStart)}`);
             if (inactivityMs > STREAM_INACTIVITY_TIMEOUT_MS) {
               console.error(`[PersonaGeneration] Stream inactivity timeout (${STREAM_INACTIVITY_TIMEOUT_MS / 1000}s with no events), aborting`);
               stream.abort();
@@ -295,7 +296,7 @@ export async function researchPopulation(params: {
           }
 
           const response: ParsedResponse<null> = await stream.finalResponse();
-          console.log(`[PersonaGeneration] Stream completed | totalEvents=${eventCount} | elapsed=${elapsed(overallStart)}`);
+          log.debug(`[PersonaGeneration] Stream completed | totalEvents=${eventCount} | elapsed=${elapsed(overallStart)}`);
           return response;
         },
         extractUsage: makeResponsesUsageExtractor(config.model),
@@ -303,12 +304,12 @@ export async function researchPopulation(params: {
 
       const result = tracked.result;
       const briefText = extractOutputText(result);
-      console.log(`[PersonaGeneration] Response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length} | elapsed=${elapsed(overallStart)}`);
+      log.debug(`[PersonaGeneration] Response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length} | elapsed=${elapsed(overallStart)}`);
       const brief: PopulationBrief = JSON.parse(briefText);
 
       const citations = extractCitations(result);
 
-      console.log(`[PersonaGeneration] Research completed | confidence=${brief.confidence} | citations=${citations.length} | demographics=${brief.demographics?.distributions?.length ?? 0} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
+      log.info(`[PersonaGeneration] Research completed | confidence=${brief.confidence} | citations=${citations.length} | demographics=${brief.demographics?.distributions?.length ?? 0} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
 
       if (brief.confidence === "low" && citations.length === 0) {
         console.warn(
@@ -382,7 +383,7 @@ async function researchWithoutWebSearch(
   userPrompt: string,
   overallStart: number,
 ): Promise<ResearchResult> {
-  console.log(`[PersonaGeneration] Fallback research call starting (no web search) | elapsed=${elapsed(overallStart)}`);
+  log.debug(`[PersonaGeneration] Fallback research call starting (no web search) | elapsed=${elapsed(overallStart)}`);
 
   const tracked = await withTrackedLlmCall({
     attribution: params.attribution,
@@ -414,10 +415,10 @@ async function researchWithoutWebSearch(
 
   const result = tracked.result;
   const briefText = extractOutputText(result);
-  console.log(`[PersonaGeneration] Fallback response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length}`);
+  log.debug(`[PersonaGeneration] Fallback response structure | output_text=${typeof result.output_text} | outputItems=${result.output?.length ?? 0} | textLength=${briefText.length}`);
   const brief: PopulationBrief = JSON.parse(briefText);
 
-  console.log(`[PersonaGeneration] Fallback research completed | confidence=${brief.confidence} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
+  log.info(`[PersonaGeneration] Fallback research completed | confidence=${brief.confidence} | profiles=${brief.suggestedPersonaProfiles?.length ?? 0} | elapsed=${elapsed(overallStart)}`);
 
   return { brief, citations: [], ungrounded: true };
 }

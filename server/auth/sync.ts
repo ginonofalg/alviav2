@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import { db } from "../db";
 import { users } from "@shared/models/auth";
 import { workspaces, workspaceMembers, respondents, inviteList, waitlistEntries, simulationRuns } from "@shared/schema";
@@ -26,7 +27,7 @@ export async function syncClerkUser(
   const existingByEmail = await authStorage.getUserByEmail(clerkEmail);
   if (existingByEmail) {
     const oldId = existingByEmail.id;
-    console.log(`[auth-sync] Migrating user ${clerkEmail} from ${oldId} to ${clerkUserId}`);
+    log.info(`[auth-sync] Migrating user ${clerkEmail} from ${oldId} to ${clerkUserId}`);
 
     await db.transaction(async (tx) => {
       await tx.update(workspaces).set({ ownerId: clerkUserId }).where(eq(workspaces.ownerId, oldId));
@@ -46,7 +47,7 @@ export async function syncClerkUser(
       }).where(eq(users.id, oldId));
     });
 
-    console.log(`[auth-sync] Successfully migrated user ${clerkEmail} from ${oldId} to ${clerkUserId}`);
+    log.info(`[auth-sync] Successfully migrated user ${clerkEmail} from ${oldId} to ${clerkUserId}`);
     return await authStorage.getUser(clerkUserId);
   }
 

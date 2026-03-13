@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import WebSocket from "ws";
 import {
   getRealtimeProvider,
@@ -350,6 +351,6 @@ export const CONNECTION_REFRESH_LAST_RESORT_MS = parseInt(process.env.CONNECTION
 export const WS_CLOSE_CODE_REFRESH = 4000; // Custom close code for planned connection refresh
 export const REFRESH_RESET_TIMEOUT_MS = 30_000; // Reset isConnectionRefresh if client never reconnects
 
-console.log(
+log.debug(
   `[ConnectionRefresh] Timing config: flag=${CONNECTION_REFRESH_MS / 1000}s, fallback=${CONNECTION_REFRESH_FALLBACK_MS / 1000}s, last-resort=${CONNECTION_REFRESH_LAST_RESORT_MS / 1000}s`,
 );

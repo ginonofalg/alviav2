@@ -1,3 +1,4 @@
+import { log } from '../logger';
 import type { BarbaraGuidanceLogEntry, PersistedTranscriptEntry } from "@shared/schema";
 import type { InterviewState } from "./types";
 import type { BarbaraGuidance } from "../barbara-orchestrator";
@@ -35,7 +36,7 @@ export async function scoreAndPersistAdherence(
       barbaraGuidanceLog: scoredLog,
       guidanceAdherenceSummary: adherenceSummary,
     });
-    console.log(
+    log.debug(
       `[GuidanceAdherence] Scored ${scoredLog.length} entries for ${sessionId}: ` +
       `${adherenceSummary.followedCount} followed, ${adherenceSummary.partiallyFollowedCount} partial, ` +
       `${adherenceSummary.notFollowedCount} not followed (rate: ${(adherenceSummary.overallAdherenceRate * 100).toFixed(1)}%)`,
